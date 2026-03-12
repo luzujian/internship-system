@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.gdmu.mapper.ChatMapper">
+    <resultMap id="BaseResultMap" type="com.gdmu.entity.Chat">
+        <id column="id" property="id" jdbcType="BIGINT" />
+        <result column="name" property="name" jdbcType="VARCHAR" />
+        <result column="type" property="type" jdbcType="INTEGER" />
+        <result column="avatar" property="avatar" jdbcType="VARCHAR" />
+        <result column="creator_id" property="creatorId" jdbcType="BIGINT" />
+        <result column="creator_type" property="creatorType" jdbcType="INTEGER" />
+        <result column="last_message_id" property="lastMessageId" jdbcType="BIGINT" />
+        <result column="last_message_content" property="lastMessageContent" jdbcType="VARCHAR" />
+        <result column="last_message_time" property="lastMessageTime" jdbcType="TIMESTAMP" />
+        <result column="create_time" property="createTime" jdbcType="TIMESTAMP" />
+        <result column="update_time" property="updateTime" jdbcType="TIMESTAMP" />
+        <result column="status" property="status" jdbcType="INTEGER" />
+    </resultMap>
+    
+    <insert id="insert" parameterType="com.gdmu.entity.Chat" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO chat (
+            name, type, avatar, creator_id, creator_type, 
+            last_message_id, last_message_content, last_message_time,
+            create_time, update_time, status
+        ) VALUES (
+            #{name,jdbcType=VARCHAR}, #{type,jdbcType=INTEGER}, #{avatar,jdbcType=VARCHAR}, 
+            #{creatorId,jdbcType=BIGINT}, #{creatorType,jdbcType=INTEGER}, 
+            #{lastMessageId,jdbcType=BIGINT}, #{lastMessageContent,jdbcType=VARCHAR}, 
+            #{lastMessageTime,jdbcType=TIMESTAMP}, #{createTime,jdbcType=TIMESTAMP}, 
+            #{updateTime,jdbcType=TIMESTAMP}, #{status,jdbcType=INTEGER}
+        )
+    </insert>
+    
+    <update id="update" parameterType="com.gdmu.entity.Chat">
+        UPDATE chat SET
+            name = #{name,jdbcType=VARCHAR},
+            type = #{type,jdbcType=INTEGER},
+            avatar = #{avatar,jdbcType=VARCHAR},
+            creator_id = #{creatorId,jdbcType=BIGINT},
+            creator_type = #{creatorType,jdbcType=INTEGER},
+            last_message_id = #{lastMessageId,jdbcType=BIGINT},
+            last_message_content = #{lastMessageContent,jdbcType=VARCHAR},
+            last_message_time = #{lastMessageTime,jdbcType=TIMESTAMP},
+            update_time = #{updateTime,jdbcType=TIMESTAMP},
+            status = #{status,jdbcType=INTEGER}
+        WHERE id = #{id,jdbcType=BIGINT}
+    </update>
+    
+    <select id="findById" parameterType="java.lang.Long" resultMap="BaseResultMap">
+        SELECT * FROM chat WHERE id = #{id,jdbcType=BIGINT}
+    </select>
+    
+    <select id="findByUserId" parameterType="java.util.Map" resultMap="BaseResultMap">
+        SELECT 
+            c.id,
+            CASE 
+                WHEN c.type = 1 THEN (
+                    SELECT cm2.member_name 
+                    FROM chat_member cm2 
+                    WHERE cm2.chat_id = c.id 
+                    AND NOT (cm2.member_id = #{userId} AND cm2.member_type = #{userType})
+                    AND cm2.status = 0
+                    LIMIT 1
+                )
+                ELSE c.name
+            END as name,
+            c.type,
+            CASE 
+                WHEN c.type = 1 THEN (
+                    SELECT cm2.avatar 
+                    FROM chat_member cm2 
+                    WHERE cm2.chat_id = c.id 
+                    AND NOT (cm2.member_id = #{userId} AND cm2.member_type = #{userType})
+                    AND cm2.status = 0
+                    LIMIT 1
+                )
+                ELSE c.avatar
+            END as avatar,
+            c.creator_id,
+            c.creator_type,
+            c.last_message_id,
+            c.last_message_content,
+            c.last_message_time,
+            c.create_time,
+            c.update_time,
+            c.status
+        FROM chat c
+        JOIN chat_member cm ON c.id = cm.chat_id
+        WHERE cm.member_id = #{userId} 
+        AND cm.member_type = #{userType} 
+        AND cm.status = 0 
+        AND c.status = 0
+        AND c.last_message_id IS NOT NULL
+        ORDER BY c.last_message_time DESC
+    </select>
+    
+    <select id="findSingleChat" parameterType="java.util.Map" resultMap="BaseResultMap">
+        SELECT c.* FROM chat c
+        JOIN chat_member cm1 ON c.id = cm1.chat_id
+        JOIN chat_member cm2 ON c.id = cm2.chat_id AND cm1.id != cm2.id
+        WHERE c.type = 1 AND c.status = 0
+        AND cm1.member_id = #{userId1} AND cm1.member_type = #{userType1} AND cm1.status = 0
+        AND cm2.member_id = #{userId2} AND cm2.member_type = #{userType2} AND cm2.status = 0
+        ORDER BY c.create_time DESC
+        LIMIT 1
+    </select>
+    
+    <update id="updateLastMessage" parameterType="java.util.Map">
+        UPDATE chat SET
+            last_message_id = #{lastMessageId,jdbcType=BIGINT},
+            last_message_content = #{lastMessageContent,jdbcType=VARCHAR},
+            last_message_time = #{lastMessageTime,jdbcType=TIMESTAMP},
+            update_time = NOW()
+        WHERE id = #{chatId,jdbcType=BIGINT}
+    </update>
+</mapper>
