@@ -1,0 +1,193 @@
+management:
+  health:
+    mail:
+      enabled: false
+    redis:
+      enabled: true
+
+spring:
+  application:
+    name: internship
+  main:
+    allow-circular-references: true
+    allow-bean-definition-overriding: true
+  jndi:
+    rmi:
+      remote:
+        object:
+          read-timeout: 0
+  netty:
+    leak-detection:
+      level: DISABLED
+    allocator:
+      type: unpooled
+    transport:
+      noNative: true
+  server:
+    tomcat:
+      connection-timeout: 60000
+      max-connections: 10000
+      threads:
+        max: 200
+    response-timeout: 300000
+  mvc:
+    async:
+      request-timeout: 300000
+  datasource:
+    url: jdbc:mysql://${DB_HOST:10.147.17.67}:${DB_PORT:3306}/${DB_NAME:internship}?useSSL=true&serverTimezone=Asia/Shanghai&characterEncoding=utf8&useUnicode=true
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:1234}
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 5
+      idle-timeout: 30000
+      connection-timeout: 30000
+      auto-commit: true
+  sql:
+    init:
+      mode: never
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 100MB
+      enabled: true
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      database: 0
+      timeout: 3000
+      lettuce:
+        pool:
+          max-active: 8
+          max-idle: 8
+          min-idle: 0
+          max-wait: -1
+        shutdown-timeout: 200ms
+        cluster:
+          refresh:
+            adaptive: true
+  cache:
+    type: redis
+    redis:
+      time-to-live: 300000
+      cache-null-values: false
+  mail:
+    host: ${MAIL_HOST:smtp.qq.com}
+    port: ${MAIL_PORT:465}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    protocol: smtps
+    properties:
+      mail:
+        smtp:
+          auth: true
+          ssl:
+            enable: true
+          starttls:
+            enable: true
+          connectiontimeout: 5000
+          timeout: 5000
+          writetimeout: 5000
+    default-encoding: UTF-8
+  jackson:
+    date-format: yyyy-MM-dd HH:mm:ss
+    time-zone: GMT+8
+    serialization:
+      write-dates-as-timestamps: false
+    deserialization:
+      fail-on-unknown-properties: false
+      accept-single-value-as-array: true
+    parser:
+      allow-unquoted-control-chars: true
+      allow-backslash-escaping-any-character: true
+    mapper:
+      accept-case-insensitive-properties: true
+  ai:
+    deepseek:
+      api-key: ${DEEPSEEK_API_KEY:}
+      base-url: ${DEEPSEEK_BASE_URL:https://api.deepseek.com}
+      chat:
+        options:
+          model: deepseek-chat
+          temperature: 0.1
+          max-tokens: 2000
+  http:
+    client:
+      connect-timeout: 30000
+      read-timeout: 300000
+      pool:
+        max-idle-time: 60000
+        max-life-time: 900000
+      ssl:
+        verify: false
+
+file:
+  upload:
+    path: ${FILE_UPLOAD_PATH:D:/Web-work/Internship/uploads}
+    url-prefix: /uploads
+    max-size: ${FILE_MAX_SIZE:10485760}
+
+backup:
+  path: ${BACKUP_PATH:D:/Web-work/Internship/backups}
+  retention:
+    days: ${BACKUP_RETENTION_DAYS:30}
+  compress: false
+  format: SQL
+
+sms:
+  enabled: false
+  debug: true
+  access-key-id: ${SMS_ACCESS_KEY_ID:}
+  access-key-secret: ${SMS_ACCESS_KEY_SECRET:}
+  sign-name: 实习管理系统
+  template-code: SMS_123456789
+
+mybatis:
+  configuration:
+    map-underscore-to-camel-case: true
+  check-config-location: false
+  mapper-locations: classpath:com/gdmu/mapper/*.xml,classpath:mapper/*.xml
+
+pagehelper:
+  helper-dialect: mysql
+  reasonable: true
+  support-methods-arguments: true
+  params: count=countSql;pageNum=page;pageSize=pageSize;
+
+logging:
+  level:
+    root: INFO
+    com.gdmu: INFO
+    org.springframework.ai: INFO
+    org.springframework.security: INFO
+    org.hibernate.SQL: INFO
+    org.hibernate.type.descriptor.sql.BasicBinder: INFO
+    org.springframework.jdbc.support.JdbcTransactionManager: INFO
+    com.github.pagehelper: INFO
+    com.github.pagehelper.page: INFO
+
+jwt:
+  secret: ${JWT_SECRET:defaultSecretChangeInProduction_ReplaceThisWithRandomSecret1234567890==}
+  expiration: ${JWT_EXPIRATION:86400000}
+  refresh-expiration: ${JWT_REFRESH_EXPIRATION:604800000}
+  enabled: true
+
+aliyun:
+  oss:
+    endpoint: ${ALIYUN_OSS_ENDPOINT:https://oss-cn-beijing.aliyuncs.com}
+    bucketName: ${ALIYUN_OSS_BUCKET_NAME:lzj-java-ai}
+    region: ${ALIYUN_OSS_REGION:cn-beijing}
+    access-key-id: ${ALIYUN_OSS_ACCESS_KEY_ID:}
+    access-key-secret: ${ALIYUN_OSS_ACCESS_KEY_SECRET:}
+
+server:
+  servlet:
+    session:
+      timeout: 30m
+  response-timeout: 60000
+  tomcat:
+    relaxed-path-chars: "|"
+    relaxed-query-chars: "|"
