@@ -1,0 +1,119 @@
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.gdmu.mapper.DepartmentMapper">
+    <!-- 定义结果映射，确保实体类属性与数据库字段正确映射 -->
+    <resultMap id="DepartmentResultMap" type="com.gdmu.entity.Department">
+        <id property="id" column="id"/>
+        <result property="name" column="name"/>
+        <result property="createTime" column="create_time"/>
+        <result property="updateTime" column="update_time"/>
+        <result property="teacherCount" column="teacher_count"/>
+        <result property="studentCount" column="student_count"/>
+        <result property="confirmedCount" column="confirmed_count"/>
+        <result property="notFoundCount" column="not_found_count"/>
+        <result property="hasOfferCount" column="has_offer_count"/>
+    </resultMap>
+
+    <!-- 插入院系 -->
+    <insert id="insert" parameterType="com.gdmu.entity.Department" useGeneratedKeys="true" keyProperty="id">
+        insert into department (name, create_time, update_time)
+        values (#{name}, #{createTime}, #{updateTime})
+    </insert>
+
+    <!-- 根据ID查询院系 -->
+    <select id="findById" resultType="com.gdmu.entity.Department" parameterType="java.lang.Long">
+        select * from department where id = #{id}
+    </select>
+
+    <!-- 查询所有院系 -->
+    <select id="findAll" resultType="com.gdmu.entity.Department">
+        select * from department
+    </select>
+
+    <!-- 更新院系 -->
+    <update id="update" parameterType="com.gdmu.entity.Department">
+        update department
+        set
+            name = #{name},
+            update_time = #{updateTime}
+        where id = #{id}
+    </update>
+
+    <!-- 删除院系 -->
+    <delete id="deleteById" parameterType="java.lang.Long">
+        delete from department where id = #{id}
+    </delete>
+
+    <!-- 分页条件查询课程 -->
+    <select id="list" parameterType="map" resultMap="DepartmentResultMap">
+        SELECT * FROM department
+        <where>
+            <if test="name != null and name != ''">
+                AND name LIKE CONCAT('%', #{name}, '%')
+            </if>
+        </where>
+        order by department.update_time desc
+    </select>
+
+    <!-- 统计院系数量 -->
+    <select id="count" resultType="java.lang.Long">
+        select count(1) from department
+    </select>
+    
+    <!-- 根据院系ID查询教师人数 -->
+    <select id="getTeacherCountByDepartmentId" resultType="java.lang.Integer" parameterType="java.lang.Long">
+        select count(1) from teacher_users where department_id = #{departmentId}
+    </select>
+    
+    <!-- 根据院系ID查询学生人数 -->
+    <select id="getStudentCountByDepartmentId" resultType="java.lang.Integer" parameterType="java.lang.Long">
+        select count(1) from student_users where major_id in (
+            select id from major where department_id = #{departmentId}
+        )
+    </select>
+    
+    <!-- 更新院系人数信息 -->
+    <update id="updateDepartmentCount" parameterType="map">
+        update department
+        set teacher_count = #{teacherCount},
+            student_count = #{studentCount},
+            update_time = CURRENT_TIMESTAMP
+        where id = #{id}
+    </update>
+    
+    <!-- 根据院系ID查询已确定实习的学生数 -->
+    <select id="getConfirmedCountByDepartmentId" resultType="java.lang.Integer" parameterType="java.lang.Long">
+        SELECT COUNT(*) FROM student_internship_status sis
+        INNER JOIN student_users su ON sis.student_id = su.id
+        INNER JOIN major m ON su.major_id = m.id
+        WHERE m.department_id = #{departmentId} AND sis.status = 2
+    </select>
+    
+    <!-- 根据院系ID查询未找到实习的学生数 -->
+    <select id="getNotFoundCountByDepartmentId" resultType="java.lang.Integer" parameterType="java.lang.Long">
+        SELECT COUNT(*) FROM student_users su
+        INNER JOIN major m ON su.major_id = m.id
+        LEFT JOIN student_internship_status sis ON su.id = sis.student_id
+        WHERE m.department_id = #{departmentId} AND (sis.status = 0 OR sis.status IS NULL)
+    </select>
+    
+    <!-- 根据院系ID查询有Offer未确定的学生数 -->
+    <select id="getHasOfferCountByDepartmentId" resultType="java.lang.Integer" parameterType="java.lang.Long">
+        SELECT COUNT(*) FROM student_internship_status sis
+        INNER JOIN student_users su ON sis.student_id = su.id
+        INNER JOIN major m ON su.major_id = m.id
+        WHERE m.department_id = #{departmentId} AND sis.status = 1
+    </select>
+    
+    <!-- 更新院系实习状态统计信息 -->
+    <update id="updateDepartmentInternshipCount" parameterType="map">
+        update department
+        set confirmed_count = #{confirmedCount},
+            not_found_count = #{notFoundCount},
+            has_offer_count = #{hasOfferCount},
+            update_time = CURRENT_TIMESTAMP
+        where id = #{id}
+    </update>
+
+</mapper>
