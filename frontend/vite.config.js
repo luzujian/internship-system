@@ -1,19 +1,19 @@
-import { defineConfig } from 'vite'
-import vue from '@vitejs/plugin-vue'
-import path from 'path'
+import { defineConfig } from vite
+import vue from @vitejs/plugin-vue
+import path from path
 
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [vue()],
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, 'src')
+      @: path.resolve(__dirname, src)
     }
   },
   server: {
     proxy: {
-      '/api': {
-        target: 'http://localhost:8080',
+      /api: {
+        target: http://localhost:8080,
         changeOrigin: true,
         rewrite: (path) => path
       }
@@ -21,33 +21,36 @@ export default defineConfig({
   },
   // 构建优化配置
   build: {
-    chunkSizeWarningLimit: 1000, // 增加chunk大小警告限制
+    chunkSizeWarningLimit: 1000,
     rollupOptions: {
       output: {
-        // 代码分割 - 将大型依赖库分离成独立的chunk
         manualChunks: {
-          'element-plus': ['element-plus'],
-          'echarts': ['echarts'],
-          'axios': ['axios'],
-          'xlsx': ['xlsx']
+          element-plus: [element-plus],
+          echarts: [echarts],
+          axios: [axios],
+          xlsx: [xlsx]
         },
-        // 静态资源打包策略
-        assetFileNames: 'assets/[name].[hash:8][extname]',
-        chunkFileNames: 'assets/[name].[hash:8].js',
-        entryFileNames: 'assets/[name].[hash:8].js'
+        assetFileNames: assets/[name].[hash:8][extname],
+        chunkFileNames: assets/[name].[hash:8].js,
+        entryFileNames: assets/[name].[hash:8].js
       }
     },
-    // 压缩CSS和JS
-    minify: 'terser',
+    minify: terser,
     terserOptions: {
       compress: {
-        drop_console: true, // 移除console
-        drop_debugger: true // 移除debugger
+        drop_console: true,
+        drop_debugger: true
       }
-    }
+    },
+    // 图片压缩配置
+    assetsInlineLimit: 4096, // 4kb 以下的图片内联为 base64
   },
-  // 优化开发体验
   optimizeDeps: {
-    include: ['element-plus', 'echarts', 'axios']
+    include: [element-plus, echarts, axios]
+  },
+  // 图片压缩插件
+  esbuild: {
+    // 启用更多树摇优化
+    treeShaking: true,
   }
 })
