@@ -1,1 +1,0 @@
-import{r as e}from"./index.B4mz7wli.js";const a=()=>e.get("/problem-feedback"),b=a=>e.get(`/problem-feedback/${a}`),r=a=>e.get("/problem-feedback/page",{params:a}),d=a=>e.delete(`/problem-feedback/${a}`),p=a=>e.delete("/problem-feedback/batch",{data:{ids:a}}),s=(a,b)=>e.put(`/problem-feedback/${a}/reply`,b);export{r as a,p as b,a as c,d,b as g,s as r};
