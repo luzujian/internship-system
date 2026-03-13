@@ -74,6 +74,7 @@ target/
 node_modules/
 dist/
 dist-ssr/
+dist_temp/
 *.local
 
 # Vue/Vite
