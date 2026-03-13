@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.gdmu.mapper.InternshipReflectionMapper">
+    
+    <resultMap id="InternshipReflectionResultMap" type="com.gdmu.entity.InternshipReflection">
+        <id property="id" column="id" />
+        <result property="studentId" column="student_id" />
+        <result property="studentName" column="student_name" />
+        <result property="studentUserId" column="student_user_id" />
+        <result property="content" column="content" />
+        <result property="remark" column="remark" />
+        <result property="submitTime" column="submit_time" />
+        <result property="aiKeywords" column="ai_keywords" />
+        <result property="aiAnalysis" column="ai_analysis" />
+        <result property="aiScore" column="ai_score" />
+        <result property="aiAnalysisTime" column="ai_analysis_time" />
+        <result property="status" column="status" />
+        <result property="createTime" column="create_time" />
+        <result property="updateTime" column="update_time" />
+        <result property="deleted" column="deleted" />
+        
+        <association property="student" javaType="com.gdmu.entity.StudentUser">
+            <id property="id" column="su_id" />
+            <result property="name" column="su_name" />
+            <result property="studentUserId" column="su_student_id" />
+            <result property="gender" column="su_gender" />
+            <result property="grade" column="su_grade" />
+            <result property="majorId" column="su_major_id" />
+            <result property="classId" column="su_class_id" />
+        </association>
+    </resultMap>
+    
+    <insert id="insert" parameterType="com.gdmu.entity.InternshipReflection" useGeneratedKeys="true" keyProperty="id">
+        insert into internship_reflection (student_id, student_name, student_user_id, content, remark, submit_time, ai_keywords, ai_analysis, ai_score, ai_analysis_time, status, create_time, update_time, deleted)
+        values (#{studentId}, #{studentName}, #{studentUserId}, #{content}, #{remark}, #{submitTime}, #{aiKeywords}, #{aiAnalysis}, #{aiScore}, #{aiAnalysisTime}, #{status}, #{createTime}, #{updateTime}, #{deleted})
+    </insert>
+    
+    <update id="updateById" parameterType="com.gdmu.entity.InternshipReflection">
+        update internship_reflection
+        <set>
+            <if test="studentId != null">student_id = #{studentId},</if>
+            <if test="studentName != null and studentName != ''">student_name = #{studentName},</if>
+            <if test="studentUserId != null and studentUserId != ''">student_user_id = #{studentUserId},</if>
+            <if test="content != null and content != ''">content = #{content},</if>
+            <if test="remark != null">remark = #{remark},</if>
+            <if test="submitTime != null">submit_time = #{submitTime},</if>
+            <if test="aiKeywords != null">ai_keywords = #{aiKeywords},</if>
+            <if test="aiAnalysis != null">ai_analysis = #{aiAnalysis},</if>
+            <if test="aiScore != null">ai_score = #{aiScore},</if>
+            <if test="aiAnalysisTime != null">ai_analysis_time = #{aiAnalysisTime},</if>
+            <if test="status != null">status = #{status},</if>
+            <if test="updateTime != null">update_time = #{updateTime},</if>
+            <if test="deleted != null">deleted = #{deleted},</if>
+        </set>
+        where id = #{id}
+    </update>
+    
+    <delete id="deleteById">
+        delete from internship_reflection where id = #{id}
+    </delete>
+    
+    <select id="findById" resultMap="InternshipReflectionResultMap">
+        select 
+            ir.*,
+            su.id as su_id, su.name as su_name, su.student_user_id as su_student_id, 
+            su.gender as su_gender, su.grade as su_grade, su.major_id as su_major_id, su.class_id as su_class_id
+        from internship_reflection ir
+        left join student_users su on ir.student_id = su.id
+        where ir.id = #{id}
+    </select>
+    
+    <select id="findByStudentId" resultMap="InternshipReflectionResultMap">
+        select 
+            ir.*,
+            su.id as su_id, su.name as su_name, su.student_user_id as su_student_id, 
+            su.gender as su_gender, su.grade as su_grade, su.major_id as su_major_id, su.class_id as su_class_id
+        from internship_reflection ir
+        left join student_users su on ir.student_id = su.id
+        where ir.student_id = #{studentId} and ir.deleted = 0
+        order by ir.submit_time desc
+    </select>
+    
+    <select id="findAll" resultMap="InternshipReflectionResultMap">
+        select 
+            ir.*,
+            su.id as su_id, su.name as su_name, su.student_user_id as su_student_id, 
+            su.gender as su_gender, su.grade as su_grade, su.major_id as su_major_id, su.class_id as su_class_id
+        from internship_reflection ir
+        left join student_users su on ir.student_id = su.id
+        where ir.deleted = 0
+        order by ir.submit_time desc
+    </select>
+    
+    <select id="findByStatus" resultMap="InternshipReflectionResultMap">
+        select 
+            ir.*,
+            su.id as su_id, su.name as su_name, su.student_user_id as su_student_id, 
+            su.gender as su_gender, su.grade as su_grade, su.major_id as su_major_id, su.class_id as su_class_id
+        from internship_reflection ir
+        left join student_users su on ir.student_id = su.id
+        where ir.status = #{status} and ir.deleted = 0
+        order by ir.submit_time desc
+    </select>
+    
+    <select id="list" resultMap="InternshipReflectionResultMap">
+        select 
+            ir.*,
+            su.id as su_id, su.name as su_name, su.student_user_id as su_student_id, 
+            su.gender as su_gender, su.grade as su_grade, su.major_id as su_major_id, su.class_id as su_class_id
+        from internship_reflection ir
+        left join student_users su on ir.student_id = su.id
+        <where>
+            ir.deleted = 0
+            <if test="studentId != null">
+                AND ir.student_id = #{studentId}
+            </if>
+            <if test="studentName != null and studentName != ''">
+                AND ir.student_name LIKE CONCAT('%', #{studentName}, '%')
+            </if>
+            <if test="studentUserId != null and studentUserId != ''">
+                AND ir.student_user_id LIKE CONCAT('%', #{studentUserId}, '%')
+            </if>
+            <if test="status != null">
+                AND ir.status = #{status}
+            </if>
+        </where>
+        order by ir.submit_time desc
+    </select>
+    
+    <select id="countByStatus" resultType="java.lang.Integer">
+        SELECT COUNT(*) FROM internship_reflection WHERE status = #{status} AND deleted = 0
+    </select>
+</mapper>

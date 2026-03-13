@@ -1,0 +1,57 @@
+# Maven
+target/
+!.mvn/wrapper/maven-wrapper.jar
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+dependency-reduced-pom.xml
+buildNumber.properties
+.mvn/timing.properties
+.mvn/wrapper/maven-wrapper.jar
+
+# IDE
+.idea/
+*.iws
+*.iml
+*.ipr
+.vscode/
+.settings/
+.project
+.classpath
+*.swp
+*.swo
+*~
+
+# 环境变量文件 - 敏感信息
+.env
+!.env.example
+
+# 日志
+logs/
+*.log
+
+# 操作系统
+.DS_Store
+Thumbs.db
+
+# 编译输出
+*.class
+*.jar
+*.war
+*.ear
+
+# 临时文件
+*.tmp
+*.temp
+*.bak
+
+# Node modules (如果有前端工具)
+node_modules/
+
+# 上传文件目录 (不应提交用户数据)
+uploads/
+
+# 备份目录
+backups/

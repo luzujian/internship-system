@@ -1,0 +1,27 @@
+-- 资源文档表
+CREATE TABLE `resource_documents` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `title` varchar(255) NOT NULL COMMENT '文档标题',
+  `description` text COMMENT '文档描述',
+  `file_url` varchar(1000) DEFAULT NULL COMMENT '文件URL',
+  `file_name` varchar(255) DEFAULT NULL COMMENT '文件名',
+  `file_type` varchar(50) DEFAULT NULL COMMENT '文件类型',
+  `file_size` bigint DEFAULT NULL COMMENT '文件大小（字节）',
+  `publisher_id` bigint DEFAULT NULL COMMENT '发布人ID',
+  `publisher` varchar(50) DEFAULT NULL COMMENT '发布人姓名',
+  `publisher_role` enum('ADMIN','TEACHER') DEFAULT NULL COMMENT '发布人身份：ADMIN-管理员，TEACHER-教师',
+  `publish_time` datetime DEFAULT NULL COMMENT '发布时间',
+  `target_type` varchar(50) DEFAULT 'ALL' COMMENT '目标类型：ALL-全体师生，STUDENT-全体学生，TEACHER-全体教师',
+  `target_value` varchar(255) DEFAULT NULL COMMENT '目标值',
+  `status` enum('DRAFT','PUBLISHED','ARCHIVED') DEFAULT 'DRAFT' COMMENT '状态：DRAFT-草稿，PUBLISHED-已发布，ARCHIVED-已归档',
+  `download_count` int DEFAULT '0' COMMENT '下载次数',
+  `view_count` int DEFAULT '0' COMMENT '浏览次数',
+  `create_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  KEY `idx_publisher_id` (`publisher_id`),
+  KEY `idx_publisher_role` (`publisher_role`),
+  KEY `idx_status` (`status`),
+  KEY `idx_publish_time` (`publish_time`),
+  KEY `idx_target_type` (`target_type`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='资源文档表';
