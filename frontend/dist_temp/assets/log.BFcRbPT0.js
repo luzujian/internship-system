@@ -1,1 +1,0 @@
-import{e}from"./index.B4mz7wli.js";const s=e("log",{state:()=>({logsCleared:!1}),actions:{setLogsCleared(e){this.logsCleared=e},notifyLogsCleared(){this.setLogsCleared(!0),setTimeout(()=>{this.setLogsCleared(!1)},100)}}});export{s as u};
