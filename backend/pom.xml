@@ -396,7 +396,6 @@
                     <meminitial>512m</meminitial>
                     <maxmem>2048m</maxmem>
                     <compilerArgs>
-                        <arg>--enable-preview</arg>
                         <arg>-J--add-opens=jdk.compiler/com.sun.tools.javac.code=ALL-UNNAMED</arg>
                         <arg>-J--add-opens=jdk.compiler/com.sun.tools.javac.comp=ALL-UNNAMED</arg>
                         <arg>-J--add-opens=jdk.compiler/com.sun.tools.javac.file=ALL-UNNAMED</arg>
