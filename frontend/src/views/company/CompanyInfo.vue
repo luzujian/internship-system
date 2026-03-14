@@ -12,12 +12,82 @@ const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
 
+// 初始化省市区数据
+const chinaData = new EluiChinaAreaDht.ChinaArea().chinaAreaflat
+
+// 辅助函数：通过行政区划代码前缀匹配层级关系
+// 中国行政区划代码规则：省级 XX0000, 市级 XXXX00, 区级 XXXXXX
+const findProvinceCode = (provinceName) => {
+  if (!provinceName) return null
+  return Object.keys(chinaData).find(code => {
+    return chinaData[code].label === provinceName && code.endsWith('0000')
+  }) || null
+}
+
+const findCityCode = (cityName, provinceCode) => {
+  if (!cityName || !provinceCode) return null
+  const provincePrefix = provinceCode.slice(0, 2)
+  // 通过省份前缀 + 名称匹配城市
+  return Object.keys(chinaData).find(code => {
+    const info = chinaData[code]
+    // 市级代码格式：XXYY00，其中 XX 是省份前缀
+    return code.startsWith(provincePrefix) &&
+           code.endsWith('00') &&
+           !code.endsWith('0000') &&
+           (info.label === cityName ||
+            info.label === cityName.slice(0, -1) || // 去掉"市"后缀
+            info.label === cityName + '市') // 添加"市"后缀
+  }) || null
+}
+
+const findDistrictCode = (districtName, cityCode) => {
+  if (!districtName || !cityCode) return null
+  const cityPrefix = cityCode.slice(0, 4)
+  // 通过城市前缀 + 名称匹配区县
+  return Object.keys(chinaData).find(code => {
+    const info = chinaData[code]
+    // 区级代码格式：XXXXYY，其中 XXXX 是城市前缀
+    return code.startsWith(cityPrefix) &&
+           !code.endsWith('00') &&
+           (info.label === districtName ||
+            info.label === districtName.replace(/[区县]$/, '')) // 去掉后缀
+  }) || null
+}
+
+// 直接通过名称查找区县代码（当没有城市信息时）
+const findDistrictByProvince = (districtName, provinceCode) => {
+  if (!districtName || !provinceCode) return null
+  const provincePrefix = provinceCode.slice(0, 2)
+  return Object.keys(chinaData).find(code => {
+    const info = chinaData[code]
+    // 直辖市区县或省直辖县级行政区：XXYYYY，其中 XX 是省份前缀
+    return code.startsWith(provincePrefix) &&
+           !code.endsWith('0000') &&
+           !code.endsWith('00') &&
+           (info.label === districtName ||
+            info.label === districtName.replace(/[区县]$/, ''))
+  }) || null
+}
+
 // 从 auth store 获取当前用户 ID
 const companyId = computed(() => {
-  if (authStore.user?.id) {
-    return parseInt(authStore.user.id)
+  const id = authStore.user?.id
+  console.log('[companyId] authStore.user?.id:', id, 'type:', typeof id)
+  if (id) {
+    const parsedId = parseInt(id)
+    console.log('[companyId] 返回解析后的 ID:', parsedId)
+    return parsedId
   }
-  return 3 // 默认值
+  // 当无法获取企业 ID 时，尝试从 localStorage 获取
+  const storedCompanyId = localStorage.getItem('company_companyId_COMPANY')
+  if (storedCompanyId) {
+    console.log('[companyId] 从 localStorage 获取到企业 ID:', storedCompanyId)
+    return parseInt(storedCompanyId)
+  }
+  // 如果仍然无法获取，返回 null 并显示错误提示
+  console.log('[companyId] authStore.user?.id 不存在，localStorage 中也没有找到企业 ID')
+  ElMessage.error('未获取到当前登录企业 ID，请重新登录')
+  return null
 })
 
 const activeTab = ref('basic')
@@ -30,7 +100,7 @@ const basicForm = ref({
   province: '',
   city: '',
   district: '',
-  addressCode: [],
+  addressCode: null,
   detailAddress: '',
   contactPerson: '',
   contactPhone: '',
@@ -267,6 +337,10 @@ const handleSaveBasic = () => {
     cooperationMode: basicForm.value.cooperationMode,
     isInternshipBase: basicForm.value.isInternshipBase ? 1 : 0
   }
+
+  console.log('=== 保存基础信息 ===')
+  console.log('发送的数据:', data)
+  console.log('companyId:', companyId.value)
   
   CompanyService.updateCompanyInfo(data).then(res => {
     if (res.code === 200) {
@@ -351,58 +425,95 @@ const handleSaveAll = () => {
 }
 
 const loadCompanyInfo = () => {
+  // 检查是否获取到有效的企业 ID
+  if (!companyId.value) {
+    ElMessage.error('未获取到企业 ID，无法加载企业信息')
+    return
+  }
+
   loading.value = true
+  console.log('=== 加载企业信息 ===')
+  console.log('companyId:', companyId.value)
+  console.log('authStore.user:', authStore.user)
+  console.log('authStore.user?.id:', authStore.user?.id)
+
   CompanyService.getCompanyInfo(companyId.value).then(res => {
     if (res.code === 200 && res.data) {
       const data = res.data
+      console.log('API 返回的数据:', data)
+      console.log('data.province:', data.province)
+      console.log('data.city:', data.city)
+      console.log('data.district:', data.district)
+      console.log('data.detailAddress:', data.detailAddress)
       
       const addressCodes = []
+      console.log('开始解析省市区代码...')
+
       if (data.province) {
-        const provinceCode = Object.keys(chinaData).find(code => chinaData[code].label === data.province)
+        const provinceCode = findProvinceCode(data.province)
         if (provinceCode) {
           addressCodes.push(provinceCode)
-          if (data.city) {
-            const cityCode = Object.keys(chinaData).find(code => chinaData[code].label === data.city && chinaData[code].parentId === provinceCode)
+
+          // 处理特殊情况："市辖区"、"县"等不是实际的区名，需要跳过直接匹配区县
+          const isDirectDistrict = data.city === '市辖区' || data.city === '县' || data.city === '城区'
+
+          if (data.city && !isDirectDistrict) {
+            const cityCode = findCityCode(data.city, provinceCode)
             if (cityCode) {
               addressCodes.push(cityCode)
               if (data.district) {
-                const districtCode = Object.keys(chinaData).find(code => chinaData[code].label === data.district && chinaData[code].parentId === cityCode)
+                const districtCode = findDistrictCode(data.district, cityCode)
                 if (districtCode) {
                   addressCodes.push(districtCode)
+                } else {
+                  console.warn('无法解析区县代码:', data.district)
                 }
               }
+            } else {
+              console.warn('无法解析城市代码:', data.city)
+            }
+          } else if (data.district) {
+            // 直接匹配区县（适用于"市辖区"或省直辖的情况）
+            const districtCode = findDistrictByProvince(data.district, provinceCode)
+            if (districtCode) {
+              addressCodes.push(districtCode)
+            } else {
+              console.warn('无法直接匹配区县代码:', data.district)
             }
           }
+        } else {
+          console.warn('无法解析省份代码:', data.province)
         }
       }
-      
-      basicForm.value = {
-        companyName: data.companyName || '',
-        industry: data.industry || '',
-        scale: data.scale || '',
-        province: data.province || '',
-        city: data.city || '',
-        district: data.district || '',
-        addressCode: addressCodes,
-        detailAddress: data.detailAddress || '',
-        contactPerson: data.contactPerson || '',
-        contactPhone: data.contactPhone || '',
-        contactEmail: data.contactEmail || '',
-        website: data.website || '',
-        cooperationMode: data.cooperationMode || 'mutual_choice',
-        isInternshipBase: data.isInternshipBase === 1
-      }
-      
+
+      // 直接设置表单属性，确保响应式更新
+      basicForm.value.companyName = data.companyName || ''
+      basicForm.value.industry = data.industry || ''
+      basicForm.value.scale = data.scale || ''
+      basicForm.value.province = data.province || ''
+      basicForm.value.city = data.city || ''
+      basicForm.value.district = data.district || ''
+      // 确保 addressCode 是一个新的数组引用，触发组件更新
+      basicForm.value.addressCode = addressCodes.length > 0 ? [...addressCodes] : null
+      basicForm.value.detailAddress = data.detailAddress || ''
+      basicForm.value.contactPerson = data.contactPerson || ''
+      basicForm.value.contactPhone = data.contactPhone || ''
+      basicForm.value.contactEmail = data.contactEmail || ''
+      basicForm.value.website = data.website || ''
+      basicForm.value.cooperationMode = data.cooperationMode || 'mutual_choice'
+      basicForm.value.isInternshipBase = data.isInternshipBase === 1
+
       const logo = data.logo || ''
       const photos = data.photos ? JSON.parse(data.photos) : []
       const videos = data.videos ? JSON.parse(data.videos) : []
-      
-      promotionForm.value = {
+
+      // 使用 Object.assign 更新表单属性，保持响应式引用
+      Object.assign(promotionForm.value, {
         logo: logo.startsWith('blob:') ? '' : logo,
         photos: photos.filter(p => !p.startsWith('blob:')),
         videos: videos.filter(v => !v.startsWith('blob:')),
         introduction: data.introduction || ''
-      }
+      })
       
       logoFileList.value = logo ? [{
         uid: Date.now(),
@@ -439,15 +550,15 @@ const loadCompanyInfo = () => {
   })
 }
 
-const chinaData = new EluiChinaAreaDht.ChinaArea().chinaAreaflat
-
 const handleAddressChange = (e) => {
-  basicForm.value.addressCode = e
+  // 确保 addressCode 是一个新的数组引用，触发组件更新
+  basicForm.value.addressCode = e && e.length > 0 ? [...e] : null
+
   if (e && e.length > 0) {
     const provinceCode = e[0]
     const cityCode = e[1]
     const districtCode = e[2]
-    
+
     basicForm.value.province = chinaData[provinceCode]?.label || ''
     basicForm.value.city = chinaData[cityCode]?.label || ''
     basicForm.value.district = chinaData[districtCode]?.label || ''
