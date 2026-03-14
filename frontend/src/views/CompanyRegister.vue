@@ -396,8 +396,8 @@ const loadExistingData = async () => {
       params: { companyName: registerForm.companyName }
     })
 
-    if (response.data.code === 200) {
-      const data = response.data.data
+    if (response.code === 200) {
+      const data = response.data
       existingCompanyId.value = data.id
       registerForm.contactPerson = data.contactPerson || ''
       registerForm.contactPhone = data.contactPhone || ''
@@ -496,7 +496,7 @@ const checkUsername = async () => {
     })
 
     usernameChecked.value = true
-    usernameAvailable.value = response.data.code === 200
+    usernameAvailable.value = response.code === 200
   } catch (error) {
     console.error('检查企业名称失败:', error)
     usernameChecked.value = false
@@ -519,7 +519,7 @@ const sendVerifyCode = async () => {
       phone: registerForm.phone
     })
 
-    if (response.data.code === 200) {
+    if (response.code === 200) {
       ElMessage.success('验证码发送成功')
       countdown.value = 60
       const timer = setInterval(() => {
@@ -529,7 +529,7 @@ const sendVerifyCode = async () => {
         }
       }, 1000)
     } else {
-      ElMessage.error(response.data.message || '发送验证码失败')
+      ElMessage.error(response.message || '发送验证码失败')
     }
   } catch (error) {
     console.error('发送验证码失败:', error)
@@ -548,11 +548,11 @@ const handleBusinessLicenseChange = async (file) => {
       }
     })
 
-    if (response.data.code === 200) {
-      registerForm.businessLicense = response.data.data.url
+    if (response.code === 200) {
+      registerForm.businessLicense = response.data.url
       ElMessage.success('营业执照上传成功')
     } else {
-      ElMessage.error(response.data.message || '营业执照上传失败')
+      ElMessage.error(response.message || '营业执照上传失败')
     }
   } catch (error) {
     console.error('营业执照上传失败:', error)
@@ -576,11 +576,11 @@ const handleIdCardFrontChange = async (file) => {
       }
     })
 
-    if (response.data.code === 200) {
-      registerForm.legalIdCardFront = response.data.data.url
+    if (response.code === 200) {
+      registerForm.legalIdCardFront = response.data.url
       ElMessage.success('身份证正面上传成功')
     } else {
-      ElMessage.error(response.data.message || '身份证正面上传失败')
+      ElMessage.error(response.message || '身份证正面上传失败')
     }
   } catch (error) {
     console.error('身份证正面上传失败:', error)
@@ -599,11 +599,11 @@ const handleIdCardBackChange = async (file) => {
       }
     })
 
-    if (response.data.code === 200) {
-      registerForm.legalIdCardBack = response.data.data.url
+    if (response.code === 200) {
+      registerForm.legalIdCardBack = response.data.url
       ElMessage.success('身份证反面上传成功')
     } else {
-      ElMessage.error(response.data.message || '身份证反面上传失败')
+      ElMessage.error(response.message || '身份证反面上传失败')
     }
   } catch (error) {
     console.error('身份证反面上传失败:', error)
@@ -632,11 +632,11 @@ const handlePlaquePhotoChange = async (file) => {
       }
     })
 
-    if (response.data.code === 200) {
-      registerForm.plaquePhoto = response.data.data.url
+    if (response.code === 200) {
+      registerForm.plaquePhoto = response.data.url
       ElMessage.success('牌匾照片上传成功')
     } else {
-      ElMessage.error(response.data.message || '牌匾照片上传失败')
+      ElMessage.error(response.message || '牌匾照片上传失败')
     }
   } catch (error) {
     console.error('牌匾照片上传失败:', error)
@@ -668,7 +668,7 @@ const submitRegister = async () => {
     let response
     if (isRecallMode.value) {
       response = await request.put(`/company/update/${existingCompanyId.value}`, registerForm)
-      if (response.data.code === 200) {
+      if (response.code === 200) {
         ElMessage.success('注册信息更新成功')
         setTimeout(() => {
           router.push({
@@ -677,11 +677,11 @@ const submitRegister = async () => {
           })
         }, 2000)
       } else {
-        ElMessage.error(response.data.message || '更新失败')
+        ElMessage.error(response.message || '更新失败')
       }
     } else {
       response = await request.post('/company/register', registerForm)
-      if (response.data.code === 200) {
+      if (response.code === 200) {
         ElMessage.success('注册申请提交成功，请等待管理员审核')
         setTimeout(() => {
           router.push({
@@ -690,7 +690,7 @@ const submitRegister = async () => {
           })
         }, 2000)
       } else {
-        ElMessage.error(response.data.message || '注册申请提交失败')
+        ElMessage.error(response.message || '注册申请提交失败')
       }
     }
   } catch (error) {

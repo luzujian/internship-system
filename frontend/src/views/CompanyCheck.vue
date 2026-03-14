@@ -438,15 +438,15 @@ const checkCompanyStatus = async () => {
     const response = await request.get('/company/check-status', {
       params: { companyName: checkForm.companyName }
     })
-    console.log('查询响应:', response.data)
-    
-    if (response.data.code === 200) {
-        const status = response.data.data.status
-        const recallStatus = response.data.data.recallStatus
-        companyInfo.value = response.data.data
-        
+    console.log('查询响应:', response)
+
+    if (response.code === 200) {
+        const status = response.data.status
+        const recallStatus = response.data.recallStatus
+        companyInfo.value = response.data
+
         if (recallStatus === 1) {
-          const recallReviewerId = response.data.data.recallReviewerId
+          const recallReviewerId = response.data.recallReviewerId
           console.log('[CompanyCheck] recallStatus === 1, recallReviewerId:', recallReviewerId, '类型:', typeof recallReviewerId)
           if (recallReviewerId === -1) {
             console.log('[CompanyCheck] 显示转交管理员对话框')
@@ -471,14 +471,14 @@ const checkCompanyStatus = async () => {
         } else if (status === 2) {
           auditRejectedDialogVisible.value = true
         }
-      } else if (response.data.message && response.data.message.includes('未注册')) {
+      } else if (response.message && response.message.includes('未注册')) {
       router.push({
         path: '/company-register',
         query: { companyName: checkForm.companyName }
       })
     } else {
-      console.log('查询失败，响应数据:', response.data)
-    ElMessage.error(response.data.message || '查询失败')
+      console.log('查询失败，响应数据:', response)
+    ElMessage.error(response.message || '查询失败')
     }
   } catch (error) {
     console.error('查询企业注册状态失败:', error)
