@@ -11,6 +11,7 @@
         <result property="contactPhone" column="contact_phone" />
         <result property="contactEmail" column="contact_email" />
         <result property="phone" column="phone" />
+        <result property="email" column="email" />
         <result property="username" column="username" />
         <result property="password" column="password" />
         <result property="role" column="role" />
@@ -40,18 +41,29 @@
         <result property="recallAuditRemark" column="recall_audit_remark" />
         <result property="createTime" column="create_time" />
         <result property="updateTime" column="update_time" />
+        <result property="industry" column="industry" />
+        <result property="scale" column="scale" />
+        <result property="province" column="province" />
+        <result property="city" column="city" />
+        <result property="district" column="district" />
+        <result property="detailAddress" column="detail_address" />
+        <result property="website" column="website" />
+        <result property="cooperationMode" column="cooperation_mode" />
+        <result property="logo" column="logo" />
+        <result property="photos" column="photos" />
+        <result property="videos" column="videos" />
     </resultMap>
     
     <insert id="insert" parameterType="com.gdmu.entity.CompanyUser">
-        insert into company_users (company_name, contact_person, contact_phone, contact_email, phone, username, password, role, address, introduction, business_license, legal_id_card, is_internship_base, plaque_photo, has_received_interns, current_employees_count, accept_backup, max_backup_students, company_tag, register_time, apply_time, audit_time, audit_status, audit_remark, reviewer_id, status, recall_status, recall_reason, recall_apply_time, recall_audit_time, recall_reviewer_id, recall_audit_remark, create_time, update_time)
-        values (#{companyName}, #{contactPerson}, #{contactPhone}, #{contactEmail}, #{phone}, #{username}, #{password}, #{role}, #{address}, #{introduction}, #{businessLicense}, #{legalIdCard}, #{isInternshipBase}, #{plaquePhoto}, #{hasReceivedInterns}, #{currentEmployeesCount}, #{acceptBackup}, #{maxBackupStudents}, #{companyTag}, #{registerTime}, #{applyTime}, #{auditTime}, #{auditStatus}, #{auditRemark}, #{reviewerId}, #{status}, #{recallStatus}, #{recallReason}, #{recallApplyTime}, #{recallAuditTime}, #{recallReviewerId}, #{recallAuditRemark}, #{createTime}, #{updateTime})
+        insert into company_users (company_name, contact_person, contact_phone, contact_email, phone, username, password, role, address, introduction, business_license, legal_id_card, is_internship_base, plaque_photo, has_received_interns, current_employees_count, accept_backup, max_backup_students, company_tag, register_time, apply_time, audit_time, audit_status, audit_remark, reviewer_id, status, recall_status, recall_reason, recall_apply_time, recall_audit_time, recall_reviewer_id, recall_audit_remark, industry, scale, province, city, district, detail_address, website, cooperation_mode, logo, photos, videos, create_time, update_time)
+        values (#{companyName}, #{contactPerson}, #{contactPhone}, #{contactEmail}, #{phone}, #{username}, #{password}, #{role}, #{address}, #{introduction}, #{businessLicense}, #{legalIdCard}, #{isInternshipBase}, #{plaquePhoto}, #{hasReceivedInterns}, #{currentEmployeesCount}, #{acceptBackup}, #{maxBackupStudents}, #{companyTag}, #{registerTime}, #{applyTime}, #{auditTime}, #{auditStatus}, #{auditRemark}, #{reviewerId}, #{status}, #{recallStatus}, #{recallReason}, #{recallApplyTime}, #{recallAuditTime}, #{recallReviewerId}, #{recallAuditRemark}, #{industry}, #{scale}, #{province}, #{city}, #{district}, #{detailAddress}, #{website}, #{cooperationMode}, #{logo}, #{photos}, #{videos}, #{createTime}, #{updateTime})
     </insert>
     
     <insert id="batchInsert" parameterType="java.util.List">
-        INSERT INTO company_users (company_name, contact_person, contact_phone, contact_email, phone, username, password, role, address, introduction, business_license, legal_id_card, is_internship_base, plaque_photo, has_received_interns, current_employees_count, accept_backup, max_backup_students, company_tag, register_time, apply_time, audit_time, audit_status, audit_remark, reviewer_id, status, recall_status, recall_reason, recall_apply_time, recall_audit_time, recall_reviewer_id, recall_audit_remark, create_time, update_time)
+        INSERT INTO company_users (company_name, contact_person, contact_phone, contact_email, phone, username, password, role, address, introduction, business_license, legal_id_card, is_internship_base, plaque_photo, has_received_interns, current_employees_count, accept_backup, max_backup_students, company_tag, register_time, apply_time, audit_time, audit_status, audit_remark, reviewer_id, status, recall_status, recall_reason, recall_apply_time, recall_audit_time, recall_reviewer_id, recall_audit_remark, industry, scale, province, city, district, detail_address, website, cooperation_mode, logo, photos, videos, create_time, update_time)
         VALUES
         <foreach collection="companyUsers" item="companyUser" separator=",">
-            (#{companyUser.companyName}, #{companyUser.contactPerson}, #{companyUser.contactPhone}, #{companyUser.contactEmail}, #{companyUser.phone}, #{companyUser.username}, #{companyUser.password}, #{companyUser.role}, #{companyUser.address}, #{companyUser.introduction}, #{companyUser.businessLicense}, #{companyUser.legalIdCard}, #{companyUser.isInternshipBase}, #{companyUser.plaquePhoto}, #{companyUser.hasReceivedInterns}, #{companyUser.currentEmployeesCount}, #{companyUser.acceptBackup}, #{companyUser.maxBackupStudents}, #{companyUser.companyTag}, #{companyUser.registerTime}, #{companyUser.applyTime}, #{companyUser.auditTime}, #{companyUser.auditStatus}, #{companyUser.auditRemark}, #{companyUser.reviewerId}, #{companyUser.status}, #{companyUser.recallStatus}, #{companyUser.recallReason}, #{companyUser.recallApplyTime}, #{companyUser.recallAuditTime}, #{companyUser.recallReviewerId}, #{companyUser.recallAuditRemark}, #{companyUser.createTime}, #{companyUser.updateTime})
+            (#{companyUser.companyName}, #{companyUser.contactPerson}, #{companyUser.contactPhone}, #{companyUser.contactEmail}, #{companyUser.phone}, #{companyUser.username}, #{companyUser.password}, #{companyUser.role}, #{companyUser.address}, #{companyUser.introduction}, #{companyUser.businessLicense}, #{companyUser.legalIdCard}, #{companyUser.isInternshipBase}, #{companyUser.plaquePhoto}, #{companyUser.hasReceivedInterns}, #{companyUser.currentEmployeesCount}, #{companyUser.acceptBackup}, #{companyUser.maxBackupStudents}, #{companyUser.companyTag}, #{companyUser.registerTime}, #{companyUser.applyTime}, #{companyUser.auditTime}, #{companyUser.auditStatus}, #{companyUser.auditRemark}, #{companyUser.reviewerId}, #{companyUser.status}, #{companyUser.recallStatus}, #{companyUser.recallReason}, #{companyUser.recallApplyTime}, #{companyUser.recallAuditTime}, #{companyUser.recallReviewerId}, #{companyUser.recallAuditRemark}, #{companyUser.industry}, #{companyUser.scale}, #{companyUser.province}, #{companyUser.city}, #{companyUser.district}, #{companyUser.detailAddress}, #{companyUser.website}, #{companyUser.cooperationMode}, #{companyUser.logo}, #{companyUser.photos}, #{companyUser.videos}, #{companyUser.createTime}, #{companyUser.updateTime})
         </foreach>
     </insert>
     
@@ -83,6 +95,9 @@
             </if>
             <if test="phone != null and phone != ''">
                 phone = #{phone},
+            </if>
+            <if test="email != null and email != ''">
+                email = #{email},
             </if>
             <if test="address != null and address != ''">
                 address = #{address},
@@ -155,6 +170,39 @@
             </if>
             <if test="recallAuditRemark != null">
                 recall_audit_remark = #{recallAuditRemark},
+            </if>
+            <if test="industry != null">
+                industry = #{industry},
+            </if>
+            <if test="scale != null">
+                scale = #{scale},
+            </if>
+            <if test="province != null">
+                province = #{province},
+            </if>
+            <if test="city != null">
+                city = #{city},
+            </if>
+            <if test="district != null">
+                district = #{district},
+            </if>
+            <if test="detailAddress != null">
+                detail_address = #{detailAddress},
+            </if>
+            <if test="website != null">
+                website = #{website},
+            </if>
+            <if test="cooperationMode != null">
+                cooperation_mode = #{cooperationMode},
+            </if>
+            <if test="logo != null">
+                logo = #{logo},
+            </if>
+            <if test="photos != null">
+                photos = #{photos},
+            </if>
+            <if test="videos != null">
+                videos = #{videos},
             </if>
             <if test="updateTime != null">
                 update_time = #{updateTime}
