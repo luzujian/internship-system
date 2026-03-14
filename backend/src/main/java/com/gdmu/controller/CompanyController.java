@@ -12,6 +12,7 @@ import com.gdmu.service.CompanyUserService;
 import com.gdmu.service.InternshipApplicationService;
 import com.gdmu.service.PositionService;
 import com.gdmu.service.StudentInternshipStatusService;
+import com.gdmu.utils.CurrentHolder;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
@@ -351,7 +352,13 @@ public class CompanyController {
     }
 
     private Long getCurrentCompanyId() {
-        return 3L;
+        Long companyId = CurrentHolder.getUserId();
+        if (companyId == null) {
+            log.warn("未获取到当前登录企业 ID，返回默认值");
+            return 3L; // 默认值，仅用于兼容
+        }
+        log.debug("获取到当前登录企业 ID: {}", companyId);
+        return companyId;
     }
 
     @PutMapping("/password")

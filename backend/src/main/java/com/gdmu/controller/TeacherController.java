@@ -148,7 +148,13 @@ public class TeacherController {
     }
 
     private Long getCurrentUserId() {
-        return 1L;
+        Long userId = CurrentHolder.getUserId();
+        if (userId == null) {
+            log.warn("未获取到当前登录用户 ID，返回默认值");
+            return 1L; // 默认值，仅用于兼容
+        }
+        log.debug("获取到当前登录用户 ID: {}", userId);
+        return userId;
     }
 
 }

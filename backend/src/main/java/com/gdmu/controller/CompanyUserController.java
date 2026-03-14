@@ -6,6 +6,7 @@ import com.gdmu.entity.CompanyUser;
 import com.gdmu.entity.PageResult;
 import com.gdmu.entity.Result;
 import com.gdmu.service.CompanyUserService;
+import com.gdmu.utils.CurrentHolder;
 import com.gdmu.utils.ExcelUtils;
 import com.gdmu.utils.PasswordValidator;
 import lombok.extern.slf4j.Slf4j;
@@ -306,7 +307,13 @@ public class CompanyUserController {
     }
 
     private Long getCurrentUserId() {
-        return 1L;
+        Long userId = CurrentHolder.getUserId();
+        if (userId == null) {
+            log.warn("未获取到当前登录用户 ID，返回默认值");
+            return 1L; // 默认值，仅用于兼容
+        }
+        log.debug("获取到当前登录用户 ID: {}", userId);
+        return userId;
     }
 
     @GetMapping("/statistics")
