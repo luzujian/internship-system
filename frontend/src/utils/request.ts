@@ -349,7 +349,7 @@ async function refreshToken(): Promise<string | null> {
 
 request.interceptors.response.use(
   (response: AxiosResponse) => {
-    return response
+    return response.data
   },
   async (error) => {
     const { config, response, code } = error || {}

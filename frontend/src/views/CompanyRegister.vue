@@ -5,7 +5,7 @@
         <h2>企业注册申请</h2>
         <p>请填写企业信息并上传相关资质文件</p>
       </div>
-      
+
       <el-alert
         v-if="!isRecallMode"
         title="审核说明"
@@ -15,12 +15,12 @@
         class="audit-notice"
       >
         <template #default>
-          <p>• 提交申请后，相关负责人会在1-3个工作日内完成审核</p>
+          <p>• 提交申请后，相关负责人会在 1-3 个工作日内完成审核</p>
           <p>• 审核通过：系统将通过邮件和短信通知您登录账号和密码</p>
           <p>• 审核未通过：系统将通知您未通过的原因，请补充材料后重新提交</p>
         </template>
       </el-alert>
-      
+
       <el-alert
         v-if="isRecallMode"
         title="追回模式"
@@ -35,17 +35,17 @@
           <p>• 提交后将重新进入审核流程</p>
         </template>
       </el-alert>
-      
-      <el-form 
-        ref="registerFormRef" 
-        :model="registerForm" 
-        :rules="rules" 
+
+      <el-form
+        ref="registerFormRef"
+        :model="registerForm"
+        :rules="rules"
         label-width="120px"
         class="register-form"
       >
         <el-form-item label="企业名称" prop="companyName">
-          <el-input 
-            v-model="registerForm.companyName" 
+          <el-input
+            v-model="registerForm.companyName"
             placeholder="请输入企业全称"
             :disabled="isRecallMode"
             @blur="checkUsername"
@@ -54,61 +54,104 @@
             {{ usernameAvailable ? '企业名称可用' : '企业名称已被注册' }}
           </div>
         </el-form-item>
-        
+
+        <el-form-item label="所属行业" prop="industry">
+          <el-select v-model="registerForm.industry" placeholder="请选择所属行业" style="width: 100%">
+            <el-option
+              v-for="item in industryOptions"
+              :key="item.value"
+              :label="item.label"
+              :value="item.value"
+            />
+          </el-select>
+        </el-form-item>
+
+        <el-form-item label="企业规模" prop="scale">
+          <el-select v-model="registerForm.scale" placeholder="请选择企业规模" style="width: 100%">
+            <el-option
+              v-for="item in scaleOptions"
+              :key="item.value"
+              :label="item.label"
+              :value="item.value"
+            />
+          </el-select>
+        </el-form-item>
+
+        <el-form-item label="合作模式" prop="cooperationMode">
+          <el-radio-group v-model="registerForm.cooperationMode">
+            <el-radio
+              v-for="option in cooperationModeOptions"
+              :key="option.value"
+              :label="option.value"
+            >
+              {{ option.label }}
+            </el-radio>
+          </el-radio-group>
+        </el-form-item>
+
         <el-form-item label="联系人" prop="contactPerson">
           <el-input v-model="registerForm.contactPerson" placeholder="请输入联系人姓名" />
         </el-form-item>
-        
+
         <el-form-item label="联系电话" prop="contactPhone">
           <el-input v-model="registerForm.contactPhone" placeholder="请输入联系电话" />
         </el-form-item>
-        
+
         <el-form-item label="联系邮箱" prop="contactEmail">
           <el-input v-model="registerForm.contactEmail" placeholder="请输入联系邮箱" />
         </el-form-item>
-        
+
         <el-form-item label="手机号" prop="phone">
-          <el-input 
-            v-model="registerForm.phone" 
+          <el-input
+            v-model="registerForm.phone"
             placeholder="请输入手机号"
             maxlength="11"
           />
-          <el-button 
-            type="primary" 
-            :disabled="countdown > 0" 
+          <el-button
+            type="primary"
+            :disabled="countdown > 0"
             @click="sendVerifyCode"
             class="verify-code-btn"
           >
             {{ countdown > 0 ? `${countdown}秒后重试` : '发送验证码' }}
           </el-button>
         </el-form-item>
-        
+
         <el-form-item label="验证码" prop="verifyCode">
-          <el-input 
-            v-model="registerForm.verifyCode" 
+          <el-input
+            v-model="registerForm.verifyCode"
             placeholder="请输入验证码"
             maxlength="6"
           />
         </el-form-item>
-        
-        <el-form-item label="企业地址" prop="address">
-          <el-input 
-            v-model="registerForm.address" 
-            type="textarea" 
-            :rows="2"
-            placeholder="请输入企业详细地址" 
+
+        <el-form-item label="企业地址" prop="province">
+          <elui-china-area-dht
+            v-model="chinaAreaValue"
+            @change="handleAddressChange"
+            placeholder="请选择省/市/区"
+            style="width: 100%"
+          />
+          <el-input
+            v-model="registerForm.detailAddress"
+            placeholder="请输入详细地址，如街道、门牌号等"
+            style="margin-top: 10px;"
           />
         </el-form-item>
-        
+
+        <el-form-item label="企业网站" prop="website">
+          <el-input v-model="registerForm.website" placeholder="请输入企业网站" />
+        </el-form-item>
+
         <el-form-item label="企业简介" prop="introduction">
-          <el-input 
-            v-model="registerForm.introduction" 
-            type="textarea" 
+          <el-input
+            v-model="registerForm.introduction"
+            type="textarea"
             :rows="4"
-            placeholder="请输入企业简介（选填）" 
+            placeholder="请输入企业简介（选填）"
           />
         </el-form-item>
-        
+
         <el-form-item label="营业执照" prop="businessLicense" required>
           <el-upload
             class="upload-demo"
@@ -121,7 +164,7 @@
             <div v-if="!registerForm.businessLicense" class="upload-trigger">
               <el-icon class="upload-icon"><Plus /></el-icon>
               <div class="upload-text">点击上传营业执照</div>
-              <div class="upload-tip">支持jpg、png等图片格式</div>
+              <div class="upload-tip">支持 jpg、png 等图片格式</div>
             </div>
             <div v-else class="file-preview">
               <img :src="getImageUrl(registerForm.businessLicense)" alt="营业执照预览" />
@@ -129,7 +172,7 @@
             </div>
           </el-upload>
         </el-form-item>
-        
+
         <el-form-item label="法人身份证" required>
           <div class="id-card-upload-container">
             <!-- 正面上传 -->
@@ -154,7 +197,7 @@
                 </div>
               </el-upload>
             </div>
-            
+
             <!-- 反面上传 -->
             <div class="id-card-upload-item">
               <div class="id-card-label-title">身份证反面</div>
@@ -179,7 +222,7 @@
             </div>
           </div>
         </el-form-item>
-        
+
         <el-form-item label="挂牌实习基地" prop="isInternshipBase">
           <el-radio-group v-model="registerForm.isInternshipBase">
             <el-radio :label="0">否</el-radio>
@@ -187,7 +230,7 @@
             <el-radio :label="2">省级</el-radio>
           </el-radio-group>
         </el-form-item>
-        
+
         <el-form-item v-if="registerForm.isInternshipBase > 0" label="牌匾照片" prop="plaquePhoto">
           <el-upload
             class="upload-demo"
@@ -200,7 +243,7 @@
             <div v-if="!registerForm.plaquePhoto" class="upload-trigger">
               <el-icon class="upload-icon"><Plus /></el-icon>
               <div class="upload-text">点击上传牌匾照片</div>
-              <div class="upload-tip">支持jpg、png等图片格式</div>
+              <div class="upload-tip">支持 jpg、png 等图片格式</div>
             </div>
             <div v-else class="file-preview">
               <img :src="getImageUrl(registerForm.plaquePhoto)" alt="牌匾照片预览" />
@@ -208,23 +251,23 @@
             </div>
           </el-upload>
         </el-form-item>
-        
+
         <el-form-item label="接受兜底" prop="acceptBackup">
           <el-radio-group v-model="registerForm.acceptBackup">
             <el-radio :label="0">否</el-radio>
             <el-radio :label="1">是</el-radio>
           </el-radio-group>
         </el-form-item>
-        
+
         <el-form-item v-if="registerForm.acceptBackup === 1" label="兜底学生数量" prop="maxBackupStudents">
-          <el-input 
-            v-model.number="registerForm.maxBackupStudents" 
+          <el-input
+            v-model.number="registerForm.maxBackupStudents"
             type="number"
             :min="0"
             placeholder="请输入能接受兜底的最多学生数量"
           />
         </el-form-item>
-        
+
         <el-form-item>
           <el-button type="primary" @click="submitRegister" :loading="loading">
             提交申请
@@ -241,6 +284,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
+import { EluiChinaAreaDht } from 'elui-china-area-dht'
 import request from '@/utils/request'
 
 const router = useRouter()
@@ -253,14 +297,68 @@ const usernameAvailable = ref(false)
 const isRecallMode = ref(false)
 const existingCompanyId = ref(null)
 
+const industryOptions = [
+  { label: '互联网/IT', value: 'internet' },
+  { label: '金融', value: 'finance' },
+  { label: '教育', value: 'education' },
+  { label: '医疗', value: 'medical' },
+  { label: '制造业', value: 'manufacturing' },
+  { label: '服务业', value: 'service' },
+  { label: '房地产', value: 'realestate' },
+  { label: '能源', value: 'energy' },
+  { label: '其他', value: 'other' }
+]
+
+const scaleOptions = [
+  { label: '1-50 人', value: '1-50' },
+  { label: '51-100 人', value: '51-100' },
+  { label: '101-500 人', value: '101-500' },
+  { label: '501-1000 人', value: '501-1000' },
+  { label: '1000 人以上', value: '1000+' }
+]
+
+const cooperationModeOptions = [
+  { label: '接受兜底', value: 'accept_fallback', type: 'danger' },
+  { label: '学生自主联系', value: 'student_contact', type: 'warning' },
+  { label: '双向选择', value: 'mutual_choice', type: 'success' }
+]
+
+const chinaAreaValue = ref([])
+
+const chinaData = new EluiChinaAreaDht.ChinaArea().chinaAreaflat
+
+const handleAddressChange = (e) => {
+  chinaAreaValue.value = e
+  if (e && e.length > 0) {
+    const provinceCode = e[0]
+    const cityCode = e[1]
+    const districtCode = e[2]
+
+    registerForm.province = chinaData[provinceCode]?.label || ''
+    registerForm.city = chinaData[cityCode]?.label || ''
+    registerForm.district = chinaData[districtCode]?.label || ''
+  } else {
+    registerForm.province = ''
+    registerForm.city = ''
+    registerForm.district = ''
+  }
+}
+
 const registerForm = reactive({
   companyName: '',
+  industry: '',
+  scale: '',
+  province: '',
+  city: '',
+  district: '',
+  detailAddress: '',
   contactPerson: '',
   contactPhone: '',
   contactEmail: '',
+  website: '',
+  cooperationMode: 'mutual_choice',
   phone: '',
   verifyCode: '',
-  address: '',
   introduction: '',
   businessLicense: '',
   legalIdCardFront: '',
@@ -282,7 +380,7 @@ const getImageUrl = (url) => {
 onMounted(async () => {
   if (route.query.companyName) {
     registerForm.companyName = String(route.query.companyName)
-    
+
     if (route.query.recall === 'true') {
       isRecallMode.value = true
       await loadExistingData()
@@ -297,7 +395,7 @@ const loadExistingData = async () => {
     const response = await request.get('/company/check-status', {
       params: { companyName: registerForm.companyName }
     })
-    
+
     if (response.data.code === 200) {
       const data = response.data.data
       existingCompanyId.value = data.id
@@ -305,16 +403,23 @@ const loadExistingData = async () => {
       registerForm.contactPhone = data.contactPhone || ''
       registerForm.contactEmail = data.contactEmail || ''
       registerForm.phone = data.phone || ''
-      registerForm.address = data.address || ''
+      registerForm.industry = data.industry || ''
+      registerForm.scale = data.scale || ''
+      registerForm.province = data.province || ''
+      registerForm.city = data.city || ''
+      registerForm.district = data.district || ''
+      registerForm.detailAddress = data.detailAddress || ''
+      registerForm.website = data.website || ''
+      registerForm.cooperationMode = data.cooperationMode || 'mutual_choice'
       registerForm.introduction = data.introduction || ''
       registerForm.businessLicense = data.businessLicense || ''
-      
+
       if (data.legalIdCard) {
         const idCardImages = data.legalIdCard.split(',')
         registerForm.legalIdCardFront = idCardImages[0] || ''
         registerForm.legalIdCardBack = idCardImages[1] || ''
       }
-      
+
       registerForm.isInternshipBase = data.isInternshipBase || 0
       registerForm.plaquePhoto = data.plaquePhoto || ''
       registerForm.acceptBackup = data.acceptBackup || 0
@@ -330,15 +435,31 @@ const loadExistingData = async () => {
 const rules = {
   companyName: [
     { required: true, message: '请输入企业名称', trigger: 'blur' },
-    { min: 2, max: 255, message: '企业名称长度必须在2-255个字符之间', trigger: 'blur' }
+    { min: 2, max: 255, message: '企业名称长度必须在 2-255 个字符之间', trigger: 'blur' }
+  ],
+  industry: [
+    { required: true, message: '请选择所属行业', trigger: 'change' }
+  ],
+  scale: [
+    { required: true, message: '请选择企业规模', trigger: 'change' }
+  ],
+  province: [
+    { required: true, message: '请选择省份', trigger: 'change' }
+  ],
+  detailAddress: [
+    { required: true, message: '请输入详细地址', trigger: 'blur' },
+    { min: 5, max: 255, message: '详细地址长度必须在 5-255 个字符之间', trigger: 'blur' }
+  ],
+  website: [
+    { type: 'url', message: '请输入正确的网址格式', trigger: 'blur' }
   ],
   contactPerson: [
     { required: true, message: '请输入联系人', trigger: 'blur' },
-    { min: 1, max: 50, message: '联系人长度必须在1-50个字符之间', trigger: 'blur' }
+    { min: 1, max: 50, message: '联系人长度必须在 1-50 个字符之间', trigger: 'blur' }
   ],
   contactPhone: [
     { required: true, message: '请输入联系电话', trigger: 'blur' },
-    { min: 11, max: 20, message: '联系电话长度必须在11-20个字符之间', trigger: 'blur' }
+    { min: 11, max: 20, message: '联系电话长度必须在 11-20 个字符之间', trigger: 'blur' }
   ],
   contactEmail: [
     { required: true, message: '请输入联系邮箱', trigger: 'blur' },
@@ -350,11 +471,7 @@ const rules = {
   ],
   verifyCode: [
     { required: true, message: '请输入验证码', trigger: 'blur' },
-    { len: 6, message: '验证码必须是6位数字', trigger: 'blur' }
-  ],
-  address: [
-    { required: true, message: '请输入企业地址', trigger: 'blur' },
-    { min: 5, max: 255, message: '企业地址长度必须在5-255个字符之间', trigger: 'blur' }
+    { len: 6, message: '验证码必须是 6 位数字', trigger: 'blur' }
   ],
   businessLicense: [
     { required: true, message: '请上传营业执照', trigger: 'change' }
@@ -372,12 +489,12 @@ const checkUsername = async () => {
     usernameChecked.value = false
     return
   }
-  
+
   try {
     const response = await request.get('/company/check-username', {
       params: { username: registerForm.companyName }
     })
-    
+
     usernameChecked.value = true
     usernameAvailable.value = response.data.code === 200
   } catch (error) {
@@ -391,17 +508,17 @@ const sendVerifyCode = async () => {
     ElMessage.warning('请先输入手机号')
     return
   }
-  
+
   if (!/^1[3-9]\d{9}$/.test(registerForm.phone)) {
     ElMessage.warning('手机号格式不正确')
     return
   }
-  
+
   try {
     const response = await request.post('/company/send-verify-code', {
       phone: registerForm.phone
     })
-    
+
     if (response.data.code === 200) {
       ElMessage.success('验证码发送成功')
       countdown.value = 60
@@ -424,13 +541,13 @@ const handleBusinessLicenseChange = async (file) => {
   try {
     const formData = new FormData()
     formData.append('file', file.raw)
-    
+
     const response = await request.post('/upload/image', formData, {
       headers: {
         'Content-Type': 'multipart/form-data'
       }
     })
-    
+
     if (response.data.code === 200) {
       registerForm.businessLicense = response.data.data.url
       ElMessage.success('营业执照上传成功')
@@ -508,13 +625,13 @@ const handlePlaquePhotoChange = async (file) => {
   try {
     const formData = new FormData()
     formData.append('file', file.raw)
-    
+
     const response = await request.post('/upload/image', formData, {
       headers: {
         'Content-Type': 'multipart/form-data'
       }
     })
-    
+
     if (response.data.code === 200) {
       registerForm.plaquePhoto = response.data.data.url
       ElMessage.success('牌匾照片上传成功')
@@ -537,16 +654,16 @@ const submitRegister = async () => {
       ElMessage.warning('请先确认企业名称可用')
       return
     }
-  
+
   try {
     await registerFormRef.value.validate()
   } catch (error) {
     ElMessage.warning('请填写完整信息')
     return
   }
-  
+
   loading.value = true
-  
+
   try {
     let response
     if (isRecallMode.value) {

@@ -62,16 +62,28 @@ public class CompanyRegisterController {
             companyUser.setContactPhone(registerDTO.getContactPhone());
             companyUser.setContactEmail(registerDTO.getContactEmail());
             companyUser.setPhone(registerDTO.getPhone());
-            companyUser.setAddress(registerDTO.getAddress());
+
+            // 新地址字段
+            companyUser.setProvince(registerDTO.getProvince());
+            companyUser.setCity(registerDTO.getCity());
+            companyUser.setDistrict(registerDTO.getDistrict());
+            companyUser.setDetailAddress(registerDTO.getDetailAddress());
+            // 保留旧的 address 字段以兼容（可选）
+            companyUser.setAddress(registerDTO.getDetailAddress());
+
             companyUser.setIntroduction(registerDTO.getIntroduction());
             companyUser.setBusinessLicense(registerDTO.getBusinessLicense());
-            
+            companyUser.setIndustry(registerDTO.getIndustry());
+            companyUser.setScale(registerDTO.getScale());
+            companyUser.setWebsite(registerDTO.getWebsite());
+            companyUser.setCooperationMode(registerDTO.getCooperationMode());
+
             String legalIdCard = registerDTO.getLegalIdCardFront();
             if (registerDTO.getLegalIdCardBack() != null && !registerDTO.getLegalIdCardBack().isEmpty()) {
                 legalIdCard += "," + registerDTO.getLegalIdCardBack();
             }
             companyUser.setLegalIdCard(legalIdCard);
-            
+
             companyUser.setIsInternshipBase(registerDTO.getIsInternshipBase() != null ? registerDTO.getIsInternshipBase() : 0);
             companyUser.setPlaquePhoto(registerDTO.getPlaquePhoto());
             companyUser.setAcceptBackup(registerDTO.getAcceptBackup() != null ? registerDTO.getAcceptBackup() : 0);
@@ -186,7 +198,17 @@ public class CompanyRegisterController {
             data.put("recallAuditTime", companyUser.getRecallAuditTime());
             data.put("recallAuditRemark", companyUser.getRecallAuditRemark());
             data.put("recallReviewerId", companyUser.getRecallReviewerId());
-            
+
+            // 新增字段
+            data.put("industry", companyUser.getIndustry());
+            data.put("scale", companyUser.getScale());
+            data.put("province", companyUser.getProvince());
+            data.put("city", companyUser.getCity());
+            data.put("district", companyUser.getDistrict());
+            data.put("detailAddress", companyUser.getDetailAddress());
+            data.put("website", companyUser.getWebsite());
+            data.put("cooperationMode", companyUser.getCooperationMode());
+
             return Result.success(data);
         } catch (Exception e) {
             log.error("检查企业注册状态失败: {}", e.getMessage(), e);
@@ -310,7 +332,7 @@ public class CompanyRegisterController {
             
             CompanyUser companyUser = new CompanyUser();
             companyUser.setId(id);
-            
+
             if (updateData.containsKey("contactPerson")) {
                 companyUser.setContactPerson((String) updateData.get("contactPerson"));
             }
@@ -323,6 +345,19 @@ public class CompanyRegisterController {
             if (updateData.containsKey("phone")) {
                 companyUser.setPhone((String) updateData.get("phone"));
             }
+            // 新地址字段
+            if (updateData.containsKey("province")) {
+                companyUser.setProvince((String) updateData.get("province"));
+            }
+            if (updateData.containsKey("city")) {
+                companyUser.setCity((String) updateData.get("city"));
+            }
+            if (updateData.containsKey("district")) {
+                companyUser.setDistrict((String) updateData.get("district"));
+            }
+            if (updateData.containsKey("detailAddress")) {
+                companyUser.setDetailAddress((String) updateData.get("detailAddress"));
+            }
             if (updateData.containsKey("address")) {
                 companyUser.setAddress((String) updateData.get("address"));
             }
@@ -331,6 +366,19 @@ public class CompanyRegisterController {
             }
             if (updateData.containsKey("businessLicense")) {
                 companyUser.setBusinessLicense((String) updateData.get("businessLicense"));
+            }
+            // 新增字段
+            if (updateData.containsKey("industry")) {
+                companyUser.setIndustry((String) updateData.get("industry"));
+            }
+            if (updateData.containsKey("scale")) {
+                companyUser.setScale((String) updateData.get("scale"));
+            }
+            if (updateData.containsKey("website")) {
+                companyUser.setWebsite((String) updateData.get("website"));
+            }
+            if (updateData.containsKey("cooperationMode")) {
+                companyUser.setCooperationMode((String) updateData.get("cooperationMode"));
             }
             if (updateData.containsKey("legalIdCardFront")) {
                 String legalIdCard = (String) updateData.get("legalIdCardFront");

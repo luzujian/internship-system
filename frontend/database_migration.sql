@@ -298,6 +298,142 @@ PREPARE alterIfNotExists FROM @preparedStatement;
 EXECUTE alterIfNotExists;
 DEALLOCATE PREPARE alterIfNotExists;
 
+-- province
+SET @columnname = 'province';
+SET @preparedStatement = (SELECT IF(
+  (
+    SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE
+      (table_name = 'company_users')
+      AND (table_schema = DATABASE())
+      AND (column_name = @columnname)
+  ) > 0,
+  'SELECT 1',
+  'ALTER TABLE company_users ADD COLUMN province VARCHAR(50) COMMENT ''省份'' AFTER logo'
+));
+PREPARE alterIfNotExists FROM @preparedStatement;
+EXECUTE alterIfNotExists;
+DEALLOCATE PREPARE alterIfNotExists;
+
+-- city
+SET @columnname = 'city';
+SET @preparedStatement = (SELECT IF(
+  (
+    SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE
+      (table_name = 'company_users')
+      AND (table_schema = DATABASE())
+      AND (column_name = @columnname)
+  ) > 0,
+  'SELECT 1',
+  'ALTER TABLE company_users ADD COLUMN city VARCHAR(50) COMMENT ''城市'' AFTER province'
+));
+PREPARE alterIfNotExists FROM @preparedStatement;
+EXECUTE alterIfNotExists;
+DEALLOCATE PREPARE alterIfNotExists;
+
+-- district
+SET @columnname = 'district';
+SET @preparedStatement = (SELECT IF(
+  (
+    SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE
+      (table_name = 'company_users')
+      AND (table_schema = DATABASE())
+      AND (column_name = @columnname)
+  ) > 0,
+  'SELECT 1',
+  'ALTER TABLE company_users ADD COLUMN district VARCHAR(50) COMMENT ''区县'' AFTER city'
+));
+PREPARE alterIfNotExists FROM @preparedStatement;
+EXECUTE alterIfNotExists;
+DEALLOCATE PREPARE alterIfNotExists;
+
+-- detail_address
+SET @columnname = 'detail_address';
+SET @preparedStatement = (SELECT IF(
+  (
+    SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE
+      (table_name = 'company_users')
+      AND (table_schema = DATABASE())
+      AND (column_name = @columnname)
+  ) > 0,
+  'SELECT 1',
+  'ALTER TABLE company_users ADD COLUMN detail_address VARCHAR(255) COMMENT ''详细地址'' AFTER district'
+));
+PREPARE alterIfNotExists FROM @preparedStatement;
+EXECUTE alterIfNotExists;
+DEALLOCATE PREPARE alterIfNotExists;
+
+-- cooperation_mode
+SET @columnname = 'cooperation_mode';
+SET @preparedStatement = (SELECT IF(
+  (
+    SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE
+      (table_name = 'company_users')
+      AND (table_schema = DATABASE())
+      AND (column_name = @columnname)
+  ) > 0,
+  'SELECT 1',
+  'ALTER TABLE company_users ADD COLUMN cooperation_mode VARCHAR(50) COMMENT ''合作模式'' AFTER detail_address'
+));
+PREPARE alterIfNotExists FROM @preparedStatement;
+EXECUTE alterIfNotExists;
+DEALLOCATE PREPARE alterIfNotExists;
+
+-- description
+SET @columnname = 'description';
+SET @preparedStatement = (SELECT IF(
+  (
+    SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE
+      (table_name = 'company_users')
+      AND (table_schema = DATABASE())
+      AND (column_name = @columnname)
+  ) > 0,
+  'SELECT 1',
+  'ALTER TABLE company_users ADD COLUMN description TEXT COMMENT ''企业描述'' AFTER cooperation_mode'
+));
+PREPARE alterIfNotExists FROM @preparedStatement;
+EXECUTE alterIfNotExists;
+DEALLOCATE PREPARE alterIfNotExists;
+
+-- photos
+SET @columnname = 'photos';
+SET @preparedStatement = (SELECT IF(
+  (
+    SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE
+      (table_name = 'company_users')
+      AND (table_schema = DATABASE())
+      AND (column_name = @columnname)
+  ) > 0,
+  'SELECT 1',
+  'ALTER TABLE company_users ADD COLUMN photos TEXT COMMENT ''企业照片'' AFTER description'
+));
+PREPARE alterIfNotExists FROM @preparedStatement;
+EXECUTE alterIfNotExists;
+DEALLOCATE PREPARE alterIfNotExists;
+
+-- videos
+SET @columnname = 'videos';
+SET @preparedStatement = (SELECT IF(
+  (
+    SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE
+      (table_name = 'company_users')
+      AND (table_schema = DATABASE())
+      AND (column_name = @columnname)
+  ) > 0,
+  'SELECT 1',
+  'ALTER TABLE company_users ADD COLUMN videos TEXT COMMENT ''企业视频'' AFTER photos'
+));
+PREPARE alterIfNotExists FROM @preparedStatement;
+EXECUTE alterIfNotExists;
+DEALLOCATE PREPARE alterIfNotExists;
+
 -- ========================================
 -- 3. 为 student_internship_status 表添加字段（检查是否已存在）
 -- ========================================
