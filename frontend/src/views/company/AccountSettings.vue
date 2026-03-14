@@ -10,6 +10,7 @@ const route = useRoute()
 const authStore = useAuthStore()
 
 const activeTab = ref('profile')
+const loading = ref(false)
 
 // 获取当前用户信息
 const currentUser = computed(() => authStore.user)
@@ -23,6 +24,30 @@ const displayName = computed(() => {
   return '企业用户'
 })
 
+// 邮箱脱敏显示
+const maskedEmail = computed(() => {
+  const email = profileForm.value.email
+  if (!email || !email.includes('@')) {
+    return '未绑定'
+  }
+  const parts = email.split('@')
+  const username = parts[0]
+  const domain = parts[1]
+  if (username.length <= 2) {
+    return username + '***@' + domain
+  }
+  return username.charAt(0) + '***' + username.charAt(username.length - 1) + '@' + domain
+})
+
+// 手机脱敏显示
+const maskedPhone = computed(() => {
+  const phone = profileForm.value.phone
+  if (!phone || phone.length < 11) {
+    return '未绑定'
+  }
+  return phone.substring(0, 3) + '****' + phone.substring(7)
+})
+
 onMounted(async () => {
   if (route.query.tab) {
     activeTab.value = route.query.tab
@@ -31,6 +56,7 @@ onMounted(async () => {
 })
 
 const loadProfile = async () => {
+  loading.value = true
   try {
     const response = await CompanyService.getProfile()
     if (response.code === 200 && response.data) {
@@ -45,6 +71,9 @@ const loadProfile = async () => {
     }
   } catch (error) {
     console.error('加载个人信息失败:', error)
+    ElMessage.error('加载个人信息失败')
+  } finally {
+    loading.value = false
   }
 }
 
@@ -256,7 +285,7 @@ const handleLogout = async () => {
           <div class="security-item">
             <div class="security-info">
               <h4>绑定手机</h4>
-              <p>已绑定：{{ profileForm.phone ? profileForm.phone.substring(0, 3) + '****' + profileForm.phone.substring(7) : '未绑定' }}</p>
+              <p>已绑定：{{ maskedPhone }}</p>
             </div>
             <el-button>更换手机</el-button>
           </div>
@@ -264,7 +293,7 @@ const handleLogout = async () => {
           <div class="security-item">
             <div class="security-info">
               <h4>绑定邮箱</h4>
-              <p>已绑定：{{ profileForm.email ? profileForm.email.substring(0, 4) + '***' + profileForm.email.substring(profileForm.email.indexOf('@')) : '未绑定' }}</p>
+              <p>已绑定：{{ maskedEmail }}</p>
             </div>
             <el-button>更换邮箱</el-button>
           </div>
