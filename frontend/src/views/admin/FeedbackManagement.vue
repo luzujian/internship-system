@@ -342,8 +342,8 @@ const fetchFeedbackById = async (id: string): Promise<void> => {
   loading.value = true
   try {
     const response = await problemFeedbackApi.getFeedbackById(id)
-    if (response.data && response.data.code === 200 && response.data.data) {
-      const feedback = response.data.data
+    if (response.code === 200 && response.data) {
+      const feedback = response.data
       tableData.value = [feedback]
       total.value = 1
       searchForm.title = feedback.title || ''
@@ -378,7 +378,7 @@ const fetchData = async (): Promise<void> => {
     const response = await problemFeedbackApi.getFeedbackByPage(params)
     const result = response.data
     if (result && result.code === 200 && result.data) {
-      tableData.value = result.data.list || []
+      tableData.value = result.data.rows || []
       total.value = result.data.total || 0
     } else {
       tableData.value = []

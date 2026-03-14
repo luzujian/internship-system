@@ -1,10 +1,13 @@
 package com.gdmu.controller;
 
 import com.gdmu.anno.Log;
+import com.gdmu.entity.PageResult;
 import com.gdmu.entity.ProblemFeedback;
 import com.gdmu.entity.Result;
 import com.gdmu.mapper.ProblemFeedbackMapper;
 import com.gdmu.vo.ProblemFeedbackVO;
+import com.github.pagehelper.PageHelper;
+import com.github.pagehelper.PageInfo;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -74,17 +77,21 @@ public class ProblemFeedbackController {
             @RequestParam(required = false) String title) {
         log.info("分页查询问题反馈，页码: {}, 每页大小: {}", page, pageSize);
         try {
-            int offset = (page - 1) * pageSize;
-            List<ProblemFeedback> feedbackList = problemFeedbackMapper.findPageWithConditions(
-                offset, pageSize, userType, status, priority, feedbackType, userName, title);
-            Long total = problemFeedbackMapper.countWithConditions(
+            // 使用 PageHelper 进行分页查询
+            PageHelper.startPage(page, pageSize);
+            List<ProblemFeedback> feedbackList = problemFeedbackMapper.list(
                 userType, status, priority, feedbackType, userName, title);
 
-            Map<String, Object> result = new HashMap<>();
-            result.put("list", feedbackList);
-            result.put("total", total);
-            result.put("page", page);
-            result.put("pageSize", pageSize);
+            // 构建 PageInfo 对象
+            PageInfo<ProblemFeedback> pageInfo = new PageInfo<>(feedbackList);
+
+            // 返回 PageResult 对象，与其他 Controller 保持一致
+            PageResult<ProblemFeedback> result = PageResult.build(
+                pageInfo.getTotal(),
+                pageInfo.getList(),
+                pageInfo.getPages(),
+                pageInfo.getPageNum(),
+                pageInfo.getPageSize());
 
             return Result.success(result);
         } catch (Exception e) {
