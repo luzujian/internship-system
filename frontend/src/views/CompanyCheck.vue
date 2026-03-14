@@ -373,11 +373,11 @@ const startRecallPolling = () => {
         params: { companyName: checkForm.companyName }
       })
       
-      if (response.data.code === 200) {
-        const recallStatus = response.data.data.recallStatus
-        const recallReviewerId = response.data.data.recallReviewerId
-        companyInfo.value = response.data.data
-        
+      if (response.code === 200) {
+        const recallStatus = response.data.recallStatus
+        const recallReviewerId = response.data.recallReviewerId
+        companyInfo.value = response.data
+
         console.log('轮询撤回状态 - recallStatus:', recallStatus, 'recallReviewerId:', recallReviewerId)
         
         if (recallReviewerId === -1) {
@@ -537,9 +537,9 @@ const showRecallConfirm = async () => {
       params: { companyName: checkForm.companyName }
     })
     
-    if (response.data.code === 200) {
-      const recallStatus = response.data.data.recallStatus
-      const recallReviewerId = response.data.data.recallReviewerId
+    if (response.code === 200) {
+      const recallStatus = response.data.recallStatus
+      const recallReviewerId = response.data.recallReviewerId
       
       console.log('[showRecallConfirm] recallStatus:', recallStatus, 'recallReviewerId:', recallReviewerId)
       
@@ -597,7 +597,7 @@ const submitRecallApplication = async () => {
       recallReason: recallReasonText
     })
     
-    if (response.data.code === 200) {
+    if (response.code === 200) {
       const message = response.data.msg || ''
       
       ElMessage.success('撤回申请已提交，系统正在审核中...')
