@@ -2,14 +2,38 @@ import type { RouteRecordRaw } from 'vue-router'
 
 const companyRoutes: RouteRecordRaw[] = [
   {
-    path: 'dashboard',
-    name: 'companyDashboard',
-    component: () => import('../views/company/Dashboard.vue')
+    path: '',
+    redirect: 'dashboard'
   },
   {
-    path: 'positions',
-    name: 'companyPositions',
-    component: () => import('../views/company/PositionManagement.vue')
+    path: 'dashboard',
+    name: 'companyDashboard',
+    component: () => import('../views/company/CompanyHome.vue')
+  },
+  {
+    path: 'jobs',
+    name: 'RecruitmentManagement',
+    component: () => import('../views/company/RecruitmentManagement.vue')
+  },
+  {
+    path: 'internship-confirm',
+    name: 'InternshipConfirm',
+    component: () => import('../views/company/InternshipConfirm.vue')
+  },
+  {
+    path: 'application-view',
+    name: 'ApplicationView',
+    component: () => import('../views/company/ApplicationView.vue')
+  },
+  {
+    path: 'interviews',
+    name: 'CompanyInfo',
+    component: () => import('../views/company/CompanyInfo.vue')
+  },
+  {
+    path: 'settings',
+    name: 'AccountSettings',
+    component: () => import('../views/company/AccountSettings.vue')
   }
 ]
 

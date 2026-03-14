@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.gdmu.mapper.StudentArchiveMapper">
+    
+    <resultMap id="StudentArchiveResultMap" type="com.gdmu.entity.StudentArchive">
+        <id property="id" column="id" />
+        <result property="studentId" column="student_id" />
+        <result property="fileType" column="file_type" />
+        <result property="fileName" column="file_name" />
+        <result property="fileUrl" column="file_url" />
+        <result property="uploadTime" column="upload_time" />
+        <result property="remark" column="remark" />
+        <result property="status" column="status" />
+    </resultMap>
+    
+    <insert id="insert" parameterType="com.gdmu.entity.StudentArchive" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO student_archives (student_id, file_type, file_name, file_url, upload_time, remark, status)
+        VALUES (#{studentId}, #{fileType}, #{fileName}, #{fileUrl}, #{uploadTime}, #{remark}, #{status})
+    </insert>
+    
+    <select id="findById" resultMap="StudentArchiveResultMap">
+        SELECT * FROM student_archives WHERE id = #{id}
+    </select>
+    
+    <update id="update" parameterType="com.gdmu.entity.StudentArchive">
+        UPDATE student_archives
+        <set>
+            <if test="fileType != null">file_type = #{fileType},</if>
+            <if test="fileName != null">file_name = #{fileName},</if>
+            <if test="fileUrl != null">file_url = #{fileUrl},</if>
+            <if test="remark != null">remark = #{remark},</if>
+            <if test="status != null">status = #{status},</if>
+        </set>
+        WHERE id = #{id}
+    </update>
+    
+    <delete id="deleteById">
+        DELETE FROM student_archives WHERE id = #{id}
+    </delete>
+    
+    <select id="findPageWithStudent" resultType="java.util.Map">
+        SELECT 
+            sa.id, sa.student_id AS studentId, sa.file_type AS fileType,
+            sa.file_name AS fileName, sa.file_url AS fileUrl,
+            sa.upload_time AS uploadTime, sa.remark, sa.status,
+            su.name AS studentName, su.student_user_id AS studentUserId,
+            m.name AS majorName, c.name AS className
+        FROM student_archives sa
+        LEFT JOIN student_users su ON sa.student_id = su.id
+        LEFT JOIN major m ON su.major_id = m.id
+        LEFT JOIN class c ON su.class_id = c.id
+        <where>
+            <if test="studentName != null and studentName != ''">
+                su.name LIKE CONCAT('%', #{studentName}, '%')
+            </if>
+            <if test="fileType != null and fileType != ''">
+                AND sa.file_type = #{fileType}
+            </if>
+            <if test="status != null">
+                AND sa.status = #{status}
+            </if>
+        </where>
+        ORDER BY sa.upload_time DESC
+    </select>
+    
+    <select id="findByStudentId" resultMap="StudentArchiveResultMap">
+        SELECT * FROM student_archives WHERE student_id = #{studentId} ORDER BY upload_time DESC
+    </select>
+    
+    <select id="getStatistics" resultType="java.util.Map">
+        SELECT 
+            COUNT(*) AS totalArchives,
+            SUM(CASE WHEN status = 0 THEN 1 ELSE 0 END) AS pendingCount,
+            SUM(CASE WHEN status = 1 THEN 1 ELSE 0 END) AS approvedCount,
+            SUM(CASE WHEN status = 2 THEN 1 ELSE 0 END) AS rejectedCount
+        FROM student_archives
+    </select>
+    
+    <delete id="batchDeleteByIds" parameterType="java.util.List">
+        DELETE FROM student_archives WHERE id IN
+        <foreach collection="ids" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </delete>
+    
+    <select id="countByStatus" resultType="java.lang.Integer">
+        SELECT COUNT(*) FROM student_archives WHERE status = #{status}
+    </select>
+</mapper>

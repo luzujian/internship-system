@@ -445,4 +445,20 @@ public class StudentInternshipStatusController {
             return Result.error("清除失败");
         }
     }
+
+    /**
+     * 根据企业 ID 获取实习状态列表（企业端使用）
+     */
+    @GetMapping("/company/{companyId}")
+    @PreAuthorize("hasAnyRole('ADMIN', 'COMPANY')")
+    public Result getInternshipStatusByCompanyId(@PathVariable Long companyId) {
+        log.info("根据企业 ID 获取实习状态列表，企业 ID: {}", companyId);
+        try {
+            List<StudentInternshipStatus> statusList = studentInternshipStatusService.list(null, null, null, null, companyId, null);
+            return Result.success(statusList);
+        } catch (Exception e) {
+            log.error("获取企业实习状态列表失败：{}", e.getMessage(), e);
+            return Result.error("获取实习状态列表失败：" + e.getMessage());
+        }
+    }
 }

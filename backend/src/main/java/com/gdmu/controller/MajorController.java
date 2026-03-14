@@ -21,7 +21,7 @@ public class MajorController {
     
     // 获取所有专业
     @GetMapping
-    @PreAuthorize("hasAuthority('major:view')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'TEACHER', 'COMPANY') or hasAuthority('major:view')")
     public Result getAllMajors() {
         log.info("获取所有专业列表");
         try {

@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.gdmu.mapper.InternshipApplicationMapper">
+    
+    <resultMap id="InternshipApplicationResultMap" type="com.gdmu.entity.InternshipApplicationEntity">
+        <id property="id" column="id" />
+        <result property="studentId" column="student_id" />
+        <result property="positionId" column="position_id" />
+        <result property="companyId" column="company_id" />
+        <result property="status" column="status" />
+        <result property="viewed" column="viewed" />
+        <result property="skills" column="skills" />
+        <result property="experience" column="experience" />
+        <result property="selfEvaluation" column="self_evaluation" />
+        <result property="applyTime" column="apply_time" />
+        <result property="viewTime" column="view_time" />
+        <result property="createTime" column="create_time" />
+        <result property="updateTime" column="update_time" />
+        
+        <result property="studentName" column="student_name" />
+        <result property="studentUserId" column="student_user_id" />
+        <result property="gender" column="gender" />
+        <result property="grade" column="grade" />
+        <result property="school" column="school" />
+        <result property="education" column="education" />
+        <result property="major" column="major" />
+        <result property="phone" column="phone" />
+        <result property="email" column="email" />
+        <result property="positionName" column="position_name" />
+    </resultMap>
+    
+    <insert id="insert" parameterType="com.gdmu.entity.InternshipApplicationEntity" useGeneratedKeys="true" keyProperty="id">
+        insert into internship_application (student_id, position_id, company_id, status, viewed, skills, experience, self_evaluation, apply_time, view_time, create_time, update_time)
+        values (#{studentId}, #{positionId}, #{companyId}, #{status}, #{viewed}, #{skills}, #{experience}, #{selfEvaluation}, #{applyTime}, #{viewTime}, #{createTime}, #{updateTime})
+    </insert>
+    
+    <select id="findById" resultMap="InternshipApplicationResultMap">
+        select * from internship_application where id = #{id}
+    </select>
+    
+    <select id="findByCompanyId" resultMap="InternshipApplicationResultMap">
+        SELECT 
+            ia.*,
+            su.name AS student_name,
+            su.student_user_id,
+            su.gender,
+            su.grade,
+            '广东医科大学' AS school,
+            '本科' AS education,
+            m.name AS major,
+            su.phone,
+            su.email,
+            p.position_name
+        FROM internship_application ia
+        LEFT JOIN student_users su ON ia.student_id = su.id
+        LEFT JOIN major m ON su.major_id = m.id
+        LEFT JOIN position p ON ia.position_id = p.id
+        WHERE ia.company_id = #{companyId}
+        ORDER BY ia.apply_time DESC
+    </select>
+    
+    <select id="findByPositionId" resultMap="InternshipApplicationResultMap">
+        select * from internship_application where position_id = #{positionId} order by apply_time desc
+    </select>
+    
+    <select id="findByStudentId" resultMap="InternshipApplicationResultMap">
+        select * from internship_application where student_id = #{studentId} order by apply_time desc
+    </select>
+    
+    <select id="findByStatus" resultMap="InternshipApplicationResultMap">
+        select * from internship_application where status = #{status} order by apply_time desc
+    </select>
+    
+    <select id="findByCompanyIdAndStatus" resultMap="InternshipApplicationResultMap">
+        select * from internship_application where company_id = #{companyId} and status = #{status} order by apply_time desc
+    </select>
+    
+    <update id="updateStatus">
+        update internship_application set status = #{status}, update_time = NOW() where id = #{id}
+    </update>
+    
+    <update id="updateViewed">
+        update internship_application set viewed = #{viewed}, view_time = NOW(), update_time = NOW() where id = #{id}
+    </update>
+    
+    <delete id="deleteById">
+        delete from internship_application where id = #{id}
+    </delete>
+    
+    <select id="findAll" resultMap="InternshipApplicationResultMap">
+        select * from internship_application order by apply_time desc
+    </select>
+    
+    <select id="countByCompanyId" resultType="java.lang.Long">
+        SELECT COUNT(*) FROM internship_application WHERE company_id = #{companyId}
+    </select>
+    
+    <select id="countByCompanyIdAndStatus" resultType="java.lang.Long">
+        SELECT COUNT(*) FROM internship_application WHERE company_id = #{companyId} AND status = #{status}
+    </select>
+</mapper>

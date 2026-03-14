@@ -171,7 +171,7 @@ public class PositionController {
      * 根据企业ID获取岗位列表
      */
     @GetMapping("/company/{companyId}")
-    @PreAuthorize("hasAuthority('recruitment:view')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'COMPANY') or hasAuthority('recruitment:view')")
     public Result getPositionsByCompanyId(@PathVariable Long companyId) {
         log.info("根据企业ID获取岗位列表，企业ID: {}", companyId);
         List<Position> positions = positionService.findByCompanyId(companyId);

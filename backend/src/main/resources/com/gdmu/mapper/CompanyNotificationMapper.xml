@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.gdmu.mapper.CompanyNotificationMapper">
+    
+    <resultMap id="CompanyNotificationResultMap" type="com.gdmu.entity.CompanyNotification">
+        <id property="id" column="id" />
+        <result property="companyId" column="company_id" />
+        <result property="notificationType" column="notification_type" />
+        <result property="title" column="title" />
+        <result property="content" column="content" />
+        <result property="priority" column="priority" />
+        <result property="positionId" column="position_id" />
+        <result property="isRead" column="is_read" />
+        <result property="createTime" column="create_time" />
+        <result property="readTime" column="read_time" />
+    </resultMap>
+    
+    <insert id="insert" parameterType="com.gdmu.entity.CompanyNotification">
+        insert into company_notification (company_id, notification_type, title, content, priority, position_id, is_read, create_time, read_time)
+        values (#{companyId}, #{notificationType}, #{title}, #{content}, #{priority}, #{positionId}, #{isRead}, #{createTime}, #{readTime})
+    </insert>
+    
+    <select id="findById" parameterType="java.lang.Long" resultMap="CompanyNotificationResultMap">
+        select * from company_notification where id = #{id}
+    </select>
+    
+    <select id="findByCompanyId" resultMap="CompanyNotificationResultMap">
+        select * from company_notification 
+        where company_id = #{companyId}
+        order by create_time desc
+        <if test="limit != null">
+            limit #{limit}
+        </if>
+    </select>
+    
+    <select id="findUnreadByCompanyId" resultMap="CompanyNotificationResultMap">
+        select * from company_notification 
+        where company_id = #{companyId} and is_read = 0
+        order by create_time desc
+        <if test="limit != null">
+            limit #{limit}
+        </if>
+    </select>
+    
+    <update id="markAsRead">
+        update company_notification 
+        set is_read = 1, read_time = #{readTime}
+        where id = #{id}
+    </update>
+    
+    <delete id="deleteById" parameterType="java.lang.Long">
+        delete from company_notification where id = #{id}
+    </delete>
+    
+    <select id="countByCompanyId" parameterType="java.lang.Long" resultType="java.lang.Long">
+        select count(*) from company_notification where company_id = #{companyId}
+    </select>
+    
+    <select id="countUnreadByCompanyId" parameterType="java.lang.Long" resultType="java.lang.Long">
+        select count(*) from company_notification where company_id = #{companyId} and is_read = 0
+    </select>
+</mapper>

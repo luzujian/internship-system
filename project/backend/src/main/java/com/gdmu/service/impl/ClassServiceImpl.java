@@ -1,0 +1,428 @@
+package com.gdmu.service.impl;
+
+import com.gdmu.mapper.ClassMapper;
+import com.gdmu.entity.Class;
+import com.gdmu.entity.Major;
+import com.gdmu.service.ClassService;
+import com.gdmu.service.MajorService;
+import com.gdmu.service.StudentUserService;
+import com.gdmu.utils.ExcelUtils;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.context.annotation.Lazy;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
+
+import java.io.IOException;
+import java.util.*;
+
+@Slf4j
+@Service
+public class ClassServiceImpl implements ClassService {
+    
+    @Autowired
+    private ClassMapper classMapper;
+    
+    @Autowired
+    @Lazy
+    private StudentUserService studentUserService;
+    
+    @Autowired
+    private MajorService majorService;
+    
+    @Override
+    public Class findById(Long id) {
+        return classMapper.findById(id);
+    }
+    
+    @Override
+    @Cacheable(value = "classes", key = "'all'", unless = "#result == null")
+    public List<Class> findAll() {
+        return classMapper.findAll();
+    }
+    
+    @Override
+    public List<Class> findAllWithStudentCount() {
+        return classMapper.findAll();
+    }
+    
+    @Override
+    public List<Class> findByMajorId(Long majorId) {
+        return classMapper.findByMajorId(majorId);
+    }
+    
+    @Override
+    @CacheEvict(value = "classes", key = "'all'")
+    public int save(Class classEntity) {
+        classEntity.setCreateTime(new Date());
+        classEntity.setUpdateTime(new Date());
+        return classMapper.insert(classEntity);
+    }
+    
+    @Override
+    @CacheEvict(value = "classes", key = "'all'")
+    public int update(Class classEntity) {
+        classEntity.setUpdateTime(new Date());
+        return classMapper.update(classEntity);
+    }
+    
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    @CacheEvict(value = "classes", key = "'all'")
+    public int delete(Long id) {
+        log.info("删除班级，ID: {}", id);
+        
+        if (id == null || id <= 0) {
+            throw new IllegalArgumentException("班级ID无效");
+        }
+        
+        Class classEntity = classMapper.findById(id);
+        if (classEntity == null) {
+            throw new IllegalArgumentException("班级不存在");
+        }
+        
+        log.info("开始删除班级 {} 下的所有学生", id);
+        int deletedStudentCount = studentUserService.deleteByClassId(id);
+        log.info("成功删除班级 {} 下的 {} 名学生", id, deletedStudentCount);
+        
+        int result = classMapper.delete(id);
+        log.info("班级删除成功，班级ID: {}", id);
+        return result;
+    }
+    
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public int batchDelete(List<Long> ids) {
+        if (ids == null || ids.isEmpty()) {
+            throw new IllegalArgumentException("班级ID列表不能为空");
+        }
+        
+        int result = 0;
+        for (Long id : ids) {
+            result += delete(id);
+        }
+        
+        return result;
+    }
+    
+    @Override
+    public Map<String, Object> importExcel(MultipartFile file) {
+        log.info("开始导入班级Excel数据");
+        try {
+            List<Map<String, Object>> dataList = ExcelUtils.readExcel(file);
+            
+            int successCount = 0;
+            int failCount = 0;
+            List<Map<String, Object>> failList = new ArrayList<>();
+            
+            if (dataList == null || dataList.isEmpty()) {
+                Map<String, Object> result = new HashMap<>();
+                result.put("successCount", successCount);
+                result.put("failCount", failCount);
+                result.put("failList", failList);
+                return result;
+            }
+            
+            for (int i = 0; i < dataList.size(); i++) {
+                Map<String, Object> rowData = dataList.get(i);
+                Map<String, Object> failInfo = new HashMap<>();
+                failInfo.put("rowNum", i + 2);
+                failInfo.putAll(rowData);
+                
+                try {
+                    Class classEntity = convertToClass(rowData);
+                    validateClassData(classEntity);
+                    
+                    boolean exists = false;
+                    List<Class> allClasses = findAll();
+                    for (Class existing : allClasses) {
+                        if (existing.getName().equals(classEntity.getName())) {
+                            exists = true;
+                            break;
+                        }
+                    }
+                    
+                    if (exists) {
+                        failInfo.put("errorMsg", "班级已存在: " + classEntity.getName());
+                        failList.add(failInfo);
+                        failCount++;
+                        continue;
+                    }
+                    
+                    save(classEntity);
+                    successCount++;
+                } catch (Exception e) {
+                    log.error("导入班级数据失败，行号: {}", i + 2, e);
+                    failInfo.put("errorMsg", e.getMessage());
+                    failList.add(failInfo);
+                    failCount++;
+                }
+            }
+            
+            log.info("班级Excel数据导入完成，成功: {}, 失败: {}", successCount, failCount);
+            
+            Map<String, Object> result = new HashMap<>();
+            result.put("successCount", successCount);
+            result.put("failCount", failCount);
+            result.put("failList", failList);
+            
+            return result;
+        } catch (IOException e) {
+            log.error("读取Excel文件失败: {}", e.getMessage());
+            throw new RuntimeException("读取Excel文件失败: " + e.getMessage());
+        } catch (Exception e) {
+            log.error("导入班级数据失败: {}", e.getMessage());
+            throw new RuntimeException("导入班级数据失败: " + e.getMessage());
+        }
+    }
+    
+    @Override
+    public Map<String, Object> importFromJson(String jsonData) {
+        log.info("开始从JSON导入班级数据");
+        log.info("接收到的JSON数据: {}", jsonData);
+        try {
+            com.fasterxml.jackson.databind.ObjectMapper objectMapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            List<Map<String, Object>> dataList = objectMapper.readValue(jsonData, 
+                objectMapper.getTypeFactory().constructCollectionType(List.class, Map.class));
+            
+            log.info("解析后的数据列表大小: {}", dataList != null ? dataList.size() : 0);
+            if (dataList != null && !dataList.isEmpty()) {
+                log.info("第一条数据示例: {}", dataList.get(0));
+                log.info("第一条数据的所有字段: {}", dataList.get(0).keySet());
+            }
+            
+            int successCount = 0;
+            int failCount = 0;
+            List<Map<String, Object>> failList = new ArrayList<>();
+            
+            if (dataList == null || dataList.isEmpty()) {
+                Map<String, Object> result = new HashMap<>();
+                result.put("successCount", successCount);
+                result.put("failCount", failCount);
+                result.put("failList", failList);
+                return result;
+            }
+            
+            for (int i = 0; i < dataList.size(); i++) {
+                Map<String, Object> rowData = dataList.get(i);
+                Map<String, Object> failInfo = new HashMap<>();
+                failInfo.put("rowNum", i + 1);
+                failInfo.putAll(rowData);
+                
+                try {
+                    Class classEntity = convertFromJsonData(rowData);
+                    validateClassData(classEntity);
+                    
+                    boolean exists = false;
+                    List<Class> allClasses = findAll();
+                    for (Class existing : allClasses) {
+                        if (existing.getName().equals(classEntity.getName())) {
+                            exists = true;
+                            break;
+                        }
+                    }
+                    
+                    if (exists) {
+                        failInfo.put("errorMsg", "班级已存在: " + classEntity.getName());
+                        failList.add(failInfo);
+                        failCount++;
+                        continue;
+                    }
+                    
+                    save(classEntity);
+                    successCount++;
+                } catch (Exception e) {
+                    log.error("导入班级数据失败，行号: {}", i + 1, e);
+                    failInfo.put("errorMsg", e.getMessage());
+                    failList.add(failInfo);
+                    failCount++;
+                }
+            }
+            
+            log.info("班级JSON数据导入完成，成功: {}, 失败: {}", successCount, failCount);
+            
+            Map<String, Object> result = new HashMap<>();
+            result.put("successCount", successCount);
+            result.put("failCount", failCount);
+            result.put("failList", failList);
+            
+            return result;
+        } catch (Exception e) {
+            log.error("导入班级JSON数据失败: {}", e.getMessage(), e);
+            throw new RuntimeException("导入班级JSON数据失败: " + e.getMessage());
+        }
+    }
+    
+    @Override
+    public List<Class> getAllClassData() {
+        return findAllWithStudentCount();
+    }
+    
+    private Class convertToClass(Map<String, Object> rowData) {
+        log.debug("处理Excel行数据: {}", rowData);
+        Class classEntity = new Class();
+        
+        String name = getStringValue(rowData, "班级名称");
+        String majorName = getStringValue(rowData, "专业名称");
+        String majorIdStr = getStringValue(rowData, "专业ID");
+        String gradeStr = getStringValue(rowData, "年级");
+        String teacherIdStr = getStringValue(rowData, "负责教师");
+        
+        if (teacherIdStr == null || teacherIdStr.isEmpty()) {
+            teacherIdStr = getStringValue(rowData, "负责老师");
+        }
+        if (teacherIdStr == null || teacherIdStr.isEmpty()) {
+            teacherIdStr = getStringValue(rowData, "teacherId");
+        }
+        
+        log.debug("解析到的字段值 - 班级名称: {}, 专业名称: {}, 专业ID: {}, 年级: {}, 负责教师ID: {}", name, majorName, majorIdStr, gradeStr, teacherIdStr);
+        
+        classEntity.setName(name);
+        
+        if (gradeStr != null && !gradeStr.isEmpty()) {
+            try {
+                classEntity.setGrade(Integer.parseInt(gradeStr));
+            } catch (NumberFormatException e) {
+                throw new RuntimeException("年级格式不正确: " + gradeStr);
+            }
+        }
+        
+        if (majorIdStr != null && !majorIdStr.isEmpty()) {
+            try {
+                Long majorId = Long.parseLong(majorIdStr);
+                classEntity.setMajorId(majorId);
+                log.debug("直接从Excel中获取专业ID: {}", majorId);
+            } catch (NumberFormatException e) {
+                log.debug("专业ID格式不正确，尝试通过专业名称查找: {}", majorIdStr);
+            }
+        }
+        
+        if (classEntity.getMajorId() == null) {
+            if (majorName == null || majorName.isEmpty()) {
+                majorName = getStringValue(rowData, "专业");
+            }
+            
+            if (majorName != null && !majorName.isEmpty()) {
+                log.debug("尝试通过专业名称查找: {}", majorName);
+                List<Major> majors = majorService.findByName(majorName);
+                if (majors == null || majors.isEmpty()) {
+                    List<Major> allMajors = majorService.findAll();
+                    log.debug("未找到专业: {}, 系统中可用的专业有: {}", majorName, allMajors);
+                    throw new RuntimeException("专业名称不存在: " + majorName);
+                }
+                Long majorId = majors.get(0).getId();
+                classEntity.setMajorId(majorId);
+                log.debug("通过专业名称获取专业ID: {}, 名称: {}", majorId, majorName);
+            } else {
+                log.error("专业ID和专业名称都为空，rowData中的所有key: {}", rowData.keySet());
+                throw new RuntimeException("专业ID不能为空，请在Excel中提供专业ID或专业名称");
+            }
+        }
+        
+        if (teacherIdStr != null && !teacherIdStr.isEmpty()) {
+            classEntity.setTeacherId(teacherIdStr);
+            log.debug("从Excel中获取负责教师ID: {}", teacherIdStr);
+        } else {
+            log.debug("负责教师ID为空，不设置负责教师");
+        }
+        
+        log.debug("最终班级实体 - ID: {}, 名称: {}, 专业ID: {}, 年级: {}, 负责教师ID: {}", 
+            classEntity.getId(), classEntity.getName(), classEntity.getMajorId(), 
+            classEntity.getGrade(), classEntity.getTeacherId());
+        
+        return classEntity;
+    }
+    
+    private Class convertFromJsonData(Map<String, Object> rowData) {
+        log.debug("处理JSON行数据: {}", rowData);
+        Class classEntity = new Class();
+        
+        Object nameObj = rowData.get("name");
+        Object gradeObj = rowData.get("grade");
+        Object majorIdObj = rowData.get("majorId");
+        Object teacherIdObj = rowData.get("teacherId");
+        Object studentCountObj = rowData.get("studentCount");
+        
+        String name = nameObj != null ? nameObj.toString() : null;
+        String gradeStr = gradeObj != null ? gradeObj.toString() : null;
+        String majorIdStr = majorIdObj != null ? majorIdObj.toString() : null;
+        String teacherIdStr = teacherIdObj != null ? teacherIdObj.toString() : null;
+        
+        log.debug("解析到的字段值 - 班级名称: {}, 专业ID: {}, 年级: {}, 负责教师ID: {}, 班级人数: {}", name, majorIdStr, gradeStr, teacherIdStr, studentCountObj);
+        log.debug("studentCountObj类型: {}, 值: {}", studentCountObj != null ? studentCountObj.getClass().getName() : "null", studentCountObj);
+        
+        if (name == null || name.isEmpty()) {
+            throw new RuntimeException("班级名称不能为空");
+        }
+        classEntity.setName(name);
+        
+        if (gradeStr != null && !gradeStr.isEmpty()) {
+            try {
+                classEntity.setGrade(Integer.parseInt(gradeStr));
+            } catch (NumberFormatException e) {
+                throw new RuntimeException("年级格式不正确: " + gradeStr);
+            }
+        }
+        
+        if (majorIdStr != null && !majorIdStr.isEmpty()) {
+            try {
+                Long majorId = Long.parseLong(majorIdStr);
+                classEntity.setMajorId(majorId);
+                log.debug("从JSON中获取专业ID: {}", majorId);
+            } catch (NumberFormatException e) {
+                throw new RuntimeException("专业ID格式不正确: " + majorIdStr);
+            }
+        } else {
+            throw new RuntimeException("专业ID不能为空");
+        }
+        
+        if (teacherIdStr != null && !teacherIdStr.isEmpty()) {
+            classEntity.setTeacherId(teacherIdStr);
+            log.debug("从JSON中获取负责教师ID: {}", teacherIdStr);
+        }
+        
+        if (studentCountObj != null) {
+            try {
+                Integer studentCount = Integer.parseInt(studentCountObj.toString());
+                if (studentCount >= 0) {
+                    classEntity.setStudentCount(studentCount);
+                    log.debug("从JSON中获取班级人数: {}, 设置成功", studentCount);
+                } else {
+                    log.debug("班级人数不能为负数，设置为0");
+                    classEntity.setStudentCount(0);
+                }
+            } catch (NumberFormatException e) {
+                log.debug("班级人数格式不正确，设置为0，错误: {}", e.getMessage());
+                classEntity.setStudentCount(0);
+            }
+        } else {
+            log.debug("studentCountObj为null，不设置班级人数");
+        }
+        
+        log.debug("最终班级实体 - ID: {}, 名称: {}, 专业ID: {}, 年级: {}, 负责教师ID: {}, 班级人数: {}", 
+            classEntity.getId(), classEntity.getName(), classEntity.getMajorId(), 
+            classEntity.getGrade(), classEntity.getTeacherId(), classEntity.getStudentCount());
+        
+        return classEntity;
+    }
+    
+    private void validateClassData(Class classEntity) {
+        if (classEntity.getName() == null || classEntity.getName().isEmpty()) {
+            throw new RuntimeException("班级名称不能为空");
+        }
+        if (classEntity.getMajorId() == null) {
+            throw new RuntimeException("专业ID不能为空");
+        }
+        if (classEntity.getGrade() == null) {
+            throw new RuntimeException("年级不能为空");
+        }
+    }
+    
+    private String getStringValue(Map<String, Object> map, String key) {
+        Object value = map.get(key);
+        return value != null ? value.toString() : null;
+    }
+}

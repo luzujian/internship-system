@@ -1,0 +1,205 @@
+package com.gdmu.controller;
+
+import com.gdmu.anno.Log;
+import com.gdmu.entity.PageResult;
+import com.gdmu.entity.Position;
+import com.gdmu.entity.Result;
+import com.gdmu.service.PositionService;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * 招聘岗位管理控制器
+ */
+@Slf4j
+@RestController
+@RequestMapping("/api/admin/positions")
+public class PositionController {
+
+    @Autowired
+    private PositionService positionService;
+
+    /**
+     * 分页查询岗位列表
+     */
+    @GetMapping
+    public Result getPositions(@RequestParam(defaultValue = "1") Integer page,
+                               @RequestParam(defaultValue = "10") Integer pageSize,
+                               @RequestParam(required = false) String companyName,
+                               @RequestParam(required = false) String positionName) {
+        log.info("分页查询岗位列表，页码: {}, 每页: {}, 公司: {}, 岗位: {}",
+                page, pageSize, companyName, positionName);
+        PageResult<Map<String, Object>> pageResult = positionService.findPage(page, pageSize, companyName, positionName);
+        return Result.success(pageResult);
+    }
+
+    /**
+     * 获取所有岗位列表
+     */
+    @GetMapping("/all")
+    public Result getAllPositions() {
+        log.info("获取所有岗位列表");
+        List<Position> positions = positionService.findAll();
+        return Result.success(positions);
+    }
+
+    /**
+     * 获取岗位统计数据
+     */
+    @GetMapping("/statistics")
+    public Result getStatistics() {
+        log.info("获取岗位统计数据");
+        Map<String, Object> statistics = positionService.getStatistics();
+        return Result.success(statistics);
+    }
+
+    /**
+     * 根据ID获取岗位详情
+     */
+    @GetMapping("/{id}")
+    public Result getPositionById(@PathVariable Long id) {
+        log.info("获取岗位详情，ID: {}", id);
+        Position position = positionService.findById(id);
+        if (position == null) {
+            return Result.error("岗位不存在");
+        }
+        return Result.success(position);
+    }
+
+    /**
+     * 新增岗位
+     */
+    @Log(operationType = "ADD", module = "POSITION_MANAGEMENT", description = "新增招聘岗位")
+    @PostMapping
+    public Result addPosition(@RequestBody @jakarta.validation.Valid Position position) {
+        log.info("新增岗位: {}", position.getPositionName());
+        try {
+            // 计算剩余缺口
+            position.setRemainingQuota(position.getPlannedRecruit() - position.getRecruitedCount());
+            positionService.insert(position);
+            return Result.success("添加成功");
+        } catch (Exception e) {
+            log.error("新增岗位失败: {}", e.getMessage());
+            return Result.error("添加失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 更新岗位
+     */
+    @Log(operationType = "UPDATE", module = "POSITION_MANAGEMENT", description = "更新招聘岗位")
+    @PutMapping("/{id}")
+    public Result updatePosition(@PathVariable Long id, @RequestBody Position position) {
+        log.info("更新岗位，ID: {}", id);
+        try {
+            position.setId(id);
+            // 重新计算剩余缺口
+            if (position.getPlannedRecruit() != null) {
+                Integer recruitedCount = position.getRecruitedCount() != null ? position.getRecruitedCount() : 0;
+                position.setRemainingQuota(position.getPlannedRecruit() - recruitedCount);
+            }
+            positionService.update(position);
+            return Result.success("更新成功");
+        } catch (Exception e) {
+            log.error("更新岗位失败: {}", e.getMessage());
+            return Result.error("更新失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 删除岗位
+     */
+    @Log(operationType = "DELETE", module = "POSITION_MANAGEMENT", description = "删除招聘岗位")
+    @DeleteMapping("/{id}")
+    public Result deletePosition(@PathVariable Long id) {
+        log.info("删除岗位，ID: {}", id);
+        try {
+            positionService.delete(id);
+            return Result.success("删除成功");
+        } catch (Exception e) {
+            log.error("删除岗位失败: {}", e.getMessage());
+            return Result.error("删除失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 获取岗位已招学生列表
+     */
+    @GetMapping("/{id}/students")
+    public Result getPositionStudents(@PathVariable Long id) {
+        log.info("获取岗位已招学生，岗位ID: {}", id);
+        List<Map<String, Object>> students = positionService.getRecruitedStudents(id);
+        return Result.success(students);
+    }
+
+    /**
+     * 批量删除岗位
+     */
+    @Log(operationType = "DELETE", module = "POSITION_MANAGEMENT", description = "批量删除招聘岗位")
+    @DeleteMapping("/batch")
+    public Result batchDeletePositions(@RequestBody List<Long> ids) {
+        log.info("批量删除岗位，ID列表: {}", ids);
+        try {
+            if (ids == null || ids.isEmpty()) {
+                return Result.error("请选择要删除的岗位");
+            }
+            int count = positionService.batchDelete(ids);
+            return Result.success("成功删除" + count + "个岗位");
+        } catch (Exception e) {
+            log.error("批量删除岗位失败: {}", e.getMessage());
+            return Result.error("批量删除失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 根据公司ID获取岗位列表（支持搜索）
+     */
+    @GetMapping("/company/{companyId}")
+    public Result getPositionsByCompanyId(@PathVariable Long companyId,
+                                          @RequestParam(required = false) String positionName,
+                                          @RequestParam(required = false) String department,
+                                          @RequestParam(required = false) String status) {
+        log.info("根据公司ID获取岗位列表，公司ID: {}, 岗位名称: {}, 部门: {}, 状态: {}", 
+                companyId, positionName, department, status);
+        List<Position> positions = positionService.findByCompanyIdWithFilters(companyId, positionName, department, status);
+        return Result.success(positions);
+    }
+
+    /**
+     * 暂停岗位
+     */
+    @Log(operationType = "UPDATE", module = "POSITION_MANAGEMENT", description = "暂停招聘岗位")
+    @PutMapping("/{id}/pause")
+    public Result pausePosition(@PathVariable Long id) {
+        log.info("暂停岗位，ID: {}", id);
+        try {
+            positionService.pausePosition(id);
+            return Result.success("暂停成功");
+        } catch (Exception e) {
+            log.error("暂停岗位失败: {}", e.getMessage());
+            return Result.error("暂停失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 恢复岗位
+     */
+    @Log(operationType = "UPDATE", module = "POSITION_MANAGEMENT", description = "恢复招聘岗位")
+    @PutMapping("/{id}/resume")
+    public Result resumePosition(@PathVariable Long id) {
+        log.info("恢复岗位，ID: {}", id);
+        try {
+            positionService.resumePosition(id);
+            return Result.success("恢复成功");
+        } catch (Exception e) {
+            log.error("恢复岗位失败: {}", e.getMessage());
+            return Result.error("恢复失败: " + e.getMessage());
+        }
+    }
+}

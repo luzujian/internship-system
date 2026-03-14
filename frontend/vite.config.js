@@ -1,19 +1,19 @@
-import { defineConfig } from vite
-import vue from @vitejs/plugin-vue
-import path from path
+import { defineConfig } from 'vite'
+import vue from '@vitejs/plugin-vue'
+import path from 'path'
 
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [vue()],
   resolve: {
     alias: {
-      @: path.resolve(__dirname, src)
+      '@': path.resolve(__dirname, 'src')
     }
   },
   server: {
     proxy: {
-      /api: {
-        target: http://localhost:8080,
+      '/api': {
+        target: 'http://localhost:8080',
         changeOrigin: true,
         rewrite: (path) => path
       }
@@ -25,17 +25,17 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks: {
-          element-plus: [element-plus],
-          echarts: [echarts],
-          axios: [axios],
-          xlsx: [xlsx]
+          'element-plus': ['element-plus'],
+          echarts: ['echarts'],
+          axios: ['axios'],
+          xlsx: ['xlsx']
         },
-        assetFileNames: assets/[name].[hash:8][extname],
-        chunkFileNames: assets/[name].[hash:8].js,
-        entryFileNames: assets/[name].[hash:8].js
+        assetFileNames: 'assets/[name].[hash:8][extname]',
+        chunkFileNames: 'assets/[name].[hash:8].js',
+        entryFileNames: 'assets/[name].[hash:8].js'
       }
     },
-    minify: terser,
+    minify: 'terser',
     terserOptions: {
       compress: {
         drop_console: true,
@@ -46,7 +46,7 @@ export default defineConfig({
     assetsInlineLimit: 4096, // 4kb 以下的图片内联为 base64
   },
   optimizeDeps: {
-    include: [element-plus, echarts, axios]
+    include: ['element-plus', 'echarts', 'axios']
   },
   // 图片压缩插件
   esbuild: {

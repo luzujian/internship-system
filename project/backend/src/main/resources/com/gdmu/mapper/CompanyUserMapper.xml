@@ -1,0 +1,461 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.gdmu.mapper.CompanyUserMapper">
+    
+    <resultMap id="CompanyUserResultMap" type="com.gdmu.entity.CompanyUser">
+        <id property="id" column="id" />
+        <result property="companyName" column="company_name" />
+        <result property="contactPerson" column="contact_person" />
+        <result property="contactPhone" column="contact_phone" />
+        <result property="contactEmail" column="contact_email" />
+        <result property="phone" column="phone" />
+        <result property="email" column="email" />
+        <result property="username" column="username" />
+        <result property="password" column="password" />
+        <result property="role" column="role" />
+        <result property="address" column="address" />
+        <result property="introduction" column="introduction" />
+        <result property="businessLicense" column="business_license" />
+        <result property="legalIdCard" column="legal_id_card" />
+        <result property="isInternshipBase" column="is_internship_base" />
+        <result property="plaquePhoto" column="plaque_photo" />
+        <result property="hasReceivedInterns" column="has_received_interns" />
+        <result property="currentEmployeesCount" column="current_employees_count" />
+        <result property="acceptBackup" column="accept_backup" />
+        <result property="maxBackupStudents" column="max_backup_students" />
+        <result property="companyTag" column="company_tag" />
+        <result property="registerTime" column="register_time" />
+        <result property="applyTime" column="apply_time" />
+        <result property="auditTime" column="audit_time" />
+        <result property="auditStatus" column="audit_status" />
+        <result property="auditRemark" column="audit_remark" />
+        <result property="reviewerId" column="reviewer_id" />
+        <result property="status" column="status" />
+        <result property="recallStatus" column="recall_status" />
+        <result property="recallReason" column="recall_reason" />
+        <result property="recallApplyTime" column="recall_apply_time" />
+        <result property="recallAuditTime" column="recall_audit_time" />
+        <result property="recallReviewerId" column="recall_reviewer_id" />
+        <result property="recallAuditRemark" column="recall_audit_remark" />
+        <result property="createTime" column="create_time" />
+        <result property="updateTime" column="update_time" />
+        <result property="industry" column="industry" />
+        <result property="scale" column="scale" />
+        <result property="province" column="province" />
+        <result property="city" column="city" />
+        <result property="district" column="district" />
+        <result property="detailAddress" column="detail_address" />
+        <result property="website" column="website" />
+        <result property="description" column="description" />
+        <result property="cooperationMode" column="cooperation_mode" />
+        <result property="logo" column="logo" />
+        <result property="photos" column="photos" />
+        <result property="videos" column="videos" />
+    </resultMap>
+    
+    <insert id="insert" parameterType="com.gdmu.entity.CompanyUser">
+        insert into company_users (company_name, contact_person, contact_phone, contact_email, phone, email, username, password, role, address, introduction, business_license, legal_id_card, is_internship_base, plaque_photo, has_received_interns, current_employees_count, accept_backup, max_backup_students, company_tag, register_time, apply_time, audit_time, audit_status, audit_remark, reviewer_id, status, recall_status, recall_reason, recall_apply_time, recall_audit_time, recall_reviewer_id, recall_audit_remark, create_time, update_time, industry, scale, province, city, district, detail_address, website, description, cooperation_mode, logo, photos, videos)
+        values (#{companyName}, #{contactPerson}, #{contactPhone}, #{contactEmail}, #{phone}, #{email}, #{username}, #{password}, #{role}, #{address}, #{introduction}, #{businessLicense}, #{legalIdCard}, #{isInternshipBase}, #{plaquePhoto}, #{hasReceivedInterns}, #{currentEmployeesCount}, #{acceptBackup}, #{maxBackupStudents}, #{companyTag}, #{registerTime}, #{applyTime}, #{auditTime}, #{auditStatus}, #{auditRemark}, #{reviewerId}, #{status}, #{recallStatus}, #{recallReason}, #{recallApplyTime}, #{recallAuditTime}, #{recallReviewerId}, #{recallAuditRemark}, #{createTime}, #{updateTime}, #{industry}, #{scale}, #{province}, #{city}, #{district}, #{detailAddress}, #{website}, #{description}, #{cooperationMode}, #{logo}, #{photos}, #{videos})
+    </insert>
+    
+    <insert id="batchInsert" parameterType="java.util.List">
+        INSERT INTO company_users (company_name, contact_person, contact_phone, contact_email, phone, email, username, password, role, address, introduction, business_license, legal_id_card, is_internship_base, plaque_photo, has_received_interns, current_employees_count, accept_backup, max_backup_students, company_tag, register_time, apply_time, audit_time, audit_status, audit_remark, reviewer_id, status, recall_status, recall_reason, recall_apply_time, recall_audit_time, recall_reviewer_id, recall_audit_remark, create_time, update_time, industry, scale, province, city, district, detail_address, website, description, cooperation_mode, logo, photos, videos)
+        VALUES
+        <foreach collection="companyUsers" item="companyUser" separator=",">
+            (#{companyUser.companyName}, #{companyUser.contactPerson}, #{companyUser.contactPhone}, #{companyUser.contactEmail}, #{companyUser.phone}, #{companyUser.email}, #{companyUser.username}, #{companyUser.password}, #{companyUser.role}, #{companyUser.address}, #{companyUser.introduction}, #{companyUser.businessLicense}, #{companyUser.legalIdCard}, #{companyUser.isInternshipBase}, #{companyUser.plaquePhoto}, #{companyUser.hasReceivedInterns}, #{companyUser.currentEmployeesCount}, #{companyUser.acceptBackup}, #{companyUser.maxBackupStudents}, #{companyUser.companyTag}, #{companyUser.registerTime}, #{companyUser.applyTime}, #{companyUser.auditTime}, #{companyUser.auditStatus}, #{companyUser.auditRemark}, #{companyUser.reviewerId}, #{companyUser.status}, #{companyUser.recallStatus}, #{companyUser.recallReason}, #{companyUser.recallApplyTime}, #{companyUser.recallAuditTime}, #{companyUser.recallReviewerId}, #{companyUser.recallAuditRemark}, #{companyUser.createTime}, #{companyUser.updateTime}, #{companyUser.industry}, #{companyUser.scale}, #{companyUser.province}, #{companyUser.city}, #{companyUser.district}, #{companyUser.detailAddress}, #{companyUser.website}, #{companyUser.description}, #{companyUser.cooperationMode}, #{companyUser.logo}, #{companyUser.photos}, #{companyUser.videos})
+        </foreach>
+    </insert>
+    
+    <select id="findById" resultMap="CompanyUserResultMap">
+        select * from company_users where id = #{id}
+    </select>
+    
+    <select id="findByUsername" resultMap="CompanyUserResultMap">
+        select * from company_users where username = #{username}
+    </select>
+    
+    <update id="update" parameterType="com.gdmu.entity.CompanyUser">
+        update company_users
+        <trim prefix="SET" suffixOverrides=",">
+            <if test="password != null and password != ''">
+                password = #{password},
+            </if>
+            <if test="companyName != null and companyName != ''">
+                company_name = #{companyName},
+            </if>
+            <if test="contactPerson != null and contactPerson != ''">
+                contact_person = #{contactPerson},
+            </if>
+            <if test="contactPhone != null and contactPhone != ''">
+                contact_phone = #{contactPhone},
+            </if>
+            <if test="contactEmail != null and contactEmail != ''">
+                contact_email = #{contactEmail},
+            </if>
+            <if test="phone != null and phone != ''">
+                phone = #{phone},
+            </if>
+            <if test="email != null and email != ''">
+                email = #{email},
+            </if>
+            <if test="address != null and address != ''">
+                address = #{address},
+            </if>
+            <if test="introduction != null">
+                introduction = #{introduction},
+            </if>
+            <if test="businessLicense != null">
+                business_license = #{businessLicense},
+            </if>
+            <if test="legalIdCard != null">
+                legal_id_card = #{legalIdCard},
+            </if>
+            <if test="isInternshipBase != null">
+                is_internship_base = #{isInternshipBase},
+            </if>
+            <if test="plaquePhoto != null">
+                plaque_photo = #{plaquePhoto},
+            </if>
+            <if test="hasReceivedInterns != null">
+                has_received_interns = #{hasReceivedInterns},
+            </if>
+            <if test="currentEmployeesCount != null">
+                current_employees_count = #{currentEmployeesCount},
+            </if>
+            <if test="acceptBackup != null">
+                accept_backup = #{acceptBackup},
+            </if>
+            <if test="maxBackupStudents != null">
+                max_backup_students = #{maxBackupStudents},
+            </if>
+            <if test="companyTag != null">
+                company_tag = #{companyTag},
+            </if>
+            <if test="registerTime != null">
+                register_time = #{registerTime},
+            </if>
+            <if test="applyTime != null">
+                apply_time = #{applyTime},
+            </if>
+            <if test="auditTime != null">
+                audit_time = #{auditTime},
+            </if>
+            <if test="auditStatus != null">
+                audit_status = #{auditStatus},
+            </if>
+            <if test="auditRemark != null">
+                audit_remark = #{auditRemark},
+            </if>
+            <if test="reviewerId != null">
+                reviewer_id = #{reviewerId},
+            </if>
+            <if test="status != null">
+                status = #{status},
+            </if>
+            <if test="recallStatus != null">
+                recall_status = #{recallStatus},
+            </if>
+            <if test="recallReason != null">
+                recall_reason = #{recallReason},
+            </if>
+            <if test="recallApplyTime != null">
+                recall_apply_time = #{recallApplyTime},
+            </if>
+            <if test="recallAuditTime != null">
+                recall_audit_time = #{recallAuditTime},
+            </if>
+            <if test="recallReviewerId != null">
+                recall_reviewer_id = #{recallReviewerId},
+            </if>
+            <if test="recallAuditRemark != null">
+                recall_audit_remark = #{recallAuditRemark},
+            </if>
+            <if test="industry != null and industry != ''">
+                industry = #{industry},
+            </if>
+            <if test="scale != null and scale != ''">
+                scale = #{scale},
+            </if>
+            <if test="province != null and province != ''">
+                province = #{province},
+            </if>
+            <if test="city != null and city != ''">
+                city = #{city},
+            </if>
+            <if test="district != null and district != ''">
+                district = #{district},
+            </if>
+            <if test="detailAddress != null and detailAddress != ''">
+                detail_address = #{detailAddress},
+            </if>
+            <if test="website != null and website != ''">
+                website = #{website},
+            </if>
+            <if test="description != null">
+                description = #{description},
+            </if>
+            <if test="cooperationMode != null and cooperationMode != ''">
+                cooperation_mode = #{cooperationMode},
+            </if>
+            <if test="logo != null and logo != ''">
+                logo = #{logo},
+            </if>
+            <if test="photos != null and photos != ''">
+                photos = #{photos},
+            </if>
+            <if test="videos != null and videos != ''">
+                videos = #{videos},
+            </if>
+            <if test="updateTime != null">
+                update_time = #{updateTime},
+            </if>
+        </trim>
+        where id = #{id}
+    </update>
+    
+    <delete id="deleteById">
+        delete from company_users where id = #{id}
+    </delete>
+    
+    <select id="findAll" resultMap="CompanyUserResultMap">
+        select * from company_users order by 
+            CASE 
+                WHEN recall_status = 1 THEN 0
+                WHEN status = 0 THEN 1
+                WHEN status = 1 THEN 2
+                ELSE 3
+            END,
+            create_time desc
+    </select>
+    
+    <select id="list" resultMap="CompanyUserResultMap">
+        select * from company_users
+        <where>
+            <if test="companyName != null and companyName != ''">
+                company_name like concat('%',#{companyName},'%')
+            </if>
+            <if test="status != null">
+                <if test="companyName != null and companyName != ''">
+                    and
+                </if>
+                status = #{status}
+                <if test="status != 0">
+                    and recall_status != 1
+                </if>
+            </if>
+        </where>
+        order by 
+            CASE 
+                WHEN recall_status = 1 THEN 0
+                WHEN status = 0 THEN 1
+                WHEN status = 1 THEN 2
+                ELSE 3
+            END,
+            create_time desc
+    </select>
+    
+    <select id="listWithRecallStatus" resultMap="CompanyUserResultMap">
+        select * from company_users
+        <where>
+            <if test="companyName != null and companyName != ''">
+                company_name like concat('%',#{companyName},'%')
+            </if>
+            <if test="status != null">
+                <if test="companyName != null and companyName != ''">
+                    and
+                </if>
+                status = #{status}
+                <if test="status != 0">
+                    and recall_status != 1
+                </if>
+            </if>
+            <if test="recallStatus != null">
+                <if test="(companyName != null and companyName != '') or (status != null)">
+                    and
+                </if>
+                recall_status = #{recallStatus}
+            </if>
+        </where>
+        order by 
+            CASE 
+                WHEN recall_status = 1 THEN 0
+                WHEN status = 0 THEN 1
+                WHEN status = 1 THEN 2
+                ELSE 3
+            END,
+            create_time desc
+    </select>
+    
+    <select id="listWithRecallStatusAndTag" resultMap="CompanyUserResultMap">
+        select * from company_users
+        <where>
+            <if test="companyName != null and companyName != ''">
+                company_name like concat('%',#{companyName},'%')
+            </if>
+            <if test="status != null">
+                <if test="companyName != null and companyName != ''">
+                    and
+                </if>
+                status = #{status}
+                <if test="status != 0">
+                    and recall_status != 1
+                </if>
+            </if>
+            <if test="recallStatus != null">
+                <if test="(companyName != null and companyName != '') or (status != null)">
+                    and
+                </if>
+                recall_status = #{recallStatus}
+            </if>
+            <if test="companyTag != null and companyTag != ''">
+                <if test="(companyName != null and companyName != '') or (status != null) or (recallStatus != null)">
+                    and
+                </if>
+                <foreach collection="companyTag.split(',')" item="tag" open="(" separator=" or " close=")">
+                    FIND_IN_SET(#{tag}, company_tag) > 0
+                </foreach>
+            </if>
+        </where>
+        order by 
+            CASE 
+                WHEN recall_status = 1 THEN 0
+                WHEN status = 0 THEN 1
+                WHEN status = 1 THEN 2
+                ELSE 3
+            END,
+            create_time desc
+    </select>
+    
+    <select id="selectByIds" resultType="com.gdmu.entity.CompanyUser" parameterType="java.util.List">
+        SELECT * FROM company_users WHERE id IN
+        <foreach collection="list" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </select>
+    
+    <delete id="batchDeleteByIds" parameterType="java.util.List">
+        DELETE FROM company_users WHERE id IN
+        <foreach collection="ids" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </delete>
+    
+    <select id="count" resultType="java.lang.Long">
+        SELECT COUNT(*) FROM company_users
+    </select>
+    
+    <select id="findPage" resultMap="CompanyUserResultMap">
+        SELECT * FROM company_users ORDER BY create_time DESC LIMIT #{offset}, #{pageSize}
+    </select>
+    
+    <select id="countByCreateTimeAfter" resultType="java.lang.Integer">
+        SELECT COUNT(*) FROM company_users WHERE create_time > #{createTime}
+    </select>
+    
+    <select id="countByStatus" resultType="java.lang.Integer">
+        SELECT COUNT(*) FROM company_users WHERE status = #{status}
+    </select>
+    
+    <select id="selectAll" resultMap="CompanyUserResultMap">
+        SELECT * FROM company_users ORDER BY 
+            CASE 
+                WHEN recall_status = 1 THEN 0
+                WHEN status = 0 THEN 1
+                WHEN status = 1 THEN 2
+                ELSE 3
+            END,
+            create_time DESC
+    </select>
+    
+    <select id="findByAuditStatus" resultMap="CompanyUserResultMap">
+        SELECT * FROM company_users WHERE audit_status = #{auditStatus} ORDER BY apply_time DESC
+    </select>
+    
+    <select id="findPendingAudit" resultMap="CompanyUserResultMap">
+        SELECT * FROM company_users
+        WHERE audit_status = 0
+        AND recall_status = 0
+        <if test="companyName != null and companyName != ''">
+            AND company_name LIKE CONCAT('%', #{companyName}, '%')
+        </if>
+        <if test="contactPerson != null and contactPerson != ''">
+            AND contact_person LIKE CONCAT('%', #{contactPerson}, '%')
+        </if>
+        <if test="contactPhone != null and contactPhone != ''">
+            AND contact_phone LIKE CONCAT('%', #{contactPhone}, '%')
+        </if>
+        ORDER BY apply_time DESC
+    </select>
+    
+    <select id="countByAuditStatus" resultType="java.lang.Long">
+        SELECT COUNT(*) FROM company_users WHERE audit_status = #{auditStatus}
+    </select>
+    
+    <update id="updateAuditStatus">
+        UPDATE company_users 
+        SET audit_status = #{auditStatus},
+            audit_remark = #{auditRemark},
+            reviewer_id = #{reviewerId},
+            audit_time = NOW(),
+            status = CASE 
+                WHEN #{auditStatus} = 1 THEN 1
+                WHEN #{auditStatus} = 2 THEN 3
+                ELSE status
+            END,
+            update_time = NOW()
+        WHERE id = #{id}
+    </update>
+    
+    <select id="findByRecallStatus" resultMap="CompanyUserResultMap">
+        SELECT * FROM company_users WHERE recall_status = #{recallStatus} ORDER BY recall_apply_time DESC
+    </select>
+    
+    <select id="findPendingRecallAudit" resultMap="CompanyUserResultMap">
+        SELECT * FROM company_users
+        WHERE recall_status = 1
+        <if test="companyName != null and companyName != ''">
+            AND company_name LIKE CONCAT('%', #{companyName}, '%')
+        </if>
+        <if test="contactPerson != null and contactPerson != ''">
+            AND contact_person LIKE CONCAT('%', #{contactPerson}, '%')
+        </if>
+        <if test="contactPhone != null and contactPhone != ''">
+            AND contact_phone LIKE CONCAT('%', #{contactPhone}, '%')
+        </if>
+        ORDER BY recall_apply_time DESC
+        LIMIT #{offset}, #{pageSize}
+    </select>
+    
+    <select id="findPendingRecallAuditById" resultMap="CompanyUserResultMap">
+        SELECT * FROM company_users
+        WHERE recall_status = 1
+        <if test="companyId != null">
+            AND id = #{companyId}
+        </if>
+        ORDER BY recall_apply_time DESC
+        LIMIT #{offset}, #{pageSize}
+    </select>
+    
+    <select id="countByRecallStatus" resultType="java.lang.Long">
+        SELECT COUNT(*) FROM company_users WHERE recall_status = #{recallStatus}
+    </select>
+    
+    <update id="updateRecallStatus">
+        UPDATE company_users 
+        SET recall_status = #{recallStatus},
+            recall_reviewer_id = #{recallReviewerId},
+            recall_audit_time = NOW(),
+            <if test="recallAuditRemark != null and recallAuditRemark != ''">
+                recall_audit_remark = #{recallAuditRemark},
+            </if>
+            audit_status = CASE 
+                WHEN #{recallStatus} = 2 THEN 3
+                WHEN #{recallStatus} = 3 THEN 0
+                ELSE audit_status
+            END,
+            update_time = NOW()
+        WHERE id = #{id}
+    </update>
+</mapper>

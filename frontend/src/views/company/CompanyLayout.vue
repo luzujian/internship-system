@@ -1,186 +1,49 @@
-<template>
-  <div class="company-layout">
-    <div v-if="isReadOnlyMode" class="read-only-banner">
-      <el-alert type="warning" :closable="false" show-icon>
-        <template #title>
-          <span class="banner-title">
-            <el-icon><Warning /></el-icon>
-            只读模式
-          </span>
-        </template>
-        <template #default>
-          <div class="banner-content">
-            <span>您正在以管理员身份查看企业端，只能查看数据，不能进行任何修改操作。</span>
-            <el-button type="primary" size="small" @click="returnToAdmin" class="return-btn">
-              <el-icon><Back /></el-icon>
-              返回管理员端
-            </el-button>
-          </div>
-        </template>
-      </el-alert>
-    </div>
-    
-    <el-container>
-      <el-header class="header">
-        <div class="header-left">
-          <el-icon class="collapse-icon" @click="toggleSidebar">
-            <Fold v-if="!sidebarCollapsed" />
-            <Expand v-else />
-          </el-icon>
-          <div class="logo">{{ systemSettingsStore.systemName }}</div>
-        </div>
-        <div class="header-right">
-          <el-dropdown @command="handleCommand">
-            <div class="user-info">
-              <el-icon><User /></el-icon>
-              <span>{{ getCompanyName() }}</span>
-              <el-icon><CaretBottom /></el-icon>
-            </div>
-            <template #dropdown>
-              <el-dropdown-menu>
-                <el-dropdown-item command="edit">编辑资料</el-dropdown-item>
-                <el-dropdown-item command="password">修改密码</el-dropdown-item>
-                <el-dropdown-item command="logout" divided>退出登录</el-dropdown-item>
-              </el-dropdown-menu>
-            </template>
-          </el-dropdown>
-        </div>
-      </el-header>
-
-      <el-container>
-        <el-aside :width="sidebarCollapsed ? '64px' : '200px'" class="aside">
-          <el-menu
-            :default-active="activeMenu"
-            :collapse="sidebarCollapsed"
-            :collapse-transition="false"
-            router
-          >
-            <el-menu-item index="/company/dashboard">
-              <el-icon><HomeFilled /></el-icon>
-              <template #title>首页</template>
-            </el-menu-item>
-            <el-menu-item index="/company/positions">
-              <el-icon><Document /></el-icon>
-              <template #title>岗位管理</template>
-            </el-menu-item>
-          </el-menu>
-        </el-aside>
-
-        <el-scrollbar style="flex: 1;">
-          <el-main class="main">
-            <router-view />
-          </el-main>
-        </el-scrollbar>
-      </el-container>
-    </el-container>
-  </div>
-</template>
-
-<script lang="ts" setup>
+<script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ElScrollbar } from 'element-plus'
-import {
-  Fold,
-  Expand,
-  User,
-  CaretBottom,
-  HomeFilled,
-  Document,
-  Warning,
-  Back
-} from '@element-plus/icons-vue'
 import { useAuthStore } from '@/store/auth'
-import { useSystemSettingsStore } from '@/store/systemSettings'
-import request from '@/utils/request'
-import { useUserStatusCheck } from '@/composables/useUserStatusCheck'
-
-defineOptions({
-  components: {
-    ElScrollbar
-  }
-})
+import {
+  Avatar,
+  CaretBottom,
+  Collection,
+  Delete,
+  Document,
+  DocumentChecked,
+  Fold,
+  HomeFilled,
+  Lock,
+  Management,
+  Menu,
+  OfficeBuilding,
+  School,
+  SwitchButton,
+  User,
+  UserFilled,
+  ChatDotRound,
+  Folder,
+  Download,
+  Setting,
+  View
+} from '@element-plus/icons-vue'
 
 const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
-const systemSettingsStore = useSystemSettingsStore()
-
-const isReadOnlyMode = computed(() => authStore.user?.isReadOnly || false)
-
-const returnToAdmin = async () => {
-  try {
-    await ElMessageBox.confirm(
-      '确定要返回管理员端吗？',
-      '提示',
-      {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
-        type: 'warning'
-      }
-    )
-
-    const originalAdminUsername = authStore.user?.originalAdminUsername
-    if (originalAdminUsername) {
-      // 清除当前企业角色的token，避免残留
-      const currentRole = authStore.role
-      if (currentRole === 'ROLE_COMPANY') {
-        const rolePrefix = 'company_'
-        localStorage.removeItem(rolePrefix + 'accessToken_' + currentRole)
-        localStorage.removeItem(rolePrefix + 'refreshToken_' + currentRole)
-        localStorage.removeItem(rolePrefix + 'token_' + currentRole)
-        localStorage.removeItem(rolePrefix + 'role_' + currentRole)
-        localStorage.removeItem(rolePrefix + 'userId_' + currentRole)
-        localStorage.removeItem(rolePrefix + 'username_' + currentRole)
-        localStorage.removeItem(rolePrefix + 'isReadOnly_' + currentRole)
-        localStorage.removeItem(rolePrefix + 'originalAdminUsername_' + currentRole)
-        console.log('[returnToAdmin] 已清除企业角色token:', currentRole)
-      }
-
-      localStorage.setItem('current_role', 'ROLE_ADMIN')
-      localStorage.setItem('admin_accessToken_ROLE_ADMIN', localStorage.getItem('admin_accessToken_ROLE_ADMIN') || '')
-      localStorage.setItem('admin_refreshToken_ROLE_ADMIN', localStorage.getItem('admin_refreshToken_ROLE_ADMIN') || '')
-      localStorage.setItem('admin_role_ROLE_ADMIN', 'ROLE_ADMIN')
-      localStorage.setItem('admin_userId_ROLE_ADMIN', localStorage.getItem('admin_userId_ROLE_ADMIN') || '')
-      localStorage.setItem('admin_username_ROLE_ADMIN', originalAdminUsername)
-
-      authStore.role = 'ROLE_ADMIN'
-      authStore.user = {
-        id: localStorage.getItem('admin_userId_ROLE_ADMIN'),
-        username: originalAdminUsername,
-        name: originalAdminUsername
-      }
-      authStore.token = localStorage.getItem('admin_accessToken_ROLE_ADMIN')
-      authStore.isAuthenticated = true
-      authStore.user.isReadOnly = false
-      authStore.user.originalAdminUsername = null
-
-      await router.push('/admin/dashboard')
-    } else {
-      ElMessage.error('无法返回管理员端，请重新登录')
-    }
-  } catch (error) {
-    if (error !== 'cancel') {
-      console.error('返回管理员端失败:', error)
-      ElMessage.error('返回管理员端失败')
-    }
-  }
-}
-
-onMounted(() => {
-  console.log('[CompanyLayout] 组件已挂载')
-})
 
 const sidebarCollapsed = ref(false)
 
-const activeMenu = computed(() => route.path)
-
-useUserStatusCheck(180000)
-
-const getCompanyName = () => {
-  return authStore.user?.name || '企业用户'
-}
+// 获取当前用户信息
+const currentUser = computed(() => authStore.user)
+const displayName = computed(() => {
+  if (currentUser.value?.name) {
+    return currentUser.value.name
+  }
+  if (currentUser.value?.username) {
+    return currentUser.value.username
+  }
+  return '企业用户'
+})
 
 const toggleSidebar = () => {
   sidebarCollapsed.value = !sidebarCollapsed.value
@@ -189,128 +52,378 @@ const toggleSidebar = () => {
 const handleCommand = async (command) => {
   switch (command) {
     case 'edit':
-      ElMessage.info('编辑资料功能开发中')
+      router.push('/company/settings?tab=profile')
       break
     case 'password':
-      ElMessage.info('修改密码功能开发中')
+      router.push('/company/settings?tab=password')
       break
     case 'logout':
-      await logout()
+      try {
+        await ElMessageBox.confirm(
+          '确定要退出登录吗？',
+          '退出登录',
+          {
+            confirmButtonText: '确定',
+            cancelButtonText: '取消',
+            type: 'warning',
+            center: true
+          }
+        )
+        await authStore.logout()
+        ElMessage.success('已退出登录')
+        router.push('/login')
+      } catch (error) {
+        if (error !== 'cancel') {
+          ElMessage.error('操作失败')
+        }
+      }
+      break
+    default:
       break
   }
 }
 
-const logout = async () => {
-  try {
-    await ElMessageBox.confirm('确定要退出登录吗？', '提示', {
-      confirmButtonText: '确定',
-      cancelButtonText: '取消',
-      type: 'warning'
-    })
-    
-    await authStore.logout()
-    ElMessage.success('退出登录成功')
-    router.push('/login')
-  } catch (error) {
-    if (error !== 'cancel') {
-      console.error('退出登录失败:', error)
-      ElMessage.error('退出登录失败')
-    }
-  }
-}
+onMounted(() => {
+  console.log('CompanyLayout 挂载，当前用户:', currentUser.value)
+})
 </script>
 
+<template>
+  <div class="app-container">
+    <header class="header">
+      <div class="header-left">
+        <el-button type="text" @click="toggleSidebar" class="sidebar-toggle-btn">
+          <el-icon>
+            <template v-if="sidebarCollapsed">
+              <Menu />
+            </template>
+            <template v-else>
+              <Fold />
+            </template>
+          </el-icon>
+        </el-button>
+        <div class="logo">
+          <span class="logo-text">企业端</span>
+          <div class="logo-subtitle">学生实习管理系统</div>
+        </div>
+      </div>
+      <div class="user-actions">
+        <el-dropdown @command="handleCommand" class="user-dropdown">
+          <el-button type="text" class="user-btn">
+            <div class="user-info">
+              <el-icon class="user-avatar">
+                <User />
+              </el-icon>
+              <span class="user-name">欢迎您，{{ displayName }}</span>
+              <el-icon class="dropdown-arrow">
+                <CaretBottom />
+              </el-icon>
+            </div>
+          </el-button>
+          <template #dropdown>
+            <el-dropdown-menu class="user-dropdown-menu">
+              <el-dropdown-item command="edit" class="dropdown-item">
+                <el-icon>
+                  <User />
+                </el-icon>
+                <span>编辑资料</span>
+              </el-dropdown-item>
+
+              <el-dropdown-item command="password" class="dropdown-item">
+                <el-icon>
+                  <Lock />
+                </el-icon>
+                <span>修改密码</span>
+              </el-dropdown-item>
+
+              <el-dropdown-item command="logout" divided class="dropdown-item logout-item">
+                <el-icon>
+                  <SwitchButton />
+                </el-icon>
+                <span>退出登录</span>
+              </el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
+      </div>
+    </header>
+
+    <div class="main-content">
+      <aside :class="['sidebar', { 'sidebar-collapsed': sidebarCollapsed }]" v-show="!sidebarCollapsed">
+        <div class="sidebar-header">
+          <div class="sidebar-title">系统菜单</div>
+        </div>
+        <el-menu :router="true" :default-active="route.path" class="el-menu-vertical-demo" mode="vertical">
+          <el-menu-item index="/company">
+            <el-icon>
+              <HomeFilled />
+            </el-icon>
+            <span>首页</span>
+          </el-menu-item>
+
+          <el-menu-item index="/company/jobs">
+            <el-icon>
+              <OfficeBuilding />
+            </el-icon>
+            <span>招聘管理</span>
+          </el-menu-item>
+
+          <el-menu-item index="/company/internship-confirm">
+            <el-icon>
+              <DocumentChecked />
+            </el-icon>
+            <span>实习确认</span>
+          </el-menu-item>
+
+          <el-menu-item index="/company/application-view">
+            <el-icon>
+              <View />
+            </el-icon>
+            <span>岗位申请查看</span>
+          </el-menu-item>
+
+          <el-menu-item index="/company/interviews">
+            <el-icon>
+              <Document />
+            </el-icon>
+            <span>企业信息</span>
+          </el-menu-item>
+
+          <el-menu-item index="/company/settings">
+            <el-icon>
+              <Setting />
+            </el-icon>
+            <span>账号设置</span>
+          </el-menu-item>
+        </el-menu>
+      </aside>
+
+      <el-main>
+        <router-view></router-view>
+      </el-main>
+    </div>
+  </div>
+</template>
+
 <style scoped>
-.company-layout {
+.app-container {
+  display: flex;
+  flex-direction: column;
   height: 100vh;
 }
 
 .header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  background: #409EFF;
+  background: linear-gradient(135deg, #409EFF 0%, #52c41a 100%);
   color: white;
-  padding: 0 20px;
+  padding: 0 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 64px;
+  box-shadow: 0 2px 12px rgba(64, 158, 255, 0.2);
+  position: relative;
+}
+
+.header::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: radial-gradient(circle at 80% 20%, rgba(255, 255, 255, 0.1) 0%, transparent 50%);
 }
 
 .header-left {
   display: flex;
   align-items: center;
-  gap: 20px;
+  gap: 16px;
 }
 
-.collapse-icon {
+.sidebar-toggle-btn {
+  color: white;
   font-size: 20px;
-  cursor: pointer;
+  padding: 8px;
+}
+
+.sidebar-toggle-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
 }
 
 .logo {
-  font-size: 18px;
-  font-weight: 600;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
-.header-right {
+.logo-text {
+  font-size: 20px;
+  font-weight: bold;
+  letter-spacing: 1px;
+}
+
+.logo-subtitle {
+  font-size: 12px;
+  opacity: 0.9;
+}
+
+.user-actions {
   display: flex;
   align-items: center;
+  gap: 16px;
+}
+
+.user-dropdown {
+  cursor: pointer;
+}
+
+.user-btn {
+  color: white;
+  padding: 8px 16px;
+  border-radius: 20px;
+  transition: all 0.3s ease;
+}
+
+.user-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
 }
 
 .user-info {
   display: flex;
   align-items: center;
   gap: 8px;
-  cursor: pointer;
-  padding: 8px 12px;
-  border-radius: 4px;
-  transition: background 0.3s;
 }
 
-.user-info:hover {
-  background: rgba(255, 255, 255, 0.1);
+.user-avatar {
+  font-size: 20px;
 }
 
-.aside {
-  background: #304156;
-  color: white;
-  transition: width 0.3s;
+.user-name {
+  font-size: 14px;
+  font-weight: 500;
 }
 
-.aside:not(.el-menu--collapse) {
-  width: 200px;
+.dropdown-arrow {
+  font-size: 12px;
+  transition: transform 0.3s ease;
 }
 
-.el-menu {
-  border-right: none;
+.user-dropdown:hover .dropdown-arrow {
+  transform: rotate(180deg);
 }
 
-.main {
-  background: #f0f2f5;
-  padding: 20px;
+.user-dropdown-menu {
+  min-width: 180px;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
 }
 
-.read-only-banner {
-  margin: 0;
-  border-radius: 0;
-}
-
-.banner-title {
+.dropdown-item {
   display: flex;
   align-items: center;
   gap: 8px;
+  padding: 10px 16px;
+  transition: all 0.2s ease;
+}
+
+.dropdown-item:hover {
+  background: #f0f7ff;
+  color: #409EFF;
+}
+
+.logout-item {
+  color: #f56c6c;
+}
+
+.logout-item:hover {
+  background: #fef0f0;
+  color: #f56c6c;
+}
+
+.main-content {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+
+.sidebar {
+  width: 240px;
+  background: white;
+  border-right: 1px solid #e8e8e8;
+  overflow-y: auto;
+  transition: all 0.3s ease;
+}
+
+.sidebar-collapsed {
+  width: 64px;
+}
+
+.sidebar-header {
+  padding: 20px;
+  border-bottom: 1px solid #e8e8e8;
+}
+
+.sidebar-title {
   font-size: 16px;
   font-weight: 600;
+  color: #333;
 }
 
-.banner-content {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 20px;
+.el-menu-vertical-demo {
+  border-right: none;
 }
 
-.return-btn {
+.el-menu-item {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 12px;
+  padding: 12px 20px;
+  margin: 4px 12px;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+}
+
+.el-menu-item:hover {
+  background: #f0f7ff;
+  color: #409EFF;
+}
+
+.el-menu-item.is-active {
+  background: #409EFF;
+  color: white;
+}
+
+.el-main {
+  flex: 1;
+  padding: 24px;
+  overflow-y: auto;
+  background: #f5f7fa;
+  max-width: 100%;
+  width: 100%;
+}
+
+@media screen and (max-width: 768px) {
+  .header {
+    padding: 0 16px;
+  }
+
+  .logo-text {
+    font-size: 18px;
+  }
+
+  .logo-subtitle {
+    display: none;
+  }
+
+  .sidebar {
+    position: absolute;
+    z-index: 99;
+    height: calc(100vh - 64px);
+    box-shadow: 4px 0 12px rgba(0, 0, 0, 0.1);
+  }
+
+  .sidebar-collapsed {
+    transform: translateX(-100%);
+  }
 }
 </style>
