@@ -234,4 +234,14 @@ public class AliyunOSSOperator {
         String cleanEndpoint = endpoint.replace("https://", "").replace("http://", "");
         return "https://" + bucketName + "." + cleanEndpoint + "/" + objectName;
     }
+
+    /**
+     * 根据文件路径生成 OSS URL
+     */
+    public String getFileUrl(String filePath) {
+        String endpoint = aliyunOSSProperties.getEndpoint();
+        String bucketName = aliyunOSSProperties.getBucketName();
+        String cleanEndpoint = endpoint.replace("https://", "").replace("http://", "");
+        return "https://" + bucketName + "." + cleanEndpoint + "/" + filePath;
+    }
 }

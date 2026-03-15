@@ -164,6 +164,20 @@ public class CompanyUserServiceImpl implements CompanyUserService {
             existingCompany.setVideos(companyUser.getVideos());
         }
 
+        // 审核相关字段
+        if (companyUser.getAuditStatus() != null) {
+            existingCompany.setAuditStatus(companyUser.getAuditStatus());
+        }
+        if (companyUser.getAuditRemark() != null) {
+            existingCompany.setAuditRemark(companyUser.getAuditRemark());
+        }
+        if (companyUser.getAuditTime() != null) {
+            existingCompany.setAuditTime(companyUser.getAuditTime());
+        }
+        if (companyUser.getReviewerId() != null) {
+            existingCompany.setReviewerId(companyUser.getReviewerId());
+        }
+
         existingCompany.setUpdateTime(new Date());
 
         int result = companyUserMapper.update(existingCompany);

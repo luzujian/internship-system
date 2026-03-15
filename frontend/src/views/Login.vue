@@ -9,14 +9,19 @@
       <div class="university-title-english">GUANGDONG MEDICAL UNIVERSITY</div>
     </div>
     <div class="form-wrapper">
-      <!-- 左侧图片区域 - 使用CSS背景图实现同步渲染 -->
       <div class="additional-image-container"></div>
       <div class="login-form">
         <el-form>
         <p class="title">欢迎登录</p>
         
         <el-form-item prop="username" class="form-item">
-          <el-input v-model="loginForm.username" placeholder="请输入账号" clearable class="custom-input" :prefix-icon="User"/>
+          <el-input 
+            v-model="loginForm.username" 
+            placeholder="请输入账号" 
+            clearable 
+            class="custom-input" 
+            :prefix-icon="User"
+          />
         </el-form-item>
         <el-form-item prop="password" class="form-item" >
           <el-input
@@ -26,12 +31,12 @@
             class="custom-input"
             show-password
             :prefix-icon="Lock"
-            @keyup.enter="autoLogin"
+            @keyup.enter="handleLogin"
           ></el-input>
         </el-form-item>
         <div class="button-wrapper">
           <el-form-item class="button-container">
-            <el-button class="button" type="primary" @click="autoLogin" :loading="loading">登 录</el-button>
+            <el-button class="button" type="primary" @click="handleLogin" :loading="loading">登 录</el-button>
           </el-form-item>
           <div class="register-link">
             <span class="register-link-text" @click="goToCompanyRegister">企业账号申请 ></span>
@@ -60,9 +65,9 @@ const loading = ref(false)
 const authStore = useAuthStore()
 const router = useRouter()
 
-const autoLogin = async () => {
+const handleLogin = async () => {
   if (!loginForm.value.username || !loginForm.value.password) {
-    ElMessage.warning('请输入用户名和密码');
+    ElMessage.warning('请输入账号和密码');
     return;
   }
 
@@ -70,13 +75,13 @@ const autoLogin = async () => {
 
   loading.value = true;
   try {
-    const success = await authStore.autoLogin(
+    const success = await authStore.login(
         loginForm.value.username,
         loginForm.value.password
     );
 
     if (success) {
-      console.log('[Login] 自动登录成功，检查localStorage内容:')
+      console.log('[Login] 登录成功，检查localStorage内容:')
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i)
         if (key.includes('token') || key.includes('role') || key.includes('accessToken')) {

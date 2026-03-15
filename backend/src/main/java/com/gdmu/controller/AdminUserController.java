@@ -103,7 +103,7 @@ public class AdminUserController {
     }
 
     // 更新管理员用户
-    @Log(module = "USER_MANAGEMENT")
+    @Log(operationType = "UPDATE", module = "USER_MANAGEMENT", description = "更新管理员用户信息")
     @PutMapping
     @PreAuthorize("hasAuthority('user:admin:edit')")
     public Result updateAdminUser(@RequestBody AdminUser adminUser) {
@@ -129,7 +129,7 @@ public class AdminUserController {
     }
 
     // 删除管理员用户
-    @Log(module = "USER_MANAGEMENT")
+    @Log(operationType = "DELETE", module = "USER_MANAGEMENT", description = "删除管理员用户")
     @DeleteMapping("/{id}")
     @PreAuthorize("hasAuthority('user:admin:delete')")
     public Result deleteAdminUser(@PathVariable Long id) {
@@ -167,6 +167,7 @@ public class AdminUserController {
      * @param passwordDTO 包含新密码的DTO对象
      * @return 操作结果
      */
+    @Log(operationType = "UPDATE", module = "USER_MANAGEMENT", description = "重置管理员用户密码")
     @PostMapping("/{id}/reset-password")
     @PreAuthorize("hasAuthority('user:admin:reset')")
     public Result resetAdminUserPassword(@PathVariable Long id, @RequestBody Map<String, String> passwordDTO) {
@@ -208,6 +209,7 @@ public class AdminUserController {
      * @param statusDTO 包含用户状态的DTO对象
      * @return 操作结果
      */
+    @Log(operationType = "UPDATE", module = "USER_MANAGEMENT", description = "更新管理员用户状态")
     @PutMapping("/{id}/status")
     @PreAuthorize("hasAuthority('user:admin:edit')")
     public Result updateAdminUserStatus(@PathVariable Long id, @RequestBody Map<String, String> statusDTO) {
@@ -243,6 +245,7 @@ public class AdminUserController {
      * @param statusDTOList 包含用户ID和状态的DTO列表
      * @return 操作结果
      */
+    @Log(operationType = "UPDATE", module = "USER_MANAGEMENT", description = "批量更新管理员用户状态")
     @PutMapping("/batch/status")
     @PreAuthorize("hasAuthority('user:admin:edit')")
     public Result batchUpdateAdminUserStatus(@RequestBody List<Map<String, Object>> statusDTOList) {

@@ -27,32 +27,51 @@ public class CompanyTagServiceImpl implements CompanyTagService {
     
     @Override
     public String determineCompanyTag(Date registerTime, Integer acceptBackup) {
-        if (acceptBackup != null && acceptBackup == 1) {
-            return "接受兜底";
-        }
-        
-        if (registerTime == null) {
-            return null;
-        }
-        
-        try {
-            LocalDate registerDate = registerTime.toInstant().atZone(ZoneId.systemDefault()).toLocalDate();
-            
-            LocalDate startDate = getDualSelectionStartDate();
-            LocalDate endDate = getDualSelectionEndDate();
-            
-            if (startDate != null && endDate != null) {
-                if (!registerDate.isBefore(startDate) && !registerDate.isAfter(endDate)) {
-                    return "双向选择阶段";
-                } else if (registerDate.isAfter(endDate)) {
-                    return "学生自主联系";
-                }
-            }
-        } catch (Exception e) {
-            log.error("判断企业标签失败: {}", e.getMessage(), e);
-        }
-        
         return null;
+    }
+    
+    @Override
+    public String determineCompanyTags(Date registerTime, Integer acceptBackup, Integer isInternshipBase, String cooperationMode) {
+        java.util.List<String> tags = new java.util.ArrayList<>();
+        
+        if (acceptBackup != null && acceptBackup == 1) {
+            tags.add("接受兜底");
+        }
+        
+        if (isInternshipBase != null) {
+            if (isInternshipBase == 1) {
+                tags.add("国家级");
+            } else if (isInternshipBase == 2) {
+                tags.add("省级");
+            }
+        }
+        
+        if (cooperationMode != null && !cooperationMode.trim().isEmpty()) {
+            if ("mutual_choice".equals(cooperationMode)) {
+                tags.add("双向选择阶段");
+            } else if ("student_contact".equals(cooperationMode)) {
+                tags.add("学生自主联系");
+            }
+        } else if (registerTime != null) {
+            try {
+                LocalDate registerDate = registerTime.toInstant().atZone(ZoneId.systemDefault()).toLocalDate();
+                
+                LocalDate startDate = getDualSelectionStartDate();
+                LocalDate endDate = getDualSelectionEndDate();
+                
+                if (startDate != null && endDate != null) {
+                    if (!registerDate.isBefore(startDate) && !registerDate.isAfter(endDate)) {
+                        tags.add("双向选择阶段");
+                    } else if (registerDate.isAfter(endDate)) {
+                        tags.add("学生自主联系");
+                    }
+                }
+            } catch (Exception e) {
+                log.error("判断企业标签失败: {}", e.getMessage(), e);
+            }
+        }
+        
+        return tags.isEmpty() ? null : String.join(",", tags);
     }
     
     private LocalDate getDualSelectionStartDate() {
@@ -84,7 +103,7 @@ public class CompanyTagServiceImpl implements CompanyTagService {
         try {
             List<CompanyUser> companies = companyUserMapper.findAll();
             for (CompanyUser company : companies) {
-                String tag = determineCompanyTag(company.getRegisterTime(), company.getAcceptBackup());
+                String tag = determineCompanyTags(company.getRegisterTime(), company.getAcceptBackup(), company.getIsInternshipBase(), company.getCooperationMode());
                 if (tag != null && !tag.equals(company.getCompanyTag())) {
                     company.setCompanyTag(tag);
                     companyUserMapper.update(company);
@@ -101,7 +120,7 @@ public class CompanyTagServiceImpl implements CompanyTagService {
         try {
             CompanyUser company = companyUserMapper.findById(companyId);
             if (company != null) {
-                String tag = determineCompanyTag(company.getRegisterTime(), company.getAcceptBackup());
+                String tag = determineCompanyTags(company.getRegisterTime(), company.getAcceptBackup(), company.getIsInternshipBase(), company.getCooperationMode());
                 if (tag != null && !tag.equals(company.getCompanyTag())) {
                     company.setCompanyTag(tag);
                     companyUserMapper.update(company);

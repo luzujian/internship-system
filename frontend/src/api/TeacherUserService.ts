@@ -73,15 +73,15 @@ const TeacherUserService = {
     const cachedData = cacheService.get(cacheKey)
 
     if (cachedData) {
-      // 返回缓存数据的 Promise
-      return Promise.resolve({ data: cachedData })
+      // 返回缓存数据的 Promise，确保格式一致
+      return Promise.resolve({ code: 200, data: cachedData, msg: '查询成功' })
     }
 
     // 缓存未命中，请求数据
     const response = await request.get<TeacherUser>(`/admin/teachers/${id}`)
-    // 缓存数据
-    if (response.data) {
-      cacheService.set(cacheKey, response.data, CACHE_CONFIG.EXPIRATION_TIME.MEDIUM)
+    // 只有成功响应才缓存数据
+    if (response && (response as any).code === 200 && (response as any).data) {
+      cacheService.set(cacheKey, (response as any).data, CACHE_CONFIG.EXPIRATION_TIME.MEDIUM)
     }
     return response
   },
@@ -304,25 +304,30 @@ export const addApi = async (teacherData: Omit<TeacherUser, 'id' | 'createTime' 
 
 export const queryInfoApi = async (id: number) => {
   try {
-    const response = await TeacherUserService.getTeacherById(id)
-    const result = response.data || response
-
-    if ((result as { code?: number }).code === 200) {
+    // 直接调用 API，不使用缓存，确保获取最新数据
+    const response = await request.get(`/admin/teachers/${id}`)
+    logger.log('queryInfoApi - 原始响应:', response)
+    
+    // response 可能已经是 { code, data, message } 格式（后端使用 message 字段）
+    const result = response as { code?: number; data?: unknown; msg?: string; message?: string }
+    
+    // 检查响应是否成功
+    if (result.code === 200 && result.data) {
       return {
         code: 200,
-        data: (result as { data?: unknown }).data || result,
-        msg: (result as { msg?: string; message?: string }).msg || (result as { msg?: string; message?: string }).message || '查询成功'
+        data: result.data,
+        msg: result.msg || result.message || '查询成功'
       }
     } else {
       return {
-        code: (result as { code?: number }).code || 500,
-        data: (result as { data?: unknown }).data || null,
-        msg: (result as { msg?: string; message?: string }).msg || (result as { msg?: string; message?: string }).message || '查询失败'
+        code: result.code || 500,
+        data: null,
+        msg: result.msg || result.message || '查询失败'
       }
     }
   } catch (error) {
     logger.error('查询教师信息失败:', error)
-    return { code: 500, msg: '查询失败' }
+    return { code: 500, data: null, msg: '查询失败' }
   }
 }
 

@@ -274,11 +274,10 @@ const handleManualBackup = async () => {
 
 const handleDownload = async (row) => {
   try {
-    const response = await request.get(`/admin/backup/download/${row.id}`, {
+    const blob = await request.get(`/admin/backup/download/${row.id}`, {
       responseType: 'blob'
     })
     
-    const blob = new Blob([response.data])
     const url = window.URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
@@ -288,6 +287,7 @@ const handleDownload = async (row) => {
     document.body.removeChild(link)
     window.URL.revokeObjectURL(url)
   } catch (error) {
+    console.error('下载失败:', error)
     ElMessage.error('下载失败')
   }
 }

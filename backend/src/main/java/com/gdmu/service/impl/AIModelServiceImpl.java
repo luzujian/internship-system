@@ -75,6 +75,8 @@ public class AIModelServiceImpl implements AIModelService {
         
         if (aiModel.getMaxTokens() == null) {
             aiModel.setMaxTokens(4096);
+        } else if (aiModel.getMaxTokens() < 1 || aiModel.getMaxTokens() > 8192) {
+            throw new BusinessException("最大Token数必须在 [1, 8192] 范围内");
         }
         
         if (aiModel.getTemperature() == null) {
@@ -169,6 +171,10 @@ public class AIModelServiceImpl implements AIModelService {
             if (!isAllowed) {
                 throw new BusinessException("只允许选择国内的AI模型提供商");
             }
+        }
+        
+        if (aiModel.getMaxTokens() != null && (aiModel.getMaxTokens() < 1 || aiModel.getMaxTokens() > 8192)) {
+            throw new BusinessException("最大Token数必须在 [1, 8192] 范围内");
         }
         
         int result = aiModelMapper.update(aiModel);

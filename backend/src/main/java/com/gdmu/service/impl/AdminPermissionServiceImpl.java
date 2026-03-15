@@ -275,11 +275,11 @@ public class AdminPermissionServiceImpl implements AdminPermissionService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public int clearRolePermissions() {
-        log.info("开始清除角色权限数据");
+        log.info("开始清除角色权限数据（保留管理员权限）");
 
         try {
-            int count = rolePermissionMapper.deleteAll();
-            log.info("清除角色权限数据成功，共清除{}条记录", count);
+            int count = rolePermissionMapper.deleteAllExceptAdmin();
+            log.info("清除角色权限数据成功，共清除{}条记录（已保留管理员权限）", count);
             return count;
         } catch (Exception e) {
             log.error("清除角色权限数据失败: {}", e.getMessage(), e);

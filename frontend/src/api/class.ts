@@ -231,74 +231,107 @@ export const queryPageApi = async (
 
 export const addApi = async (classData: Omit<ClassItem, 'id' | 'createTime' | 'updateTime'>) => {
   try {
-    const response = await ClassService.addClass(classData)
-    const result = response.data || response
+    logger.log('addApi - 接收到的数据:', classData)
+    
+    // 确保数据格式正确
+    const addData = {
+      name: classData.name,
+      grade: classData.grade ? Number(classData.grade) : undefined,
+      majorId: classData.majorId ? Number(classData.majorId) : undefined,
+      teacherId: classData.teacherId || undefined
+    }
+    
+    logger.log('addApi - 转换后的数据:', addData)
+    
+    const response = await request.post('/classes', addData)
+    logger.log('addApi - 响应:', response)
+    
+    const result = response as { code?: number; data?: unknown; msg?: string; message?: string }
 
-    if ((result as { code: number }).code === 200) {
+    if (result.code === 200) {
       return {
         code: 200,
-        data: (result as { data?: unknown }).data || result,
-        msg: (result as { msg?: string }).msg || '操作成功'
+        data: result.data || null,
+        msg: result.msg || result.message || '添加成功'
       }
     } else {
       return {
-        code: (result as { code?: number }).code || 500,
-        data: (result as { data?: unknown }).data || null,
-        msg: (result as { msg?: string; message?: string }).msg || (result as { msg?: string; message?: string }).message || '操作失败'
+        code: result.code || 500,
+        data: null,
+        msg: result.msg || result.message || '添加失败'
       }
     }
   } catch (error) {
     logger.error('添加班级失败:', error)
-    const errorMsg = (error as { response?: { data?: { message?: string; msg?: string }; message?: string }; message?: string }).response?.data?.message || (error as { response?: { data?: { message?: string; msg?: string }; message?: string }; message?: string }).response?.data?.msg || (error as { message?: string }).message || '添加失败'
-    return { code: 500, msg: errorMsg }
+    return { code: 500, data: null, msg: '添加失败' }
   }
 }
 
 export const queryInfoApi = async (id: number | string) => {
   try {
-    const response = await ClassService.getClassById(id)
-    const result = response.data || response
-
-    if ((result as { code?: number }).code === 200) {
+    // 直接调用 API，不使用缓存，确保获取最新数据
+    const response = await request.get(`/classes/${id}`)
+    logger.log('queryInfoApi - 班级详情响应:', response)
+    
+    // response 可能已经是 { code, data, message } 格式（后端使用 message 字段）
+    const result = response as { code?: number; data?: unknown; msg?: string; message?: string }
+    
+    // 检查响应是否成功
+    if (result.code === 200 && result.data) {
       return {
         code: 200,
-        data: (result as { data?: unknown }).data || result,
-        msg: (result as { msg?: string }).msg || '查询成功'
+        data: result.data,
+        msg: result.msg || result.message || '查询成功'
       }
     } else {
       return {
-        code: (result as { code?: number }).code || 500,
-        data: (result as { data?: unknown }).data || null,
-        msg: (result as { msg?: string; message?: string }).msg || (result as { msg?: string; message?: string }).message || '查询失败'
+        code: result.code || 500,
+        data: null,
+        msg: result.msg || result.message || '查询失败'
       }
     }
   } catch (error) {
     logger.error('查询班级信息失败:', error)
-    return { code: 500, msg: '查询失败' }
+    return { code: 500, data: null, msg: '查询失败' }
   }
 }
 
 export const updateApi = async (classData: Partial<ClassItem>) => {
   try {
-    const response = await ClassService.updateClass(classData.id!, classData)
-    const result = response.data || response
+    logger.log('updateApi - 接收到的数据:', classData)
+    
+    // 确保数据格式正确
+    const updateData = {
+      id: classData.id ? Number(classData.id) : undefined,
+      name: classData.name,
+      grade: classData.grade ? Number(classData.grade) : undefined,
+      majorId: classData.majorId ? Number(classData.majorId) : undefined,
+      teacherId: classData.teacherId || undefined
+    }
+    
+    logger.log('updateApi - 转换后的数据:', updateData)
+    
+    const response = await request.put(`/classes/${updateData.id}`, updateData)
+    logger.log('updateApi - 响应:', response)
+    
+    const result = response as { code?: number; data?: unknown; msg?: string; message?: string }
 
-    if ((result as { code: number }).code === 200) {
+    if (result.code === 200) {
       return {
         code: 200,
-        data: (result as { data?: unknown }).data || result,
-        msg: (result as { msg?: string }).msg || '更新成功'
+        data: result.data || null,
+        msg: result.msg || result.message || '更新成功'
       }
     } else {
       return {
-        code: (result as { code?: number }).code || 500,
-        data: (result as { data?: unknown }).data || null,
-        msg: (result as { msg?: string; message?: string }).msg || (result as { msg?: string; message?: string }).message || '更新失败'
+        code: result.code || 500,
+        data: null,
+        msg: result.msg || result.message || '更新失败'
       }
     }
   } catch (error) {
     logger.error('更新班级失败:', error)
-    return { code: 500, msg: '更新失败' }
+    return { code: 500, data: null, msg: '更新失败' }
   }
 }
 

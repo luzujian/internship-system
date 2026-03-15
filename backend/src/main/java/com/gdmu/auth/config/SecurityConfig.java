@@ -49,7 +49,7 @@ public class SecurityConfig {
                         // 允许所有 OPTIONS 请求通过（用于 CORS 预检）
                         .requestMatchers(HttpMethod.OPTIONS).permitAll()
                         // 允许登录、注册和刷新令牌接口无需认证
-                        .requestMatchers("/api/auth/login", "/api/auth/auto-login", "/api/auth/register", "/api/auth/refresh-token").permitAll()
+                        .requestMatchers("/api/auth/login", "/api/auth/register", "/api/auth/refresh-token").permitAll()
                         // 允许企业注册相关接口无需认证
                         .requestMatchers("/api/company/register", "/api/company/check-username", "/api/company/check-status", "/api/company/send-verify-code", "/api/company/recall", "/api/company/update/**").permitAll()
                         // 允许文件上传接口无需认证

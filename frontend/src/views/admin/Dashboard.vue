@@ -168,7 +168,7 @@
             <div class="feedback-header">
               <div class="feedback-title">
                 <el-icon><ChatLineRound /></el-icon>
-                <span>最近问题反馈</span>
+                <span>未处理问题反馈</span>
                 <el-badge :value="processingFeedbackCount" :hidden="processingFeedbackCount === 0" class="feedback-badge" type="danger" />
               </div>
               <span class="view-all-link" @click="navigateTo('/admin/problem-feedback')">

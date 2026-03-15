@@ -118,20 +118,34 @@ const basicForm = ref({
   contactEmail: '',
   website: '',
   cooperationMode: 'mutual_choice',
-  isInternshipBase: true
+  isInternshipBase: 0,
+  acceptBackup: 0,
+  maxBackupStudents: 0
 })
 
 const cooperationModeOptions = [
-  { label: '接受兜底', value: 'accept_fallback', type: 'danger' },
   { label: '学生自主联系', value: 'student_contact', type: 'warning' },
   { label: '双向选择', value: 'mutual_choice', type: 'success' }
 ]
 
-const internshipBaseTag = {
-  label: '实习基地',
-  value: 'internship_base',
-  type: 'primary',
-  icon: 'Star'
+const getInternshipBaseText = (value) => {
+  switch (value) {
+    case 1: return '国家级实习基地'
+    case 2: return '省级实习基地'
+    default: return null
+  }
+}
+
+const getInternshipBaseType = (value) => {
+  switch (value) {
+    case 1: return 'danger'
+    case 2: return 'warning'
+    default: return 'info'
+  }
+}
+
+const getAcceptBackupText = (value) => {
+  return value === 1 ? '接受兜底' : null
 }
 
 const getTagText = (mode) => {
@@ -442,7 +456,9 @@ const handleSaveBasic = () => {
     contactEmail: basicForm.value.contactEmail,
     website: basicForm.value.website,
     cooperationMode: basicForm.value.cooperationMode,
-    isInternshipBase: basicForm.value.isInternshipBase ? 1 : 0
+    isInternshipBase: basicForm.value.isInternshipBase,
+    acceptBackup: basicForm.value.acceptBackup,
+    maxBackupStudents: basicForm.value.maxBackupStudents
   }
 
   console.log('=== 保存基础信息 ===')
@@ -511,7 +527,9 @@ const handleSaveAll = () => {
     contactEmail: basicForm.value.contactEmail,
     website: basicForm.value.website,
     cooperationMode: basicForm.value.cooperationMode,
-    isInternshipBase: basicForm.value.isInternshipBase ? 1 : 0,
+    isInternshipBase: basicForm.value.isInternshipBase,
+    acceptBackup: basicForm.value.acceptBackup,
+    maxBackupStudents: basicForm.value.maxBackupStudents,
     logo: promotionForm.value.logo,
     photos: JSON.stringify(promotionForm.value.photos),
     videos: JSON.stringify(promotionForm.value.videos),
@@ -635,7 +653,9 @@ const loadCompanyInfo = () => {
       basicForm.value.contactEmail = data.contactEmail || ''
       basicForm.value.website = data.website || ''
       basicForm.value.cooperationMode = data.cooperationMode || 'mutual_choice'
-      basicForm.value.isInternshipBase = data.isInternshipBase === 1
+      basicForm.value.isInternshipBase = data.isInternshipBase || 0
+      basicForm.value.acceptBackup = data.acceptBackup || 0
+      basicForm.value.maxBackupStudents = data.maxBackupStudents || 0
 
       const logo = data.logo || ''
       const photos = data.photos ? JSON.parse(data.photos) : []
@@ -729,20 +749,29 @@ watch(companyId, (newVal) => {
               <el-input v-model="basicForm.companyName" placeholder="请输入企业名称" />
             </el-form-item>
 
-            <el-form-item label="合作模式">
+            <el-form-item label="企业标签">
               <div class="tags-container">
                 <el-tag :type="getTagType(basicForm.cooperationMode)" size="large" effect="dark">
                   {{ getTagText(basicForm.cooperationMode) }}
                 </el-tag>
                 <el-tag 
-                  v-if="basicForm.isInternshipBase" 
-                  :type="internshipBaseTag.type" 
+                  v-if="basicForm.isInternshipBase > 0" 
+                  :type="getInternshipBaseType(basicForm.isInternshipBase)" 
                   size="large" 
                   effect="dark"
                   class="internship-base-tag"
                 >
                   <el-icon class="tag-icon"><Star /></el-icon>
-                  {{ internshipBaseTag.label }}
+                  {{ getInternshipBaseText(basicForm.isInternshipBase) }}
+                </el-tag>
+                <el-tag 
+                  v-if="basicForm.acceptBackup === 1" 
+                  type="danger" 
+                  size="large" 
+                  effect="dark"
+                  class="accept-backup-tag"
+                >
+                  {{ getAcceptBackupText(basicForm.acceptBackup) }}
                 </el-tag>
               </div>
               <span class="tag-hint">此标签由系统根据注册时间和选择自动设置</span>
@@ -940,11 +969,18 @@ watch(companyId, (newVal) => {
                     {{ getTagText(basicForm.cooperationMode) }}
                   </el-tag>
                   <el-tag 
-                    v-if="basicForm.isInternshipBase" 
-                    :type="internshipBaseTag.type" 
+                    v-if="basicForm.isInternshipBase > 0" 
+                    :type="getInternshipBaseType(basicForm.isInternshipBase)" 
                     size="small"
                   >
-                    {{ internshipBaseTag.label }}
+                    {{ getInternshipBaseText(basicForm.isInternshipBase) }}
+                  </el-tag>
+                  <el-tag 
+                    v-if="basicForm.acceptBackup === 1" 
+                    type="danger" 
+                    size="small"
+                  >
+                    {{ getAcceptBackupText(basicForm.acceptBackup) }}
                   </el-tag>
                 </div>
               </div>

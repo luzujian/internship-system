@@ -493,24 +493,35 @@ const resetPassword = async (): Promise<void> => {
 }
 
 
-const formatStatus = (row: unknown, _column: unknown, cellValue: number): string => {
-  if (row && row.recallStatus === 1) {
-    return '待审核'
-  }
-  switch (cellValue) {
+const formatAuditStatus = (auditStatus: number): string => {
+  switch (auditStatus) {
     case 0: return '待审核'
     case 1: return '审核通过'
     case 2: return '审核拒绝'
-    case 3: return '已撤销'
     default: return '未知状态'
   }
 }
 
-// 格式化状态标签类型
-const getStatusTagType = (status: number, recallStatus: number): string => {
-  if (recallStatus === 1) {
-    return 'warning'
+const formatAccountStatus = (status: number): string => {
+  switch (status) {
+    case 0: return '待审核'
+    case 1: return '正常'
+    case 2: return '已禁用'
+    case 3: return '已拒绝'
+    default: return '未知状态'
   }
+}
+
+const getAuditStatusTagType = (auditStatus: number): string => {
+  switch (auditStatus) {
+    case 0: return 'warning'
+    case 1: return 'success'
+    case 2: return 'danger'
+    default: return 'info'
+  }
+}
+
+const getAccountStatusTagType = (status: number): string => {
   switch (status) {
     case 0: return 'warning'
     case 1: return 'success'
@@ -554,7 +565,7 @@ const downloadMaterials = (company: CompanyUser): void => {
     '企业地址': company.address,
     '企业介绍': company.introduction || '',
     '申请时间': formatDate(null, null, company.applyTime),
-    '审核状态': formatStatus(null, null, company.auditStatus),
+    '审核状态': formatAuditStatus(company.auditStatus),
     '审核时间': formatDate(null, null, company.auditTime)
   }
   
@@ -644,6 +655,12 @@ const downloadMaterials = (company: CompanyUser): void => {
 
 // 页面加载时执行
 onMounted(async () => {
+  try {
+    await request.post('/admin/companies/tags/update-all')
+    logger.log('企业标签已自动更新')
+  } catch (error) {
+    logger.warn('自动更新企业标签失败:', error)
+  }
   await queryPage()
 })
 </script>
@@ -751,10 +768,17 @@ onMounted(async () => {
         <el-table-column type="selection" width="50" align="center" />
         <el-table-column type="index" label="序号" width="55" align="center" :index="(index) => (pagination.currentPage - 1) * pagination.pageSize + index + 1" />
         <el-table-column prop="companyName" label="企业名称" min-width="180" align="center" />
-        <el-table-column prop="status" label="状态" width="120" align="center">
+        <el-table-column prop="auditStatus" label="审核状态" width="120" align="center">
           <template #default="scope">
-            <el-tag :type="getStatusTagType(scope.row.status, scope.row.recallStatus)" size="small" class="status-tag">
-              {{ formatStatus(scope.row, null, scope.row.status) }}
+            <el-tag :type="getAuditStatusTagType(scope.row.auditStatus)" size="small" class="status-tag">
+              {{ formatAuditStatus(scope.row.auditStatus) }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="status" label="账号状态" width="120" align="center">
+          <template #default="scope">
+            <el-tag :type="getAccountStatusTagType(scope.row.status)" size="small" class="status-tag">
+              {{ formatAccountStatus(scope.row.status) }}
             </el-tag>
           </template>
         </el-table-column>
@@ -819,9 +843,6 @@ onMounted(async () => {
                     </el-dropdown-item>
                     <el-dropdown-item v-if="authStore.hasPermission('user:company:audit')" @click="downloadMaterials(scope.row)">
                       <el-icon><Download /></el-icon> 下载审核材料
-                    </el-dropdown-item>
-                    <el-dropdown-item v-if="authStore.hasPermission('company:recall:view') && scope.row.recallStatus === 1" @click="goToRecallAudit(scope.row)">
-                      <el-icon><ArrowRight /></el-icon> 审核撤回申请
                     </el-dropdown-item>
                   </el-dropdown-menu>
                 </template>
@@ -946,8 +967,8 @@ onMounted(async () => {
           </el-descriptions-item>
           <el-descriptions-item label="申请时间" :span="2">{{ formatDate(null, null, currentCompany.applyTime) }}</el-descriptions-item>
           <el-descriptions-item label="审核状态">
-            <el-tag :type="getStatusTagType(currentCompany.status, currentCompany.recallStatus)" size="small">
-              {{ formatStatus(currentCompany, null, currentCompany.status) }}
+            <el-tag :type="getAccountStatusTagType(currentCompany.status)" size="small">
+              {{ formatAccountStatus(currentCompany.status) }}
             </el-tag>
           </el-descriptions-item>
           <el-descriptions-item label="审核时间">{{ formatDate(null, null, currentCompany.auditTime) }}</el-descriptions-item>

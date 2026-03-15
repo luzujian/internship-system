@@ -85,12 +85,12 @@
           <el-input v-model="registerForm.contactPhone" placeholder="请输入企业联系电话（用于对外业务联系）" />
         </el-form-item>
 
-        <el-form-item label="个人邮箱" prop="email">
-          <el-input v-model="registerForm.email" placeholder="请输入个人邮箱（用于账号通知）" />
-        </el-form-item>
-
         <el-form-item label="联系邮箱" prop="contactEmail">
           <el-input v-model="registerForm.contactEmail" placeholder="请输入企业联系邮箱（用于对外业务联系）" />
+        </el-form-item>
+
+        <el-form-item label="个人邮箱" prop="email">
+          <el-input v-model="registerForm.email" placeholder="请输入个人邮箱（用于账号通知）" />
         </el-form-item>
 
         <el-form-item label="个人手机号" prop="phone">
@@ -133,6 +133,14 @@
 
         <el-form-item label="企业网站" prop="website">
           <el-input v-model="registerForm.website" placeholder="请输入企业网站" />
+        </el-form-item>
+
+        <el-form-item label="合作模式" prop="cooperationMode">
+          <el-select v-model="registerForm.cooperationMode" placeholder="请选择合作模式（选填）" style="width: 100%" clearable>
+            <el-option label="双向选择阶段" value="mutual_choice" />
+            <el-option label="学生自主联系" value="student_contact" />
+          </el-select>
+          <div class="form-tip">如不选择，系统将自动根据双向选择时间段进行填写</div>
         </el-form-item>
 
         <el-form-item label="企业简介" prop="introduction">
@@ -256,8 +264,10 @@
             v-model.number="registerForm.maxBackupStudents"
             type="number"
             :min="0"
-            placeholder="请输入能接受兜底的最多学生数量"
+            :max="1000"
+            placeholder="请输入能接受兜底的最多学生数量（最多1000名）"
           />
+          <div class="form-tip">最多允许兜底 1000 名学生</div>
         </el-form-item>
 
         <el-form-item>
@@ -343,6 +353,7 @@ const registerForm = reactive({
   contactEmail: '',
   email: '',
   website: '',
+  cooperationMode: '',
   phone: '',
   verifyCode: '',
   introduction: '',
@@ -397,6 +408,7 @@ const loadExistingData = async () => {
       registerForm.district = data.district || ''
       registerForm.detailAddress = data.detailAddress || ''
       registerForm.website = data.website || ''
+      registerForm.cooperationMode = data.cooperationMode || ''
       registerForm.introduction = data.introduction || ''
       registerForm.businessLicense = data.businessLicense || ''
 
@@ -452,6 +464,7 @@ const rules = {
     { type: 'email', message: '请输入正确的邮箱格式', trigger: 'blur' }
   ],
   email: [
+    { required: true, message: '请输入个人邮箱', trigger: 'blur' },
     { type: 'email', message: '请输入正确的邮箱格式', trigger: 'blur' }
   ],
   phone: [
@@ -470,6 +483,26 @@ const rules = {
   ],
   legalIdCardBack: [
     { required: true, message: '请上传身份证反面', trigger: 'change' }
+  ],
+  maxBackupStudents: [
+    {
+      validator: (rule, value, callback) => {
+        if (registerForm.acceptBackup === 1) {
+          if (!value && value !== 0) {
+            callback(new Error('请输入兜底学生数量'))
+          } else if (value < 1) {
+            callback(new Error('兜底学生数量最少为 1'))
+          } else if (value > 1000) {
+            callback(new Error('兜底学生数量最多为 1000'))
+          } else {
+            callback()
+          }
+        } else {
+          callback()
+        }
+      },
+      trigger: 'blur'
+    }
   ]
 }
 
@@ -671,7 +704,7 @@ const submitRegister = async () => {
     } else {
       response = await request.post('/company/register', registerForm)
       if (response.code === 200) {
-        ElMessage.success('注册申请提交成功，请等待管理员审核')
+        ElMessage.success('注册申请提交成功，请等待审核')
         setTimeout(() => {
           router.push({
             path: '/company-check',
@@ -900,5 +933,12 @@ const goBack = () => {
   right: 5px;
   padding: 4px 8px;
   font-size: 12px;
+}
+
+.form-tip {
+  margin-top: 5px;
+  font-size: 12px;
+  color: #909399;
+  line-height: 1.5;
 }
 </style>

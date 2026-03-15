@@ -1,5 +1,6 @@
 package com.gdmu.controller;
 
+import com.gdmu.anno.Log;
 import com.gdmu.entity.Announcement;
 import com.gdmu.entity.CompanyUser;
 import com.gdmu.entity.InternshipApplicationEntity;
@@ -63,6 +64,7 @@ public class CompanyController {
             companyInfo.put("contactPerson", company.getContactPerson());
             companyInfo.put("contactPhone", company.getContactPhone());
             companyInfo.put("contactEmail", company.getContactEmail());
+            companyInfo.put("phone", company.getPhone());
             companyInfo.put("address", company.getAddress());
             companyInfo.put("introduction", company.getIntroduction());
             companyInfo.put("status", company.getStatus());
@@ -76,6 +78,9 @@ public class CompanyController {
             companyInfo.put("description", company.getDescription());
             companyInfo.put("cooperationMode", company.getCooperationMode());
             companyInfo.put("isInternshipBase", company.getIsInternshipBase());
+            companyInfo.put("acceptBackup", company.getAcceptBackup());
+            companyInfo.put("maxBackupStudents", company.getMaxBackupStudents());
+            companyInfo.put("companyTag", company.getCompanyTag());
             companyInfo.put("logo", company.getLogo());
             companyInfo.put("photos", company.getPhotos());
             companyInfo.put("videos", company.getVideos());
@@ -119,6 +124,7 @@ public class CompanyController {
         }
     }
 
+    @Log(operationType = "UPDATE", module = "COMPANY_MANAGEMENT", description = "企业更新个人信息")
     @PutMapping("/profile")
     public Result updateProfile(@RequestBody Map<String, Object> profileData) {
         log.info("更新企业账号个人信息：{}", profileData);
@@ -151,6 +157,7 @@ public class CompanyController {
         }
     }
 
+    @Log(operationType = "UPDATE", module = "COMPANY_MANAGEMENT", description = "企业更新企业信息")
     @PutMapping("/info")
     public Result updateCompanyInfo(@RequestBody Map<String, Object> companyInfo) {
         log.info("更新企业信息：{}", companyInfo);
@@ -216,6 +223,15 @@ public class CompanyController {
             }
             if (companyInfo.containsKey("isInternshipBase")) {
                 company.setIsInternshipBase((Integer) companyInfo.get("isInternshipBase"));
+            }
+            if (companyInfo.containsKey("acceptBackup")) {
+                company.setAcceptBackup((Integer) companyInfo.get("acceptBackup"));
+            }
+            if (companyInfo.containsKey("maxBackupStudents")) {
+                Object value = companyInfo.get("maxBackupStudents");
+                if (value != null) {
+                    company.setMaxBackupStudents(((Number) value).longValue());
+                }
             }
             if (companyInfo.containsKey("logo")) {
                 String logo = (String) companyInfo.get("logo");
@@ -328,6 +344,7 @@ public class CompanyController {
         }
     }
 
+    @Log(operationType = "ADD", module = "POSITION_MANAGEMENT", description = "企业创建岗位")
     @PostMapping("/positions")
     public Result createPosition(@RequestBody Position position) {
         log.info("创建岗位：{}", position.getPositionName());
@@ -348,6 +365,7 @@ public class CompanyController {
         }
     }
 
+    @Log(operationType = "UPDATE", module = "POSITION_MANAGEMENT", description = "企业更新岗位")
     @PutMapping("/positions/{id}")
     public Result updatePosition(@PathVariable Long id, @RequestBody Position position) {
         log.info("更新岗位：id={}", id);
@@ -364,6 +382,7 @@ public class CompanyController {
         }
     }
 
+    @Log(operationType = "DELETE", module = "POSITION_MANAGEMENT", description = "企业删除岗位")
     @DeleteMapping("/positions/{id}")
     public Result deletePosition(@PathVariable Long id) {
         log.info("删除岗位：id={}", id);
@@ -389,6 +408,7 @@ public class CompanyController {
         return companyId;
     }
 
+    @Log(operationType = "UPDATE", module = "COMPANY_MANAGEMENT", description = "企业修改密码")
     @PutMapping("/password")
     public Result changePassword(@RequestBody Map<String, String> passwordData) {
         log.info("修改企业账号密码");
@@ -450,7 +470,7 @@ public class CompanyController {
 
             java.util.List<StudentInternshipStatus> recentStatuses = statuses.stream()
                     .sorted((a, b) -> b.getCreateTime().compareTo(a.getCreateTime()))
-                    .limit(limit)
+                    .limit(limit.longValue())
                     .toList();
 
             java.util.List<Map<String, Object>> result = recentStatuses.stream()
@@ -503,7 +523,7 @@ public class CompanyController {
                         return "COMPANY".equals(targetType);
                     }
                 })
-                .limit(limit)
+                .limit(limit.longValue())
                 .toList();
 
             log.info("查询到的通知数量：{}", announcements.size());

@@ -210,9 +210,9 @@ export const useAuthStore = defineStore('auth', {
       this.restoreAuthState()
     },
 
-    async login(username: string, password: string, userType: string): Promise<boolean> {
+    async login(username: string, password: string): Promise<boolean> {
       try {
-        if (!validateString(username, 'username') || !validateString(password, 'password') || !validateString(userType, 'userType')) {
+        if (!validateString(username, 'username') || !validateString(password, 'password')) {
           return false
         }
 
@@ -231,35 +231,6 @@ export const useAuthStore = defineStore('auth', {
         logger.log('发送登录请求到:', request.defaults.baseURL + '/auth/login')
         const response = await request.post('/auth/login', {
           username,
-          password,
-          userType
-        })
-
-        if (!response || response.code !== 200) {
-          ElMessage.error(response?.message || ERROR_MESSAGES.LOGIN_FAILED)
-          return false
-        }
-
-        return this.handleLoginSuccess(response, userType)
-      } catch (error) {
-        logger.error('登录失败:', error)
-        ElMessage.error(ERROR_MESSAGES.LOGIN_FAILED)
-        return false
-      }
-    },
-
-    async autoLogin(username: string, password: string): Promise<boolean> {
-      try {
-        if (!validateString(username, 'username') || !validateString(password, 'password')) {
-          return false
-        }
-
-        // 清理所有旧认证信息
-        this.clearAllAuthInfo()
-
-        logger.log('发送自动登录请求')
-        const response = await request.post('/auth/auto-login', {
-          username,
           password
         })
 
@@ -268,9 +239,9 @@ export const useAuthStore = defineStore('auth', {
           return false
         }
 
-        return this.handleLoginSuccess(response, 'auto')
+        return this.handleLoginSuccess(response, '')
       } catch (error) {
-        logger.error('自动登录失败:', error)
+        logger.error('登录失败:', error)
         ElMessage.error(ERROR_MESSAGES.LOGIN_FAILED)
         return false
       }

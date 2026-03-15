@@ -112,9 +112,8 @@ public class AuthController {
     public Result login(@RequestBody Map<String, Object> loginRequest, HttpServletRequest request) {
         String username = (String) loginRequest.get("username");
         String password = (String) loginRequest.get("password");
-        String userType = (String) loginRequest.get("userType");
         
-        log.info("用户登录请求: username={}, userType={}", username, userType);
+        log.info("用户登录请求: username={}", username);
         
         if (username == null || username.isEmpty()) {
             return Result.error("用户名不能为空");
@@ -124,19 +123,7 @@ public class AuthController {
             return Result.error("密码不能为空");
         }
         
-        if (userType == null || userType.isEmpty()) {
-            return Result.error("用户类型不能为空");
-        }
-        
-        if (!SystemSettingsConfig.isSystemEnabled()) {
-            if (!"admin".equals(userType)) {
-                log.warn("系统维护中，拒绝非管理员用户登录: username={}, userType={}", username, userType);
-                return Result.error("系统维护中，暂时无法登录，请稍后再试");
-            }
-            log.info("系统维护中，允许管理员登录: username={}", username);
-        }
-        
-        String cacheKey = username + ":" + userType;
+        String cacheKey = username;
         LoginAttemptInfo attemptInfo = LOGIN_ATTEMPT_CACHE.get(cacheKey);
         
         if (attemptInfo == null) {
@@ -146,17 +133,18 @@ public class AuthController {
         
         if (attemptInfo.isLocked()) {
             long remainingTime = attemptInfo.getRemainingLockTime();
-            log.warn("用户账号已被锁定: username={}, userType={}, 剩余锁定时间={}秒", username, userType, remainingTime);
+            log.warn("用户账号已被锁定: username={}, 剩余锁定时间={}秒", username, remainingTime);
             return Result.error("账号已被锁定，请" + remainingTime + "秒后再试");
         }
         
         try {
             Map<String, Object> result = new HashMap<>();
             
-            if ("teacher".equals(userType)) {
+            TeacherUser teacher = teacherUserService.findByTeacherUserId(username);
+            if (teacher != null) {
                 result = handleTeacherLogin(username, password, request);
             } else {
-                result = handleOtherUserLogin(username, password, userType, request);
+                result = handleOtherUserLogin(username, password, request);
             }
             
             LOGIN_ATTEMPT_CACHE.remove(cacheKey);
@@ -173,13 +161,13 @@ public class AuthController {
             
             if (attemptInfo.attemptCount >= maxAttempts) {
                 attemptInfo.lockUntil = System.currentTimeMillis() + (lockTime * 60 * 1000L);
-                log.warn("用户账号已被锁定: username={}, userType={}, 锁定时间={}分钟", username, userType, lockTime);
+                log.warn("用户账号已被锁定: username={}, 锁定时间={}分钟", username, lockTime);
             }
             
             try {
                 LoginLog loginLog = new LoginLog();
                 loginLog.setUserId(username);
-                loginLog.setUserType(userType.toUpperCase());
+                loginLog.setUserType("UNKNOWN");
                 loginLog.setUserName(username);
                 loginLog.setLoginTime(new Date());
                 loginLog.setIpAddress(request.getRemoteAddr());
@@ -290,47 +278,50 @@ public class AuthController {
         return result;
     }
     
-    private Map<String, Object> handleOtherUserLogin(String username, String password, String userType, HttpServletRequest request) {
-        log.info("处理非教师登录: username={}, userType={}", username, userType);
-
-        // 在认证之前先检查用户状态
-        User preCheckUser = userService.findByUsername(username);
-        if (preCheckUser != null) {
-            Integer status = 1;
-            String role = preCheckUser.getRole();
-            if (role != null && role.startsWith("ROLE_TEACHER")) {
-                TeacherUser teacherUser = teacherUserService.findByTeacherUserId(username);
-                if (teacherUser != null && teacherUser.getStatus() != null) {
-                    status = teacherUser.getStatus();
-                }
-            } else if ("ROLE_STUDENT".equals(role)) {
-                StudentUser studentUser = studentUserService.findByStudentId(username);
-                if (studentUser != null && studentUser.getStatus() != null) {
-                    status = studentUser.getStatus();
-                }
-            } else if ("ROLE_COMPANY".equals(role)) {
-                var companyUser = companyUserService.findById(preCheckUser.getId());
-                if (companyUser != null && companyUser.getStatus() != null) {
-                    status = companyUser.getStatus();
-                }
-            } else if ("ROLE_ADMIN".equals(role)) {
-                AdminUser adminUser = adminUserService.findByUsername(username);
-                if (adminUser != null && adminUser.getStatus() != null) {
-                    status = adminUser.getStatus();
-                }
-            }
-
-            if (status == 0) {
-                log.warn("用户登录失败: 账号已被禁用 - {}", username);
-                throw new AuthenticationException("账号已被禁用") {};
-            }
-        }
+    private Map<String, Object> handleOtherUserLogin(String username, String password, HttpServletRequest request) {
+        log.info("处理非教师登录: username={}", username);
 
         // 直接使用 passwordEncoder 进行密码验证，避免 DelegatingPasswordEncoder 问题
         User loginUser = userService.findByUsername(username);
         if (loginUser == null || loginUser.getPassword() == null) {
             log.warn("用户不存在或密码为空：{}", username);
             throw new AuthenticationException("用户名或密码错误") {};
+        }
+
+        // 在认证之前先检查用户状态
+        Integer status = 1;
+        String role = loginUser.getRole();
+        if (role != null && role.startsWith("ROLE_TEACHER")) {
+            TeacherUser teacherUser = teacherUserService.findByTeacherUserId(username);
+            if (teacherUser != null && teacherUser.getStatus() != null) {
+                status = teacherUser.getStatus();
+            }
+        } else if ("ROLE_STUDENT".equals(role)) {
+            StudentUser studentUser = studentUserService.findByStudentId(username);
+            if (studentUser != null && studentUser.getStatus() != null) {
+                status = studentUser.getStatus();
+            }
+        } else if ("ROLE_COMPANY".equals(role)) {
+            var companyUser = companyUserService.findById(loginUser.getId());
+            if (companyUser != null) {
+                if (companyUser.getStatus() != null) {
+                    status = companyUser.getStatus();
+                }
+                if (companyUser.getAuditStatus() != null && companyUser.getAuditStatus() != 1) {
+                    log.warn("企业登录失败: 审核未通过 - {}, auditStatus={}", username, companyUser.getAuditStatus());
+                    throw new AuthenticationException("企业注册申请尚未审核通过，请等待教师审核") {};
+                }
+            }
+        } else if ("ROLE_ADMIN".equals(role)) {
+            AdminUser adminUser = adminUserService.findByUsername(username);
+            if (adminUser != null && adminUser.getStatus() != null) {
+                status = adminUser.getStatus();
+            }
+        }
+
+        if (status == 0) {
+            log.warn("用户登录失败: 账号已被禁用 - {}", username);
+            throw new AuthenticationException("账号已被禁用") {};
         }
 
         // 使用 CustomPasswordEncoder 的 matches 方法进行密码验证
@@ -1156,360 +1147,7 @@ public class AuthController {
         }
     }
 
-    @PostMapping("/auto-login")
-    public Result autoLogin(@RequestBody Map<String, Object> loginRequest, HttpServletRequest request) {
-        String username = (String) loginRequest.get("username");
-        String password = (String) loginRequest.get("password");
-        
-        log.info("自动登录请求: username={}", username);
-        
-        if (username == null || username.isEmpty()) {
-            return Result.error("用户名不能为空");
-        }
-        
-        if (password == null || password.isEmpty()) {
-            return Result.error("密码不能为空");
-        }
-        
-        if (!SystemSettingsConfig.isSystemEnabled()) {
-            log.warn("系统维护中，拒绝自动登录: username={}", username);
-            return Result.error("系统维护中，暂时无法登录，请稍后再试");
-        }
-        
-        String cacheKey = username + ":auto";
-        LoginAttemptInfo attemptInfo = LOGIN_ATTEMPT_CACHE.get(cacheKey);
-        
-        if (attemptInfo == null) {
-            attemptInfo = new LoginAttemptInfo();
-            LOGIN_ATTEMPT_CACHE.put(cacheKey, attemptInfo);
-        }
-        
-        if (attemptInfo.isLocked()) {
-            long remainingTime = attemptInfo.getRemainingLockTime();
-            log.warn("用户账号已被锁定: username={}, 剩余锁定时间={}秒", username, remainingTime);
-            return Result.error("账号已被锁定，请" + remainingTime + "秒后再试");
-        }
-        
-        try {
-            Map<String, Object> result = handleAutoLogin(username, password, request);
-            
-            LOGIN_ATTEMPT_CACHE.remove(cacheKey);
-            log.info("自动登录成功，清除登录失败记录: username={}", username);
-            
-            return Result.success(result);
-        } catch (AuthenticationException e) {
-            log.error("自动登录失败: {}, 错误信息: {}", username, e.getMessage());
-            
-            attemptInfo.attemptCount++;
-            
-            int maxAttempts = SystemSettingsConfig.getMaxLoginAttempts();
-            int lockTime = SystemSettingsConfig.getLockTime();
-            
-            if (attemptInfo.attemptCount >= maxAttempts) {
-                attemptInfo.lockUntil = System.currentTimeMillis() + (lockTime * 60 * 1000L);
-                log.warn("用户账号已被锁定: username={}, 锁定时间={}分钟", username, lockTime);
-            }
-            
-            try {
-                LoginLog loginLog = new LoginLog();
-                loginLog.setUserId(username);
-                loginLog.setUserType("AUTO");
-                loginLog.setUserName(username);
-                loginLog.setLoginTime(new Date());
-                loginLog.setIpAddress(request.getRemoteAddr());
-                loginLog.setDeviceInfo(request.getHeader("User-Agent"));
-                loginLog.setLoginStatus("FAILURE");
-                
-                loginLogMapper.insert(loginLog);
-                log.info("自动登录失败日志记录成功: {}", loginLog);
-            } catch (Exception ex) {
-                log.error("记录自动登录失败日志失败: {}", ex.getMessage());
-            }
-            
-            String errorMessage = e.getMessage();
-            if (errorMessage != null && errorMessage.contains("账号已被禁用")) {
-                return Result.error("您的账号已被禁用，请联系管理员");
-            }
-            
-            if (attemptInfo.isLocked()) {
-                return Result.error("登录失败次数过多，账号已被锁定" + lockTime + "分钟");
-            }
-            
-            int remainingAttempts = maxAttempts - attemptInfo.attemptCount;
-            return Result.error("用户名或密码错误，剩余尝试次数: " + remainingAttempts);
-        } catch (Exception e) {
-            log.error("自动登录过程中发生异常: {}", e.getMessage(), e);
-            return Result.error("登录失败: " + e.getMessage());
-        }
-    }
-    
-    private Map<String, Object> handleAutoLogin(String username, String password, HttpServletRequest request) {
-        log.info("开始自动识别用户身份: username={}", username);
-        
-        Map<String, Object> result = null;
-        
-        log.info("尝试学生登录...");
-        try {
-            StudentUser student = studentUserService.findByStudentId(username);
-            if (student != null) {
-                log.info("找到学生用户: {}", username);
-                if (!passwordEncoder.matches(password, student.getPassword())) {
-                    throw new AuthenticationException("用户名或密码错误") {};
-                }
-                if (student.getStatus() == 0) {
-                    throw new AuthenticationException("账号已被禁用") {};
-                }
-                result = handleStudentAutoLogin(student, request);
-                return result;
-            }
-        } catch (AuthenticationException e) {
-            log.warn("学生登录失败: {}", e.getMessage());
-            throw e;
-        } catch (Exception e) {
-            log.debug("学生用户不存在: {}", username);
-        }
-        
-        log.info("尝试教师登录...");
-        try {
-            TeacherUser teacher = teacherUserService.findByTeacherUserId(username);
-            if (teacher != null) {
-                log.info("找到教师用户: {}", username);
-                if (!passwordEncoder.matches(password, teacher.getPassword())) {
-                    throw new AuthenticationException("用户名或密码错误") {};
-                }
-                if (teacher.getStatus() == 0) {
-                    throw new AuthenticationException("账号已被禁用") {};
-                }
-                result = handleTeacherAutoLogin(teacher, request);
-                return result;
-            }
-        } catch (AuthenticationException e) {
-            log.warn("教师登录失败: {}", e.getMessage());
-            throw e;
-        } catch (Exception e) {
-            log.debug("教师用户不存在: {}", username);
-        }
-        
-        log.info("尝试企业登录...");
-        try {
-            CompanyUser company = companyUserService.findByUsername(username);
-            if (company != null) {
-                log.info("找到企业用户: {}", username);
-                if (!passwordEncoder.matches(password, company.getPassword())) {
-                    throw new AuthenticationException("用户名或密码错误") {};
-                }
-                if (company.getStatus() == 0) {
-                    throw new AuthenticationException("账号已被禁用") {};
-                }
-                result = handleCompanyAutoLogin(company, request);
-                return result;
-            }
-        } catch (AuthenticationException e) {
-            log.warn("企业登录失败: {}", e.getMessage());
-            throw e;
-        } catch (Exception e) {
-            log.debug("企业用户不存在: {}", username);
-        }
-        
-        log.info("尝试管理员登录...");
-        try {
-            AdminUser admin = adminUserService.findByUsername(username);
-            if (admin != null) {
-                log.info("找到管理员用户: {}", username);
-                if (!passwordEncoder.matches(password, admin.getPassword())) {
-                    throw new AuthenticationException("用户名或密码错误") {};
-                }
-                if (admin.getStatus() == 0) {
-                    throw new AuthenticationException("账号已被禁用") {};
-                }
-                result = handleAdminAutoLogin(admin, request);
-                return result;
-            }
-        } catch (AuthenticationException e) {
-            log.warn("管理员登录失败: {}", e.getMessage());
-            throw e;
-        } catch (Exception e) {
-            log.debug("管理员用户不存在: {}", username);
-        }
-        
-        log.warn("未找到任何用户: {}", username);
-        throw new AuthenticationException("用户名或密码错误") {};
-    }
-    
-    private Map<String, Object> handleStudentAutoLogin(StudentUser student, HttpServletRequest request) {
-        log.info("处理学生自动登录: 学号={}", student.getStudentId());
-        
-        String role = "ROLE_STUDENT";
-        
-        Map<String, Object> claims = new HashMap<>();
-        claims.put("userId", student.getId());
-        claims.put("username", student.getStudentId());
-        claims.put("role", role);
-        
-        String accessToken = jwtUtils.generateAccessToken(claims);
-        String refreshToken = jwtUtils.generateRefreshToken(claims);
-        
-        Map<String, Object> result = new HashMap<>();
-        result.put("token", accessToken);
-        result.put("refreshToken", refreshToken);
-        
-        Map<String, Object> safeUser = new HashMap<>();
-        safeUser.put("id", student.getId());
-        safeUser.put("username", student.getStudentId());
-        safeUser.put("role", role);
-        safeUser.put("name", student.getName());
-        result.put("user", safeUser);
-        
-        log.info("学生自动登录成功: {}", student.getStudentId());
-        
-        recordLoginLog(String.valueOf(student.getId()), role, student.getStudentId(), request, "SUCCESS");
-        
-        return result;
-    }
-    
-    private Map<String, Object> handleTeacherAutoLogin(TeacherUser teacher, HttpServletRequest request) {
-        log.info("处理教师自动登录: 教师编号={}", teacher.getTeacherUserId());
-        
-        String teacherType = teacher.getTeacherType();
-        if (teacherType == null || teacherType.isEmpty()) {
-            teacherType = identifyTeacherType(teacher);
-            teacher.setTeacherType(teacherType);
-            teacherUserService.update(teacher);
-            log.info("自动识别教师类型: {} -> {}", teacher.getTeacherUserId(), teacherType);
-        }
-        
-        String role = getRoleByTeacherType(teacherType);
-        teacher.setRole(role);
-        
-        List<Permission> permissions = permissionService.getPermissionsByTeacherType(teacherType);
-        List<String> permissionCodes = permissions.stream()
-                .map(Permission::getPermissionCode)
-                .collect(Collectors.toList());
-        
-        log.info("教师 {} (类型: {}) 的权限列表: {}", teacher.getTeacherUserId(), teacherType, permissionCodes);
-        
-        Map<String, Object> claims = new HashMap<>();
-        claims.put("userId", teacher.getId());
-        claims.put("username", teacher.getTeacherUserId());
-        claims.put("role", role);
-        claims.put("teacherType", teacherType);
-        claims.put("permissions", permissionCodes);
-        
-        String accessToken = jwtUtils.generateAccessToken(claims);
-        String refreshToken = jwtUtils.generateRefreshToken(claims);
-        
-        Map<String, Object> result = new HashMap<>();
-        result.put("token", accessToken);
-        result.put("refreshToken", refreshToken);
-        result.put("userInfo", teacher);
-        result.put("permissions", permissionCodes);
-        
-        log.info("教师自动登录成功: {}, 类型: {}, 权限数: {}", teacher.getTeacherUserId(), teacherType, permissionCodes.size());
-        
-        recordLoginLog(String.valueOf(teacher.getId()), role, teacher.getTeacherUserId(), request, "SUCCESS");
-        
-        try {
-            userService.clearAllUserDetailsCache();
-            log.info("教师自动登录成功，已清除UserDetails缓存");
-        } catch (Exception e) {
-            log.warn("清除UserDetails缓存失败: {}", e.getMessage());
-        }
-        
-        return result;
-    }
-    
-    private Map<String, Object> handleAdminAutoLogin(AdminUser admin, HttpServletRequest request) {
-        log.info("处理管理员自动登录: 用户名={}", admin.getUsername());
-        
-        String role = "ROLE_ADMIN";
-        
-        Map<String, Object> claims = new HashMap<>();
-        claims.put("userId", admin.getId());
-        claims.put("username", admin.getUsername());
-        claims.put("role", role);
-        
-        String accessToken = jwtUtils.generateAccessToken(claims);
-        String refreshToken = jwtUtils.generateRefreshToken(claims);
-        
-        Map<String, Object> result = new HashMap<>();
-        result.put("accessToken", accessToken);
-        result.put("refreshToken", refreshToken);
-        
-        Map<String, Object> safeUser = new HashMap<>();
-        safeUser.put("id", admin.getId());
-        safeUser.put("username", admin.getUsername());
-        safeUser.put("role", role);
-        safeUser.put("name", admin.getName());
-        result.put("user", safeUser);
-        
-        if ("ROLE_ADMIN".equals(role)) {
-            try {
-                AdminPermissionService adminPermissionService = applicationContext.getBean(AdminPermissionService.class);
-                List<Permission> permissions = adminPermissionService.getRolePermissionsByCode(role);
-                result.put("permissions", permissions);
-                log.info("管理员自动登录成功，已返回权限信息: {} 个权限", permissions.size());
-            } catch (Exception e) {
-                log.warn("获取管理员权限失败: {}", e.getMessage());
-            }
-        }
-        
-        log.info("管理员自动登录成功: {}", admin.getUsername());
-        
-        recordLoginLog(String.valueOf(admin.getId()), role, admin.getUsername(), request, "SUCCESS");
-        
-        try {
-            OperateLog operateLog = new OperateLog();
-            operateLog.setOperateAdminId(admin.getId());
-            operateLog.setOperatorName(admin.getUsername());
-            operateLog.setOperatorUsername(admin.getUsername());
-            operateLog.setOperatorRole("ADMIN");
-            operateLog.setIpAddress(request.getRemoteAddr());
-            operateLog.setOperationType("LOGIN");
-            operateLog.setModule("USER_MANAGEMENT");
-            operateLog.setDescription("管理员自动登录系统: " + admin.getUsername());
-            operateLog.setOperationResult("SUCCESS");
-            operateLog.setOperateTime(new Date());
-            
-            operateLogMapper.insert(operateLog);
-            log.info("管理员操作日志记录成功: {}", operateLog);
-        } catch (Exception e) {
-            log.error("记录管理员操作日志失败: {}", e.getMessage());
-        }
-        
-        return result;
-    }
-    
-    private Map<String, Object> handleCompanyAutoLogin(CompanyUser company, HttpServletRequest request) {
-        log.info("处理企业自动登录: 用户名={}", company.getUsername());
-        
-        String role = "ROLE_COMPANY";
-        
-        Map<String, Object> claims = new HashMap<>();
-        claims.put("userId", company.getId());
-        claims.put("username", company.getUsername());
-        claims.put("role", role);
-        
-        String accessToken = jwtUtils.generateAccessToken(claims);
-        String refreshToken = jwtUtils.generateRefreshToken(claims);
-        
-        Map<String, Object> result = new HashMap<>();
-        result.put("accessToken", accessToken);
-        result.put("refreshToken", refreshToken);
-        
-        Map<String, Object> safeUser = new HashMap<>();
-        safeUser.put("id", company.getId());
-        safeUser.put("username", company.getUsername());
-        safeUser.put("role", role);
-        safeUser.put("name", company.getCompanyName());
-        result.put("user", safeUser);
-        
-        log.info("企业自动登录成功: {}", company.getUsername());
-        
-        recordLoginLog(String.valueOf(company.getId()), role, company.getUsername(), request, "SUCCESS");
-        
-        return result;
-    }
-    
+
     private void recordLoginLog(String userId, String userType, String userName, HttpServletRequest request, String status) {
         try {
             LoginLog loginLog = new LoginLog();

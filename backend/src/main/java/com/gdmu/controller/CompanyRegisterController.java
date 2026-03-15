@@ -77,7 +77,12 @@ public class CompanyRegisterController {
             companyUser.setIndustry(registerDTO.getIndustry());
             companyUser.setScale(registerDTO.getScale());
             companyUser.setWebsite(registerDTO.getWebsite());
-            companyUser.setCooperationMode(registerDTO.getCooperationMode());
+            
+            String cooperationMode = registerDTO.getCooperationMode();
+            if (cooperationMode == null || cooperationMode.trim().isEmpty()) {
+                cooperationMode = "mutual_choice";
+            }
+            companyUser.setCooperationMode(cooperationMode);
 
             String legalIdCard = registerDTO.getLegalIdCardFront();
             if (registerDTO.getLegalIdCardBack() != null && !registerDTO.getLegalIdCardBack().isEmpty()) {
@@ -88,7 +93,17 @@ public class CompanyRegisterController {
             companyUser.setIsInternshipBase(registerDTO.getIsInternshipBase() != null ? registerDTO.getIsInternshipBase() : 0);
             companyUser.setPlaquePhoto(registerDTO.getPlaquePhoto());
             companyUser.setAcceptBackup(registerDTO.getAcceptBackup() != null ? registerDTO.getAcceptBackup() : 0);
-            companyUser.setMaxBackupStudents(registerDTO.getMaxBackupStudents() != null ? registerDTO.getMaxBackupStudents() : 0);
+            
+            Long maxBackupStudents = registerDTO.getMaxBackupStudents();
+            if (registerDTO.getAcceptBackup() != null && registerDTO.getAcceptBackup() == 1) {
+                if (maxBackupStudents == null || maxBackupStudents < 1) {
+                    return Result.error("选择接受兜底后，兜底学生数量最少为1");
+                }
+                if (maxBackupStudents > 1000) {
+                    return Result.error("兜底学生数量不能超过1000");
+                }
+            }
+            companyUser.setMaxBackupStudents(maxBackupStudents != null ? maxBackupStudents : 0L);
             
             String username = registerDTO.getCompanyName();
             String password = "123456";
@@ -97,7 +112,7 @@ public class CompanyRegisterController {
             companyUser.setRole("ROLE_COMPANY");
             
             companyUser.setAuditStatus(0);
-            companyUser.setStatus(0);
+            companyUser.setStatus(1);
             companyUser.setApplyTime(new Date());
             companyUser.setRegisterTime(new Date());
             companyUser.setCreateTime(new Date());
@@ -383,7 +398,11 @@ public class CompanyRegisterController {
                 companyUser.setWebsite((String) updateData.get("website"));
             }
             if (updateData.containsKey("cooperationMode")) {
-                companyUser.setCooperationMode((String) updateData.get("cooperationMode"));
+                String cooperationMode = (String) updateData.get("cooperationMode");
+                if (cooperationMode == null || cooperationMode.trim().isEmpty()) {
+                    cooperationMode = "mutual_choice";
+                }
+                companyUser.setCooperationMode(cooperationMode);
             }
             if (updateData.containsKey("legalIdCardFront")) {
                 String legalIdCard = (String) updateData.get("legalIdCardFront");
@@ -405,7 +424,17 @@ public class CompanyRegisterController {
                 companyUser.setAcceptBackup(((Number) updateData.get("acceptBackup")).intValue());
             }
             if (updateData.containsKey("maxBackupStudents")) {
-                companyUser.setMaxBackupStudents(((Number) updateData.get("maxBackupStudents")).intValue());
+                Long maxBackupStudents = ((Number) updateData.get("maxBackupStudents")).longValue();
+                Integer acceptBackup = companyUser.getAcceptBackup();
+                if (acceptBackup != null && acceptBackup == 1) {
+                    if (maxBackupStudents == null || maxBackupStudents < 1) {
+                        return Result.error("选择接受兜底后，兜底学生数量最少为1");
+                    }
+                    if (maxBackupStudents > 1000) {
+                        return Result.error("兜底学生数量不能超过1000");
+                    }
+                }
+                companyUser.setMaxBackupStudents(maxBackupStudents);
             }
             
             companyUser.setAuditStatus(0);

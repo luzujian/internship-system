@@ -1,6 +1,8 @@
 package com.gdmu.dto;
 
 import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
@@ -43,13 +45,13 @@ public class CompanyRegisterDTO {
     @Size(min = 5, max = 100, message = "联系邮箱长度必须在 5-100 个字符之间")
     private String contactEmail;
 
+    @NotBlank(message = "个人邮箱不能为空")
     @Email(message = "个人邮箱格式不正确")
     @Size(min = 5, max = 100, message = "个人邮箱长度必须在 5-100 个字符之间")
     private String email;
 
     private String website;
 
-    @NotBlank(message = "合作模式不能为空")
     private String cooperationMode;
 
     @NotBlank(message = "手机号不能为空")
@@ -80,5 +82,7 @@ public class CompanyRegisterDTO {
 
     private Integer acceptBackup;
 
-    private Integer maxBackupStudents;
+    @Min(value = 0, message = "兜底学生数量不能小于0")
+    @Max(value = 1000, message = "兜底学生数量不能超过1000")
+    private Long maxBackupStudents;
 }

@@ -8,6 +8,7 @@ import com.gdmu.mapper.BackupScheduleMapper;
 import com.gdmu.service.BackupService;
 import com.gdmu.service.BackupAuditService;
 import com.gdmu.utils.BackupUtils;
+import com.gdmu.utils.AliyunOSSOperator;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -32,6 +33,8 @@ import java.util.concurrent.locks.ReentrantLock;
 import java.util.regex.Pattern;
 import java.util.regex.Matcher;
 
+import jakarta.annotation.PostConstruct;
+
 @Slf4j
 @Service
 public class BackupServiceImpl implements BackupService {
@@ -54,6 +57,9 @@ public class BackupServiceImpl implements BackupService {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
+    @Autowired
+    private AliyunOSSOperator aliyunOSSOperator;
+
     @Value("${spring.datasource.url}")
     private String datasourceUrl;
 
@@ -63,7 +69,7 @@ public class BackupServiceImpl implements BackupService {
     @Value("${spring.datasource.password}")
     private String datasourcePassword;
 
-    @Value("${backup.path:D:/Web-work/Internship/backups}")
+    @Value("${backup.path:OSS}")
     private String backupPath;
 
     @Value("${backup.retention.days:30}")
@@ -75,8 +81,25 @@ public class BackupServiceImpl implements BackupService {
     @Value("${backup.format:SQL}")
     private String backupFormat;
 
+    @Value("${backup.storage.type:OSS}")
+    private String storageType;
+
+    @Value("${backup.storage.oss.enabled:true}")
+    private Boolean ossEnabled;
+
     private static final Pattern DB_NAME_PATTERN = Pattern.compile("^[a-zA-Z0-9_-]{1,64}$");
     private static final Pattern PATH_PATTERN = Pattern.compile("^[a-zA-Z]:[\\\\/].*$|^[a-zA-Z0-9_\\-/]{1,255}$");
+
+    @PostConstruct
+    public void init() {
+        log.info("备份存储类型: {}, OSS启用: {}", storageType, ossEnabled);
+        if ("OSS".equalsIgnoreCase(storageType) && ossEnabled) {
+            log.info("备份文件将存储在阿里云OSS上");
+        } else {
+            log.info("备份文件将存储在本地文件系统: {}", backupPath);
+        }
+        syncBackupRecords();
+    }
 
     @Override
     public BackupRecord manualBackup() {
@@ -86,48 +109,43 @@ public class BackupServiceImpl implements BackupService {
     @Override
     public BackupRecord manualBackup(Long parentBackupId) {
         backupLock.lock();
+        File localBackupFile = null;
         try {
             String dbName = extractDatabaseName();
             validateDatabaseName(dbName);
-            validateBackupPath(backupPath);
             
             String timestamp = new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date());
             String backupName = "backup_" + dbName + "_" + timestamp + ".sql";
-            File backupDir = new File(backupPath);
-            if (!backupDir.exists()) {
-                backupDir.mkdirs();
-                log.info("创建备份目录: {}", backupPath);
-            }
-            String fullPath = backupPath + File.separator + backupName;
+            String localPath = System.getProperty("java.io.tmpdir") + File.separator + backupName;
 
-            log.info("开始手动备份: 数据库={}, 备份文件={}", dbName, fullPath);
-            executeMysqlDump(dbName, fullPath);
+            log.info("开始手动备份: 数据库={}, 本地临时文件={}", dbName, localPath);
+            executeMysqlDump(dbName, localPath);
 
-            File backupFile = new File(fullPath);
-            if (!backupFile.exists()) {
-                throw new RuntimeException("备份文件创建失败: " + fullPath);
+            localBackupFile = new File(localPath);
+            if (!localBackupFile.exists()) {
+                throw new RuntimeException("备份文件创建失败: " + localPath);
             }
             
-            long fileSize = backupFile.length();
-            log.info("备份文件创建成功: {}, 大小: {} bytes", fullPath, fileSize);
+            long fileSize = localBackupFile.length();
+            log.info("备份文件创建成功: {}, 大小: {} bytes", localPath, fileSize);
 
-            String checksum = BackupUtils.calculateChecksum(fullPath);
+            String checksum = BackupUtils.calculateChecksum(localPath);
             log.info("备份文件校验和: {}", checksum);
 
-            String tableList = extractTableListFromBackup(fullPath);
+            String tableList = extractTableListFromBackup(localPath);
             int dbTableCount = getDatabaseTableCount(dbName);
             log.info("数据库总表数: {}, 备份文件中表数: {}", dbTableCount, tableList.split(",").length);
 
-            String finalBackupPath = fullPath;
+            String finalBackupPath = localPath;
             Boolean isCompressed = false;
             
             if (compressBackup) {
-                String compressedPath = BackupUtils.changeFileExtension(fullPath, "sql.gz");
-                BackupUtils.compressFile(fullPath, compressedPath);
+                String compressedPath = BackupUtils.changeFileExtension(localPath, "sql.gz");
+                BackupUtils.compressFile(localPath, compressedPath);
                 
                 File compressedFile = new File(compressedPath);
                 if (compressedFile.exists()) {
-                    BackupUtils.deleteFile(fullPath);
+                    BackupUtils.deleteFile(localPath);
                     finalBackupPath = compressedPath;
                     fileSize = compressedFile.length();
                     isCompressed = true;
@@ -135,9 +153,15 @@ public class BackupServiceImpl implements BackupService {
                 }
             }
 
+            log.info("开始上传备份文件到OSS");
+            byte[] fileContent = Files.readAllBytes(Paths.get(finalBackupPath));
+            String ossObjectName = "backups/" + backupName;
+            String ossUrl = aliyunOSSOperator.uploadWithObjectName(fileContent, ossObjectName);
+            log.info("备份文件上传到OSS成功: {}", ossUrl);
+
             BackupRecord record = new BackupRecord();
             record.setBackupName(backupName);
-            record.setBackupPath(finalBackupPath.replace("\\", "/"));
+            record.setBackupPath(ossUrl);
             record.setBackupSize(fileSize);
             record.setBackupType("MANUAL");
             record.setBackupTime(new Date());
@@ -156,16 +180,24 @@ public class BackupServiceImpl implements BackupService {
                 log.info("备份记录保存成功，ID: {}", record.getId());
             } catch (Exception e) {
                 log.error("保存备份记录失败: {}", e.getMessage(), e);
-                log.warn("备份文件已创建，但记录保存失败，文件路径: {}", finalBackupPath);
+                log.warn("备份文件已上传到OSS，但记录保存失败，OSS URL: {}", ossUrl);
             }
 
-            log.info("手动备份成功: {}, 文件大小: {} bytes", backupName, fileSize);
+            log.info("手动备份成功: {}, OSS URL: {}, 文件大小: {} bytes", backupName, ossUrl, fileSize);
             return record;
         } catch (Exception e) {
             log.error("手动备份失败: {}", e.getMessage(), e);
             throw new RuntimeException("备份失败: " + e.getMessage(), e);
         } finally {
             backupLock.unlock();
+            if (localBackupFile != null && localBackupFile.exists()) {
+                try {
+                    localBackupFile.delete();
+                    log.info("删除本地临时备份文件: {}", localBackupFile.getAbsolutePath());
+                } catch (Exception e) {
+                    log.warn("删除本地临时备份文件失败: {}", e.getMessage());
+                }
+            }
         }
     }
 
@@ -177,31 +209,41 @@ public class BackupServiceImpl implements BackupService {
     @Override
     public void restoreBackup(Long id) {
         backupLock.lock();
-        String preRestoreBackupPath = null;
+        File localBackupFile = null;
+        File localPreRestoreFile = null;
         try {
             BackupRecord record = backupRecordMapper.findById(id);
             if (record == null) {
                 throw new RuntimeException("备份记录不存在");
             }
 
-            File backupFile = new File(record.getBackupPath());
-            if (!backupFile.exists()) {
-                throw new RuntimeException("备份文件不存在");
+            log.info("从OSS下载备份文件: {}", record.getBackupPath());
+            byte[] backupContent = aliyunOSSOperator.downloadFile(record.getBackupPath());
+            
+            String localBackupPath = System.getProperty("java.io.tmpdir") + File.separator + record.getBackupName();
+            Files.write(Paths.get(localBackupPath), backupContent);
+            localBackupFile = new File(localBackupPath);
+            
+            if (!localBackupFile.exists()) {
+                throw new RuntimeException("备份文件下载失败");
             }
 
             String dbName = extractDatabaseName();
             validateDatabaseName(dbName);
 
             log.info("恢复前创建当前数据库的快照备份");
-            preRestoreBackupPath = createPreRestoreBackup(dbName);
-            log.info("快照备份创建成功: {}", preRestoreBackupPath);
+            localPreRestoreFile = createPreRestoreBackup(dbName);
+            log.info("快照备份创建成功: {}", localPreRestoreFile.getAbsolutePath());
 
             log.info("备份新增表的数据和结构");
-            Map<String, List<Map<String, Object>>> newTableData = backupNewTablesData(dbName, record.getBackupPath());
-            Map<String, String> newTableStructures = backupNewTablesStructures(dbName, record.getBackupPath());
+            Map<String, List<Map<String, Object>>> newTableData = backupNewTablesData(dbName, localBackupPath);
+            Map<String, String> newTableStructures = backupNewTablesStructures(dbName, localBackupPath);
+
+            log.info("备份现有表的新增字段结构");
+            Map<String, List<Map<String, Object>>> newColumnsBackup = backupNewColumns(dbName, localBackupPath);
 
             try {
-                executeMysqlRestore(dbName, record.getBackupPath());
+                executeMysqlRestore(dbName, localBackupPath);
                 log.info("数据恢复成功，备份ID: {}, 备份文件: {}", id, record.getBackupName());
                 waitForDatabaseRecovery(60);
                 
@@ -214,13 +256,18 @@ public class BackupServiceImpl implements BackupService {
                     log.info("恢复新增表的数据");
                     restoreNewTablesData(dbName, newTableData);
                 }
+
+                if (!newColumnsBackup.isEmpty()) {
+                    log.info("恢复现有表的新增字段");
+                    restoreNewColumns(dbName, newColumnsBackup);
+                }
                 
-                log.info("恢复后同步备份目录中的备份记录");
+                log.info("恢复后同步备份记录");
                 syncBackupRecords();
             } catch (Exception e) {
                 log.error("数据恢复失败，正在回滚到快照备份: {}", e.getMessage());
-                if (preRestoreBackupPath != null) {
-                    executeMysqlRestore(dbName, preRestoreBackupPath);
+                if (localPreRestoreFile != null && localPreRestoreFile.exists()) {
+                    executeMysqlRestore(dbName, localPreRestoreFile.getAbsolutePath());
                     log.info("已回滚到恢复前的状态");
                 }
                 throw new RuntimeException("数据恢复失败，已自动回滚: " + e.getMessage(), e);
@@ -231,6 +278,22 @@ public class BackupServiceImpl implements BackupService {
             throw new RuntimeException("数据恢复失败: " + e.getMessage(), e);
         } finally {
             backupLock.unlock();
+            if (localBackupFile != null && localBackupFile.exists()) {
+                try {
+                    localBackupFile.delete();
+                    log.info("删除本地临时备份文件: {}", localBackupFile.getAbsolutePath());
+                } catch (Exception e) {
+                    log.warn("删除本地临时备份文件失败: {}", e.getMessage());
+                }
+            }
+            if (localPreRestoreFile != null && localPreRestoreFile.exists()) {
+                try {
+                    localPreRestoreFile.delete();
+                    log.info("删除本地临时快照文件: {}", localPreRestoreFile.getAbsolutePath());
+                } catch (Exception e) {
+                    log.warn("删除本地临时快照文件失败: {}", e.getMessage());
+                }
+            }
         }
     }
 
@@ -279,12 +342,12 @@ public class BackupServiceImpl implements BackupService {
         try {
             BackupRecord record = backupRecordMapper.findById(id);
             if (record != null) {
-                File backupFile = new File(record.getBackupPath());
-                if (backupFile.exists()) {
-                    boolean deleted = backupFile.delete();
-                    if (!deleted) {
-                        log.warn("备份文件删除失败: {}", record.getBackupPath());
-                    }
+                try {
+                    log.info("从OSS删除备份文件: {}", record.getBackupPath());
+                    aliyunOSSOperator.deleteFile(record.getBackupPath());
+                    log.info("OSS备份文件删除成功");
+                } catch (Exception e) {
+                    log.warn("从OSS删除备份文件失败: {}", e.getMessage());
                 }
                 backupRecordMapper.deleteById(id);
                 log.info("备份删除成功，备份ID: {}", id);
@@ -463,45 +526,39 @@ public class BackupServiceImpl implements BackupService {
             
             String dbName = extractDatabaseName();
             validateDatabaseName(dbName);
-            validateBackupPath(backupPath);
             
             String timestamp = new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date());
             String backupName = "backup_" + dbName + "_" + timestamp + ".sql";
-            File backupDir = new File(backupPath);
-            if (!backupDir.exists()) {
-                backupDir.mkdirs();
-                log.info("创建备份目录: {}", backupPath);
-            }
-            String fullPath = backupPath + File.separator + backupName;
+            String localPath = System.getProperty("java.io.tmpdir") + File.separator + backupName;
 
-            log.info("开始自动备份: 数据库={}, 备份文件={}", dbName, fullPath);
-            executeMysqlDump(dbName, fullPath);
+            log.info("开始自动备份: 数据库={}, 本地临时文件={}", dbName, localPath);
+            executeMysqlDump(dbName, localPath);
 
-            File backupFile = new File(fullPath);
+            File backupFile = new File(localPath);
             if (!backupFile.exists()) {
-                throw new RuntimeException("备份文件创建失败: " + fullPath);
+                throw new RuntimeException("备份文件创建失败: " + localPath);
             }
             
             long fileSize = backupFile.length();
-            log.info("备份文件创建成功: {}, 大小: {} bytes", fullPath, fileSize);
+            log.info("备份文件创建成功: {}, 大小: {} bytes", localPath, fileSize);
 
-            String checksum = BackupUtils.calculateChecksum(fullPath);
+            String checksum = BackupUtils.calculateChecksum(localPath);
             log.info("备份文件校验和: {}", checksum);
 
-            String tableList = extractTableListFromBackup(fullPath);
+            String tableList = extractTableListFromBackup(localPath);
             int dbTableCount = getDatabaseTableCount(dbName);
             log.info("数据库总表数: {}, 备份文件中表数: {}", dbTableCount, tableList.split(",").length);
 
-            String finalBackupPath = fullPath;
+            String finalBackupPath = localPath;
             Boolean isCompressed = false;
             
             if (compressBackup) {
-                String compressedPath = BackupUtils.changeFileExtension(fullPath, "sql.gz");
-                BackupUtils.compressFile(fullPath, compressedPath);
+                String compressedPath = BackupUtils.changeFileExtension(localPath, "sql.gz");
+                BackupUtils.compressFile(localPath, compressedPath);
                 
                 File compressedFile = new File(compressedPath);
                 if (compressedFile.exists()) {
-                    BackupUtils.deleteFile(fullPath);
+                    BackupUtils.deleteFile(localPath);
                     finalBackupPath = compressedPath;
                     fileSize = compressedFile.length();
                     isCompressed = true;
@@ -509,9 +566,15 @@ public class BackupServiceImpl implements BackupService {
                 }
             }
 
+            log.info("开始上传自动备份文件到OSS");
+            byte[] fileContent = Files.readAllBytes(Paths.get(finalBackupPath));
+            String ossObjectName = "backups/" + backupName;
+            String ossUrl = aliyunOSSOperator.uploadWithObjectName(fileContent, ossObjectName);
+            log.info("自动备份文件上传到OSS成功: {}", ossUrl);
+
             BackupRecord record = new BackupRecord();
             record.setBackupName(backupName);
-            record.setBackupPath(finalBackupPath.replace("\\", "/"));
+            record.setBackupPath(ossUrl);
             record.setBackupSize(fileSize);
             record.setBackupType("AUTO");
             record.setBackupTime(new Date());
@@ -535,7 +598,14 @@ public class BackupServiceImpl implements BackupService {
             
             long duration = System.currentTimeMillis() - startTime;
             backupAuditService.completeAuditLog(auditLog.getId(), 1, null, duration);
-            log.info("自动备份成功，备份ID: {}, 耗时: {}ms", record.getId(), duration);
+            log.info("自动备份成功，备份ID: {}, OSS URL: {}, 耗时: {}ms", record.getId(), ossUrl, duration);
+            
+            try {
+                Files.deleteIfExists(Paths.get(finalBackupPath));
+                log.info("删除本地临时自动备份文件: {}", finalBackupPath);
+            } catch (Exception e) {
+                log.warn("删除本地临时自动备份文件失败: {}", e.getMessage());
+            }
             
         } catch (Exception e) {
             long duration = System.currentTimeMillis() - startTime;
@@ -689,6 +759,86 @@ public class BackupServiceImpl implements BackupService {
         return "internship";
     }
 
+    private String extractDatabaseHost() {
+        try {
+            String url = datasourceUrl;
+            log.debug("原始数据源URL: {}", url);
+            
+            String host = "localhost";
+            
+            if (url.contains("jdbc:mysql://")) {
+                String cleanUrl = url.replace("jdbc:mysql://", "");
+                
+                int paramStartIndex = cleanUrl.indexOf("?");
+                String hostPortDb = paramStartIndex != -1 ? cleanUrl.substring(0, paramStartIndex) : cleanUrl;
+                
+                int slashIndex = hostPortDb.indexOf("/");
+                String hostPort = slashIndex != -1 ? hostPortDb.substring(0, slashIndex) : hostPortDb;
+                
+                if (hostPort.contains(":")) {
+                    host = hostPort.substring(0, hostPort.indexOf(":"));
+                } else {
+                    host = hostPort;
+                }
+                
+                if (host.contains("${") || host.contains("}")) {
+                    log.warn("主机名包含未解析的占位符: {}, 使用默认值", host);
+                    String defaultValue = extractDefaultFromPlaceholder(host);
+                    if (!defaultValue.isEmpty()) {
+                        host = defaultValue;
+                    } else {
+                        host = "localhost";
+                    }
+                }
+            }
+            
+            log.debug("提取的数据库主机: {}", host);
+            return host;
+        } catch (Exception e) {
+            log.error("提取数据库主机失败: {}", e.getMessage());
+            return "localhost";
+        }
+    }
+
+    private String extractDatabasePort() {
+        try {
+            String url = datasourceUrl;
+            log.debug("原始数据源URL: {}", url);
+            
+            String port = "3306";
+            
+            if (url.contains("jdbc:mysql://")) {
+                String cleanUrl = url.replace("jdbc:mysql://", "");
+                
+                int paramStartIndex = cleanUrl.indexOf("?");
+                String hostPortDb = paramStartIndex != -1 ? cleanUrl.substring(0, paramStartIndex) : cleanUrl;
+                
+                int slashIndex = hostPortDb.indexOf("/");
+                String hostPort = slashIndex != -1 ? hostPortDb.substring(0, slashIndex) : hostPortDb;
+                
+                if (hostPort.contains(":")) {
+                    port = hostPort.substring(hostPort.indexOf(":") + 1);
+                }
+                
+                if (port.contains("${") || port.contains("}")) {
+                    log.warn("端口包含未解析的占位符: {}, 使用默认值", port);
+                    String defaultValue = extractDefaultFromPlaceholder(port);
+                    if (!defaultValue.isEmpty()) {
+                        port = defaultValue;
+                    } else {
+                        port = "3306";
+                    }
+                }
+            }
+            
+            log.debug("提取的数据库端口: {}", port);
+            return port;
+        } catch (Exception e) {
+            log.error("提取数据库端口失败: {}", e.getMessage());
+            return "3306";
+        }
+    }
+
     private void validateDatabaseName(String dbName) {
         if (dbName == null || dbName.isEmpty()) {
             throw new RuntimeException("数据库名称不能为空");
@@ -719,32 +869,37 @@ public class BackupServiceImpl implements BackupService {
         File tempFile = File.createTempFile("mysql-config-", ".cnf");
         tempFile.deleteOnExit();
         
+        String host = extractDatabaseHost();
+        String port = extractDatabasePort();
+        
+        log.info("创建MySQL配置文件，主机: {}, 端口: {}", host, port);
+        
         try (FileWriter writer = new FileWriter(tempFile)) {
             writer.write("[client]\n");
             writer.write("user=" + datasourceUsername + "\n");
             writer.write("password=" + datasourcePassword + "\n");
-            writer.write("host=localhost\n");
-            writer.write("port=3306\n");
+            writer.write("host=" + host + "\n");
+            writer.write("port=" + port + "\n");
         }
         
         tempFile.setReadable(true, true);
         return tempFile;
     }
 
-    private String createPreRestoreBackup(String dbName) throws Exception {
+    private File createPreRestoreBackup(String dbName) throws Exception {
         String timestamp = new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date());
         String backupName = "prerestore_" + dbName + "_" + timestamp + ".sql";
-        String fullPath = backupPath + File.separator + backupName;
+        String localPath = System.getProperty("java.io.tmpdir") + File.separator + backupName;
         
-        log.info("创建恢复前快照备份: {}", fullPath);
-        executeMysqlDump(dbName, fullPath);
+        log.info("创建恢复前快照备份: {}", localPath);
+        executeMysqlDump(dbName, localPath);
         
-        File backupFile = new File(fullPath);
+        File backupFile = new File(localPath);
         if (!backupFile.exists()) {
-            throw new RuntimeException("快照备份文件创建失败: " + fullPath);
+            throw new RuntimeException("快照备份文件创建失败: " + localPath);
         }
         
-        return fullPath;
+        return backupFile;
     }
 
     private void executeMysqlDump(String dbName, String outputPath) throws Exception {
@@ -849,6 +1004,7 @@ public class BackupServiceImpl implements BackupService {
     @Override
     public BackupRecord incrementalBackup(Long parentBackupId) {
         backupLock.lock();
+        File localBackupFile = null;
         try {
             BackupRecord parentRecord = backupRecordMapper.findById(parentBackupId);
             if (parentRecord == null) {
@@ -866,39 +1022,38 @@ public class BackupServiceImpl implements BackupService {
 
             String dbName = extractDatabaseName();
             validateDatabaseName(dbName);
-            validateBackupPath(backupPath);
             
             String timestamp = new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date());
             String backupName = "incremental_" + dbName + "_" + timestamp + ".sql";
-            String fullPath = backupPath + File.separator + backupName;
+            String localPath = System.getProperty("java.io.tmpdir") + File.separator + backupName;
 
-            executeMysqlDump(dbName, fullPath);
+            executeMysqlDump(dbName, localPath);
 
-            File backupFile = new File(fullPath);
-            if (!backupFile.exists()) {
-                throw new RuntimeException("增量备份文件创建失败: " + fullPath);
+            localBackupFile = new File(localPath);
+            if (!localBackupFile.exists()) {
+                throw new RuntimeException("增量备份文件创建失败: " + localPath);
             }
             
-            long fileSize = backupFile.length();
-            log.info("增量备份文件创建成功: {}, 大小: {} bytes", fullPath, fileSize);
+            long fileSize = localBackupFile.length();
+            log.info("增量备份文件创建成功: {}, 大小: {} bytes", localPath, fileSize);
 
-            String checksum = BackupUtils.calculateChecksum(fullPath);
+            String checksum = BackupUtils.calculateChecksum(localPath);
             log.info("增量备份文件校验和: {}", checksum);
 
-            String tableList = extractTableListFromBackup(fullPath);
+            String tableList = extractTableListFromBackup(localPath);
             int dbTableCount = getDatabaseTableCount(dbName);
             log.info("数据库总表数: {}, 备份文件中表数: {}", dbTableCount, tableList.split(",").length);
 
-            String finalBackupPath = fullPath;
+            String finalBackupPath = localPath;
             Boolean isCompressed = false;
             
             if (compressBackup) {
-                String compressedPath = BackupUtils.changeFileExtension(fullPath, "sql.gz");
-                BackupUtils.compressFile(fullPath, compressedPath);
+                String compressedPath = BackupUtils.changeFileExtension(localPath, "sql.gz");
+                BackupUtils.compressFile(localPath, compressedPath);
                 
                 File compressedFile = new File(compressedPath);
                 if (compressedFile.exists()) {
-                    BackupUtils.deleteFile(fullPath);
+                    BackupUtils.deleteFile(localPath);
                     finalBackupPath = compressedPath;
                     fileSize = compressedFile.length();
                     isCompressed = true;
@@ -906,9 +1061,15 @@ public class BackupServiceImpl implements BackupService {
                 }
             }
 
+            log.info("开始上传增量备份文件到OSS");
+            byte[] fileContent = Files.readAllBytes(Paths.get(finalBackupPath));
+            String ossObjectName = "backups/" + backupName;
+            String ossUrl = aliyunOSSOperator.uploadWithObjectName(fileContent, ossObjectName);
+            log.info("增量备份文件上传到OSS成功: {}", ossUrl);
+
             BackupRecord record = new BackupRecord();
             record.setBackupName(backupName);
-            record.setBackupPath(finalBackupPath.replace("\\", "/"));
+            record.setBackupPath(ossUrl);
             record.setBackupSize(fileSize);
             record.setBackupType("INCREMENTAL");
             record.setBackupTime(new Date());
@@ -928,13 +1089,21 @@ public class BackupServiceImpl implements BackupService {
                 log.error("保存增量备份记录失败: {}", e.getMessage(), e);
             }
 
-            log.info("增量备份成功: {}, 文件大小: {} bytes", backupName, fileSize);
+            log.info("增量备份成功: {}, OSS URL: {}, 文件大小: {} bytes", backupName, ossUrl, fileSize);
             return record;
         } catch (Exception e) {
             log.error("增量备份失败: {}", e.getMessage(), e);
             throw new RuntimeException("增量备份失败: " + e.getMessage(), e);
         } finally {
             backupLock.unlock();
+            if (localBackupFile != null && localBackupFile.exists()) {
+                try {
+                    localBackupFile.delete();
+                    log.info("删除本地临时增量备份文件: {}", localBackupFile.getAbsolutePath());
+                } catch (Exception e) {
+                    log.warn("删除本地临时增量备份文件失败: {}", e.getMessage());
+                }
+            }
         }
     }
 
@@ -1206,59 +1375,149 @@ public class BackupServiceImpl implements BackupService {
         return tables;
     }
 
-    private void syncBackupRecords() {
+    private Map<String, List<Map<String, Object>>> backupNewColumns(String dbName, String backupFilePath) {
+        Map<String, List<Map<String, Object>>> newColumnsMap = new HashMap<>();
         try {
-            File backupDir = new File(backupPath);
-            if (!backupDir.exists() || !backupDir.isDirectory()) {
-                log.warn("备份目录不存在或不是目录: {}", backupPath);
-                return;
+            List<String> currentTables = getDatabaseTables(dbName);
+            List<String> backupTables = extractTableListFromBackupFile(backupFilePath);
+            
+            Set<String> commonTables = new HashSet<>(currentTables);
+            commonTables.retainAll(new HashSet<>(backupTables));
+            
+            if (commonTables.isEmpty()) {
+                log.info("没有共同的表需要检查新增字段");
+                return newColumnsMap;
             }
-
-            File[] backupFiles = backupDir.listFiles((dir, name) -> 
-                name != null && name.startsWith("backup_") && name.endsWith(".sql")
-            );
-
-            if (backupFiles == null || backupFiles.length == 0) {
-                log.info("备份目录中没有备份文件");
-                return;
-            }
-
-            log.info("开始同步备份记录，发现 {} 个备份文件", backupFiles.length);
-
-            for (File backupFile : backupFiles) {
+            
+            log.info("检查 {} 个共同表的新增字段", commonTables.size());
+            
+            for (String tableName : commonTables) {
                 try {
-                    String fileName = backupFile.getName();
-                    String normalizedPath = backupFile.getAbsolutePath().replace("\\", "/");
+                    List<Map<String, Object>> currentColumns = getTableColumns(tableName);
+                    List<String> backupColumns = extractColumnsFromBackupFile(backupFilePath, tableName);
                     
-                    BackupRecord existingRecord = backupRecordMapper.findByBackupPath(normalizedPath);
-                    if (existingRecord != null) {
-                        log.debug("备份记录已存在: {}", fileName);
-                        continue;
+                    List<Map<String, Object>> newColumns = new ArrayList<>();
+                    for (Map<String, Object> column : currentColumns) {
+                        String columnName = (String) column.get("Field");
+                        if (!backupColumns.contains(columnName)) {
+                            newColumns.add(column);
+                            log.info("发现表 {} 的新增字段: {}", tableName, columnName);
+                        }
                     }
-
-                    BackupRecord newRecord = new BackupRecord();
-                    newRecord.setBackupName(fileName);
-                    newRecord.setBackupPath(normalizedPath);
-                    newRecord.setBackupSize(backupFile.length());
-                    newRecord.setBackupType("MANUAL");
-                    newRecord.setBackupTime(new Date(backupFile.lastModified()));
-                    newRecord.setStatus(1);
-                    newRecord.setRemark("恢复后自动同步");
-                    newRecord.setBackupFormat("SQL");
-                    newRecord.setIsCompressed(false);
-
-                    try {
-                        backupRecordMapper.insert(newRecord);
-                        log.info("同步备份记录成功: {}", fileName);
-                    } catch (Exception e) {
-                        log.error("同步备份记录失败: {}, 错误: {}", fileName, e.getMessage());
+                    
+                    if (!newColumns.isEmpty()) {
+                        newColumnsMap.put(tableName, newColumns);
+                        log.info("表 {} 有 {} 个新增字段需要备份", tableName, newColumns.size());
                     }
                 } catch (Exception e) {
-                    log.error("处理备份文件失败: {}, 错误: {}", backupFile.getName(), e.getMessage());
+                    log.warn("检查表 {} 的新增字段失败: {}", tableName, e.getMessage());
                 }
             }
+            
+        } catch (Exception e) {
+            log.error("备份新增字段失败: {}", e.getMessage());
+        }
+        return newColumnsMap;
+    }
 
-            log.info("备份记录同步完成");
+    private List<Map<String, Object>> getTableColumns(String tableName) {
+        try {
+            return jdbcTemplate.queryForList("SHOW COLUMNS FROM " + tableName);
+        } catch (Exception e) {
+            log.error("获取表 {} 的列信息失败: {}", tableName, e.getMessage());
+            return Collections.emptyList();
+        }
+    }
+
+    private List<String> extractColumnsFromBackupFile(String backupFilePath, String tableName) throws Exception {
+        List<String> columns = new ArrayList<>();
+        try (BufferedReader reader = new BufferedReader(new java.io.FileReader(backupFilePath))) {
+            String line;
+            boolean inTable = false;
+            Pattern tableStartPattern = Pattern.compile("CREATE TABLE `" + Pattern.quote(tableName) + "`");
+            Pattern columnPattern = Pattern.compile("^\\s+`([^`]+)`\\s+");
+            
+            while ((line = reader.readLine()) != null) {
+                if (tableStartPattern.matcher(line).find()) {
+                    inTable = true;
+                    continue;
+                }
+                
+                if (inTable) {
+                    if (line.contains(") ENGINE=") || line.trim().startsWith(")")) {
+                        break;
+                    }
+                    
+                    Matcher columnMatcher = columnPattern.matcher(line);
+                    if (columnMatcher.find()) {
+                        columns.add(columnMatcher.group(1));
+                    }
+                }
+            }
+        }
+        return columns;
+    }
+
+    private void restoreNewColumns(String dbName, Map<String, List<Map<String, Object>>> newColumnsBackup) {
+        if (newColumnsBackup == null || newColumnsBackup.isEmpty()) {
+            return;
+        }
+        
+        for (Map.Entry<String, List<Map<String, Object>>> entry : newColumnsBackup.entrySet()) {
+            String tableName = entry.getKey();
+            List<Map<String, Object>> columns = entry.getValue();
+            
+            for (Map<String, Object> column : columns) {
+                try {
+                    String columnName = (String) column.get("Field");
+                    String columnType = (String) column.get("Type");
+                    String isNullable = (String) column.get("Null");
+                    Object defaultValue = column.get("Default");
+                    String extra = (String) column.get("Extra");
+                    
+                    List<String> existingColumns = jdbcTemplate.queryForList(
+                        "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?",
+                        String.class, dbName, tableName, columnName);
+                    
+                    if (existingColumns.isEmpty()) {
+                        StringBuilder alterSql = new StringBuilder();
+                        alterSql.append("ALTER TABLE `").append(tableName).append("` ADD COLUMN `")
+                                .append(columnName).append("` ").append(columnType);
+                        
+                        if ("NO".equalsIgnoreCase(isNullable)) {
+                            alterSql.append(" NOT NULL");
+                        } else {
+                            alterSql.append(" NULL");
+                        }
+                        
+                        if (defaultValue != null) {
+                            if (defaultValue instanceof String) {
+                                alterSql.append(" DEFAULT '").append(defaultValue).append("'");
+                            } else {
+                                alterSql.append(" DEFAULT ").append(defaultValue);
+                            }
+                        }
+                        
+                        if (extra != null && !extra.isEmpty()) {
+                            alterSql.append(" ").append(extra);
+                        }
+                        
+                        jdbcTemplate.execute(alterSql.toString());
+                        log.info("表 {} 已恢复新增字段: {}", tableName, columnName);
+                    } else {
+                        log.info("表 {} 的字段 {} 已存在，跳过恢复", tableName, columnName);
+                    }
+                } catch (Exception e) {
+                    log.warn("表 {} 恢复新增字段失败: {}", tableName, e.getMessage());
+                }
+            }
+        }
+    }
+
+    private void syncBackupRecords() {
+        try {
+            log.info("备份文件存储在OSS上，跳过本地文件系统同步");
+            return;
         } catch (Exception e) {
             log.error("同步备份记录失败: {}", e.getMessage(), e);
         }

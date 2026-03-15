@@ -34,6 +34,12 @@ public class BackupController {
     @Autowired
     private BackupAuditService backupAuditService;
 
+    @Autowired
+    private com.gdmu.utils.AliyunOSSOperator aliyunOSSOperator;
+
+    @Autowired
+    private com.gdmu.mapper.BackupRecordMapper backupRecordMapper;
+
     private String getCurrentUsername() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         return authentication != null ? authentication.getName() : "system";
@@ -117,20 +123,26 @@ public class BackupController {
     public ResponseEntity<Resource> downloadBackup(@PathVariable Long id) {
         log.info("下载备份文件，备份ID: {}", id);
         try {
-            File file = backupService.getBackupFile(id);
-            if (file == null || !file.exists()) {
+            BackupRecord record = backupRecordMapper.findById(id);
+            
+            if (record == null) {
+                log.warn("备份记录不存在，ID: {}", id);
                 return ResponseEntity.notFound().build();
             }
 
-            Resource resource = new org.springframework.core.io.FileSystemResource(file);
+            log.info("开始从OSS下载备份文件: {}", record.getBackupPath());
+            byte[] fileContent = aliyunOSSOperator.downloadFile(record.getBackupPath());
+            log.info("从OSS下载备份文件成功，大小: {} bytes", fileContent.length);
+            
+            Resource resource = new org.springframework.core.io.ByteArrayResource(fileContent);
 
             return ResponseEntity.ok()
-                    .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + file.getName() + "\"")
+                    .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + record.getBackupName() + "\"")
                     .contentType(MediaType.APPLICATION_OCTET_STREAM)
-                    .contentLength(file.length())
+                    .contentLength(fileContent.length)
                     .body(resource);
         } catch (Exception e) {
-            log.error("下载备份文件失败: {}", e.getMessage());
+            log.error("下载备份文件失败: {}", e.getMessage(), e);
             return ResponseEntity.internalServerError().build();
         }
     }

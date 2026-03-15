@@ -164,6 +164,20 @@
           </div>
         </div>
 
+        <div v-if="clearing" class="progress-section">
+          <div class="section-title">清除进度：</div>
+          <el-progress 
+            :percentage="clearProgress" 
+            :status="clearProgressStatus"
+            :stroke-width="20"
+            :text-inside="true"
+          />
+          <div class="progress-info">
+            <span class="current-module">正在清除：{{ currentClearingModule }}</span>
+            <span class="progress-text">{{ clearedCount }} / {{ totalCount }} 个模块</span>
+          </div>
+        </div>
+
         <div class="selection-section">
           <div class="section-header">
             <div class="section-title">选择需要清除数据的模块：</div>
@@ -195,20 +209,6 @@
               />
             </el-form-item>
           </el-form>
-        </div>
-
-        <div v-if="clearing" class="progress-section">
-          <div class="section-title">清除进度：</div>
-          <el-progress 
-            :percentage="clearProgress" 
-            :status="clearProgressStatus"
-            :stroke-width="20"
-            :text-inside="true"
-          />
-          <div class="progress-info">
-            <span class="current-module">正在清除：{{ currentClearingModule }}</span>
-            <span class="progress-text">{{ clearedCount }} / {{ totalCount }} 个模块</span>
-          </div>
         </div>
       </div>
 
@@ -247,7 +247,6 @@ import * as resourceDocumentApi from '../../api/resourceDocument'
 import recruitmentService from '../../api/recruitment'
 import aiModelService from '../../api/aiModel'
 import internshipService from '../../api/internship'
-import * as permissionApi from '../../api/permission'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -416,8 +415,7 @@ const availablePages = ref([
   { value: 'keyword-library', label: '关键词库管理', service: 'keywordLibrary' },
   { value: 'scoring-rule', label: '评分规则管理', service: 'scoringRule' },
   { value: 'ai-model', label: 'AI大模型选择', service: 'aiModel' },
-  { value: 'logs', label: '日志管理', service: 'log' },
-  { value: 'permissions', label: '权限管理', service: 'permission' }
+  { value: 'logs', label: '日志管理', service: 'log' }
 ])
 
 const showClearDataDialog = () => {
@@ -557,7 +555,7 @@ const clearSelectedData = async () => {
 const verifyPassword = async (password) => {
   try {
     const response = await AdminUserService.verifyAdminPassword(password)
-    return response.data?.code === 200
+    return response.code === 200
   } catch (error) {
     return false
   }
@@ -615,9 +613,6 @@ const clearPageData = async (page) => {
     case 'log':
       await clearLogData()
       break
-    case 'permission':
-      await clearPermissionData()
-      break
     default:
       throw new Error(`未知的模块类型: ${page.service}`)
   }
@@ -665,7 +660,7 @@ const clearCompanyData = async () => {
   try {
     const response = await companyService.getCompanies({ page: 1, pageSize: 10000 })
     if (response.code === 200) {
-      const companies = response.data || []
+      const companies = response.data?.rows || response.data || []
       if (companies.length > 0) {
         const ids = companies.map(c => c.id).filter(id => id)
         if (ids.length > 0) {
@@ -682,21 +677,19 @@ const clearCompanyData = async () => {
 const clearRecallAuditData = async () => {
   try {
     const studentResponse = await request.delete('/application-withdrawal-records/clear-all')
-    const studentResult = studentResponse.data
     
-    if (studentResult && studentResult.code === 200) {
+    if (studentResponse && studentResponse.code === 200) {
       ElMessage.success('学生撤回申请记录清除成功')
     } else {
-      throw new Error(studentResult?.msg || '学生撤回申请记录清除失败')
+      throw new Error(studentResponse?.msg || studentResponse?.message || '学生撤回申请记录清除失败')
     }
 
     const companyResponse = await companyService.clearRecallData()
-    const companyResult = companyResponse.data
     
-    if (companyResult && companyResult.code === 200) {
+    if (companyResponse && companyResponse.code === 200) {
       ElMessage.success('企业撤回申请数据清除成功')
     } else {
-      throw new Error(companyResult?.msg || '企业撤回申请数据清除失败')
+      throw new Error(companyResponse?.msg || companyResponse?.message || '企业撤回申请数据清除失败')
     }
   } catch (error) {
     logger.error('清除撤回申请记录失败:', error)
@@ -770,7 +763,7 @@ const clearInternshipConfirmData = async () => {
   try {
     const response = await internshipService.getInternshipStatusList({ page: 1, pageSize: 10000 })
     if (response.code === 200) {
-      const statuses = response.data || []
+      const statuses = response.data?.rows || response.data || []
       if (statuses.length > 0) {
         const ids = statuses.map(s => s.id).filter(id => id)
         if (ids.length > 0) {
@@ -919,22 +912,6 @@ const clearLogData = async () => {
     await cleanLogsApi(null, true)
   } catch (error) {
     logger.error('清除日志数据失败:', error)
-    throw error
-  }
-}
-
-const clearPermissionData = async () => {
-  try {
-    const response = await permissionApi.clearRolePermissions()
-    const result = response
-
-    if (result && result.code === 200) {
-      ElMessage.success('权限管理数据清除成功')
-    } else {
-      throw new Error(result?.msg || '权限管理数据清除失败')
-    }
-  } catch (error) {
-    logger.error('清除权限管理数据失败:', error)
     throw error
   }
 }

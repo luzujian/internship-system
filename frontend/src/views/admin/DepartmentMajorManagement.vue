@@ -108,10 +108,13 @@ const pagination = ref({ currentPage: 1, pageSize: 10, total: 0 })
 
 //钩子函数 - 页面加载时触发
 onMounted(async () => {
+  loading.value = true
   logger.log('页面开始加载...')
-  // 先获取专业列表，再查询院系数据
-  await getMajorList()
-  await queryDepartments()
+  try {
+    await getMajorList()
+  } finally {
+    await queryDepartments()
+  }
 })
 
 //获取专业列表
@@ -232,6 +235,8 @@ const queryDepartments = async (): Promise<void> => {
     departments.value = []
     pagination.value.total = 0
     ElMessage.error('查询院系失败: ' + (error.message || '未知错误'))
+  } finally {
+    loading.value = false
   }
 }
 

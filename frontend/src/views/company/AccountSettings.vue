@@ -56,7 +56,6 @@ const displayName = computed(() => {
   return '企业用户'
 })
 
-// 邮箱脱敏显示
 const maskedEmail = computed(() => {
   const email = profileForm.value.email
   if (!email || !email.includes('@')) {
@@ -71,7 +70,6 @@ const maskedEmail = computed(() => {
   return username.charAt(0) + '***' + username.charAt(username.length - 1) + '@' + domain
 })
 
-// 手机脱敏显示
 const maskedPhone = computed(() => {
   const phone = profileForm.value.phone
   if (!phone || phone.length < 11) {

@@ -99,14 +99,14 @@
         
         <template v-if="activeTab === 'student'">
           <el-table-column prop="student.name" label="申请人姓名" width="120" align="center" show-overflow-tooltip></el-table-column>
-          <el-table-column prop="withdrawalReason" label="撤回原因" min-width="200" show-overflow-tooltip></el-table-column>
-          <el-table-column prop="withdrawalTime" label="撤回时间" width="170" align="center">
-            <template #default="scope">{{ formatDateTime(scope.row.withdrawalTime) }}</template>
+          <el-table-column prop="recallReason" label="撤回原因" min-width="200" show-overflow-tooltip></el-table-column>
+          <el-table-column prop="recallApplyTime" label="撤回申请时间" width="170" align="center">
+            <template #default="scope">{{ formatDateTime(scope.row.recallApplyTime) }}</template>
           </el-table-column>
           <el-table-column label="实习状态" width="100" align="center">
             <template #default="scope">
-              <el-tag :type="getStatusType(scope.row.internshipStatus?.status)" size="small" class="status-tag">
-                {{ getStatusText(scope.row.internshipStatus?.status) }}
+              <el-tag :type="getStatusType(scope.row.status)" size="small" class="status-tag">
+                {{ getStatusText(scope.row.status) }}
               </el-tag>
             </template>
           </el-table-column>
@@ -177,18 +177,18 @@
               <span class="meta-value">{{ selectedRecord.student?.name || '-' }}</span>
             </div>
             <div class="meta-item">
-              <span class="meta-label">申请人 ID:</span>
-              <span class="meta-value">{{ selectedRecord.applicantId }}</span>
+              <span class="meta-label">学生ID:</span>
+              <span class="meta-value">{{ selectedRecord.studentId }}</span>
             </div>
             <div class="meta-item">
               <span class="meta-label">实习状态:</span>
-              <el-tag :type="getStatusType(selectedRecord.internshipStatus?.status)" size="small" class="status-tag">
-                {{ getStatusText(selectedRecord.internshipStatus?.status) }}
+              <el-tag :type="getStatusType(selectedRecord.status)" size="small" class="status-tag">
+                {{ getStatusText(selectedRecord.status) }}
               </el-tag>
             </div>
             <div class="meta-item">
-              <span class="meta-label">撤回时间:</span>
-              <span class="meta-value">{{ formatDateTime(selectedRecord.withdrawalTime) }}</span>
+              <span class="meta-label">撤回申请时间:</span>
+              <span class="meta-value">{{ formatDateTime(selectedRecord.recallApplyTime) }}</span>
             </div>
           </div>
           <el-divider></el-divider>
@@ -203,7 +203,7 @@
             </div>
             <div class="detail-row">
               <span class="detail-label">撤回原因:</span>
-              <div class="detail-content">{{ selectedRecord.withdrawalReason }}</div>
+              <div class="detail-content">{{ selectedRecord.recallReason }}</div>
             </div>
           </div>
         </template>
@@ -308,12 +308,9 @@ const fetchStudentData = async (): Promise<unknown> => {
   const params = {
     page: currentPage.value,
     pageSize: pageSize.value,
-    applicantName: searchForm.applicantName || null,
-    applicantRole: 'STUDENT',
-    startTime: searchForm.withdrawalTimeRange && searchForm.withdrawalTimeRange[0] || null,
-    endTime: searchForm.withdrawalTimeRange && searchForm.withdrawalTimeRange[1] || null
+    name: searchForm.applicantName || null
   }
-  const response = await request.get('/application-withdrawal-records/page', { params })
+  const response = await request.get('/admin/internship-status/recall/pending', { params })
   return response
 }
 
@@ -340,11 +337,15 @@ const fetchData = async (): Promise<void> => {
       response = await fetchCompanyData()
     }
     
-    if (response.data && response.code === 200) {
-      tableData.value = response.data.list || response.data.rows || []
-      total.value = response.data.total || 0
+    logger.log('获取撤回记录响应:', response)
+    
+    if (response && response.code === 200) {
+      const data = response.data || response
+      tableData.value = data.rows || data.list || []
+      total.value = data.total || 0
+      logger.log('撤回记录数据:', { tableData: tableData.value.length, total: total.value })
     } else {
-      ElMessage.error(response.message || '获取数据失败')
+      ElMessage.error(response?.message || '获取数据失败')
     }
   } catch (error) {
     logger.error('获取数据失败:', error)

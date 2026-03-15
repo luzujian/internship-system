@@ -26,9 +26,9 @@ public class CompanyUser {
     private String contactEmail;
     
     private String phone;
-    
+
     private String email;
-    
+
     private String username;
     
     private String password;
@@ -55,7 +55,7 @@ public class CompanyUser {
     
     private Integer acceptBackup = 0;
     
-    private Integer maxBackupStudents = 0;
+    private Long maxBackupStudents = 0L;
     
     private String companyTag;
     
@@ -71,7 +71,7 @@ public class CompanyUser {
     
     private Long reviewerId;
     
-    private Integer status = 0;
+    private Integer status = 1;
     
     private Integer recallStatus = 0;
     

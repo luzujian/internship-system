@@ -199,10 +199,20 @@
           </el-table-column>
           <el-table-column prop="requirements" label="岗位要求" align="center" min-width="200" show-overflow-tooltip />
           <el-table-column prop="createTime" label="发布时间" width="180" align="center" :formatter="formatDate" />
-          <el-table-column label="操作" align="center" width="150" fixed="right">
+          <el-table-column label="操作" align="center" width="120" fixed="right">
             <template #default="scope">
-              <el-button v-if="authStore.hasPermission('recruitment:edit')" type="primary" size="small" @click="handleEditPosition(scope.row)">编辑</el-button>
-              <el-button v-if="authStore.hasPermission('recruitment:delete')" type="danger" size="small" @click="handleDeletePosition(scope.row)">删除</el-button>
+              <div class="action-buttons">
+                <el-tooltip v-if="authStore.hasPermission('recruitment:edit')" content="编辑" placement="top">
+                  <el-button type="primary" size="small" @click="handleEditPosition(scope.row)" class="table-btn edit">
+                    <el-icon><Edit /></el-icon>
+                  </el-button>
+                </el-tooltip>
+                <el-tooltip v-if="authStore.hasPermission('recruitment:delete')" content="删除" placement="top">
+                  <el-button type="danger" size="small" @click="handleDeletePosition(scope.row)" class="table-btn delete">
+                    <el-icon><Delete /></el-icon>
+                  </el-button>
+                </el-tooltip>
+              </div>
             </template>
           </el-table-column>
         </el-table>
@@ -431,9 +441,13 @@ const formatDate = (_row, _column, cellValue) => {
 }
 
 onMounted(async () => {
+  loading.value = true
   logger.log('页面开始加载...')
-  await getPositionList()
-  await queryCategories()
+  try {
+    await getPositionList()
+  } finally {
+    await queryCategories()
+  }
 })
 
 const getPositionList = async (): Promise<void> => {
@@ -543,6 +557,8 @@ const queryCategories = async (): Promise<void> => {
     categories.value = []
     pagination.value.total = 0
     ElMessage.error('查询岗位类别失败: ' + (error.message || '未知错误'))
+  } finally {
+    loading.value = false
   }
 }
 

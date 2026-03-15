@@ -120,7 +120,8 @@
           <div class="form-tip">模型代码是唯一标识，添加后不可修改</div>
         </el-form-item>
         <el-form-item label="最大Token数" prop="maxTokens">
-          <el-input-number v-model="form.maxTokens" :min="1" :max="128000" placeholder="请输入最大Token数" />
+          <el-input-number v-model="form.maxTokens" :min="1" :max="8192" placeholder="请输入最大Token数" />
+          <div class="form-tip">DeepSeek API 的有效范围是 [1, 8192]</div>
         </el-form-item>
         <el-form-item label="温度参数" prop="temperature">
           <el-input-number v-model="form.temperature" :min="0" :max="2" :step="0.1" :precision="2" placeholder="请输入温度参数" />

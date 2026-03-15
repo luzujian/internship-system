@@ -27,4 +27,7 @@ public interface RolePermissionMapper {
 
     @Delete("DELETE FROM role_permissions")
     int deleteAll();
+
+    @Delete("DELETE FROM role_permissions WHERE role_code != 'ROLE_ADMIN'")
+    int deleteAllExceptAdmin();
 }

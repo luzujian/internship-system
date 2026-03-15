@@ -42,6 +42,11 @@ interface AddClassForm {
   teacherId: string | null
 }
 
+interface TeacherOption {
+  teacherUserId: string
+  name: string
+}
+
 interface ExcelDataItem {
   name?: string
   grade?: string
@@ -63,7 +68,7 @@ const tableData = ref<ClassWithCounts[]>([])
 //专业列表数据
 const majorList = ref<SelectOption[]>([])
 //教师列表数据
-const teacherList = ref<unknown[]>([])
+const teacherList = ref<TeacherOption[]>([])
 //加载状态
 const loading = ref(false)
 // 表格引用
@@ -195,22 +200,31 @@ const getTeacherList = async (): Promise<void> => {
     const response = await TeacherUserService.getAllTeachers()
     logger.log('教师列表响应:', response)
 
+    let teachers: any[] = []
+
     // 处理响应数据
     if (response && response.data) {
       if (Array.isArray(response.data)) {
-        teacherList.value = response.data
-      } else if (response.code === 200 && response.data) {
-        // 处理带 code 和 data 的响应格式
-        teacherList.value = Array.isArray(response.data) ? response.data : []
+        teachers = response.data
+      } else if (response.data.rows && Array.isArray(response.data.rows)) {
+        // 处理分页格式 { rows: [...], total: ... }
+        teachers = response.data.rows
       } else if (response.rows && Array.isArray(response.rows)) {
-        // 处理分页格式
-        teacherList.value = response.rows
-      } else {
-        teacherList.value = []
+        // 处理其他分页格式
+        teachers = response.rows
       }
-    } else {
-      teacherList.value = []
     }
+
+    // 过滤无效数据并确保每个教师对象都有必要的属性
+    teacherList.value = teachers.filter((t: any) => {
+      if (t === null || t === undefined) return false
+      if (typeof t !== 'object') return false
+      // 确保有必要的基本属性
+      return t.teacherUserId !== undefined && t.name !== undefined
+    }).map((t: any) => ({
+      teacherUserId: String(t.teacherUserId || ''),
+      name: String(t.name || '')
+    }))
 
     logger.log('最终的教师列表数据:', teacherList.value)
   } catch (error) {
@@ -324,11 +338,17 @@ const queryPage = async (): Promise<void> => {
 
         logger.log('匹配结果:', matchedTeacher)
 
+        // 优先使用后端返回的 teacherName，如果没有再尝试通过教师列表匹配
+        let finalTeacherName = classItem.teacherName || ''
+        if (!finalTeacherName && matchedTeacher) {
+          finalTeacherName = matchedTeacher.name || ''
+        }
+
         // 确保保留 ext 属性
         const result = {
           ...classItem,
           majorName: matchedMajor ? matchedMajor.name : '未知专业',
-          teacherName: matchedTeacher ? matchedTeacher.name : ''
+          teacherName: finalTeacherName
         }
 
         logger.log('处理后的 result:', result)
@@ -390,25 +410,50 @@ const clearEditClassForm = (): void => {
 }
 
 //新增班级
-const handleAddClass = (): void => {
-  dialogFormVisible.value = true
+const handleAddClass = async (): Promise<void> => {
+  // 确保教师列表和专业列表已加载
+  if (majorList.value.length === 0) {
+    await getMajorList()
+  }
+  if (teacherList.value.length === 0) {
+    await getTeacherList()
+  }
+  
   formTitle.value = '新增班级'
   clearAddClassForm()
+  dialogFormVisible.value = true
 }
 
 //修改班级
 const handleUpdateClass = async (id: string): Promise<void> => {
   clearEditClassForm()
-  dialogFormVisible.value = true
   formTitle.value = '编辑班级'
+  
+  // 确保教师列表和专业列表已加载
+  if (majorList.value.length === 0) {
+    await getMajorList()
+  }
+  if (teacherList.value.length === 0) {
+    await getTeacherList()
+  }
+  
   let result = await queryInfoApi(id)
-  if(result.code){
-    // 获取班级信息时，确保有专业列表数据
-    if (majorList.value.length === 0) {
-      await getMajorList()
-    }
+  logger.log('班级详情响应:', result)
+  
+  if(result.code === 200 && result.data){
     // 使用 JSON.parse(JSON.stringify) 进行深拷贝，避免数据引用问题
-    editClass.value = JSON.parse(JSON.stringify(result.data))
+    const classData = JSON.parse(JSON.stringify(result.data))
+    editClass.value = {
+      id: classData.id || '',
+      name: classData.name || '',
+      grade: classData.grade || '',
+      majorId: classData.majorId || null,
+      teacherId: classData.teacherId || null
+    }
+    logger.log('编辑班级数据:', editClass.value)
+    dialogFormVisible.value = true
+  } else {
+    ElMessage.error('获取班级信息失败：' + (result.msg || '未知错误'))
   }
 }
 
@@ -434,41 +479,70 @@ const handleCancel = (): void => {
 }
 
 //-------------保存班级信息
-const saveClass = (): void => {
-  let formData: AddClassForm, formRef: FormInstance | null
+const saveClass = async (): Promise<void> => {
+  logger.log('保存班级 - 开始')
+  logger.log('保存班级 - formTitle:', formTitle.value)
+  
+  let formData: AddClassForm
+  let formRefValue: FormInstance | null
 
   // 根据表单标题判断是新增还是编辑操作
   if (formTitle.value === '新增班级') {
     formData = addClass.value
-    formRef = addClassFormRef.value
+    formRefValue = addClassFormRef.value
+    logger.log('保存班级 - 使用新增表单')
   } else {
     formData = editClass.value
-    formRef = editClassFormRef.value
+    formRefValue = editClassFormRef.value
+    logger.log('保存班级 - 使用编辑表单')
   }
 
-  //表单校验
-  if(!formRef || !formRef.value) return
-  formRef.value.validate(async (valid) => {
-    if(valid) {
-      let result
-      // 表单验证通过后再调用 API
-      if (formTitle.value === '新增班级') {
-        result = await addApi(formData)
-      } else {
-        result = await updateApi(formData)
-      }
+  logger.log('保存班级 - 表单数据:', JSON.stringify(formData))
+  logger.log('保存班级 - 表单引用:', formRefValue)
 
-      if(result && result.code) {
-        ElMessage.success('操作成功')
-        dialogFormVisible.value = false
-        queryPage()
-      } else {
-        ElMessage.error(result ? result.msg : '操作失败')
-      }
+  // 表单校验
+  if (!formRefValue) {
+    logger.error('表单引用为空')
+    ElMessage.error('表单初始化失败，请重试')
+    return
+  }
+
+  try {
+    // 使用回调方式验证表单
+    await new Promise<void>((resolve, reject) => {
+      formRefValue!.validate((valid) => {
+        if (valid) {
+          logger.log('表单验证通过')
+          resolve()
+        } else {
+          logger.log('表单验证失败')
+          reject(new Error('表单验证失败'))
+        }
+      })
+    })
+
+    logger.log('开始调用 API...')
+    let result
+    // 表单验证通过后再调用 API
+    if (formTitle.value === '新增班级') {
+      result = await addApi(formData)
     } else {
-      return false
+      result = await updateApi(formData)
     }
-  })
+
+    logger.log('API 返回结果:', result)
+
+    if (result && result.code === 200) {
+      ElMessage.success('操作成功')
+      dialogFormVisible.value = false
+      queryPage()
+    } else {
+      ElMessage.error(result ? result.msg : '操作失败')
+    }
+  } catch (error) {
+    logger.error('保存班级失败:', error)
+    // 验证失败时，Element Plus 会自动显示错误信息
+  }
 }
 
 
@@ -1123,9 +1197,9 @@ const downloadTemplate = async (): Promise<void> => {
           <el-select v-model="addClass.teacherId" placeholder="请选择负责教师" filterable clearable>
             <el-option
               v-for="teacher in teacherList"
-              :key="(teacher as any).teacherUserId"
-              :label="(teacher as any).name"
-              :value="(teacher as any).teacherUserId"
+              :key="teacher?.teacherUserId || ''"
+              :label="teacher?.name || ''"
+              :value="teacher?.teacherUserId || ''"
             />
           </el-select>
         </el-form-item>
@@ -1157,9 +1231,9 @@ const downloadTemplate = async (): Promise<void> => {
           <el-select v-model="editClass.teacherId" placeholder="请选择负责教师" filterable clearable>
             <el-option
               v-for="teacher in teacherList"
-              :key="(teacher as any).teacherUserId"
-              :label="(teacher as any).name"
-              :value="(teacher as any).teacherUserId"
+              :key="teacher?.teacherUserId || ''"
+              :label="teacher?.name || ''"
+              :value="teacher?.teacherUserId || ''"
             />
           </el-select>
         </el-form-item>

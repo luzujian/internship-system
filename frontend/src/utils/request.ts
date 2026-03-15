@@ -51,7 +51,6 @@ const CONFIG: Config = {
   BEARER_PREFIX: 'Bearer ',
   PUBLIC_ENDPOINTS: [
     '/auth/login',
-    '/auth/auto-login',
     '/auth/register',
     '/auth/forgot-password',
     '/auth/reset-password',
