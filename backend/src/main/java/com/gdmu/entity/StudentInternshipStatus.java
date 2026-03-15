@@ -34,6 +34,9 @@ public class StudentInternshipStatus {
     private Integer recallStatus; // 撤回状态：0-未撤回，1-已撤回（待确认）,2-已确认撤回
     private String recallReason;
     private Date recallApplyTime; // 撤回申请时间（自动撤回时即为撤回时间）
+    private Date recallAuditTime; // 撤回审核时间
+    private Long recallReviewerId; // 撤回审核人ID
+    private String recallAuditRemark; // 撤回审核备注
     
     private Integer companyConfirmStatus;
     

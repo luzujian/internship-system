@@ -91,8 +91,8 @@ export const usePositionStore = defineStore('position', () => {
     loading.value = true
     try {
       const response = await positionApi.getPositionsByCompanyId(companyId)
-      if (response.data?.code === 200) {
-        positions.value = response.data.data.map((item: any) => ({
+      if (response.code === 200) {
+        positions.value = response.data.map((item: any) => ({
           id: item.id,
           positionName: item.positionName,
           department: item.department || '',
@@ -199,7 +199,7 @@ export const usePositionStore = defineStore('position', () => {
       console.log('提交的岗位数据:', data)
       const response = await positionApi.createPosition(data)
       console.log('创建岗位响应:', response)
-      if (response.data?.code === 200) {
+      if (response.code === 200) {
         await fetchPositions(companyId)
         return true
       }
@@ -232,7 +232,7 @@ export const usePositionStore = defineStore('position', () => {
         plannedRecruit: positionData.plannedRecruit
       }
       const response = await positionApi.updatePosition(positionId, data)
-      if (response.data?.code === 200) {
+      if (response.code === 200) {
         await fetchPositions(companyId)
         return true
       }
@@ -249,7 +249,7 @@ export const usePositionStore = defineStore('position', () => {
     loading.value = true
     try {
       const response = await positionApi.deletePosition(positionId)
-      if (response.data?.code === 200) {
+      if (response.code === 200) {
         await fetchPositions(companyId)
         return true
       }
@@ -266,7 +266,7 @@ export const usePositionStore = defineStore('position', () => {
     loading.value = true
     try {
       const response = await positionApi.pausePosition(positionId)
-      if (response.data?.code === 200) {
+      if (response.code === 200) {
         await fetchPositions(companyId)
         return true
       }
@@ -283,7 +283,7 @@ export const usePositionStore = defineStore('position', () => {
     loading.value = true
     try {
       const response = await positionApi.resumePosition(positionId)
-      if (response.data?.code === 200) {
+      if (response.code === 200) {
         await fetchPositions(companyId)
         return true
       }
@@ -316,8 +316,8 @@ export const usePositionStore = defineStore('position', () => {
     loading.value = true
     try {
       const response = await applicationApi.getApplications(companyId)
-      if (response.data?.code === 200) {
-        applications.value = response.data.data.map((item: any) => ({
+      if (response.code === 200) {
+        applications.value = response.data.map((item: any) => ({
           id: item.id,
           studentDbId: item.studentId,
           studentName: item.studentName || '',
@@ -420,14 +420,14 @@ export const usePositionStore = defineStore('position', () => {
       ])
 
       const majorsMap: Record<number, string> = {}
-      if (majorsResponse.data?.code === 200 && majorsResponse.data.data) {
-        majorsResponse.data.data.forEach((major: any) => {
+      if (majorsResponse.code === 200 && majorsResponse.data) {
+        majorsResponse.data.forEach((major: any) => {
           majorsMap[major.id] = major.name
         })
       }
 
-      if (internshipStatusResponse.data?.code === 200) {
-        internshipStatuses.value = internshipStatusResponse.data.data.map((item: any) => ({
+      if (internshipStatusResponse.code === 200) {
+        internshipStatuses.value = internshipStatusResponse.data.map((item: any) => ({
           id: item.id,
           studentId: item.studentId,
           studentName: item.student ? item.student.name : '',

@@ -75,7 +75,7 @@ public class BackupServiceImpl implements BackupService {
     @Value("${backup.format:SQL}")
     private String backupFormat;
 
-    private static final Pattern DB_NAME_PATTERN = Pattern.compile("^[a-zA-Z0-9_]{1,64}$");
+    private static final Pattern DB_NAME_PATTERN = Pattern.compile("^[a-zA-Z0-9_-]{1,64}$");
     private static final Pattern PATH_PATTERN = Pattern.compile("^[a-zA-Z]:[\\\\/].*$|^[a-zA-Z0-9_\\-/]{1,255}$");
 
     @Override
@@ -646,20 +646,47 @@ public class BackupServiceImpl implements BackupService {
     private String extractDatabaseName() {
         try {
             String url = datasourceUrl;
-            int startIndex = url.lastIndexOf("/");
-            if (startIndex != -1) {
-                String dbName = url.substring(startIndex + 1);
-                int paramIndex = dbName.indexOf("?");
-                if (paramIndex != -1) {
-                    dbName = dbName.substring(0, paramIndex);
+            log.debug("原始数据源URL: {}", url);
+            
+            int paramStartIndex = url.indexOf("?");
+            String dbPath = paramStartIndex != -1 ? url.substring(0, paramStartIndex) : url;
+            
+            int startIndex = dbPath.lastIndexOf("/");
+            if (startIndex != -1 && startIndex < dbPath.length() - 1) {
+                String dbName = dbPath.substring(startIndex + 1);
+                
+                if (dbName.contains("${") || dbName.contains("}")) {
+                    log.warn("数据库名称包含未解析的占位符: {}, 使用默认值", dbName);
+                    dbName = extractDefaultFromPlaceholder(dbName);
                 }
+                
+                dbName = dbName.replaceAll("[^a-zA-Z0-9_-]", "");
+                
+                if (dbName.isEmpty()) {
+                    log.warn("数据库名称为空，使用默认值: internship");
+                    return "internship";
+                }
+                
+                log.debug("提取的数据库名称: {}", dbName);
                 return dbName;
             }
+            log.warn("无法从URL提取数据库名称，使用默认值: internship");
             return "internship";
         } catch (Exception e) {
             log.error("提取数据库名称失败: {}", e.getMessage());
             return "internship";
         }
+    }
+    
+    private String extractDefaultFromPlaceholder(String placeholder) {
+        int colonIndex = placeholder.indexOf(":");
+        int endIndex = placeholder.indexOf("}");
+        if (colonIndex != -1 && endIndex != -1 && colonIndex < endIndex) {
+            String defaultValue = placeholder.substring(colonIndex + 1, endIndex);
+            log.debug("从占位符提取默认值: {}", defaultValue);
+            return defaultValue;
+        }
+        return "internship";
     }
 
     private void validateDatabaseName(String dbName) {
@@ -667,7 +694,7 @@ public class BackupServiceImpl implements BackupService {
             throw new RuntimeException("数据库名称不能为空");
         }
         if (!DB_NAME_PATTERN.matcher(dbName).matches()) {
-            throw new RuntimeException("数据库名称格式不正确，只能包含字母、数字和下划线，长度1-64位");
+            throw new RuntimeException("数据库名称格式不正确，只能包含字母、数字、下划线和连字符，长度1-64位");
         }
     }
 

@@ -55,7 +55,7 @@ public class AnnouncementReadRecordController {
     @GetMapping("/check")
     @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_TEACHER', 'ROLE_STUDENT')")
     public Result checkReadStatus(@RequestParam Long announcementId, 
-                                 @RequestParam Long userId, 
+                                 @RequestParam String userId, 
                                  @RequestParam String userType) {
         log.info("检查公告阅读状态，公告ID: {}, 用户ID: {}, 用户类型: {}", announcementId, userId, userType);
         try {

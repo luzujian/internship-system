@@ -52,7 +52,13 @@ public class FileUploadController {
             "text/plain",
             "application/zip",
             "application/x-rar-compressed",
-            "application/x-7z-compressed"
+            "application/x-7z-compressed",
+            "video/mp4",
+            "video/webm",
+            "video/ogg",
+            "video/quicktime",
+            "video/x-msvideo",
+            "video/x-ms-wmv"
     ));
 
     @PostMapping("/image")
@@ -218,6 +224,8 @@ public class FileUploadController {
                     category = "resources/ppt";
                 } else if (contentType.startsWith("image/")) {
                     category = "images";
+                } else if (contentType.startsWith("video/")) {
+                    category = "videos";
                 }
             }
 
@@ -292,6 +300,8 @@ public class FileUploadController {
                             category = "resources/ppt";
                         } else if (contentType.startsWith("image/")) {
                             category = "images";
+                        } else if (contentType.startsWith("video/")) {
+                            category = "videos";
                         }
                     }
 

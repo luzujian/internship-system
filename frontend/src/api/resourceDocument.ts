@@ -10,7 +10,7 @@ export interface ResourceDocument {
   downloadCount?: number
   uploaderId?: number
   uploaderType?: string
-  status?: number
+  status?: string
   createTime?: string
   updateTime?: string
 }
@@ -42,9 +42,10 @@ export const getResourceDocumentsByPage = (params: {
   pageSize?: number
   title?: string
   fileType?: string
-  status?: number
+  status?: string
+  publisherRole?: string
 }) => {
-  return request.get<ResourceDocument[]>('/resource-documents/page', { params })
+  return request<ResourceDocumentResponse>('/resource-documents/page', { params })
 }
 
 export const addResourceDocument = (data: Omit<ResourceDocument, 'id' | 'createTime' | 'updateTime'>) => {

@@ -461,4 +461,59 @@ public class StudentInternshipStatusController {
             return Result.error("获取实习状态列表失败：" + e.getMessage());
         }
     }
+
+    /**
+     * 企业确认实习状态
+     */
+    @PutMapping("/{id}/approve")
+    @PreAuthorize("hasAnyRole('ADMIN', 'COMPANY')")
+    @Log(operationType = "UPDATE", module = "INTERNSHIP_MANAGEMENT", description = "企业确认实习状态")
+    public Result approveInternshipStatus(@PathVariable Long id) {
+        log.info("企业确认实习状态，ID: {}", id);
+        try {
+            StudentInternshipStatus status = studentInternshipStatusService.findById(id);
+            if (status == null) {
+                return Result.error("实习状态不存在");
+            }
+
+            status.setCompanyConfirmStatus(1);
+            status.setStatus(2);
+            int result = studentInternshipStatusService.update(status);
+
+            if (result > 0) {
+                return Result.success("确认成功");
+            }
+            return Result.error("确认失败");
+        } catch (Exception e) {
+            log.error("确认实习状态失败：{}", e.getMessage(), e);
+            return Result.error("确认失败：" + e.getMessage());
+        }
+    }
+
+    /**
+     * 企业拒绝实习状态
+     */
+    @PutMapping("/{id}/reject")
+    @PreAuthorize("hasAnyRole('ADMIN', 'COMPANY')")
+    @Log(operationType = "UPDATE", module = "INTERNSHIP_MANAGEMENT", description = "企业拒绝实习状态")
+    public Result rejectInternshipStatus(@PathVariable Long id) {
+        log.info("企业拒绝实习状态，ID: {}", id);
+        try {
+            StudentInternshipStatus status = studentInternshipStatusService.findById(id);
+            if (status == null) {
+                return Result.error("实习状态不存在");
+            }
+
+            status.setCompanyConfirmStatus(2);
+            int result = studentInternshipStatusService.update(status);
+
+            if (result > 0) {
+                return Result.success("拒绝成功");
+            }
+            return Result.error("拒绝失败");
+        } catch (Exception e) {
+            log.error("拒绝实习状态失败：{}", e.getMessage(), e);
+            return Result.error("拒绝失败：" + e.getMessage());
+        }
+    }
 }

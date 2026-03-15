@@ -52,6 +52,19 @@ public interface PositionMapper {
      * @return 岗位信息列表
      */
     List<Position> findByCompanyId(Long companyId);
+
+    /**
+     * 根据企业ID和条件查询岗位信息
+     * @param companyId 企业ID
+     * @param positionName 岗位名称
+     * @param department 部门
+     * @param status 状态
+     * @return 岗位信息列表
+     */
+    List<Position> findByCompanyIdWithConditions(@Param("companyId") Long companyId,
+                                                  @Param("positionName") String positionName,
+                                                  @Param("department") String department,
+                                                  @Param("status") String status);
     
     /**
      * 动态条件查询岗位信息

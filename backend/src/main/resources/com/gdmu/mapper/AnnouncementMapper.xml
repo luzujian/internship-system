@@ -19,9 +19,9 @@
         <result property="priority" column="priority" />
         <result property="attachments" column="attachments" />
         <result property="status" column="status" />
+        <result property="readCount" column="read_count" />
         <result property="createTime" column="create_time" />
         <result property="updateTime" column="update_time" />
-        <result property="readCount" column="read_count" />
     </resultMap>
     
     <!-- 插入通知公告 -->
@@ -32,7 +32,7 @@
     
     <!-- 根据ID查询通知公告 -->
     <select id="findById" resultMap="AnnouncementResultMap">
-        select a.*, COALESCE((SELECT COUNT(*) FROM announcement_read_records r WHERE r.announcement_id = a.id), 0) as read_count
+        select a.*
         from announcements a
         where a.id = #{id}
     </select>
@@ -89,28 +89,26 @@
     
     <!-- 查询所有通知公告 -->
     <select id="findAll" resultMap="AnnouncementResultMap">
-        select a.*, COALESCE((SELECT COUNT(*) FROM announcement_read_records r WHERE r.announcement_id = a.id), 0) as read_count
-        from announcements a
+        select * from announcements
         order by 
-            CASE WHEN a.priority = 'important' THEN 0 ELSE 1 END,
-            a.create_time desc
+            CASE WHEN priority = 'important' THEN 0 ELSE 1 END,
+            create_time desc
     </select>
     
     <!-- 动态条件查询通知公告 -->
     <select id="list" resultMap="AnnouncementResultMap">
-        select a.*, COALESCE((SELECT COUNT(*) FROM announcement_read_records r WHERE r.announcement_id = a.id), 0) as read_count
-        from announcements a
+        select * from announcements
         <where>
             <if test="title != null and title != ''">
-                and a.title like concat('%',#{title},'%')
+                and title like concat('%',#{title},'%')
             </if>
             <if test="status != null and status != ''">
-                and a.status = #{status}
+                and status = #{status}
             </if>
         </where>
         order by 
-            CASE WHEN a.priority = 'important' THEN 0 ELSE 1 END,
-            a.create_time desc
+            CASE WHEN priority = 'important' THEN 0 ELSE 1 END,
+            create_time desc
     </select>
     
     <!-- 根据ID列表查询通知公告 -->
@@ -136,37 +134,51 @@
     
     <!-- 分页查询通知公告 -->
     <select id="findPage" resultMap="AnnouncementResultMap">
-        SELECT * FROM announcements 
-        ORDER BY 
+        SELECT * FROM announcements
+        <where>
+            <if test="title != null and title != ''">
+                and a.title like concat('%',#{title},'%')
+            </if>
+            <if test="status != null and status != ''">
+                and a.status = #{status}
+            </if>
+        </where>
+        ORDER BY
             CASE WHEN priority = 'important' THEN 0 ELSE 1 END,
-            publish_time DESC 
+            publish_time DESC
         LIMIT #{offset}, #{pageSize}
     </select>
     
     <!-- 根据用户类型和用户信息获取公告列表 -->
     <select id="getAnnouncementsForUser" resultMap="AnnouncementResultMap">
-        SELECT a.*, COALESCE((SELECT COUNT(*) FROM announcement_read_records r WHERE r.announcement_id = a.id), 0) as read_count
-        FROM announcements a
-        WHERE a.status = 'PUBLISHED'
-        AND (a.valid_to IS NULL OR a.valid_to > NOW())
+        SELECT * FROM announcements
+        WHERE status = 'PUBLISHED'
+        AND (valid_to IS NULL OR valid_to > NOW())
         <choose>
             <when test="userType == 'STUDENT'">
                 AND (
-                    a.target_type = 'ALL' 
-                    OR a.target_type = 'STUDENT'
-                    OR (a.target_type = 'MAJOR' AND a.target_value = #{userInfo})
+                    target_type LIKE '%ALL%'
+                    OR target_type LIKE '%STUDENT%'
+                    OR (target_type LIKE '%MAJOR%' AND target_value = #{userInfo})
                 )
             </when>
             <when test="userType == 'TEACHER'">
                 AND (
-                    a.target_type = 'ALL' 
-                    OR a.target_type = 'TEACHER'
-                    OR (a.target_type = 'TEACHER_TYPE' AND a.target_value = #{userInfo})
+                    target_type LIKE '%ALL%'
+                    OR target_type LIKE '%TEACHER%'
+                    OR (target_type LIKE '%TEACHER_TYPE%' AND target_value = #{userInfo})
                 )
             </when>
         </choose>
-        ORDER BY 
-            CASE WHEN a.priority = 'important' THEN 0 ELSE 1 END,
-            a.publish_time DESC
+        ORDER BY
+            CASE WHEN priority = 'important' THEN 0 ELSE 1 END,
+            publish_time DESC
     </select>
+    
+    <!-- 增加公告阅读次数 -->
+    <update id="incrementReadCount">
+        update announcements
+        set read_count = COALESCE(read_count, 0) + 1
+        where id = #{id}
+    </update>
 </mapper>

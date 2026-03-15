@@ -119,10 +119,10 @@ const loadAnnouncements = async () => {
   try {
     const majorId = getMajorId()
     const response = await getAnnouncementsForUser('STUDENT', majorId)
-    if (response.data && response.data.code === 200) {
-      announcements.value = response.data.data || []
+    if (response && response.code === 200) {
+      announcements.value = response.data || []
     } else {
-      ElMessage.error(response.data.message || '获取公告失败')
+      ElMessage.error(response?.message || '获取公告失败')
     }
   } catch (error) {
     console.error('获取公告失败:', error)

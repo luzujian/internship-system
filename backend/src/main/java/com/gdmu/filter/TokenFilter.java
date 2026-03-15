@@ -118,6 +118,24 @@ public class TokenFilter extends OncePerRequestFilter implements ApplicationCont
 
         User user = getUserService().findByUsername(username);
         if (user != null) {
+            // 对于企业用户，从company_users表获取完整信息
+            if ("ROLE_COMPANY".equals(user.getRole())) {
+                CompanyUser companyUser = getCompanyUserService().findByUsername(username);
+                if (companyUser != null) {
+                    // 创建User对象，使用CompanyUser的ID
+                    User companyBaseUser = new User();
+                    companyBaseUser.setId(companyUser.getId());
+                    companyBaseUser.setUsername(companyUser.getUsername());
+                    companyBaseUser.setPassword(companyUser.getPassword());
+                    companyBaseUser.setRole(companyUser.getRole());
+                    companyBaseUser.setName(companyUser.getCompanyName());
+                    companyBaseUser.setCreateTime(companyUser.getCreateTime());
+                    companyBaseUser.setUpdateTime(companyUser.getUpdateTime());
+                    userCacheService.cacheUser(username, companyBaseUser);
+                    log.debug("从数据库获取企业用户并缓存到 Redis: {}", username);
+                    return companyBaseUser;
+                }
+            }
             userCacheService.cacheUser(username, user);
             log.debug("从数据库获取用户并缓存到 Redis: {}", username);
         }

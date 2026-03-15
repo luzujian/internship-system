@@ -8,7 +8,7 @@ import { Search, Refresh, View, ArrowRight, Close, Plus, Edit, Delete, Download,
 import { useRouter } from 'vue-router'
 import request from '../../utils/request'
 import companyService from '../../api/company'
-import * as XLSX from 'xlsx'
+import { exportToExcel } from '../../utils/xlsx'
 import html2pdf from 'html2pdf.js'
 import { useSystemSettingsStore } from '../../store/systemSettings'
 import { useAuthStore } from '../../store/auth'
@@ -104,9 +104,9 @@ const queryPage = async (): Promise<void> => {
     logger.log('查询参数 - 处理后:', params)
     
     const response = await companyService.getCompanies(params)
-    if (response && response.data && response.data.code === 200 && response.data.data) {
-      const dataList = response.data.data.rows || []
-      const totalCount = response.data.data.total || 0
+    if (response && response.code === 200 && response.data) {
+      const dataList = response.data.rows || []
+      const totalCount = response.data.total || 0
       tableData.value = dataList
       pagination.value.total = totalCount
       logger.log('查询结果 - 数据条数:', dataList.length, '总数:', totalCount)
@@ -168,7 +168,7 @@ const getImageUrls = (urls) => {
 const viewCompanyDetail = async (id: string): Promise<void> => {
   try {
     const response = await request.get(`/admin/companies/${id}`)
-    const result = response.data
+    const result = response
     if (result && result.code === 200 && result.data) {
       currentCompany.value = result.data
       viewDialogVisible.value = true
@@ -273,7 +273,7 @@ const handleToggleStatus = async (id: number, currentStatus: number | string) =>
 
     const response = await companyService.updateCompanyStatus(id, newStatus)
 
-    if (response && response.data.code === 200) {
+    if (response && response.code === 200) {
       ElMessage.success(`${statusText}成功`)
       queryPage()
     }
@@ -305,7 +305,7 @@ const batchDelete = (): void => {
 }
 
 // 导出Excel
-const exportToExcel = async (): Promise<void> => {
+const handleExportToExcel = async (): Promise<void> => {
   try {
     ElMessage({ message: '正在准备导出数据...', type: 'info' })
     
@@ -453,7 +453,7 @@ const updateAllTags = async (): Promise<void> => {
     })
     
     const response = await request.post('/admin/companies/tags/update-all')
-    if (response.data && response.data.code === 200) {
+    if (response.code === 200) {
       ElMessage.success('批量更新标签成功')
       queryPage()
     } else {

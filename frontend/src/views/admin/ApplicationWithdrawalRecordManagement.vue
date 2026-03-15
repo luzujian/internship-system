@@ -272,7 +272,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Refresh, Delete, Download, View } from '@element-plus/icons-vue'
 import { useAuthStore } from '../../store/auth'
 import request from '../../utils/request'
-import * as XLSX from 'xlsx'
+import { exportToExcel } from '../../utils/xlsx'
 
 const authStore = useAuthStore()
 
@@ -340,11 +340,11 @@ const fetchData = async (): Promise<void> => {
       response = await fetchCompanyData()
     }
     
-    if (response.data && response.data.code === 200) {
-      tableData.value = response.data.data.list || response.data.data.rows || []
-      total.value = response.data.data.total || 0
+    if (response.data && response.code === 200) {
+      tableData.value = response.data.list || response.data.rows || []
+      total.value = response.data.total || 0
     } else {
-      ElMessage.error(response.data?.msg || '获取数据失败')
+      ElMessage.error(response.message || '获取数据失败')
     }
   } catch (error) {
     logger.error('获取数据失败:', error)
@@ -402,11 +402,11 @@ const handleDelete = (row: unknown): Promise<void> => {
       } else {
         response = await request.delete(`/admin/companies/recall-records/${row.id}`)
       }
-      if (response.data && response.data.code === 200) {
+      if (response.data && response.code === 200) {
         ElMessage.success('删除成功')
         fetchData()
       } else {
-        ElMessage.error(response.data?.msg || '删除失败')
+        ElMessage.error(response.message || '删除失败')
       }
     } catch (error) {
       logger.error('删除失败:', error)
@@ -434,11 +434,11 @@ const handleBatchDelete = (): Promise<void> => {
       } else {
         response = await request.delete('/admin/companies/recall-records/batch', { data: { ids } })
       }
-      if (response.data && response.data.code === 200) {
+      if (response.data && response.code === 200) {
         ElMessage.success('批量删除成功')
         fetchData()
       } else {
-        ElMessage.error(response.data?.msg || '批量删除失败')
+        ElMessage.error(response.message || '批量删除失败')
       }
     } catch (error) {
       logger.error('批量删除失败:', error)
@@ -498,14 +498,10 @@ const handleExport = async (): Promise<void> => {
         '注册审核时间': formatDateTime(row.auditTime),
         '注册审核备注': row.auditRemark || '-'
       }))
-      fileName = `企业撤回申请记录_${new Date().toISOString().split('T')[0]}.xlsx`
+      fileName = `企业撤回申请记录_${new Date().toISOString().split('T')[0]}`
     }
 
-    const ws = XLSX.utils.json_to_sheet(data)
-    const wb = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(wb, ws, '撤回申请记录')
-
-    XLSX.writeFile(wb, fileName)
+    await exportToExcel(data, fileName, '撤回申请记录')
     ElMessage.success('导出成功')
   } catch (error) {
     logger.error('导出Excel失败:', error)

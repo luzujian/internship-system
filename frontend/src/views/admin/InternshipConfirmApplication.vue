@@ -7,7 +7,7 @@ import { Search, Refresh, Download, Document, View } from '@element-plus/icons-v
 import { useRoute } from 'vue-router'
 import request from '../../utils/request'
 import { useSystemSettingsStore } from '../../store/systemSettings'
-import * as XLSX from 'xlsx'
+import { exportToExcel } from '../../utils/xlsx'
 import type { PaginationState } from '@/types/admin'
 
 const route = useRoute()
@@ -134,9 +134,9 @@ const queryData = async (): Promise<void> => {
       pageSize: pagination.value.pageSize
     }
     const response = await request.get('/admin/internship-status', { params })
-    if (response && response.data && response.data.code === 200 && response.data.data) {
-      const dataList = response.data.data.rows || []
-      const totalCount = response.data.data.total || 0
+    if (response.code === 200 && response.data) {
+      const dataList = response.data.rows || []
+      const totalCount = response.data.total || 0
       tableData.value = dataList
       pagination.value.total = totalCount
     } else {
@@ -239,8 +239,8 @@ const exportAll = async (): Promise<void> => {
       ...searchForm.value
     }
     const response = await request.get('/admin/internship-status/export', { params })
-    if (response && response.data && response.data.code === 200 && response.data.data) {
-      const data = response.data.data
+    if (response.code === 200 && response.data) {
+      const data = response.data
       if (data.length === 0) {
         ElMessage.warning('暂无数据可导出')
         return
@@ -263,10 +263,7 @@ const exportAll = async (): Promise<void> => {
         '备注': item.remark ?? ''
       }))
 
-      const ws = XLSX.utils.json_to_sheet(exportData)
-      const wb = XLSX.utils.book_new()
-      XLSX.utils.book_append_sheet(wb, ws, '实习确认申请表')
-      XLSX.writeFile(wb, `实习确认申请表_${new Date().getTime()}.xlsx`)
+      await exportToExcel(exportData, `实习确认申请表_${new Date().getTime()}`, '实习确认申请表')
 
       ElMessage.success('导出成功')
     } else {

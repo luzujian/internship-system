@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from '@/store/auth'
@@ -37,6 +37,17 @@ const findCityCode = (cityName, provinceCode) => {
            (info.label === cityName ||
             info.label === cityName.slice(0, -1) || // 去掉"市"后缀
             info.label === cityName + '市') // 添加"市"后缀
+  }) || null
+}
+
+// 直辖市特殊处理：返回"市辖区"代码
+const getDirectMunicipalityCityCode = (provinceName) => {
+  const provinceCode = findProvinceCode(provinceName)
+  if (!provinceCode) return null
+  // 在直辖市中，"市辖区"的父级是省级代码
+  return Object.keys(chinaData).find(code => {
+    const info = chinaData[code]
+    return info.parent === provinceCode && info.label === '市辖区'
   }) || null
 }
 
@@ -144,6 +155,17 @@ const photoPreviewVisible = ref(false)
 const videoPreviewVisible = ref(false)
 const currentPreviewUrl = ref('')
 
+const savePromotionData = () => {
+  const data = {
+    logo: promotionForm.value.logo,
+    photos: JSON.stringify(promotionForm.value.photos),
+    videos: JSON.stringify(promotionForm.value.videos),
+    introduction: promotionForm.value.introduction
+  }
+  
+  return CompanyService.updateCompanyInfo(data)
+}
+
 const handlePhotoPreview = (file) => {
   console.log('=== 照片预览 ===', file)
   if (file.url) {
@@ -169,18 +191,39 @@ const handleVideoPreview = (file) => {
 const removeVideo = (index) => {
   videoFileList.value.splice(index, 1)
   promotionForm.value.videos.splice(index, 1)
+  savePromotionData().then(saveRes => {
+    if (saveRes.code === 200) {
+      ElMessage.success('视频删除成功')
+    } else {
+      ElMessage.error('删除保存失败: ' + (saveRes.message || '未知错误'))
+    }
+  })
 }
 
 const removePhoto = (index) => {
   photoFileList.value.splice(index, 1)
   promotionForm.value.photos.splice(index, 1)
   console.log('删除照片，剩余照片:', promotionForm.value.photos)
+  savePromotionData().then(saveRes => {
+    if (saveRes.code === 200) {
+      ElMessage.success('照片删除成功')
+    } else {
+      ElMessage.error('删除保存失败: ' + (saveRes.message || '未知错误'))
+    }
+  })
 }
 
 const removeLogo = () => {
   promotionForm.value.logo = ''
   logoFileList.value = []
   console.log('删除logo')
+  savePromotionData().then(saveRes => {
+    if (saveRes.code === 200) {
+      ElMessage.success('Logo删除成功')
+    } else {
+      ElMessage.error('删除保存失败: ' + (saveRes.message || '未知错误'))
+    }
+  })
 }
 
 const industryOptions = [
@@ -212,6 +255,13 @@ const handleLogoChange = (file) => {
   UploadService.uploadImage(file.raw).then(res => {
     if (res.code === 200) {
       promotionForm.value.logo = res.data.url
+      savePromotionData().then(saveRes => {
+        if (saveRes.code === 200) {
+          ElMessage.success('Logo上传并保存成功')
+        } else {
+          ElMessage.error('Logo保存失败: ' + (saveRes.message || '未知错误'))
+        }
+      })
     } else {
       ElMessage.error(res.message || '上传失败')
     }
@@ -239,7 +289,21 @@ const handlePhotoChange = (file, fileList) => {
     
     if (res.code === 200) {
       console.log('uploadedFiles:', res.data.uploadedFiles)
-      const newPhotoUrl = res.data.uploadedFiles[0].url
+      
+      if (!res.data.uploadedFiles || res.data.uploadedFiles.length === 0) {
+        console.error('照片上传失败：uploadedFiles为空')
+        ElMessage.error('照片上传失败，请重试')
+        return
+      }
+      
+      const uploadedFile = res.data.uploadedFiles[0]
+      if (!uploadedFile || !uploadedFile.url) {
+        console.error('照片上传失败：文件信息不完整')
+        ElMessage.error('照片上传失败，文件信息不完整')
+        return
+      }
+      
+      const newPhotoUrl = uploadedFile.url
       console.log('新照片URL:', newPhotoUrl)
       
       promotionForm.value.photos.push(newPhotoUrl)
@@ -253,13 +317,26 @@ const handlePhotoChange = (file, fileList) => {
       
       console.log('更新后的photos:', promotionForm.value.photos)
       console.log('更新后的photoFileList:', photoFileList.value)
+      
+      savePromotionData().then(saveRes => {
+        if (saveRes.code === 200) {
+          ElMessage.success('照片上传并保存成功')
+        } else {
+          ElMessage.error('照片保存失败: ' + (saveRes.message || '未知错误'))
+        }
+      })
+      
+      if (res.data.errors && res.data.errors.length > 0) {
+        console.warn('上传警告:', res.data.errors)
+        ElMessage.warning(res.data.errors.join('；'))
+      }
     } else {
       console.error('照片上传失败:', res.message)
       ElMessage.error(res.message || '上传失败')
     }
   }).catch(err => {
     console.error('照片上传异常:', err)
-    ElMessage.error('上传失败: ' + err.message)
+    ElMessage.error('上传失败: ' + (err.message || '未知错误'))
   })
 }
 
@@ -282,7 +359,21 @@ const handleVideoChange = (file, fileList) => {
     
     if (res.code === 200) {
       console.log('uploadedFiles:', res.data.uploadedFiles)
-      const newVideoUrl = res.data.uploadedFiles[0].url
+      
+      if (!res.data.uploadedFiles || res.data.uploadedFiles.length === 0) {
+        console.error('视频上传失败：uploadedFiles为空')
+        ElMessage.error('视频上传失败，请重试')
+        return
+      }
+      
+      const uploadedFile = res.data.uploadedFiles[0]
+      if (!uploadedFile || !uploadedFile.url) {
+        console.error('视频上传失败：文件信息不完整')
+        ElMessage.error('视频上传失败，文件信息不完整')
+        return
+      }
+      
+      const newVideoUrl = uploadedFile.url
       console.log('新视频URL:', newVideoUrl)
       
       promotionForm.value.videos.push(newVideoUrl)
@@ -295,13 +386,26 @@ const handleVideoChange = (file, fileList) => {
       
       console.log('更新后的videos:', promotionForm.value.videos)
       console.log('更新后的videoFileList:', videoFileList.value)
+      
+      savePromotionData().then(saveRes => {
+        if (saveRes.code === 200) {
+          ElMessage.success('视频上传并保存成功')
+        } else {
+          ElMessage.error('视频保存失败: ' + (saveRes.message || '未知错误'))
+        }
+      })
+      
+      if (res.data.errors && res.data.errors.length > 0) {
+        console.warn('上传警告:', res.data.errors)
+        ElMessage.warning(res.data.errors.join('；'))
+      }
     } else {
       console.error('视频上传失败:', res.message)
       ElMessage.error(res.message || '上传失败')
     }
   }).catch(err => {
     console.error('视频上传异常:', err)
-    ElMessage.error('上传失败: ' + err.message)
+    ElMessage.error('上传失败: ' + (err.message || '未知错误'))
   })
 }
 
@@ -322,12 +426,15 @@ const handleRemove = (file, fileList) => {
 
 const handleSaveBasic = () => {
   loading.value = true
+
+  const isDirectMunicipality = ['北京市', '上海市', '天津市', '重庆市'].includes(basicForm.value.province)
+
   const data = {
     companyName: basicForm.value.companyName,
     industry: basicForm.value.industry,
     scale: basicForm.value.scale,
     province: basicForm.value.province,
-    city: basicForm.value.city,
+    city: isDirectMunicipality ? '市辖区' : basicForm.value.city,
     district: basicForm.value.district,
     detailAddress: basicForm.value.detailAddress,
     contactPerson: basicForm.value.contactPerson,
@@ -425,9 +532,9 @@ const handleSaveAll = () => {
 }
 
 const loadCompanyInfo = () => {
-  // 检查是否获取到有效的企业 ID
   if (!companyId.value) {
-    ElMessage.error('未获取到企业 ID，无法加载企业信息')
+    console.log('等待用户信息加载...')
+    loading.value = false
     return
   }
 
@@ -454,11 +561,12 @@ const loadCompanyInfo = () => {
         if (provinceCode) {
           addressCodes.push(provinceCode)
 
-          // 处理特殊情况："市辖区"、"县"等不是实际的区名，需要跳过直接匹配区县
-          const isDirectDistrict = data.city === '市辖区' || data.city === '县' || data.city === '城区'
+          // 检查是否是直辖市
+          const isDirectMunicipality = ['北京市', '上海市', '天津市', '重庆市'].includes(data.province)
 
-          if (data.city && !isDirectDistrict) {
-            const cityCode = findCityCode(data.city, provinceCode)
+          if (isDirectMunicipality) {
+            // 直辖市特殊处理：添加"市辖区"代码
+            const cityCode = getDirectMunicipalityCityCode(data.province)
             if (cityCode) {
               addressCodes.push(cityCode)
               if (data.district) {
@@ -470,15 +578,35 @@ const loadCompanyInfo = () => {
                 }
               }
             } else {
-              console.warn('无法解析城市代码:', data.city)
+              console.warn('无法解析直辖市辖区代码:', data.province)
             }
-          } else if (data.district) {
-            // 直接匹配区县（适用于"市辖区"或省直辖的情况）
-            const districtCode = findDistrictByProvince(data.district, provinceCode)
-            if (districtCode) {
-              addressCodes.push(districtCode)
-            } else {
-              console.warn('无法直接匹配区县代码:', data.district)
+          } else {
+            // 非直辖市正常处理
+            const isDirectDistrict = data.city === '市辖区' || data.city === '县' || data.city === '城区'
+
+            if (data.city && !isDirectDistrict) {
+              const cityCode = findCityCode(data.city, provinceCode)
+              if (cityCode) {
+                addressCodes.push(cityCode)
+                if (data.district) {
+                  const districtCode = findDistrictCode(data.district, cityCode)
+                  if (districtCode) {
+                    addressCodes.push(districtCode)
+                  } else {
+                    console.warn('无法解析区县代码:', data.district)
+                  }
+                }
+              } else {
+                console.warn('无法解析城市代码:', data.city)
+              }
+            } else if (data.district) {
+              // 直接匹配区县（适用于"市辖区"或省直辖的情况）
+              const districtCode = findDistrictByProvince(data.district, provinceCode)
+              if (districtCode) {
+                addressCodes.push(districtCode)
+              } else {
+                console.warn('无法直接匹配区县代码:', data.district)
+              }
             }
           }
         } else {
@@ -491,7 +619,13 @@ const loadCompanyInfo = () => {
       basicForm.value.industry = data.industry || ''
       basicForm.value.scale = data.scale || ''
       basicForm.value.province = data.province || ''
-      basicForm.value.city = data.city || ''
+      // 对于直辖市，city 应该显示为省份名称（如"北京市"而不是"市辖区"）
+      const isDirectMunicipality = ['北京市', '上海市', '天津市', '重庆市'].includes(data.province)
+      if (isDirectMunicipality && data.city === '市辖区') {
+        basicForm.value.city = data.province
+      } else {
+        basicForm.value.city = data.city || ''
+      }
       basicForm.value.district = data.district || ''
       // 确保 addressCode 是一个新的数组引用，触发组件更新
       basicForm.value.addressCode = addressCodes.length > 0 ? [...addressCodes] : null
@@ -572,6 +706,12 @@ const handleAddressChange = (e) => {
 onMounted(() => {
   loadCompanyInfo()
 })
+
+watch(companyId, (newVal) => {
+  if (newVal && !basicForm.value.companyName) {
+    loadCompanyInfo()
+  }
+})
 </script>
 
 <template>
@@ -581,7 +721,7 @@ onMounted(() => {
       <p>填写或修改企业资料</p>
     </div>
 
-    <el-tabs v-model="activeTab" class="info-tabs">
+    <el-tabs v-model="activeTab" class="info-tabs" v-loading="loading">
       <el-tab-pane label="基础信息" name="basic">
         <div class="form-card">
           <el-form :model="basicForm" label-width="120px" label-position="left">

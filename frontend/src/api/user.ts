@@ -49,7 +49,7 @@ const UserService = {
     if (response.data) {
       cacheService.set(cacheKey, response.data, CACHE_CONFIG.EXPIRATION_TIME.MEDIUM)
     }
-    return response.data
+    return response
   },
 
   // 根据角色获取用户列表
@@ -65,16 +65,17 @@ const UserService = {
     // 缓存未命中，请求数据
     const response = await request.get(`/users/role/${role}`)
     logger.log(`getUsersByRole(${role}) - response:`, response)
+    logger.log(`getUsersByRole(${role}) - response.code:`, response.code)
     logger.log(`getUsersByRole(${role}) - response.data:`, response.data)
 
     // 解析后端响应数据格式：{ code: 200, data: [...], message: "success" }
     let users: User[] = []
-    if (response.data && response.data.code === 200) {
-      users = response.data.data || []
-    } else if (Array.isArray(response.data)) {
+    if (response && response.code === 200) {
+      users = response.data || []
+    } else if (Array.isArray(response)) {
+      users = response
+    } else if (response && response.data) {
       users = response.data
-    } else if (response.data && response.data.data) {
-      users = response.data.data
     }
 
     logger.log(`getUsersByRole(${role}) - 解析后的用户列表:`, users)

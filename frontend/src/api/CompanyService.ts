@@ -100,7 +100,7 @@ export default {
     })
   },
 
-  getRecentApplications(companyId: number, limit: number) {
+  getRecentApplications(companyId?: number, limit: number = 5) {
     return request({
       url: '/company/applications/recent',
       method: 'get',
@@ -108,7 +108,7 @@ export default {
     })
   },
 
-  getNotifications(limit: number) {
+  getNotifications(limit: number = 5) {
     return request({
       url: '/company/notifications',
       method: 'get',

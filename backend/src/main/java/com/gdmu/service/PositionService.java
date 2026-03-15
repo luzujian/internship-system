@@ -50,6 +50,16 @@ public interface PositionService {
      * @return 岗位信息列表
      */
     List<Position> findByCompanyId(Long companyId);
+
+    /**
+     * 根据企业ID和条件查询岗位信息
+     * @param companyId 企业ID
+     * @param positionName 岗位名称
+     * @param department 部门
+     * @param status 状态
+     * @return 岗位信息列表
+     */
+    List<Position> findByCompanyIdWithConditions(Long companyId, String positionName, String department, String status);
     
     /**
      * 动态条件查询岗位信息
@@ -148,4 +158,18 @@ public interface PositionService {
      * @return 清除的记录数
      */
     int clearAll();
+
+    /**
+     * 暂停岗位招聘
+     * @param positionId 岗位 ID
+     * @return 更新的记录数
+     */
+    int pausePosition(Long positionId);
+
+    /**
+     * 恢复岗位招聘
+     * @param positionId 岗位 ID
+     * @return 更新的记录数
+     */
+    int resumePosition(Long positionId);
 }

@@ -340,10 +340,10 @@ const fetchRules = async (): Promise<void> => {
   loading.value = true
   try {
     const response = await request.get('/admin/scoring-rule')
-    if (response.data.code === 200) {
-      ruleList.value = response.data.data || []
+    if (response.code === 200) {
+      ruleList.value = response.data || []
     } else {
-      ElMessage.error(response.data.msg || '获取评分规则列表失败')
+      ElMessage.error(response.message || '获取评分规则列表失败')
     }
   } catch (error) {
     ElMessage.error('获取评分规则列表失败')
@@ -355,8 +355,8 @@ const fetchRules = async (): Promise<void> => {
 const fetchCategoryWeights = async (): Promise<void> => {
   try {
     const response = await request.get('/admin/category-weight/active')
-    if (response.data.code === 200) {
-      const weights = response.data.data || []
+    if (response.code === 200) {
+      const weights = response.data || []
       const weightMap = {}
       weights.forEach(item => {
         weightMap[item.categoryCode] = item.weight
@@ -381,10 +381,10 @@ const handleFilter = async (): Promise<void> => {
     }
     
     const response = await request.get(url)
-    if (response.data.code === 200) {
-      ruleList.value = response.data.data || []
+    if (response.code === 200) {
+      ruleList.value = response.data || []
     } else {
-      ElMessage.error(response.data.msg || '筛选失败')
+      ElMessage.error(response.message || '筛选失败')
     }
   } catch (error) {
     ElMessage.error('筛选失败')
@@ -454,11 +454,11 @@ const handleDelete = async (row): Promise<void> => {
     })
     
     const response = await request.delete(`/admin/scoring-rule/${row.id}`)
-    if (response.data.code === 200) {
+    if (response.code === 200) {
       ElMessage.success('删除成功')
       fetchRules()
     } else {
-      ElMessage.error(response.data.msg || '删除失败')
+      ElMessage.error(response.message || '删除失败')
     }
   } catch (error) {
     if (error !== 'cancel') {
@@ -570,8 +570,8 @@ const handleSave = async (): Promise<void> => {
       ]
       response = await request.post('/admin/scoring-rule/batch', { category: form.value.category, rules })
     }
-    
-    if (response.data.code === 200) {
+
+    if (response.code === 200) {
       ElMessage.success('保存成功')
       dialogVisible.value = false
       await fetchRules()
@@ -579,7 +579,7 @@ const handleSave = async (): Promise<void> => {
       await redistributeWeights()
       await fetchCategoryWeights()
     } else {
-      ElMessage.error(response.data.msg || '保存失败')
+      ElMessage.error(response.message || '保存失败')
     }
   } catch (error) {
     ElMessage.error('保存失败')
@@ -682,13 +682,13 @@ const handleSaveAllWeights = async (): Promise<void> => {
     }
     
     const response = await request.post('/admin/category-weight/batch', categoryWeightsList)
-    
-    if (response.data.code === 200) {
+
+    if (response.code === 200) {
       await fetchCategoryWeights()
       ElMessage.success('权重保存成功')
       weightDialogVisible.value = false
     } else {
-      ElMessage.error(response.data.msg || '保存失败')
+      ElMessage.error(response.message || '保存失败')
     }
   } catch (error) {
     logger.error('保存权重失败:', error)
@@ -738,12 +738,12 @@ const redistributeWeights = async (): Promise<void> => {
     
     const response = await request.post('/admin/category-weight/batch', categoryWeightsList)
     
-    if (response.data.code === 200) {
+    if (response.code === 200) {
       logger.log('权重批量更新成功')
       await fetchCategoryWeights()
     } else {
-      logger.error('权重批量更新失败:', response.data.msg)
-      ElMessage.error('自动分配权重失败: ' + (response.data.msg || '未知错误'))
+      logger.error('权重批量更新失败:', response.message)
+      ElMessage.error('自动分配权重失败: ' + (response.message || '未知错误'))
     }
   } catch (error) {
     logger.error('自动分配权重失败:', error)

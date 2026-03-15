@@ -245,16 +245,16 @@ const updateUsername = async () => {
       newUsername: usernameForm.newUsername
     })
     
-    if (response.data && response.data.code === 200) {
+    if (response && response.code === 200) {
       ElMessage.success('用户名修改成功，请重新登录')
       editUsernameDialogVisible.value = false
-      
+
       setTimeout(() => {
         authStore.logout()
         router.push('/login')
       }, 1500)
     } else {
-      ElMessage.error(response.data?.message || '用户名修改失败')
+      ElMessage.error(response?.message || '用户名修改失败')
     }
   } catch (error) {
     if (error !== 'cancel') {
@@ -280,14 +280,14 @@ const changePassword = async () => {
 
     const response = await UserService.changePassword(passwordData)
 
-    if (response.data && response.data.code === 200) {
+    if (response && response.code === 200) {
       ElMessage.success('密码修改成功，请重新登录')
       resetPasswordForm()
 
       authStore.logout()
       router.push('/login')
     } else {
-      ElMessage.error(response.data?.message || '密码修改失败')
+      ElMessage.error(response?.message || '密码修改失败')
     }
   } catch (error) {
     if (error !== 'cancel') {

@@ -2,6 +2,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElScrollbar } from 'element-plus'
 import { useAuthStore } from '@/store/auth'
 import {
   Avatar,
@@ -26,6 +27,12 @@ import {
   Setting,
   View
 } from '@element-plus/icons-vue'
+
+defineOptions({
+  components: {
+    ElScrollbar
+  }
+})
 
 const router = useRouter()
 const route = useRoute()
@@ -198,9 +205,11 @@ onMounted(() => {
         </el-menu>
       </aside>
 
-      <el-main>
-        <router-view></router-view>
-      </el-main>
+      <el-scrollbar style="flex: 1;">
+        <el-main>
+          <router-view></router-view>
+        </el-main>
+      </el-scrollbar>
     </div>
   </div>
 </template>
@@ -394,9 +403,7 @@ onMounted(() => {
 }
 
 .el-main {
-  flex: 1;
   padding: 24px;
-  overflow-y: auto;
   background: #f5f7fa;
   max-width: 100%;
   width: 100%;

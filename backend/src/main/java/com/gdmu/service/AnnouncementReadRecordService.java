@@ -28,7 +28,7 @@ public interface AnnouncementReadRecordService {
      * @param userType 用户类型
      * @return 公告阅读记录
      */
-    AnnouncementReadRecord findByAnnouncementAndUser(Long announcementId, Long userId, String userType);
+    AnnouncementReadRecord findByAnnouncementAndUser(Long announcementId, String userId, String userType);
     
     /**
      * 查询公告的未读人数

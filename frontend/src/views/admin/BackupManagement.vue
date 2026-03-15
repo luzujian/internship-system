@@ -227,10 +227,10 @@ const fetchBackupRecords = async () => {
   loading.value = true
   try {
     const response = await request.get('/admin/backup/records')
-    if (response.data.code === 200) {
-      backupRecords.value = response.data.data || []
+    if (response.code === 200) {
+      backupRecords.value = response.data || []
     } else {
-      ElMessage.error(response.data.msg || '获取备份记录失败')
+      ElMessage.error(response.message || '获取备份记录失败')
     }
   } catch (error) {
     ElMessage.error('获取备份记录失败')
@@ -254,13 +254,13 @@ const handleManualBackup = async () => {
     
     const response = await request.post('/admin/backup/manual')
     
-    if (response.data.code === 200) {
+    if (response.code === 200) {
       completeProgress(true, '备份成功')
       ElMessage.success('备份成功')
       fetchBackupRecords()
     } else {
-      completeProgress(false, response.data.msg || '备份失败')
-      ElMessage.error(response.data.msg || '备份失败')
+      completeProgress(false, response.message || '备份失败')
+      ElMessage.error(response.message || '备份失败')
     }
   } catch (error) {
     if (error !== 'cancel') {
@@ -309,15 +309,15 @@ const handleRestore = async (row) => {
       timeout: 120000
     })
     
-    if (response.data.code === 200) {
+    if (response.code === 200) {
       completeProgress(true, '数据恢复成功，正在重新连接数据库...')
       ElMessage.success('数据恢复成功，系统将自动重启')
       setTimeout(() => {
         window.location.reload()
       }, 3000)
     } else {
-      completeProgress(false, response.data.msg || '数据恢复失败')
-      ElMessage.error(response.data.msg || '数据恢复失败')
+      completeProgress(false, response.message || '数据恢复失败')
+      ElMessage.error(response.message || '数据恢复失败')
     }
   } catch (error) {
     if (error !== 'cancel') {
@@ -342,11 +342,11 @@ const handleDelete = async (row) => {
     })
     
     const response = await request.delete(`/admin/backup/${row.id}`)
-    if (response.data.code === 200) {
+    if (response.code === 200) {
       ElMessage.success('删除成功')
       fetchBackupRecords()
     } else {
-      ElMessage.error(response.data.msg || '删除失败')
+      ElMessage.error(response.message || '删除失败')
     }
   } catch (error) {
     if (error !== 'cancel') {
@@ -358,8 +358,8 @@ const handleDelete = async (row) => {
 const loadSchedule = async () => {
   try {
     const response = await request.get('/admin/backup/schedule')
-    if (response.data.code === 200) {
-      const data = response.data.data
+    if (response.code === 200) {
+      const data = response.data
       scheduleForm.value = {
         enabled: data.enabled,
         frequency: data.frequency,
@@ -395,10 +395,10 @@ const saveSchedule = async () => {
       time: formatTime(scheduleForm.value.time)
     }
     const response = await request.put('/admin/backup/schedule', data)
-    if (response.data.code === 200) {
+    if (response.code === 200) {
       ElMessage.success('保存成功')
     } else {
-      ElMessage.error(response.data.msg || '保存失败')
+      ElMessage.error(response.message || '保存失败')
     }
   } catch (error) {
     ElMessage.error('保存失败')

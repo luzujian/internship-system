@@ -1,10 +1,33 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import path from 'path'
+import viteImagemin from 'vite-plugin-imagemin'
 
-// https://vite.dev/config/
 export default defineConfig({
-  plugins: [vue()],
+  plugins: [
+    vue(),
+    viteImagemin({
+      gifsicle: {
+        optimizationLevel: 3,
+        interlaced: false
+      },
+      optipng: {
+        optimizationLevel: 7
+      },
+      mozjpeg: {
+        quality: 80
+      },
+      svgo: {
+        plugins: [
+          { name: 'removeViewBox', active: false },
+          { name: 'removeEmptyAttrs', active: false }
+        ]
+      },
+      webp: {
+        quality: 80
+      }
+    })
+  ],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, 'src')
@@ -16,6 +39,11 @@ export default defineConfig({
         target: 'http://localhost:8080',
         changeOrigin: true,
         rewrite: (path) => path
+      },
+      '/ws': {
+        target: 'ws://localhost:8080',
+        ws: true,
+        changeOrigin: true
       }
     }
   },
@@ -26,7 +54,6 @@ export default defineConfig({
       output: {
         manualChunks: {
           'element-plus': ['element-plus'],
-          echarts: ['echarts'],
           axios: ['axios'],
           xlsx: ['xlsx']
         },

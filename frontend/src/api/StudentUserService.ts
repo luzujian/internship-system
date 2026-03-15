@@ -79,12 +79,11 @@ const StudentUserService = {
 
       const response = await request.get(apiPath, { params })
       logger.log('getStudents - axios response:', response)
-      logger.log('getStudents - response.data:', response.data)
-      logger.log('getStudents - response.data.code:', response.data?.code)
-      logger.log('getStudents - response.data.data:', response.data?.data)
-      logger.log('getStudents - response.data.data.rows:', response.data?.data?.rows)
+      logger.log('getStudents - response.code:', response?.code)
+      logger.log('getStudents - response.data:', response?.data)
+      logger.log('getStudents - response.data.rows:', response?.data?.rows)
 
-      const result = response.data || response
+      const result = response || { code: 500, data: null, msg: '响应为空' }
       logger.log('getStudents - 返回的 result:', result)
       return result
     } catch (error) {
@@ -134,9 +133,9 @@ const StudentUserService = {
     try {
       const response = await request.get(`/admin/student-users/${studentId}/courses`)
       return {
-        code: (response.data && response.data.code === 200) || response.data.code === undefined ? 200 : response.data.code,
-        data: response.data.data || response.data,
-        msg: response.data.msg || '查询成功'
+        code: (response && response.code === 200) || response?.code === undefined ? 200 : response.code,
+        data: response.data || response,
+        msg: response.msg || '查询成功'
       }
     } catch (error) {
       logger.error('查询学生课程失败:', error)
@@ -151,7 +150,7 @@ const StudentUserService = {
   addStudent: async (studentData: Omit<StudentUser, 'id' | 'createTime' | 'updateTime'>) => {
     const response = await request.post('/admin/students', studentData)
     cacheService.clear()
-    return response.data
+    return response
   },
 
   batchAddStudents: async (studentList: Omit<StudentUser, 'id' | 'createTime' | 'updateTime'>[]) => {
@@ -174,12 +173,12 @@ const StudentUserService = {
       logger.log('提交的更新数据:', updateData)
       const response = await request.put('/admin/students', updateData)
       logger.log('更新学生响应:', response)
-      logger.log('响应数据详情:', response.data)
-      if (response.data && response.data.message) {
-        logger.log('后端返回的消息:', response.data.message)
+      logger.log('响应数据详情:', response)
+      if (response && response.message) {
+        logger.log('后端返回的消息:', response.message)
       }
       cacheService.clear()
-      return response.data
+      return response
     } catch (error) {
       logger.error('更新学生用户信息失败:', error)
       logger.error('错误详情:', error)
@@ -323,7 +322,7 @@ export const queryPageApi = async (params: {
 export const addApi = async (studentData: Omit<StudentUser, 'id' | 'createTime' | 'updateTime'>): Promise<{ code: number; data?: unknown; msg: string }> => {
   try {
     const response = await StudentUserService.addStudent(studentData)
-    const result = response.data || response
+    const result = response || { code: 500, msg: '响应为空' }
 
     if (result.code === 200) {
       return {
@@ -348,7 +347,7 @@ export const addApi = async (studentData: Omit<StudentUser, 'id' | 'createTime' 
 export const queryInfoApi = async (id: number) => {
   try {
     const response = await StudentUserService.getStudentById(id)
-    const result = response.data || response
+    const result = response || { code: 500, msg: '响应为空' }
 
     if ((result as { code?: number }).code === 200) {
       return {
@@ -372,7 +371,7 @@ export const queryInfoApi = async (id: number) => {
 export const updateApi = async (studentData: Partial<StudentUser>) => {
   try {
     const response = await StudentUserService.updateStudent(studentData.id!, studentData)
-    const result = response.data || response
+    const result = response || { code: 500, msg: '响应为空' }
     return {
       code: (result as { code?: number }).code === 200 ? 200 : 500,
       data: (result as { data?: unknown }).data || result,
@@ -393,7 +392,7 @@ export const deleteApi = async (id: number): Promise<{ code: number; msg: string
     logger.log('准备删除学生 ID:', id)
 
     const response = await StudentUserService.deleteStudent(id)
-    const result = response.data || response
+    const result = response || { code: 500, msg: '响应为空' }
     logger.log('删除学生响应:', response)
     logger.log('删除学生结果:', result)
 
@@ -436,7 +435,7 @@ export const deleteApi = async (id: number): Promise<{ code: number; msg: string
 export const resetPasswordApi = async (id: number): Promise<{ code: number; msg: string }> => {
   try {
     const response = await StudentUserService.resetStudentPassword(id, '123456')
-    const result = response.data || response
+    const result = response || { code: 500, msg: '响应为空' }
 
     if (result.code !== undefined) {
       return {
@@ -470,7 +469,7 @@ export const batchDeleteApi = async (ids: number[]): Promise<{ code: number; msg
 
       try {
         const response = await StudentUserService.batchDeleteStudents(batchIds)
-        const result = response.data || response
+        const result = response || { code: 500, msg: '响应为空' }
         logger.log(`批量删除批次 ${Math.floor(i / batchSize) + 1} 响应:`, result)
 
         const isBatchSuccess = (result as { code?: number | string }).code === 200 || (result as { code?: number | string }).code === '200' ||
@@ -559,7 +558,7 @@ export const importExcelApi = async (formData: FormData): Promise<{ code: number
         'Content-Type': 'multipart/form-data'
       }
     })
-    const result = response.data || response
+    const result = response || { code: 500, msg: '响应为空' }
 
     if (result.code === 200) {
       return {
@@ -587,7 +586,7 @@ export const updateStatusApi = async (id: number, status: number): Promise<{ cod
       status: status
     })
 
-    const result = response.data || response
+    const result = response || { code: 500, msg: '响应为空' }
     return {
       code: result.code || 200,
       msg: result.msg || (status === 1 ? '启用成功' : '禁用成功')

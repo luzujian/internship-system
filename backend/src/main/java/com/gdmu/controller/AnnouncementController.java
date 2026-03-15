@@ -47,6 +47,12 @@ public class AnnouncementController {
     @Autowired
     private AliyunOSSOperator aliyunOSSOperator;
 
+    @Autowired
+    private com.gdmu.service.AnnouncementReadRecordService announcementReadRecordService;
+
+    @Autowired
+    private com.gdmu.websocket.AnnouncementWebSocketHandler webSocketHandler;
+
     // 获取所有公告
     @GetMapping
     @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_TEACHER', 'ROLE_STUDENT')")
@@ -63,7 +69,7 @@ public class AnnouncementController {
 
     // 根据 ID 获取公告
     @GetMapping("/{id}")
-    @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_TEACHER', 'ROLE_STUDENT')")
+    @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_TEACHER', 'ROLE_STUDENT', 'ROLE_COMPANY')")
     public Result getAnnouncementById(@PathVariable Long id) {
         log.info("根据 ID 获取公告：{}", id);
         try {
@@ -71,6 +77,32 @@ public class AnnouncementController {
             if (announcement == null) {
                 return Result.error("公告不存在");
             }
+            
+            // 记录阅读状态（非管理员用户）
+            try {
+                Long userId = com.gdmu.utils.CurrentHolder.getUserId();
+                if (userId != null) {
+                    String userRole = com.gdmu.utils.CurrentHolder.getUserRole();
+                    String userType = convertRoleToType(userRole);
+                    log.info("记录阅读状态 - 用户ID: {}, 用户角色: {}, 用户类型: {}", userId, userRole, userType);
+                    if (!"ADMIN".equals(userType)) {
+                        // 创建阅读记录
+                        com.gdmu.entity.AnnouncementReadRecord readRecord = new com.gdmu.entity.AnnouncementReadRecord();
+                        readRecord.setAnnouncementId(id);
+                        readRecord.setUserId(String.valueOf(userId));
+                        readRecord.setUserType(userType);
+                        readRecord.setReadTime(new java.util.Date());
+                        announcementReadRecordService.insert(readRecord);
+                        log.info("阅读记录插入成功 - 公告ID: {}, 用户ID: {}, 用户类型: {}", id, userId, userType);
+                        
+                        // 更新公告阅读次数
+                        announcementService.incrementReadCount(id);
+                    }
+                }
+            } catch (Exception e) {
+                log.warn("记录阅读状态失败：{}", e.getMessage(), e);
+            }
+            
             return Result.success(announcement);
         } catch (Exception e) {
             log.error("获取公告详情失败：{}", e.getMessage(), e);
@@ -99,10 +131,144 @@ public class AnnouncementController {
     @Log(operationType = "ADD", module = "ANNOUNCEMENT_MANAGEMENT", description = "新增公告")
     @PostMapping
     @PreAuthorize("hasAuthority('announcement:add')")
-    public Result addAnnouncement(@RequestBody Announcement announcement) {
-        log.info("新增公告：{}", announcement.getTitle());
+    public Result addAnnouncement(@RequestBody Map<String, Object> request) {
+        log.info("新增公告，请求参数：{}", request);
         try {
+            Announcement announcement = new Announcement();
+            announcement.setTitle((String) request.get("title"));
+            announcement.setContent((String) request.get("content"));
+
+            // 处理 publisher：如果为空，使用默认值
+            String publisher = (String) request.get("publisher");
+            if (publisher == null || publisher.trim().isEmpty()) {
+                publisher = "系统管理员";
+                log.warn("publisher 为空，使用默认值：{}", publisher);
+            }
+            announcement.setPublisher(publisher);
+
+            // 处理 publisherRole：如果为空，使用默认值
+            String publisherRole = (String) request.get("publisherRole");
+            if (publisherRole == null || publisherRole.trim().isEmpty()) {
+                publisherRole = "ADMIN";
+                log.warn("publisherRole 为空，使用默认值：{}", publisherRole);
+            }
+            announcement.setPublisherRole(publisherRole);
+
+            announcement.setStatus((String) request.getOrDefault("status", "DRAFT"));
+            announcement.setPriority((String) request.getOrDefault("priority", "normal"));
+
+            // 处理 targetType：如果是数组则转为 JSON 字符串，否则直接转换
+            Object targetTypeObj = request.get("targetType");
+            if (targetTypeObj != null) {
+                if (targetTypeObj instanceof java.util.List) {
+                    // 前端发送的是数组，转换为 JSON 字符串
+                    try {
+                        ObjectMapper mapper = new ObjectMapper();
+                        announcement.setTargetType(mapper.writeValueAsString(targetTypeObj));
+                    } catch (Exception e) {
+                        log.error("序列化 targetType 失败：{}", e.getMessage(), e);
+                        announcement.setTargetType(targetTypeObj.toString());
+                    }
+                } else {
+                    announcement.setTargetType((String) targetTypeObj);
+                }
+            } else {
+                announcement.setTargetType("ALL");
+            }
+
+            announcement.setTargetValue((String) request.get("targetValue"));
+
+            // 处理日期字段
+            Object validFrom = request.get("validFrom");
+            if (validFrom != null) {
+                if (validFrom instanceof String && !((String) validFrom).isEmpty()) {
+                    try {
+                        String dateStr = (String) validFrom;
+                        Date parsedDate = null;
+                        if (dateStr.contains("Z") || dateStr.contains("+") || dateStr.contains("-")) {
+                            try {
+                                java.time.OffsetDateTime offsetDateTime = java.time.OffsetDateTime.parse(dateStr);
+                                parsedDate = Date.from(offsetDateTime.toInstant());
+                            } catch (Exception e) {
+                                log.debug("ISO 8601 格式解析失败，尝试其他格式：{}", dateStr);
+                            }
+                        }
+                        if (parsedDate == null) {
+                            try {
+                                parsedDate = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS").parse(dateStr);
+                            } catch (Exception e) {
+                                parsedDate = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss").parse(dateStr);
+                            }
+                        }
+                        if (parsedDate == null) {
+                            parsedDate = new SimpleDateFormat("yyyy-MM-dd").parse(dateStr);
+                        }
+                        if (parsedDate != null) {
+                            announcement.setValidFrom(parsedDate);
+                        }
+                    } catch (Exception e) {
+                        log.warn("解析 validFrom 日期失败：{}", validFrom, e);
+                    }
+                } else if (validFrom instanceof Date) {
+                    announcement.setValidFrom((Date) validFrom);
+                }
+            }
+
+            Object validTo = request.get("validTo");
+            if (validTo != null) {
+                if (validTo instanceof String && !((String) validTo).isEmpty()) {
+                    try {
+                        String dateStr = (String) validTo;
+                        Date parsedDate = null;
+                        if (dateStr.contains("Z") || dateStr.contains("+") || dateStr.contains("-")) {
+                            try {
+                                java.time.OffsetDateTime offsetDateTime = java.time.OffsetDateTime.parse(dateStr);
+                                parsedDate = Date.from(offsetDateTime.toInstant());
+                            } catch (Exception e) {
+                                log.debug("ISO 8601 格式解析失败，尝试其他格式：{}", dateStr);
+                            }
+                        }
+                        if (parsedDate == null) {
+                            try {
+                                parsedDate = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS").parse(dateStr);
+                            } catch (Exception e) {
+                                parsedDate = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss").parse(dateStr);
+                            }
+                        }
+                        if (parsedDate == null) {
+                            parsedDate = new SimpleDateFormat("yyyy-MM-dd").parse(dateStr);
+                        }
+                        if (parsedDate != null) {
+                            announcement.setValidTo(parsedDate);
+                        }
+                    } catch (Exception e) {
+                        log.warn("解析 validTo 日期失败：{}", validTo, e);
+                    }
+                } else if (validTo instanceof Date) {
+                    announcement.setValidTo((Date) validTo);
+                }
+            }
+
+            // 处理附件
+            Object attachments = request.get("attachments");
+            if (attachments != null) {
+                try {
+                    ObjectMapper mapper = new ObjectMapper();
+                    mapper.registerModule(new com.fasterxml.jackson.datatype.jsr310.JavaTimeModule());
+                    announcement.setAttachments(mapper.writeValueAsString(attachments));
+                } catch (Exception e) {
+                    log.error("序列化附件数据失败：{}", e.getMessage(), e);
+                }
+            } else {
+                announcement.setAttachments("[]");
+            }
+
             int result = announcementService.insert(announcement);
+            
+            if ("PUBLISHED".equals(announcement.getStatus())) {
+                pushAnnouncementNotification(announcement);
+            }
+            
             return Result.success("添加公告成功", result);
         } catch (Exception e) {
             log.error("添加公告失败：{}", e.getMessage(), e);
@@ -115,25 +281,92 @@ public class AnnouncementController {
     @PostMapping("/with-attachments")
     @PreAuthorize("hasAuthority('announcement:add')")
     public Result addAnnouncementWithAttachments(@RequestBody Map<String, Object> request) {
-        log.info("新增公告（带附件）");
+        log.info("新增公告（带附件），请求参数：{}", request);
         try {
             Announcement announcement = new Announcement();
             announcement.setTitle((String) request.get("title"));
             announcement.setContent((String) request.get("content"));
-            announcement.setPublisher((String) request.get("publisher"));
-            announcement.setPublisherRole((String) request.get("publisherRole"));
+
+            // 处理 publisher：如果为空，使用默认值
+            String publisher = (String) request.get("publisher");
+            if (publisher == null || publisher.trim().isEmpty()) {
+                publisher = "系统管理员";
+                log.warn("publisher为空，使用默认值: {}", publisher);
+            }
+            announcement.setPublisher(publisher);
+
+            // 处理 publisherRole：如果为空，使用默认值
+            String publisherRole = (String) request.get("publisherRole");
+            if (publisherRole == null || publisherRole.trim().isEmpty()) {
+                publisherRole = "ADMIN";
+                log.warn("publisherRole为空，使用默认值: {}", publisherRole);
+            }
+            announcement.setPublisherRole(publisherRole);
+
             announcement.setStatus((String) request.getOrDefault("status", "DRAFT"));
             announcement.setPriority((String) request.getOrDefault("priority", "normal"));
-            announcement.setTargetType((String) request.getOrDefault("targetType", "ALL"));
+
+            // 处理 targetType：如果是数组则转为 JSON 字符串，否则直接转换
+            Object targetTypeObj = request.get("targetType");
+            if (targetTypeObj != null) {
+                if (targetTypeObj instanceof java.util.List) {
+                    // 前端发送的是数组，转换为 JSON 字符串
+                    try {
+                        ObjectMapper mapper = new ObjectMapper();
+                        announcement.setTargetType(mapper.writeValueAsString(targetTypeObj));
+                    } catch (Exception e) {
+                        log.error("序列化 targetType 失败：{}", e.getMessage(), e);
+                        announcement.setTargetType(targetTypeObj.toString());
+                    }
+                } else {
+                    announcement.setTargetType((String) targetTypeObj);
+                }
+            } else {
+                announcement.setTargetType("ALL");
+            }
+
             announcement.setTargetValue((String) request.get("targetValue"));
 
             Object validFrom = request.get("validFrom");
             if (validFrom != null) {
                 if (validFrom instanceof String && !((String) validFrom).isEmpty()) {
                     try {
-                        announcement.setValidFrom(new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss").parse((String) validFrom));
+                        // 尝试多种日期格式解析
+                        String dateStr = (String) validFrom;
+                        Date parsedDate = null;
+
+                        // ISO 8601 格式（带毫秒和时区）：2024-01-01T00:00:00.000Z 或 2024-01-01T00:00:00.000+08:00
+                        if (dateStr.contains("Z") || dateStr.contains("+") || dateStr.contains("-")) {
+                            try {
+                                // 使用 ISO 8601 格式解析
+                                java.time.OffsetDateTime offsetDateTime = java.time.OffsetDateTime.parse(dateStr);
+                                parsedDate = Date.from(offsetDateTime.toInstant());
+                            } catch (Exception e) {
+                                log.debug("ISO 8601 格式解析失败，尝试其他格式：{}", dateStr);
+                            }
+                        }
+
+                        // 如果 ISO 8601 解析失败，尝试简单格式
+                        if (parsedDate == null) {
+                            try {
+                                parsedDate = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS").parse(dateStr);
+                            } catch (Exception e) {
+                                parsedDate = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss").parse(dateStr);
+                            }
+                        }
+
+                        // 如果还是失败，尝试纯日期格式
+                        if (parsedDate == null) {
+                            parsedDate = new SimpleDateFormat("yyyy-MM-dd").parse(dateStr);
+                        }
+
+                        if (parsedDate != null) {
+                            announcement.setValidFrom(parsedDate);
+                        } else {
+                            log.warn("所有日期格式解析失败：{}", validFrom);
+                        }
                     } catch (Exception e) {
-                        log.warn("解析 validFrom 日期失败：{}", validFrom);
+                        log.warn("解析 validFrom 日期失败：{}", validFrom, e);
                     }
                 } else if (validFrom instanceof Date) {
                     announcement.setValidFrom((Date) validFrom);
@@ -144,9 +377,42 @@ public class AnnouncementController {
             if (validTo != null) {
                 if (validTo instanceof String && !((String) validTo).isEmpty()) {
                     try {
-                        announcement.setValidTo(new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss").parse((String) validTo));
+                        // 尝试多种日期格式解析
+                        String dateStr = (String) validTo;
+                        Date parsedDate = null;
+
+                        // ISO 8601 格式（带毫秒和时区）：2024-01-01T00:00:00.000Z 或 2024-01-01T00:00:00.000+08:00
+                        if (dateStr.contains("Z") || dateStr.contains("+") || dateStr.contains("-")) {
+                            try {
+                                // 使用 ISO 8601 格式解析
+                                java.time.OffsetDateTime offsetDateTime = java.time.OffsetDateTime.parse(dateStr);
+                                parsedDate = Date.from(offsetDateTime.toInstant());
+                            } catch (Exception e) {
+                                log.debug("ISO 8601 格式解析失败，尝试其他格式：{}", dateStr);
+                            }
+                        }
+
+                        // 如果 ISO 8601 解析失败，尝试简单格式
+                        if (parsedDate == null) {
+                            try {
+                                parsedDate = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS").parse(dateStr);
+                            } catch (Exception e) {
+                                parsedDate = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss").parse(dateStr);
+                            }
+                        }
+
+                        // 如果还是失败，尝试纯日期格式
+                        if (parsedDate == null) {
+                            parsedDate = new SimpleDateFormat("yyyy-MM-dd").parse(dateStr);
+                        }
+
+                        if (parsedDate != null) {
+                            announcement.setValidTo(parsedDate);
+                        } else {
+                            log.warn("所有日期格式解析失败：{}", validTo);
+                        }
                     } catch (Exception e) {
-                        log.warn("解析 validTo 日期失败：{}", validTo);
+                        log.warn("解析 validTo 日期失败：{}", validTo, e);
                     }
                 } else if (validTo instanceof Date) {
                     announcement.setValidTo((Date) validTo);
@@ -162,9 +428,23 @@ public class AnnouncementController {
                 } catch (Exception e) {
                     log.error("序列化附件数据失败：{}", e.getMessage(), e);
                 }
+            } else {
+                // 如果没有附件，设置为空数组
+                announcement.setAttachments("[]");
             }
 
+            log.info("准备插入公告数据：title={}, content={}, publisher={}, publisherRole={}, status={}, priority={}, targetType={}, validFrom={}, validTo={}, attachments={}",
+                    announcement.getTitle(), announcement.getContent(), announcement.getPublisher(),
+                    announcement.getPublisherRole(), announcement.getStatus(), announcement.getPriority(),
+                    announcement.getTargetType(), announcement.getValidFrom(), announcement.getValidTo(),
+                    announcement.getAttachments());
+
             int result = announcementService.insert(announcement);
+            
+            if ("PUBLISHED".equals(announcement.getStatus())) {
+                pushAnnouncementNotification(announcement);
+            }
+            
             return Result.success("添加公告成功", result);
         } catch (Exception e) {
             log.error("添加公告失败：{}", e.getMessage(), e);
@@ -181,6 +461,11 @@ public class AnnouncementController {
         try {
             announcement.setId(id);
             int result = announcementService.update(announcement);
+            
+            if ("PUBLISHED".equals(announcement.getStatus())) {
+                pushAnnouncementNotification(announcement);
+            }
+            
             return Result.success("更新公告成功", result);
         } catch (Exception e) {
             log.error("更新公告失败：{}", e.getMessage(), e);
@@ -193,26 +478,93 @@ public class AnnouncementController {
     @PutMapping("/{id}/with-attachments")
     @PreAuthorize("hasAuthority('announcement:edit')")
     public Result updateAnnouncementWithAttachments(@PathVariable Long id, @RequestBody Map<String, Object> request) {
-        log.info("更新公告（带附件）: ID={}", id);
+        log.info("更新公告（带附件）: ID={}, 请求参数：{}", id, request);
         try {
             Announcement announcement = new Announcement();
             announcement.setId(id);
             announcement.setTitle((String) request.get("title"));
             announcement.setContent((String) request.get("content"));
-            announcement.setPublisher((String) request.get("publisher"));
-            announcement.setPublisherRole((String) request.get("publisherRole"));
+
+            // 处理 publisher：如果为空，使用默认值
+            String publisher = (String) request.get("publisher");
+            if (publisher == null || publisher.trim().isEmpty()) {
+                publisher = "系统管理员";
+                log.warn("更新时publisher为空，使用默认值: {}", publisher);
+            }
+            announcement.setPublisher(publisher);
+
+            // 处理 publisherRole：如果为空，使用默认值
+            String publisherRole = (String) request.get("publisherRole");
+            if (publisherRole == null || publisherRole.trim().isEmpty()) {
+                publisherRole = "ADMIN";
+                log.warn("更新时publisherRole为空，使用默认值: {}", publisherRole);
+            }
+            announcement.setPublisherRole(publisherRole);
+
             announcement.setStatus((String) request.getOrDefault("status", "DRAFT"));
             announcement.setPriority((String) request.getOrDefault("priority", "normal"));
-            announcement.setTargetType((String) request.getOrDefault("targetType", "ALL"));
+
+            // 处理 targetType：如果是数组则转为 JSON 字符串，否则直接转换
+            Object targetTypeObj = request.get("targetType");
+            if (targetTypeObj != null) {
+                if (targetTypeObj instanceof java.util.List) {
+                    // 前端发送的是数组，转换为 JSON 字符串
+                    try {
+                        ObjectMapper mapper = new ObjectMapper();
+                        announcement.setTargetType(mapper.writeValueAsString(targetTypeObj));
+                    } catch (Exception e) {
+                        log.error("序列化 targetType 失败：{}", e.getMessage(), e);
+                        announcement.setTargetType(targetTypeObj.toString());
+                    }
+                } else {
+                    announcement.setTargetType((String) targetTypeObj);
+                }
+            } else {
+                announcement.setTargetType("ALL");
+            }
+
             announcement.setTargetValue((String) request.get("targetValue"));
 
             Object validFrom = request.get("validFrom");
             if (validFrom != null) {
                 if (validFrom instanceof String && !((String) validFrom).isEmpty()) {
                     try {
-                        announcement.setValidFrom(new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss").parse((String) validFrom));
+                        // 尝试多种日期格式解析
+                        String dateStr = (String) validFrom;
+                        Date parsedDate = null;
+
+                        // ISO 8601 格式（带毫秒和时区）：2024-01-01T00:00:00.000Z 或 2024-01-01T00:00:00.000+08:00
+                        if (dateStr.contains("Z") || dateStr.contains("+") || dateStr.contains("-")) {
+                            try {
+                                // 使用 ISO 8601 格式解析
+                                java.time.OffsetDateTime offsetDateTime = java.time.OffsetDateTime.parse(dateStr);
+                                parsedDate = Date.from(offsetDateTime.toInstant());
+                            } catch (Exception e) {
+                                log.debug("ISO 8601 格式解析失败，尝试其他格式：{}", dateStr);
+                            }
+                        }
+
+                        // 如果 ISO 8601 解析失败，尝试简单格式
+                        if (parsedDate == null) {
+                            try {
+                                parsedDate = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS").parse(dateStr);
+                            } catch (Exception e) {
+                                parsedDate = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss").parse(dateStr);
+                            }
+                        }
+
+                        // 如果还是失败，尝试纯日期格式
+                        if (parsedDate == null) {
+                            parsedDate = new SimpleDateFormat("yyyy-MM-dd").parse(dateStr);
+                        }
+
+                        if (parsedDate != null) {
+                            announcement.setValidFrom(parsedDate);
+                        } else {
+                            log.warn("所有日期格式解析失败：{}", validFrom);
+                        }
                     } catch (Exception e) {
-                        log.warn("解析 validFrom 日期失败：{}", validFrom);
+                        log.warn("解析 validFrom 日期失败：{}", validFrom, e);
                     }
                 } else if (validFrom instanceof Date) {
                     announcement.setValidFrom((Date) validFrom);
@@ -223,9 +575,42 @@ public class AnnouncementController {
             if (validTo != null) {
                 if (validTo instanceof String && !((String) validTo).isEmpty()) {
                     try {
-                        announcement.setValidTo(new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss").parse((String) validTo));
+                        // 尝试多种日期格式解析
+                        String dateStr = (String) validTo;
+                        Date parsedDate = null;
+
+                        // ISO 8601 格式（带毫秒和时区）：2024-01-01T00:00:00.000Z 或 2024-01-01T00:00:00.000+08:00
+                        if (dateStr.contains("Z") || dateStr.contains("+") || dateStr.contains("-")) {
+                            try {
+                                // 使用 ISO 8601 格式解析
+                                java.time.OffsetDateTime offsetDateTime = java.time.OffsetDateTime.parse(dateStr);
+                                parsedDate = Date.from(offsetDateTime.toInstant());
+                            } catch (Exception e) {
+                                log.debug("ISO 8601 格式解析失败，尝试其他格式：{}", dateStr);
+                            }
+                        }
+
+                        // 如果 ISO 8601 解析失败，尝试简单格式
+                        if (parsedDate == null) {
+                            try {
+                                parsedDate = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS").parse(dateStr);
+                            } catch (Exception e) {
+                                parsedDate = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss").parse(dateStr);
+                            }
+                        }
+
+                        // 如果还是失败，尝试纯日期格式
+                        if (parsedDate == null) {
+                            parsedDate = new SimpleDateFormat("yyyy-MM-dd").parse(dateStr);
+                        }
+
+                        if (parsedDate != null) {
+                            announcement.setValidTo(parsedDate);
+                        } else {
+                            log.warn("所有日期格式解析失败：{}", validTo);
+                        }
                     } catch (Exception e) {
-                        log.warn("解析 validTo 日期失败：{}", validTo);
+                        log.warn("解析 validTo 日期失败：{}", validTo, e);
                     }
                 } else if (validTo instanceof Date) {
                     announcement.setValidTo((Date) validTo);
@@ -241,9 +626,23 @@ public class AnnouncementController {
                 } catch (Exception e) {
                     log.error("序列化附件数据失败：{}", e.getMessage(), e);
                 }
+            } else {
+                // 如果没有附件，设置为空数组
+                announcement.setAttachments("[]");
             }
 
+            log.info("准备更新公告数据：id={}, title={}, content={}, publisher={}, publisherRole={}, status={}, priority={}, targetType={}, validFrom={}, validTo={}, attachments={}",
+                    id, announcement.getTitle(), announcement.getContent(), announcement.getPublisher(),
+                    announcement.getPublisherRole(), announcement.getStatus(), announcement.getPriority(),
+                    announcement.getTargetType(), announcement.getValidFrom(), announcement.getValidTo(),
+                    announcement.getAttachments());
+
             int result = announcementService.update(announcement);
+            
+            if ("PUBLISHED".equals(announcement.getStatus())) {
+                pushAnnouncementNotification(announcement);
+            }
+            
             return Result.success("更新公告成功", result);
         } catch (Exception e) {
             log.error("更新公告失败：{}", e.getMessage(), e);
@@ -287,7 +686,7 @@ public class AnnouncementController {
 
     // 根据标题和状态搜索公告
     @GetMapping("/search")
-    @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_TEACHER', 'ROLE_STUDENT')")
+    @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_TEACHER', 'ROLE_STUDENT', 'ROLE_COMPANY')")
     public Result searchAnnouncements(
             @RequestParam(required = false) String title,
             @RequestParam(required = false) String status) {
@@ -567,7 +966,7 @@ public class AnnouncementController {
     }
 
     @GetMapping("/download-attachment")
-    @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_TEACHER', 'ROLE_STUDENT')")
+    @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_TEACHER', 'ROLE_STUDENT', 'ROLE_COMPANY')")
     public ResponseEntity<InputStreamResource> downloadAttachment(
             @RequestParam String announcementId,
             @RequestParam String fileName) {
@@ -706,5 +1105,68 @@ public class AnnouncementController {
                 log.error("写入错误响应失败", ex);
             }
         }
+    }
+
+    /**
+     * 推送公告通知到WebSocket客户端
+     */
+    private void pushAnnouncementNotification(Announcement announcement) {
+        try {
+            Map<String, Object> announcementData = new java.util.HashMap<>();
+            announcementData.put("id", announcement.getId());
+            announcementData.put("title", announcement.getTitle());
+            announcementData.put("content", announcement.getContent());
+            announcementData.put("publisher", announcement.getPublisher());
+            announcementData.put("publisherRole", announcement.getPublisherRole());
+            announcementData.put("priority", announcement.getPriority());
+            announcementData.put("targetType", announcement.getTargetType());
+            announcementData.put("publishTime", announcement.getPublishTime());
+            announcementData.put("validFrom", announcement.getValidFrom());
+            announcementData.put("validTo", announcement.getValidTo());
+            
+            String targetType = announcement.getTargetType();
+            if (targetType != null) {
+                if (targetType.contains("COMPANY")) {
+                    log.info("推送公告到企业端：{}", announcement.getTitle());
+                    webSocketHandler.sendAnnouncementToRole("COMPANY", announcementData);
+                }
+                if (targetType.contains("STUDENT")) {
+                    log.info("推送公告到学生端：{}", announcement.getTitle());
+                    webSocketHandler.sendAnnouncementToRole("STUDENT", announcementData);
+                }
+                if (targetType.contains("TEACHER")) {
+                    log.info("推送公告到教师端：{}", announcement.getTitle());
+                    webSocketHandler.sendAnnouncementToRole("TEACHER", announcementData);
+                }
+                if (targetType.contains("ALL")) {
+                    log.info("广播公告到所有用户：{}", announcement.getTitle());
+                    webSocketHandler.broadcastAnnouncement(announcementData);
+                }
+            }
+            
+            log.info("推送公告到管理员端：{}", announcement.getTitle());
+            webSocketHandler.sendAnnouncementToRole("ADMIN", announcementData);
+        } catch (Exception e) {
+            log.error("推送公告通知失败：{}", e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 将角色转换为用户类型
+     */
+    private String convertRoleToType(String role) {
+        if (role == null) {
+            return "UNKNOWN";
+        }
+        if (role.startsWith("ROLE_ADMIN")) {
+            return "ADMIN";
+        } else if (role.startsWith("ROLE_TEACHER")) {
+            return "TEACHER";
+        } else if (role.startsWith("ROLE_STUDENT")) {
+            return "STUDENT";
+        } else if (role.startsWith("ROLE_COMPANY")) {
+            return "ENTERPRISE";
+        }
+        return "UNKNOWN";
     }
 }

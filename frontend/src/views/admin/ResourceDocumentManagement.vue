@@ -68,7 +68,7 @@
       </div>
     </el-card>
 
-    <el-card class="resources-card" shadow="never">
+    <el-card class="resources-card" shadow="never" v-loading="loading">
       <div class="resources-grid">
         <div 
           v-for="resource in resourcesList" 
@@ -396,10 +396,14 @@ const fetchData = async (): Promise<void> => {
       publisherRole: searchForm.publisherRole || undefined
     }
     const response = await resourceDocumentApi.getResourceDocumentsByPage(params)
-    const result = response.data
+    const result = response
     if (result && result.code === 200 && result.data) {
       resourcesList.value = result.data.rows || []
       total.value = result.data.total || 0
+    } else if (result && Array.isArray(result.data)) {
+      // 兼容直接返回数组的情况
+      resourcesList.value = result.data
+      total.value = result.data.length || 0
     } else {
       resourcesList.value = []
       total.value = 0
@@ -594,7 +598,7 @@ const deleteResource = async (id): Promise<void> => {
       type: 'warning'
     })
     const response = await resourceDocumentApi.deleteResourceDocument(id)
-    const result = response.data
+    const result = response
     if (result && result.code === 200) {
       ElMessage.success('删除成功')
       fetchData()
@@ -680,7 +684,7 @@ const handleBatchDelete = async (): Promise<void> => {
       type: 'warning'
     })
     const response = await resourceDocumentApi.batchDeleteResourceDocuments(selectedIds.value)
-    const result = response.data
+    const result = response
     if (result && result.code === 200) {
       ElMessage.success('批量删除成功')
       selectedIds.value = []
@@ -729,7 +733,7 @@ const handlePublisherRoleChange = async (role): Promise<void> => {
   userListLoading.value = true
   try {
     const response = await announcementApi.getUsersByPublisherRole(role)
-    const result = response.data
+    const result = response
     if (result && result.code === 200 && result.data) {
       userList.value = result.data
       formData.publisher = ''
@@ -876,7 +880,7 @@ const handleSubmit = async (): Promise<void> => {
       formDataObj.append('status', formData.status)
       
       const response = await resourceDocumentApi.uploadResourceDocument(formDataObj)
-      const result = response.data
+      const result = response
       if (result && result.code === 200) {
         ElMessage.success('发布成功')
         dialogVisible.value = false

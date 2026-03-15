@@ -289,7 +289,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Refresh, Delete, View, ChatDotRound, Download } from '@element-plus/icons-vue'
 import * as problemFeedbackApi from '../../api/problemFeedback'
 import { useAuthStore } from '../../store/auth'
-import * as XLSX from 'xlsx'
+import { exportToExcel } from '../../utils/xlsx'
 
 const route = useRoute()
 const authStore = useAuthStore()
@@ -376,7 +376,7 @@ const fetchData = async (): Promise<void> => {
       title: searchForm.title || undefined
     }
     const response = await problemFeedbackApi.getFeedbackByPage(params)
-    const result = response.data
+    const result = response
     if (result && result.code === 200 && result.data) {
       tableData.value = result.data.rows || []
       total.value = result.data.total || 0
@@ -592,7 +592,7 @@ const getStatusTag = (status: string): string => {
   return map[status] || 'warning'
 }
 
-const exportToExcel = async (): Promise<void> => {
+const handleExportToExcel = async (): Promise<void> => {
   try {
     ElMessage({ message: '正在准备导出数据...', type: 'info' })
 
@@ -600,7 +600,7 @@ const exportToExcel = async (): Promise<void> => {
     logger.log('反馈导出数据响应:', response)
 
     // 解析后端返回的数据格式：{ code: 200, data: [...] }
-    const allFeedback = response.data?.data || response.data || []
+    const allFeedback = response.data || []
 
     if (allFeedback.length === 0) {
       ElMessage.warning('没有数据可导出')
@@ -626,10 +626,6 @@ const exportToExcel = async (): Promise<void> => {
       }
     })
 
-    const wb = XLSX.utils.book_new()
-    const ws = XLSX.utils.json_to_sheet(exportData)
-    XLSX.utils.book_append_sheet(wb, ws, '问题反馈信息')
-    
     const currentDate = new Date()
     const year = currentDate.getFullYear()
     const month = String(currentDate.getMonth() + 1).padStart(2, '0')
@@ -637,10 +633,10 @@ const exportToExcel = async (): Promise<void> => {
     const hours = String(currentDate.getHours()).padStart(2, '0')
     const minutes = String(currentDate.getMinutes()).padStart(2, '0')
     const seconds = String(currentDate.getSeconds()).padStart(2, '0')
-    const fileName = `问题反馈导出_${year}${month}${day}_${hours}${minutes}${seconds}.xlsx`
-    
-    XLSX.writeFile(wb, fileName)
-    
+    const fileName = `问题反馈导出_${year}${month}${day}_${hours}${minutes}${seconds}`
+
+    await exportToExcel(exportData, fileName, '问题反馈信息')
+
     ElMessage({ message: '导出成功', type: 'success' })
   } catch (error) {
     logger.error('导出Excel失败:', error)

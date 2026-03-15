@@ -424,8 +424,8 @@ const loadStatistics = async () => {
   try {
     const response = await recruitmentService.getStatistics()
     logger.log('统计数据响应:', response)
-    if (response.data && response.data.code === 200) {
-      const data = response.data.data as any
+    if (response.data && response.code === 200) {
+      const data = response.data as any
       statistics.value = {
         totalPositions: data.totalPositions || 0,
         totalPlannedRecruit: data.totalPlannedRecruit || 0,
@@ -452,9 +452,9 @@ const loadPositions = async () => {
       positionName: positionSearchForm.positionName
     })
     logger.log('岗位列表响应:', response)
-    if (response.data && response.data.code === 200) {
-      positionList.value = response.data.data.rows || []
-      positionPagination.total = response.data.data.total || 0
+    if (response.data && response.code === 200) {
+      positionList.value = response.data.rows || []
+      positionPagination.total = response.data.total || 0
       logger.log('岗位列表数据:', positionList.value, '总数:', positionPagination.total)
     } else {
       logger.error('岗位列表响应格式错误:', response)
@@ -479,9 +479,9 @@ const loadApplications = async () => {
       companyName: applicationSearchForm.companyName
     })
     logger.log('应聘列表响应:', response)
-    if (response.data && response.data.code === 200) {
-      applicationList.value = response.data.data.rows || []
-      applicationPagination.total = response.data.data.total || 0
+    if (response.data && response.code === 200) {
+      applicationList.value = response.data.rows || []
+      applicationPagination.total = response.data.total || 0
       logger.log('应聘列表数据:', applicationList.value, '总数:', applicationPagination.total)
     } else {
       logger.error('应聘列表响应格式错误:', response)

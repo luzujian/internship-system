@@ -3,32 +3,59 @@
         PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.gdmu.mapper.PositionMapper">
-    
+
     <!-- 定义岗位信息结果映射 -->
     <resultMap id="PositionResultMap" type="com.gdmu.entity.Position">
         <id property="id" column="id" />
         <result property="companyId" column="company_id" />
         <result property="categoryId" column="category_id" />
         <result property="positionName" column="position_name" />
+        <result property="department" column="department" />
+        <result property="positionType" column="position_type" />
+        <result property="province" column="province" />
+        <result property="city" column="city" />
+        <result property="district" column="district" />
+        <result property="detailAddress" column="detail_address" />
+        <result property="salaryMin" column="salary_min" />
+        <result property="salaryMax" column="salary_max" />
+        <result property="description" column="description" />
         <result property="requirements" column="requirements" />
         <result property="plannedRecruit" column="planned_recruit" />
         <result property="recruitedCount" column="recruited_count" />
         <result property="remainingQuota" column="remaining_quota" />
+        <result property="status" column="status" />
+        <result property="publishDate" column="publish_date" />
+        <result property="internshipStartDate" column="internship_start_date" />
+        <result property="internshipEndDate" column="internship_end_date" />
         <result property="createTime" column="create_time" />
         <result property="updateTime" column="update_time" />
     </resultMap>
-    
+
     <!-- 插入岗位信息 -->
     <insert id="insert" parameterType="com.gdmu.entity.Position">
-        insert into position (company_id, category_id, position_name, requirements, planned_recruit, recruited_count, remaining_quota, create_time, update_time)
-        values (#{companyId}, #{categoryId}, #{positionName}, #{requirements}, #{plannedRecruit}, #{recruitedCount}, #{remainingQuota}, #{createTime}, #{updateTime})
+        insert into position (
+            company_id, category_id, position_name, department, position_type,
+            province, city, district, detail_address,
+            salary_min, salary_max, description, requirements,
+            planned_recruit, recruited_count, remaining_quota,
+            status, publish_date, internship_start_date, internship_end_date,
+            create_time, update_time
+        )
+        values (
+            #{companyId}, #{categoryId}, #{positionName}, #{department}, #{positionType},
+            #{province}, #{city}, #{district}, #{detailAddress},
+            #{salaryMin}, #{salaryMax}, #{description}, #{requirements},
+            #{plannedRecruit}, #{recruitedCount}, #{remainingQuota},
+            #{status}, #{publishDate}, #{internshipStartDate}, #{internshipEndDate},
+            #{createTime}, #{updateTime}
+        )
     </insert>
-    
-    <!-- 根据ID查询岗位信息 -->
+
+    <!-- 根据 ID 查询岗位信息 -->
     <select id="findById" resultMap="PositionResultMap">
         select * from position where id = #{id}
     </select>
-    
+
     <!-- 更新岗位信息 -->
     <update id="update" parameterType="com.gdmu.entity.Position">
         update position
@@ -42,6 +69,33 @@
             <if test="positionName != null and positionName != ''">
                 position_name = #{positionName},
             </if>
+            <if test="department != null">
+                department = #{department},
+            </if>
+            <if test="positionType != null">
+                position_type = #{positionType},
+            </if>
+            <if test="province != null">
+                province = #{province},
+            </if>
+            <if test="city != null">
+                city = #{city},
+            </if>
+            <if test="district != null">
+                district = #{district},
+            </if>
+            <if test="detailAddress != null">
+                detail_address = #{detailAddress},
+            </if>
+            <if test="salaryMin != null">
+                salary_min = #{salaryMin},
+            </if>
+            <if test="salaryMax != null">
+                salary_max = #{salaryMax},
+            </if>
+            <if test="description != null">
+                description = #{description},
+            </if>
             <if test="requirements != null">
                 requirements = #{requirements},
             </if>
@@ -54,28 +108,60 @@
             <if test="remainingQuota != null">
                 remaining_quota = #{remainingQuota},
             </if>
+            <if test="status != null">
+                status = #{status},
+            </if>
+            <if test="publishDate != null">
+                publish_date = #{publishDate},
+            </if>
+            <if test="internshipStartDate != null">
+                internship_start_date = #{internshipStartDate},
+            </if>
+            <if test="internshipEndDate != null">
+                internship_end_date = #{internshipEndDate},
+            </if>
             <if test="updateTime != null">
                 update_time = #{updateTime}
             </if>
         </set>
         where id = #{id}
     </update>
-    
+
     <!-- 删除岗位信息 -->
     <delete id="deleteById">
         delete from position where id = #{id}
     </delete>
-    
+
     <!-- 查询所有岗位信息 -->
     <select id="findAll" resultMap="PositionResultMap">
         select * from position order by create_time desc
     </select>
-    
-    <!-- 根据企业ID查询岗位信息 -->
+
+    <!-- 根据企业 ID 查询岗位信息 -->
     <select id="findByCompanyId" resultMap="PositionResultMap">
         select * from position where company_id = #{companyId} order by create_time desc
     </select>
-    
+
+    <!-- 根据企业ID和条件查询岗位信息 -->
+    <select id="findByCompanyIdWithConditions" resultMap="PositionResultMap">
+        select * from position
+        <where>
+            <if test="companyId != null">
+                company_id = #{companyId}
+            </if>
+            <if test="positionName != null and positionName != ''">
+                and position_name like concat('%', #{positionName}, '%')
+            </if>
+            <if test="department != null and department != ''">
+                and department = #{department}
+            </if>
+            <if test="status != null and status != ''">
+                and status = #{status}
+            </if>
+        </where>
+        order by create_time desc
+    </select>
+
     <!-- 动态条件查询岗位信息 -->
     <select id="list" resultMap="PositionResultMap">
         select * from position
@@ -92,15 +178,15 @@
         </where>
         order by create_time desc
     </select>
-    
-    <!-- 根据ID列表查询岗位信息 -->
+
+    <!-- 根据 ID 列表查询岗位信息 -->
     <select id="selectByIds" resultType="com.gdmu.entity.Position" parameterType="java.util.List">
         SELECT * FROM position WHERE id IN
         <foreach collection="list" item="id" open="(" separator="," close=")">
             #{id}
         </foreach>
     </select>
-    
+
     <!-- 批量删除岗位信息 -->
     <delete id="batchDeleteByIds" parameterType="java.util.List">
         DELETE FROM position WHERE id IN
@@ -108,17 +194,17 @@
             #{id}
         </foreach>
     </delete>
-    
+
     <!-- 查询岗位总数 -->
     <select id="count" resultType="java.lang.Long">
         SELECT COUNT(*) FROM position
     </select>
-    
+
     <!-- 分页查询岗位信息 -->
     <select id="findPage" resultMap="PositionResultMap">
         SELECT * FROM position ORDER BY create_time DESC LIMIT #{offset}, #{pageSize}
     </select>
-    
+
     <!-- 查询所有岗位信息 -->
     <select id="selectAll" resultType="com.gdmu.entity.Position">
         SELECT * FROM position ORDER BY create_time DESC
@@ -126,15 +212,25 @@
 
     <!-- 分页查询岗位信息（带企业名称） -->
     <select id="findPageWithCompany" resultType="java.util.Map">
-        SELECT 
+        SELECT
             p.id,
             p.company_id AS companyId,
             c.company_name AS companyName,
             p.position_name AS positionName,
+            p.department,
+            p.position_type AS positionType,
+            p.province,
+            p.city,
+            p.district,
+            p.detail_address AS detailAddress,
+            p.salary_min AS salaryMin,
+            p.salary_max AS salaryMax,
             p.requirements,
             p.planned_recruit AS plannedRecruit,
             p.recruited_count AS recruitedCount,
             p.remaining_quota AS remainingQuota,
+            p.status,
+            p.publish_date AS publishDate,
             p.create_time AS createTime,
             p.update_time AS updateTime
         FROM position p
@@ -155,7 +251,7 @@
 
     <!-- 获取岗位统计数据 -->
     <select id="getStatistics" resultType="java.util.Map">
-        SELECT 
+        SELECT
             COUNT(*) AS totalPositions,
             COALESCE(SUM(planned_recruit), 0) AS totalPlanned,
             COALESCE(SUM(recruited_count), 0) AS totalRecruited,
@@ -165,7 +261,7 @@
 
     <!-- 获取岗位已招学生列表 -->
     <select id="getRecruitedStudents" resultType="java.util.Map">
-        SELECT 
+        SELECT
             su.id,
             su.student_user_id AS studentUserId,
             su.name,
@@ -173,7 +269,7 @@
             sis.status,
             CASE sis.status
                 WHEN 0 THEN '未找到实习'
-                WHEN 1 THEN '有Offer未确定'
+                WHEN 1 THEN '有 Offer 未确定'
                 WHEN 2 THEN '已确定实习'
                 WHEN 3 THEN '实习结束'
                 ELSE '未知'
@@ -185,7 +281,7 @@
         ORDER BY sis.update_time DESC
     </select>
 
-    <!-- 根据类别ID查询岗位信息 -->
+    <!-- 根据类别 ID 查询岗位信息 -->
     <select id="findByCategoryId" resultMap="PositionResultMap">
         SELECT * FROM position WHERE category_id = #{categoryId} ORDER BY create_time DESC
     </select>
@@ -193,17 +289,17 @@
     <!-- 更新岗位已招人数 -->
     <update id="updateRecruitedCount">
         UPDATE position p
-        SET 
+        SET
             p.recruited_count = (
-                SELECT COUNT(*) 
-                FROM student_internship_status sis 
-                WHERE sis.position_id = #{positionId} 
+                SELECT COUNT(*)
+                FROM student_internship_status sis
+                WHERE sis.position_id = #{positionId}
                 AND sis.status IN (1, 2)
             ),
             p.remaining_quota = p.planned_recruit - (
-                SELECT COUNT(*) 
-                FROM student_internship_status sis 
-                WHERE sis.position_id = #{positionId} 
+                SELECT COUNT(*)
+                FROM student_internship_status sis
+                WHERE sis.position_id = #{positionId}
                 AND sis.status IN (1, 2)
             ),
             p.update_time = NOW()

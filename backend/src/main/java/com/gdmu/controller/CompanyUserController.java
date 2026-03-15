@@ -8,6 +8,7 @@ import com.gdmu.entity.Result;
 import com.gdmu.service.CompanyUserService;
 import com.gdmu.utils.CurrentHolder;
 import com.gdmu.utils.ExcelUtils;
+import com.gdmu.utils.JwtUtils;
 import com.gdmu.utils.PasswordValidator;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.poi.ss.usermodel.*;
@@ -45,6 +46,9 @@ public class CompanyUserController {
 
     @Autowired
     private com.gdmu.service.CompanyTagService companyTagService;
+
+    @Autowired
+    private JwtUtils jwtUtils;
 
     @GetMapping
     @PreAuthorize("hasAuthority('user:company:view')")
@@ -674,8 +678,10 @@ public class CompanyUserController {
             companyUser.setPassword(newPassword);
             companyUserService.update(companyUser);
 
+            jwtUtils.incrementUserTokenVersion(companyUser.getUsername());
+
             log.info("企业用户 ID: {} 密码重置成功", id);
-            return Result.success("密码重置成功", newPassword);
+            return Result.success("密码重置成功，请通知企业用户使用新密码重新登录", newPassword);
         } catch (Exception e) {
             log.error("重置企业用户密码失败：{}", e.getMessage());
             return Result.error("重置密码失败：" + e.getMessage());

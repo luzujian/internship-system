@@ -212,9 +212,9 @@ const fetchData = async () => {
     console.log('[CompanyAudit] 请求URL:', '/teacher/companies/audit/pending')
     
     const response = await request.get('/teacher/companies/audit/pending', { params })
-    if (response.data.code === 200) {
-      tableData.value = response.data.data.rows || []
-      pagination.total = response.data.data.total || 0
+    if (response.code === 200) {
+      tableData.value = response.data.rows || []
+      pagination.total = response.data.total || 0
       console.log('[CompanyAudit] 获取成功，数据量:', tableData.value.length)
     }
   } catch (error) {
@@ -228,8 +228,8 @@ const fetchData = async () => {
 const fetchStatistics = async () => {
   try {
     const response = await request.get('/teacher/companies/statistics')
-    if (response.data.code === 200) {
-      statistics.pending = response.data.data.pending || 0
+    if (response.code === 200) {
+      statistics.pending = response.data.pending || 0
     }
   } catch (error) {
     console.error('获取统计数据失败:', error)
@@ -280,13 +280,13 @@ const submitAudit = async () => {
       auditRemark: auditForm.auditRemark
     })
     
-    if (response.data.code === 200) {
+    if (response.code === 200) {
       ElMessage.success(auditForm.auditStatus === 1 ? '审核通过' : '审核拒绝')
       auditDialogVisible.value = false
       fetchData()
       fetchStatistics()
     } else {
-      ElMessage.error(response.data.message || '审核失败')
+      ElMessage.error(response.message || '审核失败')
     }
   } catch (error) {
     console.error('审核失败:', error)

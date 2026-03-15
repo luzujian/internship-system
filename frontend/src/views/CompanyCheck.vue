@@ -626,9 +626,12 @@ const submitRecallApplication = async () => {
   min-height: 100vh;
   display: flex;
   justify-content: center;
-  align-items: center;
-  background: #f5f5f5;
-  padding: 20px;
+  align-items: flex-start;
+  background-image: url('../assets/2.png');
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+  background-position: center;
+  padding-top: 15vh;
 }
 
 .check-box {
@@ -638,6 +641,7 @@ const submitRecallApplication = async () => {
   border-radius: 10px;
   box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
   padding: 40px;
+  margin-top: 80px;
 }
 
 .check-header {

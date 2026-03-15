@@ -12,6 +12,38 @@ const authStore = useAuthStore()
 const activeTab = ref('profile')
 const loading = ref(false)
 
+// 行业选项映射
+const industryMap = {
+  'internet': '互联网/IT',
+  'finance': '金融',
+  'education': '教育',
+  'medical': '医疗',
+  'manufacturing': '制造业',
+  'service': '服务业',
+  'realestate': '房地产',
+  'energy': '能源',
+  'other': '其他'
+}
+
+// 企业规模选项映射
+const scaleMap = {
+  '1-50': '1-50 人',
+  '51-100': '51-100 人',
+  '101-500': '101-500 人',
+  '501-1000': '501-1000 人',
+  '1000+': '1000 人以上'
+}
+
+// 获取显示的行业名称
+const displayIndustry = computed(() => {
+  return industryMap[profileForm.value.industry] || profileForm.value.industry
+})
+
+// 获取显示的企业规模
+const displayScale = computed(() => {
+  return scaleMap[profileForm.value.scale] || profileForm.value.scale
+})
+
 // 获取当前用户信息
 const currentUser = computed(() => authStore.user)
 const displayName = computed(() => {
@@ -118,6 +150,7 @@ const passwordRules = {
 const passwordFormRef = ref(null)
 
 const handleSaveProfile = async () => {
+  loading.value = true
   try {
     const response = await CompanyService.updateProfile({
       username: profileForm.value.username,
@@ -126,12 +159,18 @@ const handleSaveProfile = async () => {
     })
     if (response.code === 200) {
       ElMessage.success('个人信息保存成功')
+      // 更新store中的用户信息
+      if (authStore.user) {
+        authStore.user.username = profileForm.value.username
+      }
     } else {
       ElMessage.error(response.message || '保存失败')
     }
   } catch (error) {
     console.error('保存个人信息失败:', error)
     ElMessage.error('保存失败，请稍后重试')
+  } finally {
+    loading.value = false
   }
 }
 
@@ -140,25 +179,32 @@ const handleChangePassword = async () => {
   
   await passwordFormRef.value.validate(async (valid) => {
     if (valid) {
+      loading.value = true
       try {
         const response = await CompanyService.changePassword({
           oldPassword: passwordForm.value.oldPassword,
           newPassword: passwordForm.value.newPassword
         })
         if (response.code === 200) {
-          ElMessage.success('密码修改成功')
+          ElMessage.success('密码修改成功，请重新登录')
           passwordForm.value = {
             oldPassword: '',
             newPassword: '',
             confirmPassword: ''
           }
           passwordFormRef.value.resetFields()
+          setTimeout(async () => {
+            await authStore.logout()
+            router.push('/login')
+          }, 1500)
         } else {
           ElMessage.error(response.message || '密码修改失败')
         }
       } catch (error) {
         console.error('修改密码失败:', error)
         ElMessage.error('密码修改失败，请稍后重试')
+      } finally {
+        loading.value = false
       }
     }
   })
@@ -194,7 +240,7 @@ const handleLogout = async () => {
       <p>管理您的账号信息和安全设置</p>
     </div>
 
-    <el-tabs v-model="activeTab" class="settings-tabs">
+    <el-tabs v-model="activeTab" class="settings-tabs" v-loading="loading">
       <el-tab-pane label="个人信息" name="profile">
         <div class="form-card">
           <el-form :model="profileForm" label-width="120px" label-position="left">
@@ -215,11 +261,11 @@ const handleLogout = async () => {
             </el-form-item>
 
             <el-form-item label="所属行业">
-              <el-input v-model="profileForm.industry" placeholder="所属行业" disabled />
+              <el-input :model-value="displayIndustry" placeholder="所属行业" disabled />
             </el-form-item>
 
             <el-form-item label="企业规模">
-              <el-input v-model="profileForm.scale" placeholder="企业规模" disabled />
+              <el-input :model-value="displayScale" placeholder="企业规模" disabled />
             </el-form-item>
 
             <el-form-item>
@@ -287,7 +333,6 @@ const handleLogout = async () => {
               <h4>绑定手机</h4>
               <p>已绑定：{{ maskedPhone }}</p>
             </div>
-            <el-button>更换手机</el-button>
           </div>
 
           <div class="security-item">
@@ -295,7 +340,6 @@ const handleLogout = async () => {
               <h4>绑定邮箱</h4>
               <p>已绑定：{{ maskedEmail }}</p>
             </div>
-            <el-button>更换邮箱</el-button>
           </div>
 
           <div class="security-item danger">

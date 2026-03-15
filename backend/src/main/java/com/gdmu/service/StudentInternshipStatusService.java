@@ -43,6 +43,8 @@ public interface StudentInternshipStatusService {
      * @return 删除的记录数
      */
     int delete(Long id);
+
+    int deleteByPositionId(Long positionId);
     
     /**
      * 查询所有学生实习状态

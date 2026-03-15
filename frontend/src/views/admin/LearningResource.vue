@@ -73,7 +73,7 @@
     </el-card>
 
     <!-- 资源列表卡片区域 -->
-    <el-card class="resources-card" shadow="never">
+    <el-card class="resources-card" shadow="never" v-loading="loading">
       <div class="resources-grid">
         <div 
           v-for="resource in resourcesList" 

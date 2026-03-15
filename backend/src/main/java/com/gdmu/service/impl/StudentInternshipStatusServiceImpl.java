@@ -67,6 +67,20 @@ public class StudentInternshipStatusServiceImpl implements StudentInternshipStat
         
         return result;
     }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public int deleteByPositionId(Long positionId) {
+        log.debug("根据岗位ID删除学生实习状态，岗位ID: {}", positionId);
+
+        if (positionId == null || positionId <= 0) {
+            throw new BusinessException("岗位ID无效");
+        }
+
+        int result = studentInternshipStatusMapper.deleteByPositionId(positionId);
+        log.info("根据岗位ID删除学生实习状态成功，岗位ID: {}, 删除记录数: {}", positionId, result);
+        return result;
+    }
     
     @Override
     public StudentInternshipStatus findById(Long id) {

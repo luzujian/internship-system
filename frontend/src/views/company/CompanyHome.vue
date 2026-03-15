@@ -5,6 +5,13 @@ import { useAuthStore } from '@/store/auth'
 import request from '@/utils/request'
 import emitter from '@/utils/event-bus'
 import { usePositionStore } from '@/store/position'
+import { ElMessage } from 'element-plus'
+import { ElScrollbar } from 'element-plus'
+import FilePreviewDialog from '@/components/FilePreviewDialog.vue'
+import {
+  initAnnouncementWebSocket,
+  disconnectAnnouncementWebSocket
+} from '@/utils/websocket'
 import {
   DocumentChecked,
   User,
@@ -17,7 +24,11 @@ import {
   Edit,
   View,
   ChatDotRound,
-  DataAnalysis
+  DataAnalysis,
+  Document,
+  Download,
+  ZoomIn,
+  Paperclip
 } from '@element-plus/icons-vue'
 
 const router = useRouter()
@@ -101,53 +112,25 @@ const quickActions = ref([
   }
 ])
 
-const recentActivities = ref([
-  {
-    id: 1,
-    type: 'application',
-    title: '张三 申请了 前端开发工程师',
-    time: '10 分钟前',
-    status: 'pending'
-  },
-  {
-    id: 2,
-    type: 'application',
-    title: '李四 申请了 后端开发工程师',
-    time: '25 分钟前',
-    status: 'pending'
-  },
-  {
-    id: 3,
-    type: 'confirmed',
-    title: '已确认 王五 的实习申请',
-    time: '1 小时前',
-    status: 'confirmed'
-  },
-  {
-    id: 4,
-    type: 'application',
-    title: '赵六 申请了 算法工程师',
-    time: '2 小时前',
-    status: 'pending'
-  },
-  {
-    id: 5,
-    type: 'rejected',
-    title: '已拒绝 钱七 的实习申请',
-    time: '3 小时前',
-    status: 'rejected'
-  }
-])
+const recentActivities = ref([])
 
 const notifications = ref([])
 
+const loading = ref(false)
+
+const unreadCount = computed(() => {
+  return notifications.value.filter(n => !n.isRead).length
+})
+
 const fetchStats = async () => {
   console.log('开始获取统计数据')
+  loading.value = true
   try {
     const response = await request({
-      url: `${API_BASE}/stats`,
+      url: '/company/stats',
       method: 'get'
     })
+    console.log('统计数据响应:', response)
     if (response.code === 200) {
       statsData.value[0].value = response.data.publishedPositions || 0
       statsData.value[1].value = response.data.totalApplications || 0
@@ -156,18 +139,20 @@ const fetchStats = async () => {
     }
   } catch (error) {
     console.error('获取统计数据失败:', error)
+  } finally {
+    loading.value = false
   }
 }
 
 const fetchRecentActivities = async () => {
   try {
     const response = await request({
-      url: `${API_BASE}/applications/recent?limit=5`,
-      method: 'get'
+      url: '/company/applications/recent',
+      method: 'get',
+      params: { limit: 5 }
     })
     console.log('最新动态响应数据:', response)
-    if (response.code === 200 && response.data && response.data.length > 0) {
-      console.log('第一条数据:', response.data[0])
+    if (response.code === 200 && response.data) {
       recentActivities.value = response.data.map((app) => ({
         id: app.id,
         type: 'application',
@@ -175,6 +160,7 @@ const fetchRecentActivities = async () => {
         time: formatTime(app.applyTime || app.createTime),
         status: app.status
       }))
+      console.log('处理后的最新动态数据:', recentActivities.value)
     }
   } catch (error) {
     console.error('获取最新动态失败:', error)
@@ -197,8 +183,9 @@ const formatTime = (date) => {
 const fetchNotifications = async () => {
   try {
     const response = await request({
-      url: `${API_BASE}/notifications?limit=5`,
-      method: 'get'
+      url: '/company/notifications',
+      method: 'get',
+      params: { limit: 5 }
     })
     console.log('通知响应数据:', response)
     if (response.code === 200 && response.data) {
@@ -211,7 +198,8 @@ const fetchNotifications = async () => {
         time: item.time,
         priority: item.priority,
         positionId: item.positionId,
-        positionName: item.positionName
+        positionName: item.positionName,
+        isRead: item.isRead
       }))
       console.log('处理后的通知数据:', notifications.value)
     } else {
@@ -297,17 +285,179 @@ const handleNotificationRefresh = () => {
   fetchNotifications()
 }
 
+const viewDialogVisible = ref(false)
+const viewData = ref(null)
+const filePreviewVisible = ref(false)
+const currentFileUrl = ref('')
+const currentFileName = ref('')
+
+const handleViewAnnouncement = async (notification) => {
+  try {
+    const response = await request({
+      url: `/announcements/${notification.id}`,
+      method: 'get'
+    })
+    if (response.code === 200 && response.data) {
+      viewData.value = response.data
+      viewDialogVisible.value = true
+      
+      // 更新本地通知列表的阅读状态
+      const targetNotification = notifications.value.find(n => n.id === notification.id)
+      if (targetNotification) {
+        targetNotification.isRead = true
+      }
+    } else {
+      ElMessage.error('获取公告详情失败')
+    }
+  } catch (error) {
+    console.error('获取公告详情失败:', error)
+    ElMessage.error('获取公告详情失败')
+  }
+}
+
+const parseAttachments = (attachments) => {
+  if (!attachments) return []
+  try {
+    if (typeof attachments === 'string') {
+      return JSON.parse(attachments)
+    }
+    return attachments
+  } catch (e) {
+    console.error('解析附件数据失败:', e)
+    return []
+  }
+}
+
+const previewFile = (attachment) => {
+  if (!attachment) {
+    ElMessage.error('附件信息不存在')
+    return
+  }
+
+  const url = attachment.url ? String(attachment.url) : null
+  const name = attachment.name ? String(attachment.name) : '附件'
+
+  if (!url) {
+    ElMessage.error('附件地址不存在')
+    return
+  }
+
+  currentFileUrl.value = url
+  currentFileName.value = name
+  filePreviewVisible.value = true
+}
+
+const downloadFile = (url, name) => {
+  try {
+    const link = document.createElement('a')
+    link.href = url
+    link.download = name || 'download'
+    link.target = '_blank'
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    ElMessage.success('开始下载')
+  } catch (error) {
+    console.error('下载失败:', error)
+    ElMessage.error('下载失败')
+  }
+}
+
+const downloadFileWithConfirm = (attachment) => {
+  if (!attachment) {
+    ElMessage.error('附件信息不存在')
+    return
+  }
+
+  const url = attachment.url ? String(attachment.url) : null
+  const name = attachment.name ? String(attachment.name) : '附件'
+
+  if (!url) {
+    ElMessage.error('附件地址不存在')
+    return
+  }
+
+  downloadFile(url, name)
+}
+
+const formatDate = (dateString) => {
+  if (!dateString) return '-'
+  const date = new Date(dateString)
+  if (isNaN(date.getTime())) return '-'
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  const d = String(date.getDate()).padStart(2, '0')
+  const h = String(date.getHours()).padStart(2, '0')
+  const min = String(date.getMinutes()).padStart(2, '0')
+  return `${y}-${m}-${d} ${h}:${min}`
+}
+
+const getPublisherRoleText = (role) => {
+  const map = {
+    ADMIN: '管理员',
+    COLLEGE: '学院教师',
+    DEPARTMENT: '系室教师',
+    COUNSELOR: '辅导员'
+  }
+  return map[role] || '-'
+}
+
+const getPublisherRoleType = (role) => {
+  const map = {
+    ADMIN: 'danger',
+    COLLEGE: 'primary',
+    DEPARTMENT: 'success',
+    COUNSELOR: 'warning'
+  }
+  return map[role] || 'info'
+}
+
+const handleWebSocketMessage = (data) => {
+  console.log('企业端收到WebSocket消息:', data)
+  
+  if (data.type === 'new_announcement') {
+    ElMessage.success({
+      message: `新公告：${data.data?.title || '未知标题'}`,
+      duration: 5000,
+      showClose: true
+    })
+    fetchNotifications()
+  }
+}
+
+const initWebSocket = () => {
+  let token = authStore.token
+  
+  if (!token) {
+    const rolePrefix = 'company_'
+    const role = 'ROLE_COMPANY'
+    token = localStorage.getItem(`${rolePrefix}accessToken_${role}`) ||
+            localStorage.getItem(`${rolePrefix}token_${role}`) ||
+            localStorage.getItem('accessToken')
+  }
+  
+  if (token) {
+    console.log('初始化 WebSocket 连接，token 存在')
+    initAnnouncementWebSocket(token, handleWebSocketMessage)
+  } else {
+    console.warn('未找到 token，无法初始化 WebSocket')
+  }
+}
+
 onMounted(() => {
   console.log('CompanyHome 组件已挂载')
   fetchStats()
   fetchRecentActivities()
   fetchNotifications()
 
+  initWebSocket()
+
   emitter.on('notification-refresh', handleNotificationRefresh)
 })
 
 onUnmounted(() => {
   console.log('CompanyHome 组件已卸载')
+  disconnectAnnouncementWebSocket()
   emitter.off('notification-refresh', handleNotificationRefresh)
 })
 </script>
@@ -328,7 +478,7 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <div class="stats-grid">
+    <div class="stats-grid" v-loading="loading">
       <div
         v-for="(stat, index) in statsData"
         :key="index"
@@ -353,7 +503,7 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <div class="content-grid">
+    <div class="content-grid" v-loading="loading">
       <div class="content-card">
         <div class="card-header">
           <h3>
@@ -389,28 +539,36 @@ onUnmounted(() => {
             <el-icon><ArrowRight /></el-icon>
           </el-button>
         </div>
-        <div class="activity-list">
-          <div
-            v-for="activity in recentActivities"
-            :key="activity.id"
-            class="activity-item"
-          >
-            <div class="activity-icon">
-              <el-icon :size="20" :color="activity.status === 'pending' ? '#E6A23C' : activity.status === 'confirmed' ? '#67C23A' : '#F56C6C'">
-                <component :is="activity.status === 'pending' ? Bell : activity.status === 'confirmed' ? DocumentChecked : Message" />
+        <el-scrollbar height="400px">
+          <div class="activity-list">
+            <div v-if="recentActivities.length === 0" class="empty-state">
+              <el-icon :size="48" color="#C0C4CC">
+                <TrendCharts />
               </el-icon>
+              <p>暂无最新动态</p>
             </div>
-            <div class="activity-content">
-              <div class="activity-title">{{ activity.title }}</div>
-              <div class="activity-meta">
-                <span class="activity-time">{{ activity.time }}</span>
-                <el-tag :type="getStatusType(activity.status)" size="small">
-                  {{ getStatusText(activity.status) }}
-                </el-tag>
+            <div
+              v-for="activity in recentActivities"
+              :key="activity.id"
+              class="activity-item"
+            >
+              <div class="activity-icon">
+                <el-icon :size="20" :color="activity.status === 'pending' ? '#E6A23C' : activity.status === 'confirmed' ? '#67C23A' : '#F56C6C'">
+                  <component :is="activity.status === 'pending' ? Bell : activity.status === 'confirmed' ? DocumentChecked : Message" />
+                </el-icon>
+              </div>
+              <div class="activity-content">
+                <div class="activity-title">{{ activity.title }}</div>
+                <div class="activity-meta">
+                  <span class="activity-time">{{ activity.time }}</span>
+                  <el-tag :type="getStatusType(activity.status)" size="small">
+                    {{ getStatusText(activity.status) }}
+                  </el-tag>
+                </div>
               </div>
             </div>
           </div>
-        </div>
+        </el-scrollbar>
       </div>
 
       <div class="content-card notification-card">
@@ -419,39 +577,127 @@ onUnmounted(() => {
             <el-icon><Bell /></el-icon>
             通知公告
           </h3>
-          <el-tag type="info">{{ notifications.length }} 条通知</el-tag>
-        </div>
-        <div class="notification-list">
-          <div v-if="notifications.length === 0" class="empty-state">
-            <el-icon :size="48" color="#C0C4CC">
-              <Bell />
-            </el-icon>
-            <p>暂无通知</p>
+          <div class="header-right">
+            <el-badge v-if="unreadCount > 0" :value="unreadCount" class="unread-badge">
+              <el-tag type="info">{{ notifications.length }} 条通知</el-tag>
+            </el-badge>
+            <el-tag v-else type="info">{{ notifications.length }} 条通知</el-tag>
           </div>
-          <div
-            v-for="notification in notifications"
-            :key="notification.id"
-            class="notification-item"
-          >
-            <div class="notification-icon">
-              <el-icon :size="20" :color="notification.priority === 'high' ? '#F56C6C' : notification.priority === 'medium' ? '#E6A23C' : '#909399'">
-                <component :is="getNotificationIcon(notification.type)" />
+        </div>
+        <el-scrollbar height="400px">
+          <div class="notification-list">
+            <div v-if="notifications.length === 0" class="empty-state">
+              <el-icon :size="48" color="#C0C4CC">
+                <Bell />
               </el-icon>
+              <p>暂无通知</p>
             </div>
-            <div class="notification-content">
-              <div class="notification-title">{{ notification.title }}</div>
-              <div class="notification-desc">{{ notification.content }}</div>
-              <div class="notification-meta">
-                <el-tag :type="getPriorityType(notification.priority)" size="small">
-                  {{ getNotificationType(notification.type) }}
-                </el-tag>
-                <span class="notification-time">{{ notification.time }}</span>
+            <div
+              v-for="notification in notifications"
+              :key="notification.id"
+              class="notification-item"
+              :class="{ 'unread': !notification.isRead }"
+              @click="handleViewAnnouncement(notification)"
+            >
+              <div class="notification-icon">
+                <el-icon :size="20" :color="notification.priority === 'high' ? '#F56C6C' : notification.priority === 'medium' ? '#E6A23C' : '#909399'">
+                  <component :is="getNotificationIcon(notification.type)" />
+                </el-icon>
+                <div v-if="!notification.isRead" class="unread-dot"></div>
+              </div>
+              <div class="notification-content">
+                <div class="notification-title">{{ notification.title }}</div>
+                <div class="notification-desc">{{ notification.content }}</div>
+                <div class="notification-meta">
+                  <el-tag :type="getPriorityType(notification.priority)" size="small">
+                    {{ getNotificationType(notification.type) }}
+                  </el-tag>
+                  <span class="notification-time">{{ notification.time }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </el-scrollbar>
+      </div>
+    </div>
+
+    <!-- 查看公告对话框 -->
+    <el-dialog v-model="viewDialogVisible" title="查看公告" width="800px" class="view-dialog">
+      <div v-if="viewData" class="view-content">
+        <h3 class="view-title">{{ viewData.title }}</h3>
+        <div class="view-meta">
+          <div class="meta-item">
+            <span class="meta-label">发布人:</span>
+            <span class="meta-value">{{ viewData.publisher }}</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-label">发布人身份:</span>
+            <el-tag :type="getPublisherRoleType(viewData.publisherRole)" size="small" class="status-tag">
+              {{ getPublisherRoleText(viewData.publisherRole) }}
+            </el-tag>
+          </div>
+          <div class="meta-item">
+            <span class="meta-label">发布日期:</span>
+            <span class="meta-value">{{ formatDate(viewData.publishDate || viewData.publishTime) }}</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-label">过期日期:</span>
+            <span class="meta-value">{{ formatDate(viewData.expireDate || viewData.validTo) }}</span>
+          </div>
+        </div>
+        <el-divider></el-divider>
+        <div class="content-body" v-html="viewData.content"></div>
+        <div v-if="viewData.attachments && parseAttachments(viewData.attachments).length > 0" class="attachments-section">
+          <el-divider></el-divider>
+          <div class="attachments-title">
+            <el-icon><Paperclip /></el-icon>
+            <span>附件列表</span>
+          </div>
+          <div class="attachments-list">
+            <div
+              v-for="(attachment, index) in parseAttachments(viewData.attachments)"
+              :key="index"
+              class="attachment-item"
+            >
+              <div class="attachment-info" @click="downloadFileWithConfirm(attachment)">
+                <el-icon class="attachment-icon"><Document /></el-icon>
+                <span class="attachment-name">{{ attachment.name }}</span>
+              </div>
+              <div class="attachment-actions">
+                <el-button
+                  type="primary"
+                  size="small"
+                  @click.stop="previewFile(attachment)"
+                  title="预览文件"
+                >
+                  <el-icon><ZoomIn /></el-icon>
+                  预览
+                </el-button>
+                <el-button
+                  type="success"
+                  size="small"
+                  @click.stop="downloadFileWithConfirm(attachment)"
+                  title="下载文件"
+                >
+                  <el-icon><Download /></el-icon>
+                  下载
+                </el-button>
               </div>
             </div>
           </div>
         </div>
       </div>
-    </div>
+      <template #footer>
+        <el-button @click="viewDialogVisible = false" class="cancel-btn">关闭</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 文件预览对话框 -->
+    <FilePreviewDialog
+      v-model="filePreviewVisible"
+      :file-url="currentFileUrl"
+      :file-name="currentFileName"
+    />
   </div>
 </template>
 
@@ -655,6 +901,24 @@ onUnmounted(() => {
   color: #409EFF;
 }
 
+.header-right {
+  display: flex;
+  align-items: center;
+}
+
+.unread-badge {
+  margin-right: 0;
+}
+
+.unread-badge :deep(.el-badge__content) {
+  background-color: #f56c6c;
+  border: 2px solid #fff;
+  font-size: 12px;
+  height: 18px;
+  line-height: 14px;
+  padding: 0 5px;
+}
+
 .quick-actions {
   padding: 20px;
   display: grid;
@@ -697,8 +961,6 @@ onUnmounted(() => {
 
 .activity-list {
   padding: 0 24px;
-  max-height: 400px;
-  overflow-y: auto;
 }
 
 .activity-item {
@@ -748,8 +1010,6 @@ onUnmounted(() => {
 
 .notification-list {
   padding: 0 24px;
-  max-height: 400px;
-  overflow-y: auto;
 }
 
 .notification-item {
@@ -758,6 +1018,11 @@ onUnmounted(() => {
   padding: 16px 0;
   border-bottom: 1px solid #f0f0f0;
   transition: background 0.2s ease;
+  cursor: pointer;
+}
+
+.notification-item:hover {
+  background: #f5f7fa;
 }
 
 .notification-item:last-child {
@@ -773,6 +1038,18 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  position: relative;
+}
+
+.unread-dot {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 10px;
+  height: 10px;
+  background: #f56c6c;
+  border-radius: 50%;
+  border: 2px solid #fff;
 }
 
 .notification-content {
@@ -834,6 +1111,113 @@ onUnmounted(() => {
 
 :deep(.el-button--text .el-icon) {
   margin-left: 4px;
+}
+
+.view-content {
+  padding: 0 20px;
+}
+
+.view-title {
+  font-size: 20px;
+  font-weight: 600;
+  color: #303133;
+  margin: 0 0 20px 0;
+}
+
+.view-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.meta-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.meta-label {
+  font-size: 14px;
+  color: #909399;
+  font-weight: 500;
+}
+
+.meta-value {
+  font-size: 14px;
+  color: #303133;
+}
+
+.status-tag {
+  margin-left: 4px;
+}
+
+.content-body {
+  font-size: 14px;
+  color: #606266;
+  line-height: 1.8;
+  min-height: 100px;
+}
+
+.attachments-section {
+  margin-top: 20px;
+}
+
+.attachments-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #303133;
+  margin-bottom: 16px;
+}
+
+.attachments-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.attachment-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: #f5f7fa;
+  border-radius: 8px;
+  transition: all 0.3s ease;
+}
+
+.attachment-item:hover {
+  background: #e8f4ff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.attachment-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  cursor: pointer;
+}
+
+.attachment-icon {
+  font-size: 20px;
+  color: #409EFF;
+}
+
+.attachment-name {
+  font-size: 14px;
+  color: #303133;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attachment-actions {
+  display: flex;
+  gap: 8px;
 }
 
 @media screen and (max-width: 1400px) {

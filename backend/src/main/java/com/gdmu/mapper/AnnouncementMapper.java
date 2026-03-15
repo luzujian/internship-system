@@ -89,4 +89,11 @@ public interface AnnouncementMapper {
      * @return 公告列表
      */
     List<Announcement> getAnnouncementsForUser(@Param("userType") String userType, @Param("userInfo") String userInfo);
+    
+    /**
+     * 增加公告阅读次数
+     * @param id 公告ID
+     * @return 更新的记录数
+     */
+    int incrementReadCount(@Param("id") Long id);
 }

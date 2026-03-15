@@ -90,13 +90,13 @@
             <if test="contactPhone != null and contactPhone != ''">
                 contact_phone = #{contactPhone},
             </if>
-            <if test="contactEmail != null and contactEmail != ''">
+            <if test="contactEmail != null">
                 contact_email = #{contactEmail},
             </if>
-            <if test="phone != null and phone != ''">
+            <if test="phone != null">
                 phone = #{phone},
             </if>
-            <if test="email != null and email != ''">
+            <if test="email != null">
                 email = #{email},
             </if>
             <if test="address != null and address != ''">

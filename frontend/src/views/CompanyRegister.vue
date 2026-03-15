@@ -77,34 +77,26 @@
           </el-select>
         </el-form-item>
 
-        <el-form-item label="合作模式" prop="cooperationMode">
-          <el-radio-group v-model="registerForm.cooperationMode">
-            <el-radio
-              v-for="option in cooperationModeOptions"
-              :key="option.value"
-              :label="option.value"
-            >
-              {{ option.label }}
-            </el-radio>
-          </el-radio-group>
-        </el-form-item>
-
         <el-form-item label="联系人" prop="contactPerson">
           <el-input v-model="registerForm.contactPerson" placeholder="请输入联系人姓名" />
         </el-form-item>
 
         <el-form-item label="联系电话" prop="contactPhone">
-          <el-input v-model="registerForm.contactPhone" placeholder="请输入联系电话" />
+          <el-input v-model="registerForm.contactPhone" placeholder="请输入企业联系电话（用于对外业务联系）" />
+        </el-form-item>
+
+        <el-form-item label="个人邮箱" prop="email">
+          <el-input v-model="registerForm.email" placeholder="请输入个人邮箱（用于账号通知）" />
         </el-form-item>
 
         <el-form-item label="联系邮箱" prop="contactEmail">
-          <el-input v-model="registerForm.contactEmail" placeholder="请输入联系邮箱" />
+          <el-input v-model="registerForm.contactEmail" placeholder="请输入企业联系邮箱（用于对外业务联系）" />
         </el-form-item>
 
-        <el-form-item label="手机号" prop="phone">
+        <el-form-item label="个人手机号" prop="phone">
           <el-input
             v-model="registerForm.phone"
-            placeholder="请输入手机号"
+            placeholder="请输入个人手机号（用于接收验证码）"
             maxlength="11"
           />
           <el-button
@@ -317,12 +309,6 @@ const scaleOptions = [
   { label: '1000 人以上', value: '1000+' }
 ]
 
-const cooperationModeOptions = [
-  { label: '接受兜底', value: 'accept_fallback', type: 'danger' },
-  { label: '学生自主联系', value: 'student_contact', type: 'warning' },
-  { label: '双向选择', value: 'mutual_choice', type: 'success' }
-]
-
 const chinaAreaValue = ref([])
 
 const chinaData = new EluiChinaAreaDht.ChinaArea().chinaAreaflat
@@ -355,8 +341,8 @@ const registerForm = reactive({
   contactPerson: '',
   contactPhone: '',
   contactEmail: '',
+  email: '',
   website: '',
-  cooperationMode: 'mutual_choice',
   phone: '',
   verifyCode: '',
   introduction: '',
@@ -402,6 +388,7 @@ const loadExistingData = async () => {
       registerForm.contactPerson = data.contactPerson || ''
       registerForm.contactPhone = data.contactPhone || ''
       registerForm.contactEmail = data.contactEmail || ''
+      registerForm.email = data.email || ''
       registerForm.phone = data.phone || ''
       registerForm.industry = data.industry || ''
       registerForm.scale = data.scale || ''
@@ -410,7 +397,6 @@ const loadExistingData = async () => {
       registerForm.district = data.district || ''
       registerForm.detailAddress = data.detailAddress || ''
       registerForm.website = data.website || ''
-      registerForm.cooperationMode = data.cooperationMode || 'mutual_choice'
       registerForm.introduction = data.introduction || ''
       registerForm.businessLicense = data.businessLicense || ''
 
@@ -463,6 +449,9 @@ const rules = {
   ],
   contactEmail: [
     { required: true, message: '请输入联系邮箱', trigger: 'blur' },
+    { type: 'email', message: '请输入正确的邮箱格式', trigger: 'blur' }
+  ],
+  email: [
     { type: 'email', message: '请输入正确的邮箱格式', trigger: 'blur' }
   ],
   phone: [
@@ -711,9 +700,13 @@ const goBack = () => {
   min-height: 100vh;
   display: flex;
   justify-content: center;
-  align-items: center;
-  background: #f5f5f5;
-  padding: 20px;
+  align-items: flex-start;
+  background-image: url('../assets/2.png');
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+  background-position: center;
+  padding-top: 15vh;
+  position: relative;
 }
 
 .register-box {
@@ -723,6 +716,7 @@ const goBack = () => {
   border-radius: 10px;
   box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
   padding: 40px;
+  margin-top: 80px;
 }
 
 .register-header {

@@ -12,7 +12,7 @@ import GradeService from '../../api/grade'
 import request from '../../utils/request'
 import { ElMessage, ElMessageBox, ElCheckbox } from 'element-plus'
 import { Search, Refresh, Plus, Edit, Delete, View, Download, Upload, ArrowDown } from '@element-plus/icons-vue'
-import * as XLSX from 'xlsx'
+import { exportToExcel, readExcelFile } from '../../utils/xlsx'
 import { useAuthStore } from '../../store/auth'
 
 const authStore = useAuthStore()
@@ -125,9 +125,9 @@ const getMajorList = async (): Promise<void> => {
     if (response && response.data) {
       if (Array.isArray(response.data)) {
         majorList.value = response.data
-      } else if (response.data.code === 200 && response.data.data) {
+      } else if (response.code === 200 && response.data) {
         // 处理带code和data的响应格式
-        majorList.value = Array.isArray(response.data.data) ? response.data.data : []
+        majorList.value = Array.isArray(response.data) ? response.data : []
       } else {
         majorList.value = []
       }
@@ -278,7 +278,7 @@ const handleMouseEnterDepartment = (departmentId) => {
 }
 
 //导出Excel功能
-const exportToExcel = async (): Promise<void> => {
+const handleExportToExcel = async (): Promise<void> => {
   try {
     exportLoading.value = true
     
@@ -343,36 +343,23 @@ const exportToExcel = async (): Promise<void> => {
       }
     })
     
-    // 创建工作簿
-    const wb = XLSX.utils.book_new()
-    
-    // 创建工作表
-    const ws = XLSX.utils.json_to_sheet(exportData)
-    
-    // 设置列宽
     const colWidths = [
-      { wch: 20 }, // 院系名称
-      { wch: 15 }, // 院系ID
-      { wch: 10 }, // 教师人数
-      { wch: 10 }, // 学生总数
-      { wch: 20 }, // 院系更新时间
-      { wch: 20 }, // 专业名称
-      { wch: 15 }, // 专业ID
-      { wch: 12 }, // 专业学生人数
-      { wch: 20 }  // 专业更新时间
+      { wch: 20 },
+      { wch: 15 },
+      { wch: 10 },
+      { wch: 10 },
+      { wch: 20 },
+      { wch: 20 },
+      { wch: 15 },
+      { wch: 12 },
+      { wch: 20 }
     ]
-    ws['!cols'] = colWidths
-    
-    // 添加工作表到工作簿
-    XLSX.utils.book_append_sheet(wb, ws, '院系专业信息')
-    
-    // 生成文件名
+
     const now = new Date()
     const formattedDate = formatDateForFilename(now)
-    const fileName = `院系专业信息_${formattedDate}.xlsx`
-    
-    // 导出文件
-    XLSX.writeFile(wb, fileName)
+    const fileName = `院系专业信息_${formattedDate}`
+
+    await exportToExcel(exportData, fileName, { sheetName: '院系专业信息', columnWidths: colWidths })
     
     ElMessage.success('导出成功！')
   } catch (error) {
@@ -589,13 +576,13 @@ const searchMajorByName = async (): Promise<void> => {
     const response = await MajorService.searchMajorsByName(searchMajorName.value.trim())
 
     let foundMajors = []
-    if (response && response.data && response.data.code === 200 && response.data.data) {
+    if (response && response.code === 200 && response.data) {
       // 如果后端返回了结果，使用后端结果
-      if (Array.isArray(response.data.data)) {
-        foundMajors = response.data.data
-      } else if (response.data.data && typeof response.data.data === 'object') {
+      if (Array.isArray(response.data)) {
+        foundMajors = response.data
+      } else if (response.data && typeof response.data === 'object') {
         // 有些后端可能直接返回单个对象
-        foundMajors = [response.data.data]
+        foundMajors = [response.data]
       }
     } else {
       // 如果后端API不支持或返回空结果，使用前端过滤
@@ -821,24 +808,7 @@ const importExcel = async (): Promise<void> => {
   importLoading.value = true
   
   try {
-    const reader = new FileReader()
-    
-    const fileData = await new Promise((resolve, reject) => {
-      reader.onload = (e) => resolve(e.target.result)
-      reader.onerror = reject
-      reader.readAsArrayBuffer(selectedFile.value)
-    })
-    
-    // 读取Excel文件
-    const data = new Uint8Array(fileData)
-    const workbook = XLSX.read(data, { type: 'array' })
-    
-    // 获取第一个工作表
-    const sheetName = workbook.SheetNames[0]
-    const worksheet = workbook.Sheets[sheetName]
-    
-    // 转换为JSON格式
-    const jsonData = XLSX.utils.sheet_to_json(worksheet)
+    const jsonData = await readExcelFile(selectedFile.value)
     
     if (jsonData.length === 0) {
       ElMessage.warning('Excel文件中没有数据')
@@ -847,7 +817,6 @@ const importExcel = async (): Promise<void> => {
     
     logger.log('读取到的Excel数据:', jsonData)
     
-    // 处理读取到的数据
     const importResult = await processImportData(jsonData)
     
     if (importResult.success) {

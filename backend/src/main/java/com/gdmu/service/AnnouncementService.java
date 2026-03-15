@@ -112,4 +112,11 @@ public interface AnnouncementService {
      * @return 导入结果，包含成功和失败信息
      */
     Map<String, Object> importFromExcel(List<Map<String, Object>> announcementDataList);
+    
+    /**
+     * 增加公告阅读次数
+     * @param id 公告ID
+     * @return 更新的记录数
+     */
+    int incrementReadCount(Long id);
 }

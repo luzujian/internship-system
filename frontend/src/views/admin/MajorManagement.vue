@@ -23,7 +23,7 @@
         <el-button v-if="authStore.hasPermission('major:view')" type="primary" @click="searchMajors" style="margin-left: 10px">搜索</el-button>
       </div>
 
-      <el-table :data="majors" style="width: 100%">
+      <el-table :data="majors" style="width: 100%" v-loading="loading">
         <el-table-column prop="id" label="专业 ID" width="80" />
         <el-table-column prop="name" label="专业名称" />
         <el-table-column prop="code" label="专业代码" />
@@ -99,7 +99,7 @@ import logger from '@/utils/logger'
 import { ref, onMounted, inject } from 'vue'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
 import { Download } from '@element-plus/icons-vue'
-import * as XLSX from 'xlsx'
+import { exportToExcel } from '../../utils/xlsx'
 import Pagination from '../../components/Pagination.vue'
 import MajorService from '../../api/major'
 import { useAuthStore } from '../../store/auth'
@@ -124,7 +124,6 @@ interface AddMajorForm {
 
 const authStore = useAuthStore()
 
-// 获取全局预加载服务
 const preloadService = inject<PreloadService | null>('preloadService', null)
 
 const majors = ref<MajorWithCounts[]>([])
@@ -132,6 +131,7 @@ const total = ref(0)
 const currentPage = ref(1)
 const pageSize = ref(10)
 const searchQuery = ref('')
+const loading = ref(false)
 
 const addDialogVisible = ref(false)
 const editDialogVisible = ref(false)
@@ -168,11 +168,10 @@ const editFormRef = ref<FormInstance | null>(null)
 
 // 加载专业列表
 const loadMajors = (): void => {
+  loading.value = true
   MajorService.getMajors()
     .then(response => {
-      // 提取业务数据对象（从完整响应对象中提取 Result 对象）
       const result = response.data || response
-      // api.js 响应拦截器返回的是 Result 对象{code, message, data}
       if (result && result.code === 200 && result.data) {
         majors.value = Array.isArray(result.data) ? result.data : []
         total.value = result.total || majors.value.length
@@ -186,6 +185,9 @@ const loadMajors = (): void => {
       ElMessage.error('加载专业列表失败：' + errorMessage)
       majors.value = []
       total.value = 0
+    })
+    .finally(() => {
+      loading.value = false
     })
 }
 
@@ -318,7 +320,7 @@ const handleCurrentChange = (current: number): void => {
 }
 
 // 导出专业数据到 Excel
-const exportToExcel = (): void => {
+const handleExportToExcel = async (): Promise<void> => {
   if (!majors.value || majors.value.length === 0) {
     ElMessage.warning('没有数据可导出')
     return
@@ -348,9 +350,6 @@ const exportToExcel = (): void => {
       '更新时间': formatDate(major.updateTime)
     }))
 
-    const wb = XLSX.utils.book_new()
-    const ws = XLSX.utils.json_to_sheet(exportData)
-
     const columnWidths = [
       { wch: 10 },
       { wch: 20 },
@@ -360,13 +359,10 @@ const exportToExcel = (): void => {
       { wch: 25 },
       { wch: 25 }
     ]
-    ws['!cols'] = columnWidths
 
-    XLSX.utils.book_append_sheet(wb, ws, '专业数据')
+    const fileName = `专业数据_${new Date().toLocaleDateString('zh-CN').replace(/\//g, '-')}`
 
-    const fileName = `专业数据_${new Date().toLocaleDateString('zh-CN').replace(/\//g, '-')}.xlsx`
-
-    XLSX.writeFile(wb, fileName)
+    await exportToExcel(exportData, fileName, { sheetName: '专业数据', columnWidths })
     ElMessage.success('导出成功')
   } catch (error: unknown) {
     logger.error('导出 Excel 失败:', error)

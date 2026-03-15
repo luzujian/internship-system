@@ -204,8 +204,8 @@ const loadUserInfo = async () => {
 
     const response = await AdminUserService.getAdminById(currentUserId)
 
-    if (response && response.data && response.data.code === 200 && response.data.data) {
-      const adminInfo = response.data.data
+    if (response && response.code === 200 && response.data) {
+      const adminInfo = response.data
       userInfo.id = adminInfo.id
       userInfo.username = adminInfo.username
       userInfo.name = adminInfo.name || ''
@@ -236,8 +236,8 @@ const showEditProfile = async () => {
 
     const response = await AdminUserService.getAdminById(currentUserId)
 
-    if (response && response.data && response.data.code === 200 && response.data.data) {
-      const adminInfo = response.data.data
+    if (response && response.code === 200 && response.data) {
+      const adminInfo = response.data
       editingUser.id = adminInfo.id
       editingUser.username = adminInfo.username
       editingUser.name = adminInfo.name || ''
@@ -277,12 +277,12 @@ const saveProfile = async () => {
 
     const response = await AdminUserService.updateAdmin(updateData)
 
-    if (response && response.data && response.data.code === 200) {
+    if (response && response.code === 200) {
       ElMessage.success('资料更新成功')
       editDialogVisible.value = false
       await loadUserInfo()
     } else {
-      ElMessage.error(response?.data?.message || '资料更新失败')
+      ElMessage.error(response?.message || '资料更新失败')
     }
   } catch (error) {
     logger.error('更新用户资料失败:', error)
@@ -322,18 +322,18 @@ const changePassword = async () => {
 
     const response = await AdminUserService.changeAdminPassword(passwordData)
 
-    const result = response.data || response
+    const result = response || response.data
     if (result && result.code === 200) {
       ElMessage.success('密码修改成功，请重新登录')
       passwordDialogVisible.value = false
-      
+
       authStore.logout(true)
       localStorage.removeItem('isLoggedIn')
       localStorage.removeItem('token')
       localStorage.removeItem('role')
       localStorage.removeItem('userId')
       localStorage.removeItem('current_role')
-      
+
       router.push('/login')
     } else {
       ElMessage.error(result ? (result.message || '密码修改失败') : '密码修改失败')

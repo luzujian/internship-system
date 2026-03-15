@@ -2,16 +2,41 @@
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Download, Document, Picture, Folder, Loading } from '@element-plus/icons-vue'
-import * as XLSX from 'xlsx'
+import { exportToExcel, createWorkbook, jsonToSheet, appendSheet, writeWorkbook, writeWorkbookToBuffer } from '../../utils/xlsx'
 import { usePositionStore } from '../../store/position'
+import { useAuthStore } from '@/store/auth'
 import studentArchiveService from '../../api/StudentArchiveService'
 
 const positionStore = usePositionStore()
-const companyId = ref(3)
+const authStore = useAuthStore()
+
+const companyId = computed(() => {
+  if (authStore.user?.id) {
+    return parseInt(authStore.user.id)
+  }
+  // 当无法获取企业 ID 时，尝试从 localStorage 获取
+  const storedCompanyId = localStorage.getItem('company_companyId_COMPANY')
+  if (storedCompanyId) {
+    return parseInt(storedCompanyId)
+  }
+  // 如果仍然无法获取，返回 null 并显示错误提示
+  ElMessage.error('未获取到当前登录企业 ID，请重新登录')
+  return null
+})
 
 onMounted(async () => {
-  await positionStore.fetchPositions(companyId.value)
-  await positionStore.fetchApplications(companyId.value)
+  loading.value = true
+  if (!companyId.value) {
+    ElMessage.error('未获取到企业 ID，无法加载数据')
+    loading.value = false
+    return
+  }
+  try {
+    await positionStore.fetchPositions(companyId.value)
+    await positionStore.fetchApplications(companyId.value)
+  } finally {
+    loading.value = false
+  }
 })
 
 const searchForm = ref({
@@ -255,16 +280,16 @@ const handleExport = async () => {
       '自我评价': item.selfEvaluation
     }))
 
-    const ws = XLSX.utils.json_to_sheet(exportData)
-    const wb = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(wb, ws, '岗位申请名单')
+    const ws = await jsonToSheet(exportData)
+    const wb = await createWorkbook()
+    await appendSheet(wb, ws, '岗位申请名单')
 
     const fileName = `岗位申请名单_${new Date().toLocaleDateString('zh-CN').replace(/\//g, '-')}`
 
     if (exportMode.value === 'zip') {
       await exportWithFiles(wb, fileName, sortedData)
     } else {
-      XLSX.writeFile(wb, fileName + '.xlsx')
+      await writeWorkbook(wb, fileName)
       ElMessage.success(`成功导出 ${dataToExport.length} 条数据`)
     }
   } catch (error) {
@@ -280,7 +305,7 @@ const exportWithFiles = async (workbook, baseFileName, data) => {
     const JSZip = (await import('jszip')).default
     const zip = new JSZip()
 
-    const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' })
+    const excelBuffer = await writeWorkbookToBuffer(workbook)
     zip.file(baseFileName + '.xlsx', excelBuffer)
 
     for (const item of data) {

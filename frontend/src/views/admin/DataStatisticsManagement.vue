@@ -178,7 +178,7 @@ import logger from '@/utils/logger'
 import { ref, computed, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
 import { UserFilled, Avatar, Operation, Refresh } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
-import * as echarts from 'echarts'
+import echarts from '../../utils/echarts'
 import request from '../../utils/request'
 import { useAuthStore } from '../../store/auth'
 
@@ -399,23 +399,23 @@ const refreshData = async () => {
     }
     
     const response = await request.get('/login-logs/active-users', { params })
-    
-    if (response.data && response.data.code === 200 && response.data.data) {
-      studentChartData.value = response.data.data.studentData || []
-      teacherChartData.value = response.data.data.teacherData || []
-      adminChartData.value = response.data.data.adminData || []
-      
-      if (response.data.data.dateRange) {
-        dateRangeText.value = response.data.data.dateRange
+
+    if (response.data && response.code === 200 && response.data) {
+      studentChartData.value = response.data.studentData || []
+      teacherChartData.value = response.data.teacherData || []
+      adminChartData.value = response.data.adminData || []
+
+      if (response.data.dateRange) {
+        dateRangeText.value = response.data.dateRange
       }
-      
+
       renderCharts()
       if (!isInitialLoad.value) {
         ElMessage.success('数据刷新成功')
       }
       isInitialLoad.value = false
     } else {
-      ElMessage.error(response.data?.msg || response.data?.message || '获取数据失败')
+      ElMessage.error(response.message || response.msg || '获取数据失败')
     }
   } catch (error) {
     logger.error('获取活跃度统计数据失败:', error)

@@ -3,14 +3,40 @@ import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Download } from '@element-plus/icons-vue'
 import { usePositionStore } from '../../store/position'
-import * as XLSX from 'xlsx'
+import { useAuthStore } from '@/store/auth'
+import { exportToExcel } from '../../utils/xlsx'
 import emitter from '@/utils/event-bus'
 
 const positionStore = usePositionStore()
+const authStore = useAuthStore()
 
-onMounted(() => {
-  positionStore.fetchPositions(3)
-  positionStore.fetchInternshipStatuses(3)
+const companyId = computed(() => {
+  if (authStore.user?.id) {
+    return parseInt(authStore.user.id)
+  }
+  // 当无法获取企业 ID 时，尝试从 localStorage 获取
+  const storedCompanyId = localStorage.getItem('company_companyId_COMPANY')
+  if (storedCompanyId) {
+    return parseInt(storedCompanyId)
+  }
+  // 如果仍然无法获取，返回 null 并显示错误提示
+  ElMessage.error('未获取到当前登录企业 ID，请重新登录')
+  return null
+})
+
+onMounted(async () => {
+  loading.value = true
+  if (!companyId.value) {
+    ElMessage.error('未获取到企业 ID，无法加载数据')
+    loading.value = false
+    return
+  }
+  try {
+    await positionStore.fetchPositions(companyId.value)
+    await positionStore.fetchInternshipStatuses(companyId.value)
+  } finally {
+    loading.value = false
+  }
 })
 
 const searchForm = ref({
@@ -187,8 +213,8 @@ const handleConfirm = async (row) => {
     
     loading.value = true
     await positionStore.approveInternshipStatus(row.id)
-    await positionStore.fetchPositions(3)
-    await positionStore.fetchInternshipStatuses(3)
+    await positionStore.fetchPositions(companyId.value)
+    await positionStore.fetchInternshipStatuses(companyId.value)
     loading.value = false
     
     if (isFull) {
@@ -222,7 +248,7 @@ const handleReject = async (row) => {
     
     loading.value = true
     await positionStore.rejectInternshipStatus(row.id)
-    await positionStore.fetchInternshipStatuses(3)
+    await positionStore.fetchInternshipStatuses(companyId.value)
     loading.value = false
     ElMessage.success(`已拒绝 ${row.studentName} 的实习确认申请`)
   } catch (error) {
@@ -262,7 +288,7 @@ const calculateInternshipDuration = (startTime, endTime) => {
   return `${diffDays} 天`
 }
 
-const handleExport = () => {
+const handleExport = async () => {
   if (filteredTableData.value.length === 0) {
     ElMessage.warning('没有数据可导出')
     return
@@ -292,12 +318,7 @@ const handleExport = () => {
       '备注': item.remark || ''
     }))
 
-    const ws = XLSX.utils.json_to_sheet(exportData)
-    const wb = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(wb, ws, '实习确认名单')
-
-    const fileName = `实习确认名单_${new Date().toLocaleDateString('zh-CN').replace(/\//g, '-')}.xlsx`
-    XLSX.writeFile(wb, fileName)
+    await exportToExcel(exportData, `实习确认名单_${new Date().toLocaleDateString('zh-CN').replace(/\//g, '-')}`, '实习确认名单')
 
     ElMessage.success(`成功导出 ${filteredTableData.value.length} 条数据`)
   } catch (error) {

@@ -22,7 +22,7 @@
         <el-button v-if="authStore.hasPermission('user:admin:view')" type="primary" @click="searchUsers" style="margin-left: 10px">搜索</el-button>
       </div>
       
-      <el-table :data="users" style="width: 100%">
+      <el-table :data="users" style="width: 100%" v-loading="loading">
         <el-table-column prop="id" label="用户ID" width="80" />
         <el-table-column prop="username" label="用户名" />
         <el-table-column prop="phone" label="手机号" />
@@ -105,7 +105,7 @@ import { Download } from '@element-plus/icons-vue'
 import Pagination from '../../components/Pagination.vue'
 import AdminUserService from '../../api/AdminUserService'
 import AdminService from '../../api/adminService'
-import * as XLSX from 'xlsx'
+import { exportToExcel } from '../../utils/xlsx'
 import { useSystemSettingsStore } from '../../store/systemSettings'
 import { useAuthStore } from '../../store/auth'
 
@@ -120,6 +120,7 @@ const total = ref(0)
 const currentPage = ref(1)
 const pageSize = ref(10)
 const searchQuery = ref('')
+const loading = ref(false)
 
 const addDialogVisible = ref(false)
 const editDialogVisible = ref(false)
@@ -150,16 +151,18 @@ const isSuperAdmin = (user) => {
 
 // 加载管理员用户列表
 const loadAdmins = () => {
+  loading.value = true
   AdminUserService.getAdmins(currentPage.value, pageSize.value, searchQuery.value)
     .then(response => {
-      // 提取业务数据对象（从完整响应对象中提取Result对象）
       const result = response.data || response
-      // 后端返回格式是 {code: 200, data: {total: xxx, rows: [...]}}
       users.value = result.data?.rows || []
       total.value = result.data?.total || 0
     })
     .catch(error => {
       ElMessage.error('加载管理员用户列表失败: ' + (error.message || '未知错误'))
+    })
+    .finally(() => {
+      loading.value = false
     })
 }
 
@@ -293,14 +296,13 @@ const handleCurrentChange = (current) => {
 }
 
 // 导出管理员数据到Excel
-const exportToExcel = () => {
+const handleExportToExcel = async () => {
   if (users.value.length === 0) {
     ElMessage.warning('没有数据可导出')
     return
   }
 
   try {
-    // 准备导出数据
     const exportData = users.value.map(user => ({
       '用户ID': user.id,
       '用户名': user.username,
@@ -310,29 +312,18 @@ const exportToExcel = () => {
       '更新时间': formatDateForExcel(user.updateTime)
     }))
 
-    // 创建工作簿和工作表
-    const wb = XLSX.utils.book_new()
-    const ws = XLSX.utils.json_to_sheet(exportData)
-
-    // 设置列宽
     const columnWidths = [
-      { wch: 10 }, // 用户ID
-      { wch: 20 }, // 用户名
-      { wch: 15 }, // 手机号
-      { wch: 12 }, // 角色
-      { wch: 25 }, // 创建时间
-      { wch: 25 }  // 更新时间
+      { wch: 10 },
+      { wch: 20 },
+      { wch: 15 },
+      { wch: 12 },
+      { wch: 25 },
+      { wch: 25 }
     ]
-    ws['!cols'] = columnWidths
 
-    // 将工作表添加到工作簿
-    XLSX.utils.book_append_sheet(wb, ws, '管理员数据')
+    const fileName = `管理员数据_${new Date().toLocaleDateString('zh-CN').replace(/\//g, '-')}`
 
-    // 生成文件名
-    const fileName = `管理员数据_${new Date().toLocaleDateString('zh-CN').replace(/\//g, '-')}.xlsx`
-
-    // 导出文件
-    XLSX.writeFile(wb, fileName)
+    await exportToExcel(exportData, fileName, { sheetName: '管理员数据', columnWidths })
     ElMessage.success('导出成功')
   } catch (error) {
     logger.error('导出Excel失败:', error)

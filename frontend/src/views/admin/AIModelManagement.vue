@@ -209,11 +209,11 @@ const fetchModels = async () => {
   loading.value = true
   try {
     const response = await aiModelService.getAIModels()
-    if (response.data.code === 200) {
-      modelList.value = response.data.data || []
+    if (response.code === 200) {
+      modelList.value = response.data || []
       currentModel.value = modelList.value.find(model => model.isDefault === 1) || null
     } else {
-      ElMessage.error(response.data.msg || '获取AI模型列表失败')
+      ElMessage.error(response.message || '获取AI模型列表失败')
     }
   } catch (error) {
     ElMessage.error('获取AI模型列表失败')
@@ -227,14 +227,14 @@ const handleSearch = async () => {
     fetchModels()
     return
   }
-  
+
   loading.value = true
   try {
     const response = await aiModelService.searchAIModels(searchKeyword.value)
-    if (response.data.code === 200) {
-      modelList.value = response.data.data || []
+    if (response.code === 200) {
+      modelList.value = response.data || []
     } else {
-      ElMessage.error(response.data.msg || '搜索失败')
+      ElMessage.error(response.message || '搜索失败')
     }
   } catch (error) {
     ElMessage.error('搜索失败')
@@ -259,9 +259,9 @@ const handleFilter = async () => {
       fetchModels()
       return
     }
-    
-    if (response && response.data.code === 200) {
-      modelList.value = response.data.data || []
+
+    if (response && response.code === 200) {
+      modelList.value = response.data || []
     }
   } catch (error) {
     ElMessage.error('筛选失败')
@@ -313,13 +313,13 @@ const handleSetDefault = async (row) => {
       cancelButtonText: '取消',
       type: 'warning'
     })
-    
+
     const response = await aiModelService.setAsDefault(row.id, 'admin')
-    if (response.data.code === 200) {
+    if (response.code === 200) {
       ElMessage.success('设置默认模型成功')
       fetchModels()
     } else {
-      ElMessage.error(response.data.msg || '设置失败')
+      ElMessage.error(response.message || '设置失败')
     }
   } catch (error) {
     if (error !== 'cancel') {
@@ -337,11 +337,11 @@ const handleDelete = async (row) => {
     })
     
     const response = await aiModelService.deleteAIModel(row.id)
-    if (response.data.code === 200) {
+    if (response.code === 200) {
       ElMessage.success('删除成功')
       fetchModels()
     } else {
-      ElMessage.error(response.data.msg || '删除失败')
+      ElMessage.error(response.message || '删除失败')
     }
   } catch (error) {
     if (error !== 'cancel') {
@@ -372,15 +372,15 @@ const handleSave = async () => {
       logger.log('响应数据:', response.data)
     }
 
-    logger.log('response.data.code:', response.data?.code)
-    logger.log('response.data.message:', response.data?.message)
+    logger.log('response.code:', response?.code)
+    logger.log('response.message:', response?.message)
 
-    if (response.data && response.data.code === 200) {
+    if (response && response.code === 200) {
       ElMessage.success('保存成功')
       dialogVisible.value = false
       fetchModels()
     } else {
-      ElMessage.error(response.data?.message || '保存失败')
+      ElMessage.error(response?.message || '保存失败')
     }
   } catch (error) {
     logger.error('保存失败:', error)

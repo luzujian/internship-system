@@ -50,8 +50,6 @@
             '广东医科大学' AS school,
             '本科' AS education,
             m.name AS major,
-            su.phone,
-            su.email,
             p.position_name
         FROM internship_application ia
         LEFT JOIN student_users su ON ia.student_id = su.id

@@ -82,7 +82,7 @@ public class PositionController {
      */
     @Log(operationType = "ADD", module = "POSITION_MANAGEMENT", description = "新增招聘岗位")
     @PostMapping
-    @PreAuthorize("hasAuthority('recruitment:add')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'COMPANY') or hasAuthority('recruitment:add')")
     public Result addPosition(@RequestBody @Validated Position position) {
         log.info("新增岗位: {}", position.getPositionName());
         try {
@@ -101,7 +101,7 @@ public class PositionController {
      */
     @Log(operationType = "UPDATE", module = "POSITION_MANAGEMENT", description = "更新招聘岗位")
     @PutMapping("/{id}")
-    @PreAuthorize("hasAuthority('recruitment:edit')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'COMPANY') or hasAuthority('recruitment:edit')")
     public Result updatePosition(@PathVariable Long id, @RequestBody Position position) {
         log.info("更新岗位，ID: {}", id);
         try {
@@ -124,7 +124,7 @@ public class PositionController {
      */
     @Log(operationType = "DELETE", module = "POSITION_MANAGEMENT", description = "删除招聘岗位")
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasAuthority('recruitment:delete')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'COMPANY') or hasAuthority('recruitment:delete')")
     public Result deletePosition(@PathVariable Long id) {
         log.info("删除岗位，ID: {}", id);
         try {
@@ -152,7 +152,7 @@ public class PositionController {
      */
     @Log(operationType = "DELETE", module = "POSITION_MANAGEMENT", description = "批量删除招聘岗位")
     @DeleteMapping("/batch")
-    @PreAuthorize("hasAuthority('recruitment:delete')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'COMPANY') or hasAuthority('recruitment:delete')")
     public Result batchDeletePositions(@RequestBody List<Long> ids) {
         log.info("批量删除岗位，ID列表: {}", ids);
         try {
@@ -172,10 +172,46 @@ public class PositionController {
      */
     @GetMapping("/company/{companyId}")
     @PreAuthorize("hasAnyRole('ADMIN', 'COMPANY') or hasAuthority('recruitment:view')")
-    public Result getPositionsByCompanyId(@PathVariable Long companyId) {
-        log.info("根据企业ID获取岗位列表，企业ID: {}", companyId);
-        List<Position> positions = positionService.findByCompanyId(companyId);
+    public Result getPositionsByCompanyId(@PathVariable Long companyId,
+                                         @RequestParam(required = false) String positionName,
+                                         @RequestParam(required = false) String department,
+                                         @RequestParam(required = false) String status) {
+        log.info("根据企业ID获取岗位列表，企业ID: {}, 岗位名称: {}, 部门: {}, 状态: {}", companyId, positionName, department, status);
+        
+        List<Position> positions;
+        if (positionName != null || department != null || status != null) {
+            positions = positionService.findByCompanyIdWithConditions(companyId, positionName, department, status);
+        } else {
+            positions = positionService.findByCompanyId(companyId);
+        }
+        
         return Result.success(positions);
+    }
+
+    @PutMapping("/{id}/pause")
+    @PreAuthorize("hasAnyRole('ADMIN', 'COMPANY') or hasAuthority('recruitment:edit')")
+    public Result pausePosition(@PathVariable Long id) {
+        log.info("暂停岗位招聘，岗位 ID: {}", id);
+        try {
+            positionService.pausePosition(id);
+            return Result.success("暂停成功");
+        } catch (Exception e) {
+            log.error("暂停岗位失败：{}", e.getMessage());
+            return Result.error("暂停失败：" + e.getMessage());
+        }
+    }
+
+    @PutMapping("/{id}/resume")
+    @PreAuthorize("hasAnyRole('ADMIN', 'COMPANY') or hasAuthority('recruitment:edit')")
+    public Result resumePosition(@PathVariable Long id) {
+        log.info("恢复岗位招聘，岗位 ID: {}", id);
+        try {
+            positionService.resumePosition(id);
+            return Result.success("恢复成功");
+        } catch (Exception e) {
+            log.error("恢复岗位失败：{}", e.getMessage());
+            return Result.error("恢复失败：" + e.getMessage());
+        }
     }
 
     @DeleteMapping("/clear")

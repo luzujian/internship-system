@@ -114,6 +114,12 @@ public class CompanyUserServiceImpl implements CompanyUserService {
         if (companyUser.getContactEmail() != null) {
             existingCompany.setContactEmail(companyUser.getContactEmail());
         }
+        if (companyUser.getPhone() != null) {
+            existingCompany.setPhone(companyUser.getPhone());
+        }
+        if (companyUser.getEmail() != null) {
+            existingCompany.setEmail(companyUser.getEmail());
+        }
         if (companyUser.getAddress() != null) {
             existingCompany.setAddress(companyUser.getAddress());
         }
@@ -122,6 +128,40 @@ public class CompanyUserServiceImpl implements CompanyUserService {
         }
         if (companyUser.getCompanyTag() != null) {
             existingCompany.setCompanyTag(companyUser.getCompanyTag());
+        }
+        // 基础信息字段
+        if (companyUser.getIndustry() != null) {
+            existingCompany.setIndustry(companyUser.getIndustry());
+        }
+        if (companyUser.getScale() != null) {
+            existingCompany.setScale(companyUser.getScale());
+        }
+        if (companyUser.getProvince() != null) {
+            existingCompany.setProvince(companyUser.getProvince());
+        }
+        if (companyUser.getCity() != null) {
+            existingCompany.setCity(companyUser.getCity());
+        }
+        if (companyUser.getDistrict() != null) {
+            existingCompany.setDistrict(companyUser.getDistrict());
+        }
+        if (companyUser.getDetailAddress() != null) {
+            existingCompany.setDetailAddress(companyUser.getDetailAddress());
+        }
+        if (companyUser.getWebsite() != null) {
+            existingCompany.setWebsite(companyUser.getWebsite());
+        }
+        if (companyUser.getCooperationMode() != null) {
+            existingCompany.setCooperationMode(companyUser.getCooperationMode());
+        }
+        if (companyUser.getLogo() != null) {
+            existingCompany.setLogo(companyUser.getLogo());
+        }
+        if (companyUser.getPhotos() != null) {
+            existingCompany.setPhotos(companyUser.getPhotos());
+        }
+        if (companyUser.getVideos() != null) {
+            existingCompany.setVideos(companyUser.getVideos());
         }
 
         existingCompany.setUpdateTime(new Date());

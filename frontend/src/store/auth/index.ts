@@ -235,12 +235,12 @@ export const useAuthStore = defineStore('auth', {
           userType
         })
 
-        if (!response || response.data?.code !== 200) {
-          ElMessage.error(response?.data?.message || ERROR_MESSAGES.LOGIN_FAILED)
+        if (!response || response.code !== 200) {
+          ElMessage.error(response?.message || ERROR_MESSAGES.LOGIN_FAILED)
           return false
         }
 
-        return this.handleLoginSuccess(response.data, userType)
+        return this.handleLoginSuccess(response, userType)
       } catch (error) {
         logger.error('登录失败:', error)
         ElMessage.error(ERROR_MESSAGES.LOGIN_FAILED)
@@ -263,12 +263,12 @@ export const useAuthStore = defineStore('auth', {
           password
         })
 
-        if (!response || response.data?.code !== 200) {
-          ElMessage.error(response?.data?.message || ERROR_MESSAGES.LOGIN_FAILED)
+        if (!response || response.code !== 200) {
+          ElMessage.error(response?.message || ERROR_MESSAGES.LOGIN_FAILED)
           return false
         }
 
-        return this.handleLoginSuccess(response.data, 'auto')
+        return this.handleLoginSuccess(response, 'auto')
       } catch (error) {
         logger.error('自动登录失败:', error)
         ElMessage.error(ERROR_MESSAGES.LOGIN_FAILED)
@@ -364,10 +364,10 @@ export const useAuthStore = defineStore('auth', {
 
         const response = await request.post('/auth/register', requestData)
 
-        if (response && response.data && response.data.code === 200) {
+        if (response && response.code === 200) {
           return true
         } else {
-          ElMessage.error(response?.data?.message || ERROR_MESSAGES.REGISTER_FAILED)
+          ElMessage.error(response?.message || ERROR_MESSAGES.REGISTER_FAILED)
           return false
         }
       } catch (error) {
@@ -401,12 +401,12 @@ export const useAuthStore = defineStore('auth', {
           adminPassword
         })
 
-        if (!response || response.data?.code !== 200) {
-          ElMessage.error(response?.data?.message || '角色切换失败')
+        if (!response || response.code !== 200) {
+          ElMessage.error(response?.message || '角色切换失败')
           return false
         }
 
-        return this.handleSwitchRoleSuccess(response.data.data, targetRole)
+        return this.handleSwitchRoleSuccess(response.data, targetRole)
       } catch (error) {
         logger.error('角色切换失败:', error)
         ElMessage.error('角色切换失败：' + ((error as { message?: string }).message || '未知错误'))

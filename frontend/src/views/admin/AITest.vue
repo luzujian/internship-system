@@ -495,8 +495,8 @@ const refreshModelInfo = async () => {
   refreshing.value = true
   try {
     const response = await aiModelService.getEnabledAIModels()
-    if (response.data.code === 200) {
-      enabledModels.value = response.data.data || []
+    if (response.code === 200) {
+      enabledModels.value = response.data || []
       const defaultModel = enabledModels.value.find(m => m.isDefault === 1)
       if (defaultModel) {
         currentModel.value = defaultModel
@@ -504,7 +504,7 @@ const refreshModelInfo = async () => {
         currentModel.value = enabledModels.value[0]
       }
     } else {
-      ElMessage.error(response.data.msg || '刷新模型信息失败')
+      ElMessage.error(response.message || '刷新模型信息失败')
     }
   } catch (error) {
     ElMessage.error('刷新模型信息失败')
@@ -985,20 +985,20 @@ const analyzeReflection = async () => {
       timeout: 300000
     } as any)
 
-    if (response.data.code === 200) {
-      await streamDisplayAnalysisResult(response.data.data.analysis)
+    if (response.code === 200) {
+      await streamDisplayAnalysisResult(response.data.analysis)
       analysisProgressVisible.value = false
       ElMessage.success(`使用 ${formatModelCode(currentModel.value.modelCode)} 分析完成`)
     } else {
       analysisProgressVisible.value = false
-      ElMessage.error(response.data.message || '分析失败')
+      ElMessage.error(response.message || '分析失败')
     }
   } catch (error) {
     logger.error('上传并分析实习心得文件失败:', error)
     analysisProgressVisible.value = false
     
     if (error.response?.data?.message) {
-      ElMessage.error(error.response.data.message)
+      ElMessage.error(error.response.message)
     } else {
       ElMessage.error('上传并分析失败，请稍后重试')
     }
@@ -1091,8 +1091,8 @@ const loadSavedAnalysisResult = () => {
 const fetchCategoryWeights = async () => {
   try {
     const response = await request.get('/admin/category-weight/active')
-    if (response.data.code === 200) {
-      const weights = response.data.data || []
+    if (response.code === 200) {
+      const weights = response.data || []
       const weightMap = {}
       weights.forEach(item => {
         weightMap[item.categoryCode] = item.categoryName

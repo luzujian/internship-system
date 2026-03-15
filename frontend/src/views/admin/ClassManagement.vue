@@ -10,7 +10,8 @@ import TeacherUserService from '../../api/TeacherUserService'
 import request from '../../utils/request'
 import { ElMessage, ElMessageBox, ElCheckbox, type FormInstance, type FormRules } from 'element-plus'
 import { Search, Refresh, Plus, Upload, Download, Edit, Delete, ArrowDown } from '@element-plus/icons-vue'
-import * as XLSX from 'xlsx'
+import { exportToExcel } from '../../utils/xlsx'
+import { readExcelFile as readExcelUtil } from '../../utils/xlsx'
 import { useAuthStore } from '../../store/auth'
 import type { Class, PaginationState, SelectOption } from '@/types/admin'
 
@@ -63,6 +64,8 @@ const tableData = ref<ClassWithCounts[]>([])
 const majorList = ref<SelectOption[]>([])
 //教师列表数据
 const teacherList = ref<unknown[]>([])
+//加载状态
+const loading = ref(false)
 // 表格引用
 const classTable = ref(null)
 // 选中的行 ID 数组
@@ -137,10 +140,14 @@ const formatDate = (_row: unknown, _column: unknown, cellValue: string): string 
 
 //钩子函数 - 页面加载时触发
 onMounted(async () => {
-  // 先获取专业列表和教师列表，再查询班级数据
-  await getMajorList()
-  await getTeacherList()
-  await queryPage()
+  loading.value = true
+  try {
+    // 先获取专业列表和教师列表，再查询班级数据
+    await getMajorList()
+    await getTeacherList()
+  } finally {
+    await queryPage()
+  }
 })
 
 //获取专业列表
@@ -154,9 +161,9 @@ const getMajorList = async (): Promise<void> => {
     if (response && response.data) {
       if (Array.isArray(response.data)) {
         majorList.value = response.data
-      } else if (response.data.code === 200 && response.data.data) {
+      } else if (response.code === 200 && response.data) {
         // 处理带 code 和 data 的响应格式
-        majorList.value = Array.isArray(response.data.data) ? response.data.data : []
+        majorList.value = Array.isArray(response.data) ? response.data : []
       } else {
         majorList.value = []
       }
@@ -192,12 +199,12 @@ const getTeacherList = async (): Promise<void> => {
     if (response && response.data) {
       if (Array.isArray(response.data)) {
         teacherList.value = response.data
-      } else if (response.data.code === 200 && response.data.data) {
+      } else if (response.code === 200 && response.data) {
         // 处理带 code 和 data 的响应格式
-        teacherList.value = Array.isArray(response.data.data) ? response.data.data : []
-      } else if (response.data.rows && Array.isArray(response.data.rows)) {
+        teacherList.value = Array.isArray(response.data) ? response.data : []
+      } else if (response.rows && Array.isArray(response.rows)) {
         // 处理分页格式
-        teacherList.value = response.data.rows
+        teacherList.value = response.rows
       } else {
         teacherList.value = []
       }
@@ -228,6 +235,7 @@ const handleCurrentChange = (page: number): void => {
 
 //分页条件查询
 const queryPage = async (): Promise<void> => {
+  loading.value = true
   try {
     logger.log('开始查询班级列表...')
 
@@ -346,6 +354,8 @@ const queryPage = async (): Promise<void> => {
     tableData.value = []
     pagination.value.total = 0
     ElMessage.error('查询班级失败：' + (error instanceof Error ? error.message : '未知错误'))
+  } finally {
+    loading.value = false
   }
 }
 
@@ -751,27 +761,8 @@ const importExcel = async (): Promise<void> => {
   }
 }
 
-// 读取 Excel 文件内容
-const readExcelFile = (file: File): Promise<unknown[]> => {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = (e) => {
-      try {
-        const data = new Uint8Array(e.target?.result as ArrayBuffer)
-        const workbook = XLSX.read(data, { type: 'array' })
-        const sheetName = workbook.SheetNames[0]
-        const worksheet = workbook.Sheets[sheetName]
-        const jsonData = XLSX.utils.sheet_to_json(worksheet)
-        resolve(jsonData)
-      } catch (error) {
-        reject(error)
-      }
-    }
-    reader.onerror = (error) => {
-      reject(error)
-    }
-    reader.readAsArrayBuffer(file)
-  })
+const readExcelFile = async (file: File): Promise<unknown[]> => {
+  return await readExcelUtil(file) as unknown[]
 }
 
 // 处理 Excel 数据，将专业名称转换为专业 ID，将负责教师名称转换为教师 ID
@@ -873,7 +864,7 @@ const processExcelData = (excelData: unknown[]): ExcelDataItem[] => {
 }
 
 // 导出 Excel 功能
-const exportToExcel = async (): Promise<void> => {
+const handleExportToExcel = async (): Promise<void> => {
   try {
     ElMessage({ message: '正在准备导出数据...', type: 'info' })
 
@@ -896,14 +887,6 @@ const exportToExcel = async (): Promise<void> => {
       }
     })
 
-    // 创建工作簿
-    const wb = XLSX.utils.book_new()
-    // 创建工作表
-    const ws = XLSX.utils.json_to_sheet(exportData)
-    // 添加工作表到工作簿
-    XLSX.utils.book_append_sheet(wb, ws, '班级信息')
-
-    // 生成文件名 - 包含当前日期时间
     const currentDate = new Date()
     const year = currentDate.getFullYear()
     const month = String(currentDate.getMonth() + 1).padStart(2, '0')
@@ -911,10 +894,9 @@ const exportToExcel = async (): Promise<void> => {
     const hours = String(currentDate.getHours()).padStart(2, '0')
     const minutes = String(currentDate.getMinutes()).padStart(2, '0')
     const seconds = String(currentDate.getSeconds()).padStart(2, '0')
-    const fileName = `班级信息_${year}${month}${day}_${hours}${minutes}${seconds}.xlsx`
+    const fileName = `班级信息_${year}${month}${day}_${hours}${minutes}${seconds}`
 
-    // 导出 Excel 文件
-    XLSX.writeFile(wb, fileName)
+    await exportToExcel(exportData, fileName, '班级信息')
 
     ElMessage({ message: '导出成功，请等待文件下载完成', type: 'success' })
   } catch (error) {
@@ -1059,7 +1041,7 @@ const downloadTemplate = async (): Promise<void> => {
         border
         style="width: 100%"
         fit
-        v-loading="false"
+        v-loading="loading"
         class="data-table"
         @selection-change="handleSelectionChange"
       >

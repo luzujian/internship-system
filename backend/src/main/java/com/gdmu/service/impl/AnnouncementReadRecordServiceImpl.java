@@ -36,7 +36,7 @@ public class AnnouncementReadRecordServiceImpl implements AnnouncementReadRecord
         
         // 检查是否已存在阅读记录
         AnnouncementReadRecord existingRecord = announcementReadRecordMapper.findByAnnouncementAndUser(
-                record.getAnnouncementId(), String.valueOf(record.getUserId()), record.getUserType());
+                record.getAnnouncementId(), record.getUserId(), record.getUserType());
         if (existingRecord != null) {
             log.info("公告阅读记录已存在，无需重复插入");
             return 0;
@@ -60,22 +60,24 @@ public class AnnouncementReadRecordServiceImpl implements AnnouncementReadRecord
     }
     
     @Override
-    public AnnouncementReadRecord findByAnnouncementAndUser(Long announcementId, Long userId, String userType) {
-        log.debug("根据公告ID和用户查询阅读记录，公告ID: {}, 用户ID: {}, 用户类型: {}", 
+    public AnnouncementReadRecord findByAnnouncementAndUser(Long announcementId, String userId, String userType) {
+        log.info("根据公告ID和用户查询阅读记录，公告ID: {}, 用户ID: {}, 用户类型: {}", 
                 announcementId, userId, userType);
         
         // 参数校验
         if (announcementId == null || announcementId <= 0) {
             throw new BusinessException("公告ID无效");
         }
-        if (userId == null || userId <= 0) {
-            throw new BusinessException("用户ID无效");
+        if (userId == null || userId.isEmpty()) {
+            throw new BusinessException("用户ID不能为空");
         }
         if (userType == null || userType.isEmpty()) {
             throw new BusinessException("用户类型不能为空");
         }
         
-        return announcementReadRecordMapper.findByAnnouncementAndUser(announcementId, String.valueOf(userId), userType);
+        AnnouncementReadRecord record = announcementReadRecordMapper.findByAnnouncementAndUser(announcementId, userId, userType);
+        log.info("查询结果: {}", record != null ? "找到记录" : "未找到记录");
+        return record;
     }
     
     @Override

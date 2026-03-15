@@ -43,6 +43,10 @@ public class CompanyRegisterDTO {
     @Size(min = 5, max = 100, message = "联系邮箱长度必须在 5-100 个字符之间")
     private String contactEmail;
 
+    @Email(message = "个人邮箱格式不正确")
+    @Size(min = 5, max = 100, message = "个人邮箱长度必须在 5-100 个字符之间")
+    private String email;
+
     private String website;
 
     @NotBlank(message = "合作模式不能为空")

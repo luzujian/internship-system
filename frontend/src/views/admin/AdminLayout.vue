@@ -211,8 +211,8 @@ const loadAdminPermissions = async () => {
     const response = await request.get('/admin/permissions/roles/1/permissions')
     logger.log('权限接口响应:', response)
     logger.log('response.data:', response.data)
-    if (response.data && response.data.code === 200 && response.data.data) {
-      const permissions = response.data.data
+    if (response && response.code === 200 && response.data) {
+      const permissions = response.data
       localStorage.setItem('adminPermissions', JSON.stringify(permissions))
       adminPermissionsLoaded.value = true
       logger.log('管理员权限列表加载成功，数量:', permissions.length)
@@ -597,8 +597,8 @@ const showEditProfile = async () => {
     const response = await AdminUserService.getAdminById(currentUserId)
 
     // 根据后端Result对象格式检查响应状态
-    if (response && response.data && response.data.code === 200 && response.data.data) {
-      const adminInfo = response.data.data
+    if (response && response.data && response.code === 200 && response.data) {
+      const adminInfo = response.data
 
       if (editingUserFormRef.value) {
         editingUserFormRef.value.resetFields()
@@ -609,8 +609,8 @@ const showEditProfile = async () => {
       editingUser.username = adminInfo.username
       editingUser.name = adminInfo.name || ''
       editingUser.phone = adminInfo.phone || ''
-    } else if (response && response.data && response.data.code !== 200) {
-      ElMessage.error(response.data.message || '获取用户信息失败')
+    } else if (response && response.data && response.code !== 200) {
+      ElMessage.error(response.message || '获取用户信息失败')
     } else {
       ElMessage.error('获取用户信息失败')
     }
@@ -655,7 +655,7 @@ const saveProfile = async () => {
     const response = await AdminUserService.updateAdmin(updateData)
 
     // 根据后端Result对象格式检查响应状态
-    if (response && response.data && response.data.code === 200) {
+    if (response && response.data && response.code === 200) {
       // 始终显示自定义的中文提示信息
       ElMessage.success('资料更新成功')
       editDialogVisible.value = false

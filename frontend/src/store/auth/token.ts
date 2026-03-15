@@ -154,9 +154,9 @@ export async function refreshAccessToken(currentRole: string): Promise<string | 
       refreshToken: refreshToken
     })
 
-    if (response && response.status === 200 && response.data?.code === 200 && response.data?.data) {
-      const newAccessToken = response.data.data.accessToken
-      const newRefreshToken = response.data.data.refreshToken
+    if (response && response.status === 200 && response.code === 200 && response.data) {
+      const newAccessToken = response.data.accessToken
+      const newRefreshToken = response.data.refreshToken
 
       localStorage.setItem(getAccessTokenKey(currentRole), newAccessToken)
 

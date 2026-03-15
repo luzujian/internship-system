@@ -61,6 +61,7 @@ public class CompanyRegisterController {
             companyUser.setContactPerson(registerDTO.getContactPerson());
             companyUser.setContactPhone(registerDTO.getContactPhone());
             companyUser.setContactEmail(registerDTO.getContactEmail());
+            companyUser.setEmail(registerDTO.getEmail());
             companyUser.setPhone(registerDTO.getPhone());
 
             // 新地址字段
@@ -179,6 +180,7 @@ public class CompanyRegisterController {
             data.put("contactPerson", companyUser.getContactPerson());
             data.put("contactPhone", companyUser.getContactPhone());
             data.put("contactEmail", companyUser.getContactEmail());
+            data.put("email", companyUser.getEmail());
             data.put("phone", companyUser.getPhone());
             data.put("address", companyUser.getAddress());
             data.put("introduction", companyUser.getIntroduction());
@@ -341,6 +343,9 @@ public class CompanyRegisterController {
             }
             if (updateData.containsKey("contactEmail")) {
                 companyUser.setContactEmail((String) updateData.get("contactEmail"));
+            }
+            if (updateData.containsKey("email")) {
+                companyUser.setEmail((String) updateData.get("email"));
             }
             if (updateData.containsKey("phone")) {
                 companyUser.setPhone((String) updateData.get("phone"));

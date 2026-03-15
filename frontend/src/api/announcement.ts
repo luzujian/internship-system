@@ -18,7 +18,7 @@ interface PageParams {
   page?: number
   pageSize?: number
   title?: string
-  status?: number
+  status?: string
   publisherRole?: string
   startTime?: string
   endTime?: string

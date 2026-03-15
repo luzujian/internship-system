@@ -46,6 +46,8 @@ public interface StudentInternshipStatusMapper {
      * @return 删除的记录数
      */
     int deleteById(Long id);
+
+    int deleteByPositionId(@Param("positionId") Long positionId);
     
     /**
      * 查询所有学生实习状态

@@ -135,10 +135,10 @@ const getNameOrPhonePlaceholder = computed(() => {
 const getMajorList = async () => {
   try {
     const response = await MajorService.getMajors()
-    if (response && response.data && response.data.code === 200 && response.data.data) {
-      majorList.value = response.data.data
-    } else if (response && response.data && Array.isArray(response.data)) {
+    if (response && response.code === 200 && response.data) {
       majorList.value = response.data
+    } else if (response && Array.isArray(response)) {
+      majorList.value = response
     }
   } catch (error) {
     console.error('获取专业列表失败:', error)
@@ -155,10 +155,10 @@ const getClassListByMajorId = async (majorId) => {
   
   try {
     const response = await ClassService.getClassesByMajorId(majorId)
-    if (response && response.data && response.data.code === 200 && response.data.data) {
-      classList.value = response.data.data
-    } else if (response && response.data && Array.isArray(response.data)) {
+    if (response && response.code === 200 && response.data) {
       classList.value = response.data
+    } else if (response && Array.isArray(response)) {
+      classList.value = response
     }
   } catch (error) {
     console.error('获取班级列表失败:', error)
@@ -170,10 +170,10 @@ const getClassListByMajorId = async (majorId) => {
 const getDepartmentList = async () => {
   try {
     const response = await DepartmentService.getDepartments()
-    if (response && response.data && response.data.code === 200 && response.data.data) {
-      departmentList.value = response.data.data
-    } else if (response && response.data && Array.isArray(response.data)) {
+    if (response && response.code === 200 && response.data) {
       departmentList.value = response.data
+    } else if (response && Array.isArray(response)) {
+      departmentList.value = response
     }
   } catch (error) {
     console.error('获取院系列表失败:', error)

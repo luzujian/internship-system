@@ -12,7 +12,7 @@ import { createGradeValidator, createRequiredValidator } from '@/utils/validatio
 import type { StudentUser, PageParams, PaginationState, DialogState, Class, Major } from '@/types/admin'
 
 import request from '../../utils/request'
-import * as XLSX from 'xlsx'
+import { exportToExcel } from '../../utils/xlsx'
 
 const systemSettingsStore = useSystemSettingsStore()
 const authStore = useAuthStore()
@@ -694,9 +694,9 @@ const getMajorList = async () => {
     if (response && response.data) {
       if (Array.isArray(response.data)) {
         rawMajors = response.data
-      } else if (response.data.code === 200 && response.data.data) {
+      } else if (response.code === 200 && response.data) {
         //处理带code和data的响应格式
-        rawMajors = Array.isArray(response.data.data) ? response.data.data : []
+        rawMajors = Array.isArray(response.data) ? response.data : []
       }
     }
 
@@ -754,9 +754,9 @@ const getClassList = async () => {
     if (response && response.data) {
       if (Array.isArray(response.data)) {
         classes.value = response.data
-      } else if (response.data.code === 200 && response.data.data) {
+      } else if (response.code === 200 && response.data) {
         //处理带code和data的响应格式
-        classes.value = Array.isArray(response.data.data) ? response.data.data : []
+        classes.value = Array.isArray(response.data) ? response.data : []
       } else {
         classes.value = []
       }
@@ -1004,7 +1004,7 @@ const importExcel = async () => {
 }
 
 // 导出Excel功能
-const exportToExcel = async () => {
+const handleExportToExcel = async () => {
   try {
     ElMessage({ message: '正在准备导出数据...', type: 'info' })
     
@@ -1031,14 +1031,6 @@ const exportToExcel = async () => {
       }
     })
 
-    // 创建工作簿
-    const wb = XLSX.utils.book_new()
-    // 创建工作表
-    const ws = XLSX.utils.json_to_sheet(exportData)
-    // 添加工作表到工作簿
-    XLSX.utils.book_append_sheet(wb, ws, '学生信息')
-    
-    // 生成文件名 - 包含当前日期时间
     const currentDate = new Date()
     const year = currentDate.getFullYear()
     const month = String(currentDate.getMonth() + 1).padStart(2, '0')
@@ -1046,10 +1038,9 @@ const exportToExcel = async () => {
     const hours = String(currentDate.getHours()).padStart(2, '0')
     const minutes = String(currentDate.getMinutes()).padStart(2, '0')
     const seconds = String(currentDate.getSeconds()).padStart(2, '0')
-    const fileName = `学生信息导出_${year}${month}${day}_${hours}${minutes}${seconds}.xlsx`
+    const fileName = `学生信息导出_${year}${month}${day}_${hours}${minutes}${seconds}`
     
-    // 导出文件
-    XLSX.writeFile(wb, fileName)
+    await exportToExcel(exportData, fileName, '学生信息')
     
     ElMessage({ message: '导出成功', type: 'success' })
   } catch (error) {
@@ -1060,12 +1051,16 @@ const exportToExcel = async () => {
 
 //页面加载时执行
 onMounted(async () => {
+  loading.value = true
   logger.log('页面挂载，开始加载数据...')
-  await Promise.all([
-    getMajorList(),
-    getClassList()
-  ])
-  await queryPage()
+  try {
+    await Promise.all([
+      getMajorList(),
+      getClassList()
+    ])
+  } finally {
+    await queryPage()
+  }
   logger.log('数据加载完成')
 })
 </script>
@@ -1189,6 +1184,7 @@ onMounted(async () => {
         border 
         style="width: 100%" 
         fit 
+        v-loading="loading"
         @selection-change="handleSelectionChange" 
         row-key="id"
         class="data-table"

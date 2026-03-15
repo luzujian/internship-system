@@ -22,7 +22,7 @@
         </div>
         <div class="dashboard-actions">
           <el-button type="primary" @click="showResourceDocumentDialog" class="action-btn primary">
-            <el-icon><Document /></el-icon>&nbsp;发布文档
+            <el-icon><Document /></el-icon>&nbsp;上传资源
           </el-button>
           <el-button type="success" @click="showAnnouncementDialog" class="action-btn success">
             <el-icon><Promotion /></el-icon>&nbsp;发布公告
@@ -263,41 +263,41 @@
         </el-scrollbar>
       </el-card>
 
-      <!-- 撤回申请区域 -->
-      <div class="recall-section">
-        <el-card class="recall-card" shadow="never">
+      <!-- 最近公告区域 -->
+      <div class="announcement-section">
+        <el-card class="announcement-card" shadow="never">
           <template #header>
-            <div class="recall-header">
-              <div class="recall-title">
-                <el-icon><RefreshLeft /></el-icon>
-                <span>待处理撤回申请</span>
-                <el-badge :value="pendingRecallCount" :hidden="pendingRecallCount === 0" class="recall-badge" type="warning" />
+            <div class="announcement-header">
+              <div class="announcement-title">
+                <el-icon><Promotion /></el-icon>
+                <span>最近公告</span>
+                <el-badge :value="publishedAnnouncementCount" :hidden="publishedAnnouncementCount === 0" class="announcement-badge" type="success" />
               </div>
-              <span class="view-all-link" @click="navigateTo('/admin/recall-audit')">
+              <span class="view-all-link" @click="navigateTo('/admin/announcements')">
                 查看全部
                 <el-icon><ArrowRight /></el-icon>
               </span>
             </div>
           </template>
           <el-scrollbar height="400px">
-            <div class="recall-container" v-loading="loadingRecall">
-              <div v-if="pendingRecall.length === 0" class="empty-recall">
-                <el-empty description="暂无待处理撤回申请" />
+            <div class="announcement-container" v-loading="loadingAnnouncement">
+              <div v-if="recentAnnouncements.length === 0" class="empty-announcement">
+                <el-empty description="暂无公告" />
               </div>
-              <div v-else class="recall-list">
-                <div v-for="recall in pendingRecall" :key="recall.id" class="recall-item" @click="navigateToRecallAudit(recall)">
-                  <div class="recall-content">
-                    <div class="recall-header">
-                      <el-tag :type="recall.recallType === 'company' ? 'primary' : 'success'" size="small">
-                        {{ recall.recallType === 'company' ? '企业撤回' : '学生撤回' }}
+              <div v-else class="announcement-list">
+                <div v-for="announcement in recentAnnouncements" :key="announcement.id" class="announcement-item" @click="navigateToAnnouncement(announcement.id)">
+                  <div class="announcement-content">
+                    <div class="announcement-header">
+                      <span class="announcement-title-text">{{ announcement.title }}</span>
+                      <el-tag :type="getPriorityTagType(announcement.priority)" size="small">
+                        {{ getPriorityText(announcement.priority) }}
                       </el-tag>
-                      <el-tag type="warning" size="small">待审核</el-tag>
                     </div>
-                    <div class="recall-title">
-                      {{ recall.recallType === 'company' ? recall.companyName : recall.student?.name }}
+                    <div class="announcement-publisher">
+                      <el-icon><User /></el-icon>
+                      <span>{{ announcement.publisherName || '管理员' }}</span>
                     </div>
-                    <div class="recall-reason">{{ recall.recallReason }}</div>
-                    <div class="recall-time">{{ formatRecallTime(recall.recallApplyTime) }}</div>
+                    <div class="announcement-time">{{ formatAnnouncementTime(announcement.publishTime || announcement.createTime) }}</div>
                   </div>
                 </div>
               </div>
@@ -354,10 +354,10 @@
             <el-option label="发布" value="PUBLISHED"></el-option>
           </el-select>
         </el-form-item>
-        <el-form-item label="发布日期">
+        <el-form-item label="发布日期" prop="publishDate">
           <el-date-picker v-model="announcementForm.publishDate" type="datetime" placeholder="选择发布日期" style="width: 100%"></el-date-picker>
         </el-form-item>
-        <el-form-item label="过期日期">
+        <el-form-item label="过期日期" prop="expireDate">
           <el-date-picker v-model="announcementForm.expireDate" type="datetime" placeholder="选择过期日期" style="width: 100%"></el-date-picker>
         </el-form-item>
         <el-form-item label="发布人身份" prop="publisherRole">
@@ -387,24 +387,24 @@
             <el-option label="重要" value="important"></el-option>
           </el-select>
         </el-form-item>
-        <el-form-item label="目标群体">
-          <el-select v-model="announcementForm.targetType" placeholder="请选择目标群体">
-            <el-option label="全体师生" value="ALL"></el-option>
+        <el-form-item label="目标群体" prop="targetType">
+          <el-select v-model="announcementForm.targetType" placeholder="请选择目标群体" multiple collapse-tags collapse-tags-tooltip>
             <el-option label="全体学生" value="STUDENT"></el-option>
             <el-option label="全体教师" value="TEACHER"></el-option>
             <el-option label="特定教师类别" value="TEACHER_TYPE"></el-option>
             <el-option label="特定专业学生" value="MAJOR"></el-option>
+            <el-option label="企业用户" value="COMPANY"></el-option>
           </el-select>
         </el-form-item>
-        <el-form-item v-if="announcementForm.targetType === 'TEACHER_TYPE'" label="教师类别">
-          <el-select v-model="announcementForm.targetValue" placeholder="请选择教师类别">
+        <el-form-item v-if="announcementForm.targetType.includes('TEACHER_TYPE')" label="教师类别">
+          <el-select v-model="announcementForm.teacherTypes" placeholder="请选择教师类别（可多选）" multiple collapse-tags collapse-tags-tooltip>
             <el-option label="学院教师" value="COLLEGE"></el-option>
             <el-option label="系室教师" value="DEPARTMENT"></el-option>
             <el-option label="辅导员" value="COUNSELOR"></el-option>
           </el-select>
         </el-form-item>
-        <el-form-item v-if="announcementForm.targetType === 'MAJOR'" label="专业">
-          <el-select v-model="announcementForm.targetValue" placeholder="请选择专业" filterable>
+        <el-form-item v-if="announcementForm.targetType.includes('MAJOR')" label="专业">
+          <el-select v-model="announcementForm.majorIds" placeholder="请选择专业（可多选）" multiple collapse-tags collapse-tags-tooltip filterable>
             <el-option v-for="major in majorList" :key="major.id" :label="major.name" :value="String(major.id)"></el-option>
           </el-select>
         </el-form-item>
@@ -415,7 +415,7 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="resourceDocumentDialogVisible" title="发布文档" width="700px" @close="handleResourceDocumentDialogClose">
+    <el-dialog v-model="resourceDocumentDialogVisible" title="上传资源" width="700px" @close="handleResourceDocumentDialogClose">
       <el-form ref="resourceDocumentFormRef" :model="resourceDocumentForm" :rules="resourceDocumentRules" label-width="100px">
         <el-form-item label="标题" prop="title">
           <el-input v-model="resourceDocumentForm.title" placeholder="请输入文档标题"></el-input>
@@ -486,7 +486,7 @@
 
 <script setup lang="ts">
 import logger from '@/utils/logger'
-import { ref, onMounted, nextTick, computed } from 'vue'
+import { ref, onMounted, onUnmounted, nextTick, computed } from 'vue'
 import type { TeacherUser, Announcement, OperationLog, Feedback } from '@/types/admin'
 
 import { useRouter } from 'vue-router'
@@ -501,6 +501,10 @@ import { queryPageApi } from '@/api/log'
 import * as announcementApi from '@/api/announcement'
 import MajorService from '@/api/major'
 import * as resourceDocumentApi from '@/api/resourceDocument'
+import {
+  initAnnouncementWebSocket,
+  disconnectAnnouncementWebSocket
+} from '@/utils/websocket'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -509,7 +513,7 @@ const authStore = useAuthStore()
 const loading = ref<boolean>(false)
 const loadingLogs = ref<boolean>(false)
 const loadingFeedback = ref<boolean>(false)
-const loadingRecall = ref<boolean>(false)
+const loadingAnnouncement = ref<boolean>(false)
 const submitting = ref<boolean>(false)
 
 const logFilterRole = ref<string>('')
@@ -537,9 +541,9 @@ const recentLogs = ref<unknown[]>([])
 const recentFeedback = ref<unknown[]>([])
 const processingFeedbackCount = ref<number>(0)
 
-// 待处理撤回申请
-const pendingRecall = ref<unknown[]>([])
-const pendingRecallCount = ref<number>(0)
+// 最近公告
+const recentAnnouncements = ref<unknown[]>([])
+const publishedAnnouncementCount = ref<number>(0)
 
 // 公告发布相关
 const announcementDialogVisible = ref<boolean>(false)
@@ -562,7 +566,9 @@ const announcementForm = ref({
   publishDate: null,
   expireDate: null,
   priority: 'normal',
-  targetType: 'ALL',
+  targetType: [] as string[],
+  teacherTypes: [] as string[],
+  majorIds: [] as string[],
   targetValue: null,
   attachments: []
 })
@@ -575,7 +581,23 @@ const announcementRules = {
   content: [{ required: true, message: '请输入公告内容', trigger: 'blur' }],
   status: [{ required: true, message: '请选择公告状态', trigger: 'change' }],
   publisher: [{ required: true, message: '请选择发布人姓名', trigger: 'change' }],
-  publisherRole: [{ required: true, message: '请选择发布人身份', trigger: 'change' }]
+  publisherRole: [{ required: true, message: '请选择发布人身份', trigger: 'change' }],
+  publishDate: [{ required: true, message: '请选择发布日期', trigger: 'change' }],
+  expireDate: [{ required: true, message: '请选择过期日期', trigger: 'change' }],
+  targetType: [
+    { 
+      required: true, 
+      message: '请选择目标群体', 
+      trigger: 'change',
+      validator: (rule, value, callback) => {
+        if (!value || value.length === 0) {
+          callback(new Error('请选择目标群体'))
+        } else {
+          callback()
+        }
+      }
+    }
+  ]
 }
 
 const handleAnnouncementUploadSuccess = (response, file, fileList) => {
@@ -662,8 +684,8 @@ const getSafeUsername = () => {
 const fetchStats = async (): Promise<void> => {
   try {
     const response = await request.get('/admin/dashboard/stats')
-    if (response.data && response.data.code === 200 && response.data.data) {
-      stats.value = { ...stats.value, ...response.data.data }
+    if (response.code === 200 && response.data) {
+      stats.value = { ...stats.value, ...response.data }
     }
   } catch (error) {
     logger.error('获取统计数据失败:', error)
@@ -671,26 +693,26 @@ const fetchStats = async (): Promise<void> => {
   
   try {
     const categoriesResponse = await request.get('/admin/position-categories')
-    if (categoriesResponse.data && categoriesResponse.data.code === 200 && categoriesResponse.data.data) {
-      stats.value.totalPositionCategories = categoriesResponse.data.data.length
+    if (categoriesResponse && categoriesResponse.code === 200 && categoriesResponse.data) {
+      stats.value.totalPositionCategories = categoriesResponse.data.length
     }
   } catch (error) {
     logger.error('获取岗位类别总数失败:', error)
   }
-  
+
   try {
     const modelsResponse = await request.get('/admin/ai-model')
-    if (modelsResponse.data && modelsResponse.data.code === 200 && modelsResponse.data.data) {
-      stats.value.totalAIModels = modelsResponse.data.data.length
+    if (modelsResponse && modelsResponse.code === 200 && modelsResponse.data) {
+      stats.value.totalAIModels = modelsResponse.data.length
     }
   } catch (error) {
     logger.error('获取AI模型总数失败:', error)
   }
-  
+
   try {
     const defaultResponse = await request.get('/admin/ai-model/default')
-    if (defaultResponse.data && defaultResponse.data.code === 200 && defaultResponse.data.data) {
-      stats.value.currentAIModel = defaultResponse.data.data.modelName || '未设置'
+    if (defaultResponse && defaultResponse.code === 200 && defaultResponse.data) {
+      stats.value.currentAIModel = defaultResponse.data.modelName || '未设置'
     }
   } catch (error) {
     logger.error('获取当前AI模型失败:', error)
@@ -702,8 +724,8 @@ const fetchRecentLogs = async (): Promise<void> => {
   loadingLogs.value = true
   try {
     const response = await queryPageApi('', logFilterRole.value, '', '', 1, 5, 'operate_time', 'desc')
-    if (response.data && response.data.code === 200 && response.data.data) {
-      const rawData = response.data.data.rows || []
+    if (response.code === 200 && response.data) {
+      const rawData = response.data.rows || []
       recentLogs.value = rawData.map(log => ({
         ...log,
         operationTypeName: getOperationTypeText(log.operationType),
@@ -733,11 +755,11 @@ const fetchRecentFeedback = async (): Promise<void> => {
       }),
       request.get('/problem-feedback/processing-count')
     ])
-    if (feedbackResponse.data && feedbackResponse.data.code === 200 && feedbackResponse.data.data) {
-      recentFeedback.value = feedbackResponse.data.data.list || []
+    if (feedbackResponse && feedbackResponse.code === 200 && feedbackResponse.data) {
+      recentFeedback.value = feedbackResponse.data.rows || []
     }
-    if (countResponse.data && countResponse.data.code === 200) {
-      processingFeedbackCount.value = countResponse.data.data || 0
+    if (countResponse && countResponse.code === 200) {
+      processingFeedbackCount.value = countResponse.data || 0
     }
   } catch (error) {
     logger.error('获取问题反馈失败:', error)
@@ -748,44 +770,79 @@ const fetchRecentFeedback = async (): Promise<void> => {
   }
 }
 
-// 获取待处理撤回申请
-const fetchPendingRecall = async (): Promise<void> => {
-  loadingRecall.value = true
+// 获取最近公告
+const fetchRecentAnnouncements = async (): Promise<void> => {
+  loadingAnnouncement.value = true
   try {
-    const [companyResponse, studentResponse] = await Promise.all([
-      request.get('/admin/companies/recall/pending', {
-        params: {
-          page: 1,
-          pageSize: 100
-        }
-      }),
-      request.get('/admin/internship-status/recall/pending', {
-        params: {
-          page: 1,
-          pageSize: 100
-        }
-      })
-    ])
-    
-    const companyRecalls = (companyResponse.data?.data?.rows || []).map(item => ({
-      ...item,
-      recallType: 'company'
-    }))
-    
-    const studentRecalls = (studentResponse.data?.data?.rows || []).map(item => ({
-      ...item,
-      recallType: 'student'
-    }))
-    
-    pendingRecall.value = [...companyRecalls, ...studentRecalls]
-    pendingRecallCount.value = pendingRecall.value.length
+    const response = await announcementApi.getAnnouncementsByPage({
+      page: 1,
+      pageSize: 10,
+      status: 'PUBLISHED' // 已发布
+    })
+    if (response && response.code === 200 && response.data) {
+      recentAnnouncements.value = response.data.rows || []
+      publishedAnnouncementCount.value = response.data.total || 0
+    }
   } catch (error) {
-    logger.error('获取撤回申请失败:', error)
-    pendingRecall.value = []
-    pendingRecallCount.value = 0
+    logger.error('获取公告失败:', error)
+    recentAnnouncements.value = []
+    publishedAnnouncementCount.value = 0
   } finally {
-    loadingRecall.value = false
+    loadingAnnouncement.value = false
   }
+}
+
+// 格式化公告时间
+const formatAnnouncementTime = (time) => {
+  if (!time) return ''
+  const date = new Date(time)
+  const now = new Date()
+  const diff = now - date
+
+  if (diff < 60000) {
+    return '刚刚'
+  } else if (diff < 3600000) {
+    return `${Math.floor(diff / 60000)}分钟前`
+  } else if (diff < 86400000) {
+    return `${Math.floor(diff / 3600000)}小时前`
+  } else if (diff < 604800000) {
+    return `${Math.floor(diff / 86400000)}天前`
+  } else {
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
+  }
+}
+
+// 获取优先级标签类型
+const getPriorityTagType = (priority) => {
+  const typeMap = {
+    'urgent': 'danger',
+    'high': 'warning',
+    'normal': 'info',
+    'low': 'success'
+  }
+  return typeMap[priority] || 'info'
+}
+
+// 获取优先级文本
+const getPriorityText = (priority) => {
+  const typeMap = {
+    'urgent': '紧急',
+    'high': '高',
+    'normal': '普通',
+    'low': '低'
+  }
+  return typeMap[priority] || '普通'
+}
+
+// 导航到公告详情
+const navigateToAnnouncement = (id) => {
+  router.push({
+    path: '/admin/announcements',
+    query: { viewId: id }
+  })
 }
 
 // 格式化日志时间
@@ -922,29 +979,6 @@ const formatFeedbackTime = (time) => {
   }
 }
 
-// 格式化撤回申请时间
-const formatRecallTime = (time) => {
-  if (!time) return ''
-  const date = new Date(time)
-  const now = new Date()
-  const diff = now - date
-  
-  if (diff < 60000) {
-    return '刚刚'
-  } else if (diff < 3600000) {
-    return `${Math.floor(diff / 60000)}分钟前`
-  } else if (diff < 86400000) {
-    return `${Math.floor(diff / 3600000)}小时前`
-  } else if (diff < 604800000) {
-    return `${Math.floor(diff / 86400000)}天前`
-  } else {
-    const year = date.getFullYear()
-    const month = String(date.getMonth() + 1).padStart(2, '0')
-    const day = String(date.getDate()).padStart(2, '0')
-    return `${year}-${month}-${day}`
-  }
-}
-
 // 获取用户类型标签类型
 const getUserTypeTag = (type) => {
   const typeMap = {
@@ -971,8 +1005,8 @@ const showAnnouncementDialog = async (): Promise<void> => {
   
   try {
     const response = await MajorService.getMajors()
-    if (response.data && response.data.code === 200) {
-      majorList.value = response.data.data || []
+    if (response.code === 200) {
+      majorList.value = response.data || []
     }
   } catch (error) {
     logger.error('获取专业列表失败:', error)
@@ -993,19 +1027,19 @@ const handlePublisherRoleChange = async (role): Promise<void> => {
     announcementForm.value.publisher = ''
     return
   }
-  
+
   userListLoading.value = true
   try {
     const response = await announcementApi.getUsersByPublisherRole(role)
     logger.log('用户列表响应:', response)
-    const result = response.data
-    if (result && result.code === 200 && result.data) {
-      userList.value = result.data
+    // 响应拦截器已经返回了 response.data，所以 response 就是 { code, message, data }
+    if (response && response.code === 200 && response.data) {
+      userList.value = response.data
       announcementForm.value.publisher = ''
     } else {
       userList.value = []
       announcementForm.value.publisher = ''
-      ElMessage.error(result?.msg || '获取用户列表失败')
+      ElMessage.error(response?.msg || '获取用户列表失败')
     }
   } catch (error) {
     logger.error('获取用户列表失败:', error)
@@ -1023,19 +1057,19 @@ const handleResourcePublisherRoleChange = async (role): Promise<void> => {
     resourceDocumentForm.value.publisher = ''
     return
   }
-  
+
   resourceUserListLoading.value = true
   try {
     const response = await announcementApi.getUsersByPublisherRole(role)
     logger.log('资源文档用户列表响应:', response)
-    const result = response.data
-    if (result && result.code === 200 && result.data) {
-      resourceUserList.value = result.data
+    // 响应拦截器已经返回了 response.data，所以 response 就是 { code, message, data }
+    if (response && response.code === 200 && response.data) {
+      resourceUserList.value = response.data
       resourceDocumentForm.value.publisher = ''
     } else {
       resourceUserList.value = []
       resourceDocumentForm.value.publisher = ''
-      ElMessage.error(result?.msg || '获取用户列表失败')
+      ElMessage.error(response?.msg || '获取用户列表失败')
     }
   } catch (error) {
     logger.error('获取用户列表失败:', error)
@@ -1050,24 +1084,51 @@ const handleResourcePublisherRoleChange = async (role): Promise<void> => {
 // 提交公告
 const submitAnnouncement = async (): Promise<void> => {
   if (!announcementFormRef.value) return
-  
+
   await announcementFormRef.value.validate(async (valid) => {
     if (valid) {
       submitting.value = true
       try {
+        // 构建 targetValue 对象
+        let targetValue = null
+        let targetValueObj: Record<string, unknown> = {}
+        if (announcementForm.value.teacherTypes && announcementForm.value.teacherTypes.length > 0) {
+          targetValueObj.teacherTypes = announcementForm.value.teacherTypes
+        }
+        if (announcementForm.value.majorIds && announcementForm.value.majorIds.length > 0) {
+          targetValueObj.majorIds = announcementForm.value.majorIds
+        }
+        if (Object.keys(targetValueObj).length > 0) {
+          targetValue = JSON.stringify(targetValueObj)
+        }
+
+        // 如果 publisher 为空，使用当前登录用户的名称
+        let publisher = announcementForm.value.publisher
+        if (!publisher || publisher.trim() === '') {
+          publisher = authStore.user?.name || authStore.user?.username || '系统管理员'
+          logger.log('publisher 为空，使用当前登录用户:', publisher)
+        }
+
+        // 如果 publisherRole 为空，使用默认值
+        let publisherRole = announcementForm.value.publisherRole
+        if (!publisherRole || publisherRole.trim() === '') {
+          publisherRole = 'ADMIN'
+          logger.log('publisherRole 为空，使用默认值:', publisherRole)
+        }
+
         const submitData = {
           title: announcementForm.value.title,
           content: announcementForm.value.content,
           status: announcementForm.value.status,
-          publisher: announcementForm.value.publisher,
-          publisherRole: announcementForm.value.publisherRole,
+          publisher: publisher,
+          publisherRole: publisherRole,
           priority: announcementForm.value.priority,
           validFrom: announcementForm.value.publishDate,
           validTo: announcementForm.value.expireDate,
-          targetType: announcementForm.value.targetType,
-          targetValue: announcementForm.value.targetValue
+          targetType: announcementForm.value.targetType && announcementForm.value.targetType.length > 0 ? announcementForm.value.targetType : ['ALL'],
+          targetValue: targetValue || null
         }
-        
+
         if (announcementForm.value.attachments && announcementForm.value.attachments.length > 0) {
           submitData.attachments = announcementForm.value.attachments.map(file => ({
             name: file.name,
@@ -1076,21 +1137,21 @@ const submitAnnouncement = async (): Promise<void> => {
             type: file.raw ? file.raw.type : (file.response ? file.response.type : '')
           }))
         }
-        
+
         let response
         if (submitData.attachments && submitData.attachments.length > 0) {
           response = await announcementApi.addAnnouncementWithAttachments(submitData)
         } else {
           response = await announcementApi.addAnnouncement(submitData)
         }
-        
-        const result = response.data
-        if (result && result.code === 200) {
+
+        // 响应拦截器已经返回了 response.data，所以 response 就是 { code, message, data }
+        if (response && response.code === 200) {
           ElMessage.success('公告发布成功')
           announcementDialogVisible.value = false
           resetAnnouncementForm()
         } else {
-          ElMessage.error(result?.msg || '公告发布失败')
+          ElMessage.error(response?.msg || '公告发布失败')
         }
       } catch (error) {
         logger.error('公告发布失败:', error)
@@ -1112,7 +1173,9 @@ const resetAnnouncementForm = () => {
     publishDate: null,
     expireDate: null,
     priority: 'normal',
-    targetType: 'ALL',
+    targetType: [] as string[],
+    teacherTypes: [] as string[],
+    majorIds: [] as string[],
     targetValue: null,
     attachments: []
   }
@@ -1160,13 +1223,13 @@ const submitResourceDocument = async (): Promise<void> => {
         formDataObj.append('status', resourceDocumentForm.value.status)
         
         const response = await resourceDocumentApi.uploadResourceDocument(formDataObj)
-        const result = response.data
-        if (result && result.code === 200) {
+        // 响应拦截器已经返回了 response.data，所以 response 就是 { code, message, data }
+        if (response && response.code === 200) {
           ElMessage.success('发布成功')
           resourceDocumentDialogVisible.value = false
           resetResourceDocumentForm()
         } else {
-          ElMessage.error(result?.msg || '发布失败')
+          ElMessage.error(response?.msg || '发布失败')
         }
       } catch (error) {
         logger.error('发布失败:', error)
@@ -1235,24 +1298,43 @@ const navigateToFeedback = (feedbackId) => {
   })
 }
 
-// 导航到撤回申请审核
-const navigateToRecallAudit = (recall) => {
-  if (recall.recallType === 'company') {
-    router.push({
-      path: '/admin/recall-audit',
-      query: { 
-        tab: 'recall',
-        companyId: recall.id
-      }
+const handleWebSocketMessage = (data) => {
+  console.log('管理员端收到WebSocket消息:', data)
+  
+  if (data.type === 'new_announcement') {
+    ElMessage.success({
+      message: `新公告：${data.data?.title || '未知标题'}`,
+      duration: 5000,
+      showClose: true
     })
+    fetchRecentAnnouncements()
+  } else if (data.type === 'new_feedback') {
+    ElMessage.warning({
+      message: `新问题反馈：${data.data?.title || '未知标题'}`,
+      duration: 5000,
+      showClose: true
+    })
+    fetchRecentFeedback()
+    fetchStats()
+  }
+}
+
+const initWebSocket = () => {
+  let token = authStore.token
+  
+  if (!token) {
+    const rolePrefix = 'admin_'
+    const role = 'ROLE_ADMIN'
+    token = localStorage.getItem(`${rolePrefix}accessToken_${role}`) ||
+            localStorage.getItem(`${rolePrefix}token_${role}`) ||
+            localStorage.getItem('accessToken')
+  }
+  
+  if (token) {
+    console.log('管理员端初始化 WebSocket 连接')
+    initAnnouncementWebSocket(token, handleWebSocketMessage)
   } else {
-    router.push({
-      path: '/admin/recall-audit',
-      query: { 
-        tab: 'student-recall',
-        studentId: recall.id
-      }
-    })
+    console.warn('未找到 token，无法初始化 WebSocket')
   }
 }
 
@@ -1263,8 +1345,13 @@ onMounted(() => {
     fetchStats(),
     fetchRecentLogs(),
     fetchRecentFeedback(),
-    fetchPendingRecall()
+    fetchRecentAnnouncements()
   ])
+  initWebSocket()
+})
+
+onUnmounted(() => {
+  disconnectAnnouncementWebSocket()
 })
 </script>
 
@@ -1441,7 +1528,7 @@ onMounted(() => {
   min-height: 0;
 }
 
-.recall-card {
+.announcement-card {
   flex: 1;
   min-height: 0;
 }
@@ -1453,10 +1540,13 @@ onMounted(() => {
   margin-bottom: 24px;
 }
 
-/* 撤回申请区域 */
-.recall-section {
+/* 最近公告区域 */
+.announcement-section {
   flex: 0 0 360px;
   max-width: 360px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
 .stat-card {
@@ -1917,8 +2007,8 @@ onMounted(() => {
   text-align: center;
 }
 
-/* 撤回申请卡片 */
-.recall-card {
+/* 最近公告卡片 */
+.announcement-card {
   border-radius: 16px;
   border: none;
   background: white;
@@ -1928,18 +2018,18 @@ onMounted(() => {
   flex-direction: column;
 }
 
-.recall-card :deep(.el-card__header) {
+.announcement-card :deep(.el-card__header) {
   border-bottom: 1px solid #f0f0f0;
   padding: 16px 20px;
 }
 
-.recall-header {
+.announcement-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
 }
 
-.recall-title {
+.announcement-title {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1948,27 +2038,27 @@ onMounted(() => {
   color: #303133;
 }
 
-.recall-badge {
+.announcement-badge {
   margin-left: 4px;
 }
 
-.recall-title .el-icon {
-  color: #faad14;
+.announcement-title .el-icon {
+  color: #409EFF;
   font-size: 18px;
 }
 
-.recall-container {
+.announcement-container {
   padding: 8px 0;
   flex: 1;
 }
 
-.recall-list {
+.announcement-list {
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
 
-.recall-item {
+.announcement-item {
   padding: 10px 12px;
   border-radius: 8px;
   background: #f8f9fa;
@@ -1977,26 +2067,26 @@ onMounted(() => {
   min-width: 0;
 }
 
-.recall-item:hover {
-  background: #fff7e6;
+.announcement-item:hover {
+  background: #f0f7ff;
   transform: translateY(-2px);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
 
-.recall-content {
+.announcement-content {
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
 
-.recall-header {
+.announcement-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 8px;
 }
 
-.recall-title {
+.announcement-title-text {
   font-weight: 600;
   color: #303133;
   font-size: 13px;
@@ -2004,28 +2094,24 @@ onMounted(() => {
   text-overflow: ellipsis;
   white-space: nowrap;
   line-height: 1.4;
+  flex: 1;
 }
 
-.recall-reason {
-  font-size: 13px;
+.announcement-publisher {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
   color: #606266;
-  font-weight: 500;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  line-height: 1.4;
-  max-width: 100%;
 }
 
-.recall-time {
+.announcement-time {
   font-size: 11px;
   color: #909399;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
-.empty-recall {
+.empty-announcement {
   padding: 40px 0;
   text-align: center;
 }
@@ -2054,40 +2140,40 @@ onMounted(() => {
     flex-direction: column;
   }
   
-  .recall-section {
+  .announcement-section {
     flex: 0 0 auto;
     width: 100%;
   }
-  
+
   .stats-cards-grid {
     grid-template-columns: repeat(2, 1fr);
   }
-  
+
   .stat-card {
     min-height: 120px;
   }
-  
+
   .feedback-list {
     gap: 8px;
   }
-  
+
   .feedback-item {
     padding: 8px 10px;
   }
-  
+
   .feedback-container {
     max-height: 320px;
   }
-  
-  .recall-list {
+
+  .announcement-list {
     gap: 8px;
   }
-  
-  .recall-item {
+
+  .announcement-item {
     padding: 8px 10px;
   }
   
-  .recall-container {
+  .announcement-container {
     max-height: 320px;
   }
   

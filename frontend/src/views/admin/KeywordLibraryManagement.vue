@@ -161,10 +161,10 @@ const fetchKeywords = async () => {
   loading.value = true
   try {
     const response = await request.get('/admin/keyword-library')
-    if (response.data.code === 200) {
-      keywordList.value = response.data.data || []
+    if (response.code === 200) {
+      keywordList.value = response.data || []
     } else {
-      ElMessage.error(response.data.msg || '获取关键词列表失败')
+      ElMessage.error(response.msg || '获取关键词列表失败')
     }
   } catch (error) {
     ElMessage.error('获取关键词列表失败')
@@ -182,10 +182,10 @@ const handleFilter = async () => {
     }
     
     const response = await request.get(url)
-    if (response.data.code === 200) {
-      keywordList.value = response.data.data || []
+    if (response.code === 200) {
+      keywordList.value = response.data || []
     } else {
-      ElMessage.error(response.data.msg || '筛选失败')
+      ElMessage.error(response.msg || '筛选失败')
     }
   } catch (error) {
     ElMessage.error('筛选失败')
@@ -240,11 +240,11 @@ const handleDelete = async (row) => {
     })
     
     const response = await request.delete(`/admin/keyword-library/${row.id}`)
-    if (response.data.code === 200) {
+    if (response.code === 200) {
       ElMessage.success('删除成功')
       fetchKeywords()
     } else {
-      ElMessage.error(response.data.msg || '删除失败')
+      ElMessage.error(response.msg || '删除失败')
     }
   } catch (error) {
     if (error !== 'cancel') {
@@ -264,11 +264,11 @@ const handleToggleStatus = async (row) => {
       status: newStatus
     })
     
-    if (response.data.code === 200) {
+    if (response.code === 200) {
       ElMessage.success(`${statusText}成功`)
       fetchKeywords()
     } else {
-      ElMessage.error(response.data.msg || `${statusText}失败`)
+      ElMessage.error(response.msg || `${statusText}失败`)
     }
   } catch (error) {
     ElMessage.error(`${statusText}失败`)
@@ -293,12 +293,12 @@ const handleSave = async () => {
       response = await request.post('/admin/keyword-library', form.value)
     }
     
-    if (response.data.code === 200) {
+    if (response.code === 200) {
       ElMessage.success('保存成功')
       dialogVisible.value = false
       fetchKeywords()
     } else {
-      ElMessage.error(response.data.msg || '保存失败')
+      ElMessage.error(response.msg || '保存失败')
     }
   } catch (error) {
     ElMessage.error('保存失败')

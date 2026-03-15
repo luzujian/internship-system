@@ -5,11 +5,13 @@ import com.gdmu.entity.Position;
 import com.gdmu.exception.BusinessException;
 import com.gdmu.mapper.PositionMapper;
 import com.gdmu.service.PositionService;
+import com.gdmu.service.StudentInternshipStatusService;
 import com.github.pagehelper.PageHelper;
 import com.github.pagehelper.PageInfo;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,10 +25,13 @@ import java.util.*;
 public class PositionServiceImpl implements PositionService {
     
     private final PositionMapper positionMapper;
-    
+    private final StudentInternshipStatusService studentInternshipStatusService;
+
     @Autowired
-    public PositionServiceImpl(PositionMapper positionMapper) {
+    public PositionServiceImpl(PositionMapper positionMapper,
+                               @Lazy StudentInternshipStatusService studentInternshipStatusService) {
         this.positionMapper = positionMapper;
+        this.studentInternshipStatusService = studentInternshipStatusService;
     }
     
     @Override
@@ -99,6 +104,16 @@ public class PositionServiceImpl implements PositionService {
             throw new BusinessException("岗位不存在");
         }
         
+        // 先删除该岗位下的所有实习确认表
+        try {
+            int deletedCount = studentInternshipStatusService.deleteByPositionId(id);
+            log.info("已删除岗位关联的实习确认表，岗位ID: {}, 删除记录数: {}", id, deletedCount);
+        } catch (Exception e) {
+            log.error("删除岗位关联的实习确认表失败，岗位ID: {}, 错误: {}", id, e.getMessage());
+            throw new BusinessException("删除岗位关联的实习确认表失败: " + e.getMessage());
+        }
+        
+        // 删除岗位
         int result = positionMapper.deleteById(id);
         log.info("岗位信息删除成功，岗位名称: {}", position.getPositionName());
         return result;
@@ -120,6 +135,18 @@ public class PositionServiceImpl implements PositionService {
         }
         
         return positionMapper.findByCompanyId(companyId);
+    }
+
+    @Override
+    public List<Position> findByCompanyIdWithConditions(Long companyId, String positionName, String department, String status) {
+        log.debug("根据企业ID和条件查询岗位信息，企业ID: {}, 岗位名称: {}, 部门: {}, 状态: {}", companyId, positionName, department, status);
+        
+        // 参数校验
+        if (companyId == null || companyId <= 0) {
+            throw new BusinessException("企业ID无效");
+        }
+        
+        return positionMapper.findByCompanyIdWithConditions(companyId, positionName, department, status);
     }
     
     @Override
@@ -284,5 +311,49 @@ public class PositionServiceImpl implements PositionService {
             log.error("清除所有岗位数据失败: {}", e.getMessage(), e);
             throw new BusinessException("清除岗位数据失败: " + e.getMessage());
         }
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public int pausePosition(Long positionId) {
+        log.info("暂停岗位招聘，岗位 ID: {}", positionId);
+
+        if (positionId == null || positionId <= 0) {
+            throw new BusinessException("岗位 ID 无效");
+        }
+
+        Position position = positionMapper.findById(positionId);
+        if (position == null) {
+            throw new BusinessException("岗位不存在");
+        }
+
+        position.setStatus("paused");
+        position.setUpdateTime(new Date());
+
+        int result = positionMapper.update(position);
+        log.info("岗位招聘已暂停，岗位 ID: {}, 岗位名称：{}", positionId, position.getPositionName());
+        return result;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public int resumePosition(Long positionId) {
+        log.info("恢复岗位招聘，岗位 ID: {}", positionId);
+
+        if (positionId == null || positionId <= 0) {
+            throw new BusinessException("岗位 ID 无效");
+        }
+
+        Position position = positionMapper.findById(positionId);
+        if (position == null) {
+            throw new BusinessException("岗位不存在");
+        }
+
+        position.setStatus("active");
+        position.setUpdateTime(new Date());
+
+        int result = positionMapper.update(position);
+        log.info("岗位招聘已恢复，岗位 ID: {}, 岗位名称：{}", positionId, position.getPositionName());
+        return result;
     }
 }

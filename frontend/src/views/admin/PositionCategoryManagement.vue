@@ -360,7 +360,7 @@ import PositionService from '../../api/position'
 import request from '../../utils/request'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Refresh, Plus, Edit, Delete, View, Download, Upload, Close, ArrowDown } from '@element-plus/icons-vue'
-import * as XLSX from 'xlsx'
+import { exportToExcel, readExcelFile } from '../../utils/xlsx'
 import { useAuthStore } from '../../store/auth'
 
 const authStore = useAuthStore()
@@ -443,8 +443,8 @@ const getPositionList = async (): Promise<void> => {
     logger.log('岗位列表响应:', response)
 
     if (response && response.data) {
-      if (response.data.code === 200 && response.data.data) {
-        positionList.value = Array.isArray(response.data.data) ? response.data.data : []
+      if (response.code === 200 && response.data) {
+        positionList.value = Array.isArray(response.data) ? response.data : []
       } else if (Array.isArray(response.data)) {
         positionList.value = response.data
       } else {
@@ -675,7 +675,7 @@ const handleUpdateCategory = async (id): Promise<void> => {
   try {
     const response = await PositionCategoryService.getCategoryById(id)
     if (response && response.data) {
-      const categoryData = response.data.code === 200 ? response.data.data : response.data
+      const categoryData = response.code === 200 ? response.data : response.data
       categoryForm.value = {
         id: categoryData.id,
         name: categoryData.name,
@@ -1058,21 +1058,7 @@ const importExcel = async (): Promise<void> => {
   importLoading.value = true
   
   try {
-    const reader = new FileReader()
-    
-    const fileData = await new Promise((resolve, reject) => {
-      reader.onload = (e) => resolve(e.target.result)
-      reader.onerror = reject
-      reader.readAsArrayBuffer(selectedFile.value)
-    })
-    
-    const data = new Uint8Array(fileData)
-    const workbook = XLSX.read(data, { type: 'array' })
-    
-    const sheetName = workbook.SheetNames[0]
-    const worksheet = workbook.Sheets[sheetName]
-    
-    const jsonData = XLSX.utils.sheet_to_json(worksheet)
+    const jsonData = await readExcelFile(selectedFile.value)
     
     if (jsonData.length === 0) {
       ElMessage.warning('Excel文件中没有数据')
@@ -1280,7 +1266,7 @@ const processImportData = async (data): Promise<void> => {
   }
 }
 
-const exportToExcel = async (): Promise<void> => {
+const handleExportToExcel = async (): Promise<void> => {
   try {
     exportLoading.value = true
 
@@ -1312,12 +1298,8 @@ const exportToExcel = async (): Promise<void> => {
       })
     }
 
-    const worksheet = XLSX.utils.json_to_sheet(exportData)
-    const workbook = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(workbook, worksheet, '岗位类别数据')
-
-    const fileName = `岗位类别数据_${new Date().getTime()}.xlsx`
-    XLSX.writeFile(workbook, fileName)
+    const fileName = `岗位类别数据_${new Date().getTime()}`
+    await exportToExcel(exportData, fileName, '岗位类别数据')
 
     ElMessage.success('导出成功')
   } catch (error) {

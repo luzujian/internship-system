@@ -1,51 +1,64 @@
 import sharp from 'sharp';
-import fs from 'fs';
-import path from 'path';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+import { readFileSync, writeFileSync, existsSync, unlinkSync } from 'fs';
 
-const assetsDir = '/home/gdmu/internship-system/frontend/src/assets';
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
-async function compressImage(filename, options = {}) {
-    const inputPath = path.join(assetsDir, filename);
-    if (!fs.existsSync(inputPath)) {
-        console.log();
-        return;
-    }
+const assetsDir = join(__dirname, 'src', 'assets');
+
+const files = ['2.png', '3.png', 'register.png', 'schoollogo.png'];
+
+async function compressImage(filename) {
+  const inputPath = join(assetsDir, filename);
+  const outputPath = join(assetsDir, filename + '.compressed');
+  
+  if (!existsSync(inputPath)) {
+    console.log(`文件不存在: ${filename}`);
+    return;
+  }
+
+  console.log(`正在压缩: ${filename}`);
+  
+  try {
+    await sharp(inputPath)
+      .png({ 
+        quality: 80,
+        compressionLevel: 9,
+        effort: 10
+      })
+      .toFile(outputPath);
     
-    const stats = fs.statSync(inputPath);
-    console.log();
+    const inputStats = existsSync(inputPath) ? readFileSync(inputPath).length : 0;
+    const outputStats = existsSync(outputPath) ? readFileSync(outputPath).length : 0;
     
-    try {
-        let pipeline = sharp(inputPath);
-        
-        if (filename.endsWith('.png')) {
-            pipeline = pipeline.png({ compressionLevel: 9, palette: true });
-        } else if (filename.endsWith('.jpg') || filename.endsWith('.jpeg')) {
-            pipeline = pipeline.jpeg({ quality: options.quality || 75, progressive: true });
-        }
-        
-        await pipeline.toFile(inputPath + '.tmp');
-        fs.renameSync(inputPath + '.tmp', inputPath);
-        
-        const newStats = fs.statSync(inputPath);
-        const savings = ((stats.size - newStats.size) / stats.size * 100).toFixed(1);
-        console.log();
-    } catch (e) {
-        console.log();
-    }
+    const savedBytes = inputStats - outputStats;
+    const savedPercent = ((savedBytes / inputStats) * 100).toFixed(2);
+    
+    console.log(`  原始大小: ${(inputStats / 1024).toFixed(2)} KB`);
+    console.log(`  压缩后: ${(outputStats / 1024).toFixed(2)} KB`);
+    console.log(`  节省: ${savedPercent}%`);
+    
+    unlinkSync(inputPath);
+    const fs = await import('fs');
+    fs.renameSync(outputPath, inputPath);
+    
+    console.log(`  ✓ 已替换原文件`);
+  } catch (error) {
+    console.error(`  ✗ 压缩失败: ${error.message}`);
+  }
 }
 
 async function main() {
-    console.log('Starting image compression...\n');
-    
-    await compressImage('3.png');
-    await compressImage('register.png');
-    await compressImage('login-bg-with-logo.png');
-    await compressImage('schoollogo.png');
-    await compressImage('2.png');
-    await compressImage('school.jpg', { quality: 70 });
-    await compressImage('1.jpg', { quality: 70 });
-    
-    console.log('\nDone!');
+  console.log('开始压缩图片...\n');
+  
+  for (const file of files) {
+    await compressImage(file);
+    console.log('');
+  }
+  
+  console.log('压缩完成！');
 }
 
 main().catch(console.error);

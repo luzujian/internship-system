@@ -26,8 +26,10 @@
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^6.0.4",
+    "sharp": "^0.34.5",
     "typescript": "^5.9.3",
     "vite": "^7.1.7",
+    "vite-plugin-imagemin": "^0.6.1",
     "vue-tsc": "^3.2.5"
   }
 }

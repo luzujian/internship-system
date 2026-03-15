@@ -15,7 +15,7 @@
 
     <div class="settings-content">
       <el-card class="settings-card" shadow="hover">
-        <el-tabs v-model="activeTab" class="settings-tabs">
+        <el-tabs v-model="activeTab" class="settings-tabs" v-loading="loading">
         <el-tab-pane label="基础配置" name="basic">
           <div class="system-status-section">
             <h3 class="section-title">系统状态</h3>
@@ -260,6 +260,7 @@ const goToBackupPage = () => {
 const activeTab = ref('basic')
 const saving = ref(false)
 const clearing = ref(false)
+const loading = ref(false)
 
 const basicFormRef = ref(null)
 const securityFormRef = ref(null)
@@ -304,10 +305,11 @@ const securityRules = {
 }
 
 const loadSettings = async () => {
+  loading.value = true
   try {
     const response = await request.get('/admin/settings')
-    if (response.data.code === 200) {
-      const settings = response.data.data
+    if (response.code === 200) {
+      const settings = response.data
       
       if (settings.basic) {
         Object.assign(basicForm, settings.basic)
@@ -322,6 +324,8 @@ const loadSettings = async () => {
   } catch (error) {
     logger.error('加载系统设置失败:', error)
     ElMessage.error('加载系统设置失败')
+  } finally {
+    loading.value = false
   }
 }
 
@@ -335,10 +339,10 @@ const saveBasicSettings = async () => {
         const response = await request.put('/admin/settings', {
           basic: basicForm
         })
-        if (response.data.code === 200) {
+        if (response.code === 200) {
           ElMessage.success('基础配置保存成功')
         } else {
-          ElMessage.error(response.data.msg || '保存失败')
+          ElMessage.error(response.message || '保存失败')
         }
       } catch (error) {
         logger.error('保存基础配置失败:', error)
@@ -363,11 +367,11 @@ const saveSecuritySettings = async () => {
         const response = await request.put('/admin/settings', {
           security: securityData
         })
-        if (response.data.code === 200) {
+        if (response.code === 200) {
           ElMessage.success('安全配置保存成功')
           systemSettingsStore.updateSecuritySettings(securityData)
         } else {
-          ElMessage.error(response.data.msg || '保存失败')
+          ElMessage.error(response.message || '保存失败')
         }
       } catch (error) {
         logger.error('保存安全配置失败:', error)
@@ -660,8 +664,8 @@ const clearStudentData = async () => {
 const clearCompanyData = async () => {
   try {
     const response = await companyService.getCompanies({ page: 1, pageSize: 10000 })
-    if (response.data.code === 200) {
-      const companies = response.data.data || []
+    if (response.code === 200) {
+      const companies = response.data || []
       if (companies.length > 0) {
         const ids = companies.map(c => c.id).filter(id => id)
         if (ids.length > 0) {
@@ -703,8 +707,8 @@ const clearRecallAuditData = async () => {
 const clearPositionCategoryData = async () => {
   try {
     const response = await PositionCategoryService.getCategories()
-    if (response.data.code === 200) {
-      const categories = response.data.data || []
+    if (response.code === 200) {
+      const categories = response.data || []
       if (categories.length > 0) {
         for (const category of categories) {
           await PositionCategoryService.deleteCategory(category.id)
@@ -720,8 +724,8 @@ const clearPositionCategoryData = async () => {
 const clearClassData = async () => {
   try {
     const response = await ClassService.getClasses()
-    if (response.data.code === 200) {
-      const classes = response.data.data || []
+    if (response.code === 200) {
+      const classes = response.data || []
       if (classes.length > 0) {
         const ids = classes.map(c => c.id).filter(id => id)
         if (ids.length > 0) {
@@ -738,8 +742,8 @@ const clearClassData = async () => {
 const clearMajorData = async () => {
   try {
     const response = await MajorService.getMajors()
-    if (response.data.code === 200) {
-      const majors = response.data.data || []
+    if (response.code === 200) {
+      const majors = response.data || []
       if (majors.length > 0) {
         for (const major of majors) {
           await MajorService.deleteMajor(major.id)
@@ -765,8 +769,8 @@ const clearMajorData = async () => {
 const clearInternshipConfirmData = async () => {
   try {
     const response = await internshipService.getInternshipStatusList({ page: 1, pageSize: 10000 })
-    if (response.data.code === 200) {
-      const statuses = response.data.data || []
+    if (response.code === 200) {
+      const statuses = response.data || []
       if (statuses.length > 0) {
         const ids = statuses.map(s => s.id).filter(id => id)
         if (ids.length > 0) {
@@ -783,8 +787,8 @@ const clearInternshipConfirmData = async () => {
 const clearRecruitmentData = async () => {
   try {
     const response = await positionService.clearAllPositions()
-    const result = response.data
-    
+    const result = response
+
     if (result && result.code === 200) {
       ElMessage.success('招聘管理数据清除成功')
     } else {
@@ -799,8 +803,8 @@ const clearRecruitmentData = async () => {
 const clearAnnouncementData = async () => {
   try {
     const response = await announcementApi.getAllAnnouncements()
-    if (response.data.code === 200) {
-      const announcements = response.data.data || []
+    if (response.code === 200) {
+      const announcements = response.data || []
       if (announcements.length > 0) {
         const ids = announcements.map(a => a.id).filter(id => id)
         if (ids.length > 0) {
@@ -817,8 +821,8 @@ const clearAnnouncementData = async () => {
 const clearResourceDocumentsData = async () => {
   try {
     const response = await resourceDocumentApi.getAllResourceDocuments()
-    if (response.data.code === 200) {
-      const documents = response.data.data || []
+    if (response.code === 200) {
+      const documents = response.data || []
       if (documents.length > 0) {
         const ids = documents.map(d => d.id).filter(id => id)
         if (ids.length > 0) {
@@ -835,8 +839,8 @@ const clearResourceDocumentsData = async () => {
 const clearFeedbackData = async () => {
   try {
     const response = await feedbackApi.getAllFeedback()
-    if (response.data.code === 200) {
-      const feedbacks = response.data.data || []
+    if (response.code === 200) {
+      const feedbacks = response.data || []
       if (feedbacks.length > 0) {
         const ids = feedbacks.map(f => f.id).filter(id => id)
         if (ids.length > 0) {
@@ -853,8 +857,8 @@ const clearFeedbackData = async () => {
 const clearKeywordLibraryData = async () => {
   try {
     const response = await request.get('/admin/keyword-library')
-    if (response.data.code === 200) {
-      const keywords = response.data.data || []
+    if (response.code === 200) {
+      const keywords = response.data || []
       if (keywords.length > 0) {
         for (const keyword of keywords) {
           await request.delete(`/admin/keyword-library/${keyword.id}`)
@@ -870,8 +874,8 @@ const clearKeywordLibraryData = async () => {
 const clearScoringRuleData = async () => {
   try {
     const response = await request.get('/admin/scoring-rule')
-    if (response.data.code === 200) {
-      const rules = response.data.data || []
+    if (response.code === 200) {
+      const rules = response.data || []
       if (rules.length > 0) {
         for (const rule of rules) {
           await request.delete(`/admin/scoring-rule/${rule.id}`)
@@ -899,7 +903,7 @@ const clearAiModelData = async () => {
     logger.log('开始批量删除所有AI模型')
     const response = await aiModelService.deleteAllAIModels()
     logger.log('批量删除AI模型响应:', response)
-    if (response.data.code === 200) {
+    if (response.code === 200) {
       logger.log('批量删除AI模型成功')
     } else {
       throw new Error(response.data?.msg || '删除失败')
@@ -922,8 +926,8 @@ const clearLogData = async () => {
 const clearPermissionData = async () => {
   try {
     const response = await permissionApi.clearRolePermissions()
-    const result = response.data
-    
+    const result = response
+
     if (result && result.code === 200) {
       ElMessage.success('权限管理数据清除成功')
     } else {
@@ -942,10 +946,10 @@ const extractIdsFromResponse = (response) => {
 
   let items = []
 
-  if (response.data.data && response.data.data.list) {
-    items = response.data.data.list
-  } else if (response.data.data && response.data.data.rows) {
-    items = response.data.data.rows
+  if (response.data && response.data.list) {
+    items = response.data.list
+  } else if (response.data && response.data.rows) {
+    items = response.data.rows
   } else if (response.data.list) {
     items = response.data.list
   } else if (response.data.rows) {

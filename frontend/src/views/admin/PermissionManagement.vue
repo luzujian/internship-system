@@ -215,10 +215,10 @@ const fetchRoles = async () => {
   loading.value = true
   try {
     const response = await request.get('/admin/permissions/roles')
-    if (response.data.code === 200) {
-      roles.value = response.data.data.filter(role => role.roleCode === 'ROLE_ADMIN')
+    if (response.code === 200) {
+      roles.value = response.data.filter(role => role.roleCode === 'ROLE_ADMIN')
     } else {
-      ElMessage.error(response.data.msg || '获取角色列表失败')
+      ElMessage.error(response.message || '获取角色列表失败')
     }
   } catch (error) {
     ElMessage.error('获取角色列表失败')
@@ -231,12 +231,12 @@ const fetchPermissionTree = async () => {
   try {
     const response = await request.get('/admin/permissions/permission-tree')
     logger.log('[PermissionManagement] 权限树接口响应:', response)
-    if (response.data.code === 200) {
-      permissionTree.value = response.data.data
+    if (response.code === 200) {
+      permissionTree.value = response.data
       logger.log('[PermissionManagement] 获取到的权限树数据:', permissionTree.value)
       logger.log('[PermissionManagement] 权限树主模块:', permissionTree.value.map(m => m.module))
     } else {
-      ElMessage.error(response.data.msg || '获取权限树失败')
+      ElMessage.error(response.message || '获取权限树失败')
     }
   } catch (error) {
     logger.error('[PermissionManagement] 获取权限树失败:', error)
@@ -252,8 +252,8 @@ const handleAssignPermissions = async (row) => {
   
   try {
     const response = await request.get(`/admin/permissions/roles/${row.id}/permissions`)
-    if (response.data.code === 200) {
-      let checkedKeys = response.data.data.map(p => p.id)
+    if (response.code === 200) {
+      let checkedKeys = response.data.map(p => p.id)
       
       await nextTick()
       
@@ -301,18 +301,18 @@ const savePermissions = async () => {
     
     const response = await request.post(`/admin/permissions/roles/${currentRole.value.id}/permissions`, requestData)
     
-    logger.log('[PermissionManagement] 后端响应:', response.data)
-    
-    if (response.data.code === 200) {
+    logger.log('[PermissionManagement] 后端响应:', response)
+
+    if (response.code === 200) {
       ElMessage.success('权限分配成功')
       permissionDialogVisible.value = false
-      
+
       if (isCurrentUserRole(currentRole.value)) {
         try {
           const permissionsResponse = await request.get('/admin/permissions/roles/1/permissions')
-          if (permissionsResponse.data.code === 200 && permissionsResponse.data.data) {
-            localStorage.setItem('adminPermissions', JSON.stringify(permissionsResponse.data.data))
-            logger.log('[PermissionManagement] 已更新当前用户权限:', permissionsResponse.data.data)
+          if (permissionsResponse.code === 200 && permissionsResponse.data) {
+            localStorage.setItem('adminPermissions', JSON.stringify(permissionsResponse.data))
+            logger.log('[PermissionManagement] 已更新当前用户权限:', permissionsResponse.data)
             ElMessage.info('权限已更新，页面即将刷新')
             setTimeout(() => {
               window.location.reload()
@@ -324,7 +324,7 @@ const savePermissions = async () => {
         }
       }
     } else {
-      ElMessage.error(response.data.msg || '权限分配失败')
+      ElMessage.error(response.message || '权限分配失败')
     }
   } catch (error) {
     logger.error('[PermissionManagement] 保存权限失败:', error)

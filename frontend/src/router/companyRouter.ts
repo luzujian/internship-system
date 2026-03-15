@@ -3,6 +3,7 @@ import type { RouteRecordRaw } from 'vue-router'
 const companyRoutes: RouteRecordRaw[] = [
   {
     path: '',
+    name: 'company-home',
     redirect: 'dashboard'
   },
   {

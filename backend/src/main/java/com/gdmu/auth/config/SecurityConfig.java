@@ -70,6 +70,10 @@ public class SecurityConfig {
                         .requestMatchers("/api/ai/student/query", "/api/ai/student/query/stream", "/api/ai/student/info").permitAll()
                         // 允许资源查询 Agent 接口无需认证
                         .requestMatchers("/api/ai/resource/advanced/query", "/api/ai/resource/advanced/query/stream").permitAll()
+                        // 允许 WebSocket 端点访问（认证在握手拦截器中处理）
+                        .requestMatchers("/ws/**").permitAll()
+                        // 允许公告相关接口访问（权限由Controller的@PreAuthorize控制）
+                        .requestMatchers("/api/announcement/**").authenticated()
                         // 允许静态资源访问
                         .requestMatchers("/css/**", "/js/**", "/images/**", "/favicon.ico").permitAll()
                         // 允许 Swagger 文档访问

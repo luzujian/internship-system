@@ -12,8 +12,8 @@ import cacheService from '../../api/cacheService'
 import { Search, Refresh, Plus, Delete, Upload, Download, Document, School, View, ArrowDown } from '@element-plus/icons-vue'
 import type { TeacherUser, PageParams, PaginationState, DialogState, Department, Major } from '@/types/admin'
 import { ElMessage, ElMessageBox, ElForm, ElTable } from 'element-plus'
-import { queryPageApi, addApi, queryInfoApi, updateApi, deleteApi, resetPasswordApi, batchDeleteApi, exportTeacherDataApi, importTeacherDataApi, updateStatusApi } from '../../api/TeacherUserService'
-import * as XLSX from 'xlsx'
+import { queryPageApi, addApi, queryInfoApi, updateApi, deleteApi, resetPasswordApi, exportTeacherDataApi, importTeacherDataApi, updateStatusApi } from '../../api/TeacherUserService'
+import { exportToExcel } from '../../utils/xlsx'
 
 const systemSettingsStore = useSystemSettingsStore()
 const authStore = useAuthStore()
@@ -219,8 +219,8 @@ const getDepartmentList = async () => {
     let departmentData = []
     if (response && response.data) {
       // 处理Result对象格式: { code: 200, data: [departments] }
-      if (response.data.code === 200 && response.data.data) {
-        departmentData = Array.isArray(response.data.data) ? response.data.data : []
+      if (response.code === 200 && response.data) {
+        departmentData = Array.isArray(response.data) ? response.data : []
       } 
       // 处理直接返回数组的情况
       else if (Array.isArray(response.data)) {
@@ -271,9 +271,9 @@ const getMajorList = async () => {
     if (response && response.data) {
       if (Array.isArray(response.data)) {
         majorData = response.data
-      } else if (response.data.code === 200 && response.data.data) {
+      } else if (response.code === 200 && response.data) {
         //处理带code和data的响应格式
-        majorData = Array.isArray(response.data.data) ? response.data.data : []
+        majorData = Array.isArray(response.data) ? response.data : []
       }
     }
 
@@ -950,7 +950,7 @@ const handleToggleStatus = async (id, currentStatus) => {
 // 应用本地存储的教师状态函数已在文件前面定义，此处删除重复定义
 
 // 导出Excel功能
-const exportToExcel = async () => {
+const handleExportToExcel = async () => {
   try {
     ElMessage({ message: '正在准备导出数据...', type: 'info' })
     
@@ -976,14 +976,6 @@ const exportToExcel = async () => {
       }
     })
 
-    // 创建工作簿
-    const wb = XLSX.utils.book_new()
-    // 创建工作表
-    const ws = XLSX.utils.json_to_sheet(exportData)
-    // 添加工作表到工作簿
-    XLSX.utils.book_append_sheet(wb, ws, '教师信息')
-    
-    // 生成文件名 - 包含当前日期时间
     const currentDate = new Date()
     const year = currentDate.getFullYear()
     const month = String(currentDate.getMonth() + 1).padStart(2, '0')
@@ -991,11 +983,10 @@ const exportToExcel = async () => {
     const hours = String(currentDate.getHours()).padStart(2, '0')
     const minutes = String(currentDate.getMinutes()).padStart(2, '0')
     const seconds = String(currentDate.getSeconds()).padStart(2, '0')
-    const fileName = `教师信息导出_${year}${month}${day}_${hours}${minutes}${seconds}.xlsx`
-    
-    // 导出文件
-    XLSX.writeFile(wb, fileName)
-    
+    const fileName = `教师信息导出_${year}${month}${day}_${hours}${minutes}${seconds}`
+
+    await exportToExcel(exportData, fileName, '教师信息')
+
     ElMessage({ message: '导出成功', type: 'success' })
   } catch (error) {
     logger.error('导出Excel失败:', error)
@@ -1032,10 +1023,14 @@ const closeViewCoursesDialog = () => {
 
 //页面加载时执行
 onMounted(async () => {
+  loading.value = true
   logger.log('页面挂载，开始加载数据...')
-  await getDepartmentList()
-  await getMajorList()
-  await queryPage()
+  try {
+    await getDepartmentList()
+    await getMajorList()
+  } finally {
+    await queryPage()
+  }
   logger.log('数据加载完成')
 })
 </script>

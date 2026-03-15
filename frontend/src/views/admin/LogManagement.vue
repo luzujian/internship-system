@@ -6,7 +6,7 @@ import { useLogStore } from '@/store/log'
 import { useSystemSettingsStore } from '@/store/systemSettings'
 import { ElTag, ElMessage, ElCard, ElTable, ElTableColumn, ElPagination, ElTabs, ElTabPane, ElMessageBox, ElDropdown, ElDropdownMenu, ElDropdownItem, ElSelect, ElOption, type FormInstance } from 'element-plus'
 import { Search, Refresh, Download, Delete, ArrowDown } from '@element-plus/icons-vue'
-import * as XLSX from 'xlsx'
+import { exportToExcel } from '../../utils/xlsx'
 import request from '@/utils/request'
 import { useAuthStore } from '@/store/auth'
 import type { PaginationState, SelectOption } from '@/types/admin'
@@ -349,7 +349,7 @@ const processLogData = (rows: unknown[]): LogData[] => {
   }))
 }
 
-const exportToExcel = async (): Promise<void> => {
+const handleExportToExcel = async (): Promise<void> => {
   const selectedRole = ref('all')
   
   try {
@@ -399,8 +399,8 @@ const exportToExcel = async (): Promise<void> => {
     
     const response = await queryPageApi(searchForm.value.operatorName, operatorRole, searchForm.value.operationType, searchForm.value.module, 1, 10000, 'operate_time', 'desc')
     
-    if (response && response.data && response.data.code === 200 && response.data.data) {
-      const exportDataList = response.data.data.rows || []
+    if (response && response.code === 200 && response.data) {
+      const exportDataList = response.data.rows || []
       
       if (exportDataList.length === 0) {
         ElMessage.warning('暂无数据可导出')
@@ -420,15 +420,11 @@ const exportToExcel = async (): Promise<void> => {
         '操作时间': formatDate(item.operateTime || item.createTime) 
       }))
       
-      const wb = XLSX.utils.book_new()
-      const ws = XLSX.utils.json_to_sheet(exportData)
-      XLSX.utils.book_append_sheet(wb, ws, '操作日志')
-      
       const timestamp = new Date().toLocaleString('zh-CN').replace(/[/\\:]/g, '-')
       const roleName = selectedRole.value === 'all' ? '全部' : getRoleName(selectedRole.value)
-      const fileName = `${roleName}系统操作日志_${timestamp}.xlsx`
+      const fileName = `${roleName}系统操作日志_${timestamp}`
       
-      XLSX.writeFile(wb, fileName)
+      await exportToExcel(exportData, fileName, '操作日志')
       
       ElMessage.success('日志数据导出成功')
     } else {
@@ -485,7 +481,7 @@ const cleanLogs = async (role: string | null = null): Promise<void> => {
       logger.error('清理日志失败:', error)
       
       if (error.response && error.response.data) {
-        const errorMsg = error.response.data.message || error.response.data.msg || '日志清理失败，请重试'
+        const errorMsg = error.response.message || error.response.msg || '日志清理失败，请重试'
         ElMessage.error(errorMsg)
       } else if (error.message) {
         ElMessage.error('清理日志失败：' + error.message)
@@ -538,9 +534,9 @@ const queryPage = async (): Promise<void> => {
     const response = await queryPageApi(operatorName, operatorRole, operationType, module, page, pageSize, 'operate_time', 'desc')
     logger.log('查询结果响应:', response)
 
-    if (response && response.data && response.data.code === 200 && response.data.data) {
-      const dataList = response.data.data.rows || []
-      const totalCount = response.data.data.total || 0
+    if (response && response.code === 200 && response.data) {
+      const dataList = response.data.rows || []
+      const totalCount = response.data.total || 0
 
       const enhancedData = processLogData(dataList).map(log => {
         const operationTypeName = getOperationTypeName(log.operationType)

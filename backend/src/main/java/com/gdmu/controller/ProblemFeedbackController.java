@@ -29,6 +29,9 @@ public class ProblemFeedbackController {
     @Autowired
     private ProblemFeedbackMapper problemFeedbackMapper;
 
+    @Autowired
+    private com.gdmu.websocket.AnnouncementWebSocketHandler webSocketHandler;
+
     @GetMapping
     @PreAuthorize("hasRole('ROLE_ADMIN')")
     public Result getAllFeedback() {
@@ -120,10 +123,35 @@ public class ProblemFeedbackController {
             feedback.setStatus("processing");
             
             int result = problemFeedbackMapper.insert(feedback);
+            
+            if (result > 0) {
+                pushFeedbackNotification(feedback);
+            }
+            
             return Result.success("提交问题反馈成功", result);
         } catch (Exception e) {
             log.error("提交问题反馈失败: {}", e.getMessage(), e);
             return Result.error("提交问题反馈失败: " + e.getMessage());
+        }
+    }
+
+    private void pushFeedbackNotification(ProblemFeedback feedback) {
+        try {
+            Map<String, Object> feedbackData = new HashMap<>();
+            feedbackData.put("id", feedback.getId());
+            feedbackData.put("title", feedback.getTitle());
+            feedbackData.put("content", feedback.getContent());
+            feedbackData.put("userType", feedback.getUserType());
+            feedbackData.put("userName", feedback.getUserName());
+            feedbackData.put("priority", feedback.getPriority());
+            feedbackData.put("feedbackType", feedback.getFeedbackType());
+            feedbackData.put("createTime", feedback.getCreateTime());
+            feedbackData.put("status", feedback.getStatus());
+            
+            webSocketHandler.sendFeedbackToAdmin(feedbackData);
+            log.info("已推送问题反馈通知到管理员");
+        } catch (Exception e) {
+            log.error("推送问题反馈通知失败: {}", e.getMessage(), e);
         }
     }
 

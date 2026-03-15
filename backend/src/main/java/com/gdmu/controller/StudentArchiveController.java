@@ -123,6 +123,15 @@ public class StudentArchiveController {
     }
 
     /**
+     * 企业用户获取申请学生的材料列表
+     */
+    @GetMapping("/company/student/{studentId}")
+    @PreAuthorize("hasRole('COMPANY')")
+    public Result getCompanyStudentArchives(@PathVariable Long studentId) {
+        return Result.success(studentArchiveService.findByStudentId(studentId));
+    }
+
+    /**
      * 下载归档文件
      */
     @GetMapping("/download/{id}")
@@ -159,12 +168,86 @@ public class StudentArchiveController {
     }
 
     /**
+     * 企业用户下载归档文件
+     */
+    @GetMapping("/company/download/{id}")
+    @PreAuthorize("hasRole('COMPANY')")
+    public ResponseEntity<byte[]> downloadArchiveForCompany(@PathVariable Long id) {
+        log.info("企业用户下载归档文件，ID: {}", id);
+        try {
+            StudentArchive archive = studentArchiveService.findById(id);
+            if (archive == null) {
+                log.warn("归档文件不存在，ID: {}", id);
+                return ResponseEntity.notFound().build();
+            }
+
+            String fileUrl = archive.getFileUrl();
+            String fileName = archive.getFileName();
+
+            log.info("开始下载文件: {}", fileName);
+
+            byte[] fileBytes = aliyunOSSOperator.downloadFile(fileUrl);
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_OCTET_STREAM);
+            headers.setContentDisposition(ContentDisposition.builder("attachment")
+                    .filename(URLEncoder.encode(fileName, StandardCharsets.UTF_8.toString()).replaceAll("\\+", "%20"))
+                    .build());
+
+            return ResponseEntity.ok()
+                    .headers(headers)
+                    .body(fileBytes);
+        } catch (Exception e) {
+            log.error("下载文件失败: {}", e.getMessage(), e);
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    /**
      * 预览归档文件
      */
     @GetMapping("/preview/{id}")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<byte[]> previewArchive(@PathVariable Long id) {
         log.info("预览归档文件，ID: {}", id);
+        try {
+            StudentArchive archive = studentArchiveService.findById(id);
+            if (archive == null) {
+                log.warn("归档文件不存在，ID: {}", id);
+                return ResponseEntity.notFound().build();
+            }
+
+            String fileUrl = archive.getFileUrl();
+            String fileName = archive.getFileName();
+
+            log.info("开始预览文件: {}", fileName);
+
+            byte[] fileBytes = aliyunOSSOperator.downloadFile(fileUrl);
+
+            String fileExtension = fileName.substring(fileName.lastIndexOf(".") + 1).toLowerCase();
+            MediaType mediaType = getMediaType(fileExtension);
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(mediaType);
+            headers.setContentDisposition(ContentDisposition.builder("inline")
+                    .build());
+
+            return ResponseEntity.ok()
+                    .headers(headers)
+                    .body(fileBytes);
+        } catch (Exception e) {
+            log.error("预览文件失败: {}", e.getMessage(), e);
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    /**
+     * 企业用户预览归档文件
+     */
+    @GetMapping("/company/preview/{id}")
+    @PreAuthorize("hasRole('COMPANY')")
+    public ResponseEntity<byte[]> previewArchiveForCompany(@PathVariable Long id) {
+        log.info("企业用户预览归档文件，ID: {}", id);
         try {
             StudentArchive archive = studentArchiveService.findById(id);
             if (archive == null) {

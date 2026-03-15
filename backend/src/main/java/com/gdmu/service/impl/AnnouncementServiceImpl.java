@@ -20,6 +20,10 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
+
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
  * 通知公告服务实现类
@@ -46,11 +50,6 @@ public class AnnouncementServiceImpl implements AnnouncementService {
         // 设置创建和发布时间
         Date now = new Date();
         announcement.setPublishTime(now);
-        
-        // 如果未设置有效期开始时间，默认为当前时间
-        if (announcement.getValidFrom() == null) {
-            announcement.setValidFrom(now);
-        }
         
         // 如果设置了有效期结束时间，并且当前时间已经超过结束时间，设置为过期状态
         if (announcement.getValidTo() != null && now.after(announcement.getValidTo())) {
@@ -93,17 +92,10 @@ public class AnnouncementServiceImpl implements AnnouncementService {
         // 参数校验
         validateAnnouncementInfo(announcement);
         
-        // 如果是已发布状态，检查有效期
-        if ("PUBLISHED".equals(announcement.getStatus())) {
+        // 如果设置了有效期结束时间，并且当前时间已经超过结束时间，设置为过期状态
+        if (announcement.getValidTo() != null) {
             Date now = new Date();
-            
-            // 如果未设置有效期开始时间，默认为当前时间
-            if (announcement.getValidFrom() == null) {
-                announcement.setValidFrom(now);
-            }
-            
-            // 如果设置了有效期结束时间，并且当前时间已经超过结束时间，设置为过期状态
-            if (announcement.getValidTo() != null && now.after(announcement.getValidTo())) {
+            if (now.after(announcement.getValidTo())) {
                 announcement.setStatus("EXPIRED");
             }
         }
@@ -223,11 +215,24 @@ public class AnnouncementServiceImpl implements AnnouncementService {
             throw new BusinessException("公告状态不能为空");
         }
         
-        // 验证有效期：如果两个都不为空，开始时间必须早于结束时间
-        if (announcement.getValidFrom() != null && announcement.getValidTo() != null) {
-            if (announcement.getValidFrom().after(announcement.getValidTo())) {
-                throw new BusinessException("公告开始时间不能晚于结束时间");
-            }
+        // 验证发布日期（validFrom）必填
+        if (announcement.getValidFrom() == null) {
+            throw new BusinessException("发布日期不能为空");
+        }
+        
+        // 验证过期日期（validTo）必填
+        if (announcement.getValidTo() == null) {
+            throw new BusinessException("过期日期不能为空");
+        }
+        
+        // 验证目标群体必填
+        if (StringUtils.isBlank(announcement.getTargetType())) {
+            throw new BusinessException("目标群体不能为空");
+        }
+        
+        // 验证有效期：开始时间必须早于结束时间
+        if (announcement.getValidFrom().after(announcement.getValidTo())) {
+            throw new BusinessException("公告开始时间不能晚于结束时间");
         }
     }
     
@@ -415,8 +420,36 @@ public class AnnouncementServiceImpl implements AnnouncementService {
             return "TEACHER_TYPE";
         } else if ("特定专业学生".equals(targetType)) {
             return "MAJOR";
+        } else if ("企业用户".equals(targetType)) {
+            return "COMPANY";
         } else {
             return targetType;
+        }
+    }
+
+    /**
+     * 从 JSON 数组中转换目标类型（用于 Excel 导入）
+     */
+    private String convertTargetTypesToEnglish(List<String> targetTypes) {
+        if (targetTypes == null || targetTypes.isEmpty()) {
+            return null;
+        }
+        List<String> englishTypes = new ArrayList<>();
+        for (String type : targetTypes) {
+            String english = convertTargetTypeToEnglish(type);
+            if (english != null) {
+                englishTypes.add(english);
+            }
+        }
+        if (englishTypes.isEmpty()) {
+            return null;
+        }
+        try {
+            ObjectMapper objectMapper = new ObjectMapper();
+            return objectMapper.writeValueAsString(englishTypes);
+        } catch (JsonProcessingException e) {
+            log.error("序列化 JSON 失败：{}", e.getMessage());
+            return null;
         }
     }
     
@@ -426,5 +459,27 @@ public class AnnouncementServiceImpl implements AnnouncementService {
             return null;
         }
         return value.toString().trim();
+    }
+    
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public int incrementReadCount(Long id) {
+        log.debug("增加公告阅读次数，ID: {}", id);
+        
+        // 参数校验
+        if (id == null || id <= 0) {
+            throw new BusinessException("公告ID无效");
+        }
+        
+        // 检查公告是否存在
+        Announcement announcement = announcementMapper.findById(id);
+        if (announcement == null) {
+            throw new BusinessException("公告不存在");
+        }
+        
+        // 增加阅读次数
+        int result = announcementMapper.incrementReadCount(id);
+        log.info("公告阅读次数增加成功，ID: {}", id);
+        return result;
     }
 }

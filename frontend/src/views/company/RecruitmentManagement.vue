@@ -12,7 +12,20 @@ const chinaData = new EluiChinaAreaDht.ChinaArea().chinaAreaflat
 const positionStore = usePositionStore()
 const authStore = useAuthStore()
 
-const companyId = ref(3)
+// 从 auth store 获取当前企业用户 ID
+const companyId = computed(() => {
+  if (authStore.user?.id) {
+    return parseInt(authStore.user.id)
+  }
+  // 当无法获取企业 ID 时，尝试从 localStorage 获取
+  const storedCompanyId = localStorage.getItem('company_companyId_COMPANY')
+  if (storedCompanyId) {
+    return parseInt(storedCompanyId)
+  }
+  // 如果仍然无法获取，返回 null 并显示错误提示
+  ElMessage.error('未获取到当前登录企业 ID，请重新登录')
+  return null
+})
 
 const dialogVisible = ref(false)
 const dialogTitle = ref('发布岗位')
@@ -78,9 +91,9 @@ const hasSearched = ref(false)
 
 const formatWorkLocation = (item) => {
   const parts = []
-  if (item.province) parts.push(item.province)
-  if (item.city) parts.push(item.city)
-  if (item.district) parts.push(item.district)
+  if (item.province && item.province !== 'None') parts.push(item.province)
+  if (item.city && item.city !== 'None') parts.push(item.city)
+  if (item.district && item.district !== 'None') parts.push(item.district)
   if (item.detailAddress) parts.push(item.detailAddress)
   return parts.join('')
 }
@@ -146,9 +159,19 @@ const getRowStyle = ({ row }) => {
   return {}
 }
 
-onMounted(() => {
-  loadPositions()
-  positionStore.fetchInternshipStatuses(companyId.value)
+onMounted(async () => {
+  loading.value = true
+  if (!companyId.value) {
+    ElMessage.error('未获取到企业 ID，无法加载数据')
+    loading.value = false
+    return
+  }
+  try {
+    await loadPositions()
+    await positionStore.fetchInternshipStatuses(companyId.value)
+  } finally {
+    loading.value = false
+  }
 })
 
 const loadPositions = async () => {
@@ -187,9 +210,9 @@ const handleSearch = async () => {
         remainingQuota: item.remainingQuota || 0,
         status: item.status || 'active',
         publishDate: formatDate(item.publishDate || item.createTime),
-        province: item.province || '',
-        city: item.city || '',
-        district: item.district || '',
+        province: item.province && item.province !== 'None' ? item.province : '',
+        city: item.city && item.city !== 'None' ? item.city : '',
+        district: item.district && item.district !== 'None' ? item.district : '',
         detailAddress: item.detailAddress || '',
         description: item.description || '',
         requirements: item.requirements || '',
@@ -269,15 +292,15 @@ const handleEdit = (row) => {
   dialogType.value = 'edit'
   
   const addressCodes = []
-  if (row.province) {
+  if (row.province && row.province !== 'None') {
     const provinceCode = Object.keys(chinaData).find(code => chinaData[code].label === row.province)
     if (provinceCode) {
       addressCodes.push(provinceCode)
-      if (row.city) {
+      if (row.city && row.city !== 'None') {
         const cityCode = Object.keys(chinaData).find(code => chinaData[code].label === row.city && chinaData[code].parent === provinceCode)
         if (cityCode) {
           addressCodes.push(cityCode)
-          if (row.district) {
+          if (row.district && row.district !== 'None') {
             const districtCode = Object.keys(chinaData).find(code => chinaData[code].label === row.district && chinaData[code].parent === cityCode)
             if (districtCode) {
               addressCodes.push(districtCode)
@@ -292,9 +315,9 @@ const handleEdit = (row) => {
     ...row,
     salaryMin: row.salaryMin || '',
     salaryMax: row.salaryMax || '',
-    province: row.province || '',
-    city: row.city || '',
-    district: row.district || '',
+    province: row.province && row.province !== 'None' ? row.province : '',
+    city: row.city && row.city !== 'None' ? row.city : '',
+    district: row.district && row.district !== 'None' ? row.district : '',
     detailAddress: row.detailAddress || '',
     plannedRecruit: row.plannedRecruit || 1,
     addressCode: addressCodes,
