@@ -1,0 +1,439 @@
+:root {
+  /* ============================================
+     企业级字体规范
+     字体优先级：苹方(中文Mac) > 思源黑体 > 系统默认
+     ============================================ */
+  --font-family-base: 'PingFang SC', 'Source Han Sans SC', 'Noto Sans CJK SC', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  --font-family-mono: 'JetBrains Mono', 'Fira Code', 'Consolas', 'Monaco', monospace;
+  --font-family-display: 'PingFang SC', 'Source Han Sans SC', 'Microsoft YaHei', sans-serif;
+
+  /* ============================================
+     企业级字体大小规范（基于 16px 基准）
+     ============================================ */
+  --font-size-xs: 12px;      /* 辅助文字、标签、小字 */
+  --font-size-sm: 13px;      /* 次要信息 */
+  --font-size-base: 14px;    /* 正文（小）、表格 */
+  --font-size-md: 15px;      /* 正文、按钮、输入框 */
+  --font-size-lg: 16px;      /* 基准字体 */
+  --font-size-xl: 18px;      /* 副标题 */
+  --font-size-2xl: 20px;     /* 标题 h4 */
+  --font-size-3xl: 24px;     /* 标题 h3 */
+  --font-size-4xl: 28px;     /* 标题 h2 */
+  --font-size-5xl: 32px;     /* 标题 h1 */
+
+  /* 全局基础样式 */
+  font-family: var(--font-family-base);
+  line-height: 1.6;
+  font-weight: 400;
+
+  /* 设置为浅色主题，营造青春阳光的感觉 */
+  color-scheme: light;
+  color: #2a4365;
+  background-color: #f8fafc;
+
+  /* 字体渲染优化 */
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+
+  /* 全局字体大小设置 - 企业级标准 */
+  font-size: var(--font-size-lg);
+
+  /* 全局颜色变量 - 企业级标准 */
+  --color-primary: #1890ff;
+  --color-success: #52c41a;
+  --color-info: #13c2c2;
+  --color-danger: #f5222d;
+  --color-warning: #faad14;
+
+  /* 全局圆角变量 */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-full: 9999px;
+
+  /* 全局阴影变量 */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1);
+
+  /* 全局过渡变量 */
+  --transition-normal: 0.3s ease;
+}
+
+a {
+  /* 蓝色链接 */
+  font-weight: 500;
+  color: #3b82f6;
+  text-decoration: none;
+  transition: all 0.2s ease;
+}
+
+a:hover {
+  /* 悬停效果 - 更深的蓝色 */
+  color: #2563eb;
+  text-decoration: underline;
+}
+
+body {
+  margin: 0;
+  display: flex;
+  place-items: center;
+  min-width: 320px;
+  min-height: 100vh;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  /* 蓝色标题 */
+  color: #1e40af;
+  line-height: 1.3;
+  font-weight: 700;
+}
+
+h1 {
+  font-size: var(--font-size-5xl);
+}
+
+h2 {
+  font-size: var(--font-size-4xl);
+}
+
+h3 {
+  font-size: var(--font-size-3xl);
+}
+
+h4 {
+  font-size: var(--font-size-2xl);
+}
+
+h5 {
+  font-size: var(--font-size-xl);
+}
+
+h6 {
+  font-size: var(--font-size-lg);
+}
+
+button {
+  /* 蓝色按钮 */
+  border-radius: 8px;
+  border: 1px solid #93c5fd;
+  padding: 0.6em 1.2em;
+  font-size: 15px;
+  font-weight: 500;
+  font-family: inherit;
+  background-color: #3b82f6;
+  color: white;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 5px rgba(59, 130, 246, 0.2);
+}
+
+button:hover {
+  background-color: #2563eb;
+  border-color: #60a5fa;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 10px rgba(59, 130, 246, 0.3);
+}
+
+button:focus,
+button:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+.card {
+  /* 卡片样式 - 白色背景，蓝色边框 */
+  padding: 2em;
+  background-color: white;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1);
+}
+
+#app {
+  /* 应用容器 */
+  width: 100%;
+  height: 100vh;
+  margin: 0;
+  padding: 0;
+}
+
+/* 绿色强调元素 */
+.primary-accent {
+  color: #10b981;
+}
+
+.bg-primary-accent {
+  background-color: #10b981;
+}
+
+.border-primary-accent {
+  border-color: #10b981;
+}
+
+/* 响应式调整 */
+@media (max-width: 768px) {
+  #app {
+    padding: 1rem;
+  }
+  
+  h1 {
+    font-size: 2em;
+  }
+  
+  h2 {
+    font-size: 1.5em;
+  }
+}
+
+/* 图片懒加载优化样式 */
+img {
+  /* 为所有图片添加基本过渡效果 */
+  transition: opacity 0.3s ease-in-out, transform 0.2s ease;
+}
+
+/* 懒加载图片样式 */
+img[v-lazy-load] {
+  /* 设置默认透明度和最小尺寸 */
+  opacity: 0.6;
+  min-width: 1px;
+  min-height: 1px;
+  background-color: #f1f5f9;
+  /* 确保图片不会导致布局偏移 */
+  aspect-ratio: attr(width) / attr(height);
+}
+
+/* 图片加载完成样式 */
+img.lazy-loaded {
+  /* 加载完成后完全显示 */
+  opacity: 1;
+}
+
+/* 图片加载错误样式 */
+img.lazy-error {
+  /* 加载错误时的样式 */
+  opacity: 0.8;
+  background-color: #fecaca;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #dc2626;
+  font-family: monospace;
+}
+
+/* 为图片添加骨架屏效果 */
+img[v-lazy-load]:not(.lazy-loaded) {
+  position: relative;
+  overflow: hidden;
+}
+
+img[v-lazy-load]:not(.lazy-loaded)::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
+  animation: shimmer 1.5s infinite;
+  pointer-events: none;
+}
+
+@keyframes shimmer {
+  0% {
+    left: -100%;
+  }
+  100% {
+    left: 100%;
+  }
+}
+
+/* 优化图片性能 */
+img {
+  /* 避免图片模糊 */
+  image-rendering: -webkit-optimize-contrast;
+  /* 优化大图片显示 */
+  contain: layout style;
+}
+
+/* 确保图片不会导致布局偏移 */
+@media (prefers-reduced-motion: reduce) {
+  img {
+    transition: none !important;
+  }
+  
+  img[v-lazy-load]:not(.lazy-loaded)::before {
+    animation: none !important;
+  }
+}
+
+/* Element Plus 组件字体大小覆盖 - 企业级标准 */
+.el-button {
+  font-size: var(--font-size-md);
+  font-weight: 500;
+}
+
+/* 修复 Element Plus 虚拟列表 wheel 事件 passive 警告 */
+.el-table__body-wrapper,
+.el-table__body,
+.el-scrollbar__wrap,
+.el-scrollbar__bar,
+.el-virtual-scrollbar,
+.el-select-dropdown__wrap,
+.el-select-dropdown__list,
+.el-popper.is-active,
+.el-dialog__body,
+.el-form-item__content {
+  touch-action: pan-y;
+  overscroll-behavior: contain;
+}
+
+.el-input__inner,
+.el-textarea__inner {
+  font-size: var(--font-size-md);
+}
+
+.el-select-dropdown__item,
+.el-option {
+  font-size: var(--font-size-md);
+}
+
+.el-table {
+  font-size: var(--font-size-base);
+}
+
+.el-table th,
+.el-table td {
+  font-size: var(--font-size-base);
+}
+
+.el-table th {
+  font-weight: 600;
+}
+
+.el-form-item__label {
+  font-size: var(--font-size-md);
+  font-weight: 500;
+}
+
+.el-dialog__title {
+  font-size: var(--font-size-2xl);
+  font-weight: 600;
+}
+
+.el-dialog__body {
+  font-size: var(--font-size-md);
+}
+
+.el-message {
+  font-size: var(--font-size-md);
+}
+
+.el-notification {
+  font-size: var(--font-size-md);
+}
+
+.el-notification__title {
+  font-weight: 600;
+}
+
+.el-menu-item,
+.el-sub-menu__title {
+  font-size: var(--font-size-md);
+}
+
+.el-breadcrumb__item {
+  font-size: var(--font-size-base);
+}
+
+.el-pagination {
+  font-size: var(--font-size-base);
+}
+
+.el-tag {
+  font-size: var(--font-size-sm);
+}
+
+.el-card__header {
+  font-size: var(--font-size-lg);
+  font-weight: 600;
+}
+
+.el-card__body {
+  font-size: var(--font-size-md);
+}
+
+.el-descriptions__label,
+.el-descriptions__content {
+  font-size: var(--font-size-md);
+}
+
+.el-descriptions__label {
+  font-weight: 500;
+}
+
+.el-tabs__item {
+  font-size: var(--font-size-md);
+  font-weight: 500;
+}
+
+.el-dropdown-menu__item {
+  font-size: var(--font-size-base);
+}
+
+/* 全局文本元素字体大小 */
+p, span, div, li, td, th {
+  font-size: var(--font-size-md);
+}
+
+/* 小字说明文字 */
+.small-text {
+  font-size: var(--font-size-sm);
+  color: #64748b;
+}
+
+/* 辅助文字 */
+.helper-text {
+  font-size: var(--font-size-base);
+  color: #64748b;
+}
+
+/* 等宽字体用于代码和数字 */
+.font-mono {
+  font-family: var(--font-family-mono);
+  font-size: 14px;
+}
+
+/* Element Plus el-scrollbar 全局滚动条样式 - 与管理员端一致 */
+.el-scrollbar__wrap {
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+/* 全局统一滚动条样式 - 覆盖所有滚动条 */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f5f7fa;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #c0c4cc;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #909399;
+}

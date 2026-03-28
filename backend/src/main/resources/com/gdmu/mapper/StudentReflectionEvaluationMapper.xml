@@ -1,0 +1,139 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.gdmu.mapper.StudentReflectionEvaluationMapper">
+    
+    <resultMap id="StudentReflectionEvaluationResultMap" type="com.gdmu.entity.StudentReflectionEvaluation">
+        <id property="id" column="id" />
+        <result property="reflectionId" column="reflection_id" />
+        <result property="studentId" column="student_id" />
+        <result property="counselorId" column="counselor_id" />
+        <result property="aiAnalysisId" column="ai_analysis_id" />
+        <result property="scoreDetails" column="score_details" typeHandler="com.gdmu.handler.JsonMapObjectTypeHandler" />
+        <result property="totalScore" column="total_score" />
+        <result property="grade" column="grade" />
+        <result property="teacherComment" column="teacher_comment" />
+        <result property="isAiScoreModified" column="is_ai_score_modified" />
+        <result property="evaluateTime" column="evaluate_time" />
+        <result property="createTime" column="create_time" />
+        <result property="updateTime" column="update_time" />
+        
+        <association property="student" javaType="com.gdmu.entity.StudentUser">
+            <id property="id" column="su_id" />
+            <result property="name" column="su_name" />
+            <result property="studentUserId" column="su_student_user_id" />
+            <result property="grade" column="su_grade" />
+        </association>
+        
+        <association property="counselor" javaType="com.gdmu.entity.TeacherUser">
+            <id property="id" column="tu_id" />
+            <result property="name" column="tu_name" />
+            <result property="teacherUserId" column="tu_teacher_user_id" />
+        </association>
+        
+        <association property="aiAnalysis" javaType="com.gdmu.entity.StudentReflectionAIAnalysis">
+            <id property="id" column="aa_id" />
+            <result property="totalScore" column="aa_total_score" />
+            <result property="grade" column="aa_grade" />
+            <result property="analysisReport" column="aa_analysis_report" />
+        </association>
+    </resultMap>
+    
+    <insert id="insert" parameterType="com.gdmu.entity.StudentReflectionEvaluation" useGeneratedKeys="true" keyProperty="id">
+        insert into student_reflection_evaluation (reflection_id, student_id, counselor_id, ai_analysis_id, score_details, total_score, grade, teacher_comment, is_ai_score_modified, evaluate_time, create_time, update_time)
+        values (#{reflectionId}, #{studentId}, #{counselorId}, #{aiAnalysisId}, #{scoreDetails, typeHandler=com.gdmu.handler.JsonMapObjectTypeHandler}, #{totalScore}, #{grade}, #{teacherComment}, #{isAiScoreModified}, #{evaluateTime}, #{createTime}, #{updateTime})
+    </insert>
+    
+    <select id="findById" resultMap="StudentReflectionEvaluationResultMap">
+        select sre.*, 
+            su.id as su_id, su.name as su_name, su.student_user_id as su_student_user_id, su.grade as su_grade,
+            tu.id as tu_id, tu.name as tu_name, tu.teacher_user_id as tu_teacher_user_id,
+            aa.id as aa_id, aa.total_score as aa_total_score, aa.grade as aa_grade, aa.analysis_report as aa_analysis_report
+        from student_reflection_evaluation sre
+        left join student_users su on sre.student_id = su.id
+        left join teacher_users tu on sre.counselor_id = tu.id
+        left join student_reflection_ai_analysis aa on sre.ai_analysis_id = aa.id
+        where sre.id = #{id}
+    </select>
+    
+    <select id="findByReflectionId" resultMap="StudentReflectionEvaluationResultMap">
+        select sre.*, 
+            su.id as su_id, su.name as su_name, su.student_user_id as su_student_user_id, su.grade as su_grade,
+            tu.id as tu_id, tu.name as tu_name, tu.teacher_user_id as tu_teacher_user_id,
+            aa.id as aa_id, aa.total_score as aa_total_score, aa.grade as aa_grade, aa.analysis_report as aa_analysis_report
+        from student_reflection_evaluation sre
+        left join student_users su on sre.student_id = su.id
+        left join teacher_users tu on sre.counselor_id = tu.id
+        left join student_reflection_ai_analysis aa on sre.ai_analysis_id = aa.id
+        where sre.reflection_id = #{reflectionId}
+    </select>
+    
+    <select id="findByStudentId" resultMap="StudentReflectionEvaluationResultMap">
+        select sre.*, 
+            su.id as su_id, su.name as su_name, su.student_user_id as su_student_user_id, su.grade as su_grade,
+            tu.id as tu_id, tu.name as tu_name, tu.teacher_user_id as tu_teacher_user_id,
+            aa.id as aa_id, aa.total_score as aa_total_score, aa.grade as aa_grade, aa.analysis_report as aa_analysis_report
+        from student_reflection_evaluation sre
+        left join student_users su on sre.student_id = su.id
+        left join teacher_users tu on sre.counselor_id = tu.id
+        left join student_reflection_ai_analysis aa on sre.ai_analysis_id = aa.id
+        where sre.student_id = #{studentId}
+        order by sre.evaluate_time desc
+        limit 1
+    </select>
+    
+    <select id="findByCounselorId" resultMap="StudentReflectionEvaluationResultMap">
+        select sre.*, 
+            su.id as su_id, su.name as su_name, su.student_user_id as su_student_user_id, su.grade as su_grade,
+            tu.id as tu_id, tu.name as tu_name, tu.teacher_user_id as tu_teacher_user_id,
+            aa.id as aa_id, aa.total_score as aa_total_score, aa.grade as aa_grade, aa.analysis_report as aa_analysis_report
+        from student_reflection_evaluation sre
+        left join student_users su on sre.student_id = su.id
+        left join teacher_users tu on sre.counselor_id = tu.id
+        left join student_reflection_ai_analysis aa on sre.ai_analysis_id = aa.id
+        where sre.counselor_id = #{counselorId}
+        order by sre.evaluate_time desc
+    </select>
+    
+    <update id="update" parameterType="com.gdmu.entity.StudentReflectionEvaluation">
+        update student_reflection_evaluation
+        <set>
+            <if test="aiAnalysisId != null">
+                ai_analysis_id = #{aiAnalysisId},
+            </if>
+            <if test="scoreDetails != null">
+                score_details = #{scoreDetails, typeHandler=com.gdmu.handler.JsonMapObjectTypeHandler},
+            </if>
+            <if test="totalScore != null">
+                total_score = #{totalScore},
+            </if>
+            <if test="grade != null">
+                grade = #{grade},
+            </if>
+            <if test="teacherComment != null">
+                teacher_comment = #{teacherComment},
+            </if>
+            <if test="isAiScoreModified != null">
+                is_ai_score_modified = #{isAiScoreModified},
+            </if>
+            <if test="evaluateTime != null">
+                evaluate_time = #{evaluateTime},
+            </if>
+            update_time = #{updateTime}
+        </set>
+        where id = #{id}
+    </update>
+    
+    <delete id="deleteById">
+        delete from student_reflection_evaluation where id = #{id}
+    </delete>
+    
+    <delete id="deleteByReflectionId">
+        delete from student_reflection_evaluation where reflection_id = #{reflectionId}
+    </delete>
+    
+    <select id="countByCounselorId" resultType="int">
+        select count(*) from student_reflection_evaluation where counselor_id = #{counselorId}
+    </select>
+</mapper>

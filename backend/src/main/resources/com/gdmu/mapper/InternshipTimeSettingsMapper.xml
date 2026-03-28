@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.gdmu.mapper.InternshipTimeSettingsMapper">
+    
+    <resultMap id="InternshipTimeSettingsResultMap" type="com.gdmu.entity.InternshipTimeSettings">
+        <id property="id" column="id" />
+        <result property="createTime" column="create_time" />
+        <result property="updateTime" column="update_time" />
+        <result property="creator" column="creator" />
+        <result property="updater" column="updater" />
+        <result property="deleted" column="deleted" />
+        <result property="applicationStartDate" column="application_start_date" />
+        <result property="applicationEndDate" column="application_end_date" />
+        <result property="companyConfirmationDeadline" column="company_confirmation_deadline" />
+        <result property="delayApplicationDeadline" column="delay_application_deadline" />
+        <result property="reportCycle" column="report_cycle" />
+        <result property="startDate" column="start_date" />
+        <result property="endDate" column="end_date" />
+        <result property="reportDeadline" column="report_deadline" />
+        <result property="evaluationDeadline" column="evaluation_deadline" />
+    </resultMap>
+    
+    <insert id="insert" parameterType="com.gdmu.entity.InternshipTimeSettings">
+        insert into internship_time_settings (
+            application_start_date, application_end_date, company_confirmation_deadline,
+            delay_application_deadline, report_cycle,
+            start_date, end_date, report_deadline, evaluation_deadline,
+            create_time, update_time, creator, updater, deleted
+        ) values (
+            #{applicationStartDate}, #{applicationEndDate}, #{companyConfirmationDeadline},
+            #{delayApplicationDeadline}, #{reportCycle},
+            #{startDate}, #{endDate}, #{reportDeadline}, #{evaluationDeadline},
+            NOW(), NOW(), #{creator}, #{updater}, 0
+        )
+    </insert>
+    
+    <select id="findLatest" resultMap="InternshipTimeSettingsResultMap">
+        select * from internship_time_settings where deleted = 0 order by id desc limit 1
+    </select>
+    
+    <update id="update" parameterType="com.gdmu.entity.InternshipTimeSettings">
+        update internship_time_settings
+        <set>
+            <if test="applicationStartDate != null">application_start_date = #{applicationStartDate},</if>
+            <if test="applicationEndDate != null">application_end_date = #{applicationEndDate},</if>
+            <if test="companyConfirmationDeadline != null">company_confirmation_deadline = #{companyConfirmationDeadline},</if>
+            <if test="delayApplicationDeadline != null">delay_application_deadline = #{delayApplicationDeadline},</if>
+            <if test="reportCycle != null">report_cycle = #{reportCycle},</if>
+            <if test="startDate != null">start_date = #{startDate},</if>
+            <if test="endDate != null">end_date = #{endDate},</if>
+            <if test="reportDeadline != null">report_deadline = #{reportDeadline},</if>
+            <if test="evaluationDeadline != null">evaluation_deadline = #{evaluationDeadline},</if>
+            <if test="updater != null">updater = #{updater},</if>
+            update_time = NOW()
+        </set>
+        where id = #{id}
+    </update>
+</mapper>

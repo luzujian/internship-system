@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.gdmu.mapper.InternshipEvaluationDetailMapper">
+    
+    <resultMap id="InternshipEvaluationDetailResultMap" type="com.gdmu.entity.InternshipEvaluationDetail">
+        <id property="id" column="id" />
+        <result property="evaluationId" column="evaluation_id" />
+        <result property="studentId" column="student_id" />
+        <result property="categoryCode" column="category_code" />
+        <result property="categoryName" column="category_name" />
+        <result property="score" column="score" />
+        <result property="weight" column="weight" />
+        <result property="createTime" column="create_time" />
+        <result property="updateTime" column="update_time" />
+        
+        <association property="evaluation" javaType="com.gdmu.entity.InternshipEvaluation">
+            <id property="id" column="ie_id" />
+            <result property="studentId" column="ie_student_id" />
+            <result property="totalScore" column="ie_total_score" />
+            <result property="grade" column="ie_grade" />
+        </association>
+        
+        <association property="student" javaType="com.gdmu.entity.StudentUser">
+            <id property="id" column="su_id" />
+            <result property="name" column="su_name" />
+            <result property="studentId" column="su_student_id" />
+        </association>
+    </resultMap>
+    
+    <insert id="insert" parameterType="com.gdmu.entity.InternshipEvaluationDetail" useGeneratedKeys="true" keyProperty="id">
+        insert into internship_evaluation_detail (evaluation_id, student_id, category_code, category_name, score, weight, create_time, update_time)
+        values (#{evaluationId}, #{studentId}, #{categoryCode}, #{categoryName}, #{score}, #{weight}, #{createTime}, #{updateTime})
+    </insert>
+    
+    <update id="update" parameterType="com.gdmu.entity.InternshipEvaluationDetail">
+        update internship_evaluation_detail
+        <set>
+            <if test="score != null">
+                score = #{score},
+            </if>
+            <if test="weight != null">
+                weight = #{weight},
+            </if>
+            update_time = #{updateTime}
+        </set>
+        where id = #{id}
+    </update>
+    
+    <delete id="deleteById">
+        delete from internship_evaluation_detail where id = #{id}
+    </delete>
+    
+    <delete id="deleteByEvaluationId">
+        delete from internship_evaluation_detail where evaluation_id = #{evaluationId}
+    </delete>
+    
+    <delete id="deleteByStudentId">
+        delete from internship_evaluation_detail where student_id = #{studentId}
+    </delete>
+    
+    <delete id="deleteByEvaluationIdAndCategoryCode">
+        delete from internship_evaluation_detail where evaluation_id = #{evaluationId} and category_code = #{categoryCode}
+    </delete>
+    
+    <select id="findById" resultMap="InternshipEvaluationDetailResultMap">
+        select 
+            ied.*,
+            ie.id as ie_id, ie.student_id as ie_student_id, ie.total_score as ie_total_score, ie.grade as ie_grade,
+            su.id as su_id, su.name as su_name, su.student_user_id as su_student_id
+        from internship_evaluation_detail ied
+        left join internship_evaluation ie on ied.evaluation_id = ie.id
+        left join student_users su on ied.student_id = su.id
+        where ied.id = #{id}
+    </select>
+    
+    <select id="findByEvaluationId" resultMap="InternshipEvaluationDetailResultMap">
+        select 
+            ied.*,
+            ie.id as ie_id, ie.student_id as ie_student_id, ie.total_score as ie_total_score, ie.grade as ie_grade,
+            su.id as su_id, su.name as su_name, su.student_user_id as su_student_id
+        from internship_evaluation_detail ied
+        left join internship_evaluation ie on ied.evaluation_id = ie.id
+        left join student_users su on ied.student_id = su.id
+        where ied.evaluation_id = #{evaluationId}
+        order by ied.id
+    </select>
+    
+    <select id="findByStudentId" resultMap="InternshipEvaluationDetailResultMap">
+        select 
+            ied.*,
+            ie.id as ie_id, ie.student_id as ie_student_id, ie.total_score as ie_total_score, ie.grade as ie_grade,
+            su.id as su_id, su.name as su_name, su.student_user_id as su_student_id
+        from internship_evaluation_detail ied
+        left join internship_evaluation ie on ied.evaluation_id = ie.id
+        left join student_users su on ied.student_id = su.id
+        where ied.student_id = #{studentId}
+        order by ied.id
+    </select>
+    
+    <insert id="batchInsert" parameterType="java.util.List">
+        insert into internship_evaluation_detail (evaluation_id, student_id, category_code, category_name, score, weight, create_time, update_time)
+        values
+        <foreach collection="details" item="detail" separator=",">
+            (#{detail.evaluationId}, #{detail.studentId}, #{detail.categoryCode}, #{detail.categoryName}, #{detail.score}, #{detail.weight}, #{detail.createTime}, #{detail.updateTime})
+        </foreach>
+    </insert>
+</mapper>

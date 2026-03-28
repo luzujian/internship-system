@@ -1,0 +1,37 @@
+{
+  "name": "frontend",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@element-plus/icons-vue": "^2.3.2",
+    "@tiptap/starter-kit": "^2.4.0",
+    "@tiptap/vue-3": "^2.4.0",
+    "axios": "^1.12.2",
+    "echarts": "^5.4.3",
+    "element-plus": "^2.11.4",
+    "elui-china-area-dht": "^1.0.0",
+    "html2pdf.js": "^0.10.1",
+    "jszip": "^3.10.1",
+    "mitt": "^3.0.1",
+    "pinia": "^2.2.6",
+    "vue": "^3.5.21",
+    "vue-router": "^4.5.1",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^6.0.4",
+    "ali-oss": "^6.23.0",
+    "typescript": "^5.9.3",
+    "vite": "^7.1.7",
+    "vue-tsc": "^3.2.5"
+  },
+  "overrides": {
+    "gifsicle": {}
+  }
+}

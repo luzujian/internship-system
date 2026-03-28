@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.gdmu.mapper.PositionViewRecordMapper">
+
+    <insert id="insert" parameterType="com.gdmu.entity.PositionViewRecord">
+        INSERT INTO position_view_record (position_id, student_id, view_time)
+        VALUES (#{positionId}, #{studentId}, #{viewTime})
+    </insert>
+
+    <select id="existsByPositionIdAndStudentId" resultType="int">
+        SELECT COUNT(*) FROM position_view_record
+        WHERE position_id = #{positionId} AND student_id = #{studentId}
+    </select>
+
+    <delete id="deleteByPositionIdAndStudentId">
+        DELETE FROM position_view_record
+        WHERE position_id = #{positionId} AND student_id = #{studentId}
+    </delete>
+
+</mapper>

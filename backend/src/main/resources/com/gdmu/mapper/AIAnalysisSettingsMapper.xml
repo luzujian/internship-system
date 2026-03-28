@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.gdmu.mapper.AIAnalysisSettingsMapper">
+    
+    <resultMap id="AIAnalysisSettingsResultMap" type="com.gdmu.entity.AIAnalysisSettings">
+        <id property="id" column="id" />
+        <result property="createTime" column="create_time" />
+        <result property="updateTime" column="update_time" />
+        <result property="creator" column="creator" />
+        <result property="updater" column="updater" />
+        <result property="deleted" column="deleted" />
+        <result property="enableKeywordLibrary" column="enable_keyword_library" />
+        <result property="enableScoringRules" column="enable_scoring_rules" />
+    </resultMap>
+    
+    <insert id="insert" parameterType="com.gdmu.entity.AIAnalysisSettings">
+        insert into ai_analysis_settings (
+            enable_keyword_library, enable_scoring_rules,
+            create_time, update_time, creator, updater, deleted
+        ) values (
+            #{enableKeywordLibrary}, #{enableScoringRules},
+            NOW(), NOW(), #{creator}, #{updater}, 0
+        )
+    </insert>
+    
+    <select id="findLatest" resultMap="AIAnalysisSettingsResultMap">
+        select * from ai_analysis_settings where deleted = 0 order by id desc limit 1
+    </select>
+    
+    <update id="update" parameterType="com.gdmu.entity.AIAnalysisSettings">
+        update ai_analysis_settings
+        <set>
+            <if test="enableKeywordLibrary != null">enable_keyword_library = #{enableKeywordLibrary},</if>
+            <if test="enableScoringRules != null">enable_scoring_rules = #{enableScoringRules},</if>
+            <if test="updater != null">updater = #{updater},</if>
+            update_time = NOW()
+        </set>
+        where id = #{id}
+    </update>
+</mapper>

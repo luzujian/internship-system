@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.gdmu.mapper.CounselorAISettingsMapper">
+    
+    <resultMap id="CounselorAISettingsResultMap" type="com.gdmu.entity.CounselorAISettings">
+        <id property="id" column="id" />
+        <result property="counselorId" column="counselor_id" />
+        <result property="enableAiScoring" column="enable_ai_scoring" />
+        <result property="aiModelCode" column="ai_model_code" />
+        <result property="createTime" column="create_time" />
+        <result property="updateTime" column="update_time" />
+        
+        <association property="counselor" javaType="com.gdmu.entity.TeacherUser">
+            <id property="id" column="tu_id" />
+            <result property="name" column="tu_name" />
+            <result property="teacherUserId" column="tu_teacher_user_id" />
+            <result property="teacherType" column="tu_teacher_type" />
+        </association>
+    </resultMap>
+    
+    <insert id="insert" parameterType="com.gdmu.entity.CounselorAISettings" useGeneratedKeys="true" keyProperty="id">
+        insert into counselor_ai_settings (counselor_id, enable_ai_scoring, ai_model_code, create_time, update_time)
+        values (#{counselorId}, #{enableAiScoring}, #{aiModelCode}, #{createTime}, #{updateTime})
+    </insert>
+    
+    <select id="findById" resultMap="CounselorAISettingsResultMap">
+        select cas.*, tu.id as tu_id, tu.name as tu_name, tu.teacher_user_id as tu_teacher_user_id, tu.teacher_type as tu_teacher_type
+        from counselor_ai_settings cas
+        left join teacher_users tu on cas.counselor_id = tu.id
+        where cas.id = #{id}
+    </select>
+    
+    <select id="findByCounselorId" resultMap="CounselorAISettingsResultMap">
+        select cas.*, tu.id as tu_id, tu.name as tu_name, tu.teacher_user_id as tu_teacher_user_id, tu.teacher_type as tu_teacher_type
+        from counselor_ai_settings cas
+        left join teacher_users tu on cas.counselor_id = tu.id
+        where cas.counselor_id = #{counselorId}
+    </select>
+    
+    <update id="update" parameterType="com.gdmu.entity.CounselorAISettings">
+        update counselor_ai_settings
+        <set>
+            <if test="enableAiScoring != null">
+                enable_ai_scoring = #{enableAiScoring},
+            </if>
+            <if test="aiModelCode != null">
+                ai_model_code = #{aiModelCode},
+            </if>
+            update_time = #{updateTime}
+        </set>
+        where id = #{id}
+    </update>
+    
+    <delete id="deleteById">
+        delete from counselor_ai_settings where id = #{id}
+    </delete>
+    
+    <delete id="deleteByCounselorId">
+        delete from counselor_ai_settings where counselor_id = #{counselorId}
+    </delete>
+</mapper>

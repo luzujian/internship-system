@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.gdmu.mapper.ResourceMapper">
+    
+    <resultMap id="BaseResultMap" type="com.gdmu.entity.Resource">
+        <id column="id" property="id"/>
+        <result column="name" property="name"/>
+        <result column="type" property="type"/>
+        <result column="description" property="description"/>
+        <result column="file_url" property="fileUrl"/>
+        <result column="file_size" property="fileSize"/>
+        <result column="download_count" property="downloadCount"/>
+        <result column="uploader_id" property="uploaderId"/>
+        <result column="uploader_name" property="uploaderName"/>
+        <result column="uploader_role" property="uploaderRole"/>
+        <result column="content" property="content"/>
+        <result column="status" property="status"/>
+        <result column="create_time" property="createTime"/>
+        <result column="update_time" property="updateTime"/>
+    </resultMap>
+    
+    <insert id="insert" parameterType="com.gdmu.entity.Resource" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO learning_resource (name, type, description, file_url, file_size, download_count, uploader_id, uploader_name, uploader_role, content, status)
+        VALUES (#{name}, #{type}, #{description}, #{fileUrl}, #{fileSize}, #{downloadCount}, #{uploaderId}, #{uploaderName}, #{uploaderRole}, #{content}, #{status})
+    </insert>
+    
+    <update id="updateById" parameterType="com.gdmu.entity.Resource">
+        UPDATE learning_resource
+        SET name = #{name},
+            type = #{type},
+            description = #{description},
+            file_url = #{fileUrl},
+            file_size = #{fileSize},
+            uploader_name = #{uploaderName},
+            uploader_role = #{uploaderRole},
+            content = #{content},
+            status = #{status}
+        WHERE id = #{id}
+    </update>
+    
+    <delete id="deleteById">
+        DELETE FROM learning_resource WHERE id = #{id}
+    </delete>
+    
+    <select id="selectById" resultMap="BaseResultMap">
+        SELECT * FROM learning_resource WHERE id = #{id}
+    </select>
+    
+    <select id="selectList" resultMap="BaseResultMap">
+        SELECT * FROM learning_resource ORDER BY create_time DESC
+    </select>
+    
+    <select id="selectByType" resultMap="BaseResultMap">
+        SELECT * FROM learning_resource WHERE type = #{type} ORDER BY create_time DESC
+    </select>
+    
+    <select id="selectByStatus" resultMap="BaseResultMap">
+        SELECT * FROM learning_resource WHERE status = #{status} ORDER BY create_time DESC
+    </select>
+    
+    <select id="selectByTypeAndStatus" resultMap="BaseResultMap">
+        SELECT * FROM learning_resource 
+        WHERE type = #{type} AND status = #{status}
+        ORDER BY create_time DESC
+    </select>
+    
+    <select id="searchByKeyword" resultMap="BaseResultMap">
+        SELECT * FROM learning_resource 
+        WHERE status = 'APPROVED'
+        AND (name LIKE CONCAT('%', #{keyword}, '%') OR description LIKE CONCAT('%', #{keyword}, '%'))
+        ORDER BY create_time DESC
+    </select>
+    
+    <select id="selectByTypeAndKeyword" resultMap="BaseResultMap">
+        SELECT * FROM learning_resource 
+        WHERE status = 'APPROVED'
+        AND type = #{type}
+        AND (name LIKE CONCAT('%', #{keyword}, '%') OR description LIKE CONCAT('%', #{keyword}, '%'))
+        ORDER BY create_time DESC
+    </select>
+    
+    <select id="selectPage" resultMap="BaseResultMap">
+        SELECT * FROM learning_resource 
+        WHERE status = 'APPROVED'
+        ORDER BY create_time DESC
+        LIMIT #{offset}, #{limit}
+    </select>
+    
+    <select id="selectPageByType" resultMap="BaseResultMap">
+        SELECT * FROM learning_resource 
+        WHERE status = 'APPROVED'
+        <if test="type != null and type != ''">
+            AND type = #{type}
+        </if>
+        ORDER BY create_time DESC
+        LIMIT #{offset}, #{limit}
+    </select>
+    
+    <select id="countByType" resultType="int">
+        SELECT COUNT(*) FROM learning_resource WHERE type = #{type}
+    </select>
+    
+    <select id="countByStatus" resultType="int">
+        SELECT COUNT(*) FROM learning_resource WHERE status = #{status}
+    </select>
+    
+    <select id="countByTypeAndStatus" resultType="int">
+        SELECT COUNT(*) FROM learning_resource 
+        WHERE type = #{type} AND status = #{status}
+    </select>
+    
+    <select id="countByTypeAndKeyword" resultType="int">
+        SELECT COUNT(*) FROM learning_resource 
+        WHERE status = 'APPROVED'
+        <if test="type != null and type != ''">
+            AND type = #{type}
+        </if>
+        <if test="keyword != null and keyword != ''">
+            AND (name LIKE CONCAT('%', #{keyword}, '%') OR description LIKE CONCAT('%', #{keyword}, '%'))
+        </if>
+    </select>
+    
+    <update id="incrementDownloadCount">
+        UPDATE learning_resource 
+        SET download_count = download_count + 1 
+        WHERE id = #{id}
+    </update>
+</mapper>

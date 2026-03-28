@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.gdmu.mapper.ChatMessageMapper">
+    <resultMap id="BaseResultMap" type="com.gdmu.entity.ChatMessage">
+        <id column="id" property="id" jdbcType="BIGINT" />
+        <result column="chat_id" property="chatId" jdbcType="BIGINT" />
+        <result column="sender_id" property="senderId" jdbcType="BIGINT" />
+        <result column="sender_type" property="senderType" jdbcType="INTEGER" />
+        <result column="sender_name" property="senderName" jdbcType="VARCHAR" />
+        <result column="type" property="type" jdbcType="INTEGER" />
+        <result column="content" property="content" jdbcType="VARCHAR" />
+        <result column="status" property="status" jdbcType="INTEGER" />
+        <result column="send_time" property="sendTime" jdbcType="TIMESTAMP" />
+        <result column="create_time" property="createTime" jdbcType="TIMESTAMP" />
+        <result column="read_time" property="readTime" jdbcType="TIMESTAMP" />
+    </resultMap>
+    
+    <insert id="insert" parameterType="com.gdmu.entity.ChatMessage" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO chat_message (
+            chat_id, sender_id, sender_type, sender_name, type, 
+            content, status, send_time, create_time, read_time
+        ) VALUES (
+            #{chatId,jdbcType=BIGINT}, #{senderId,jdbcType=BIGINT}, #{senderType,jdbcType=INTEGER}, 
+            #{senderName,jdbcType=VARCHAR}, #{type,jdbcType=INTEGER}, #{content,jdbcType=VARCHAR}, 
+            #{status,jdbcType=INTEGER}, #{sendTime,jdbcType=TIMESTAMP}, #{createTime,jdbcType=TIMESTAMP}, 
+            #{readTime,jdbcType=TIMESTAMP}
+        )
+    </insert>
+    
+    <update id="updateStatus" parameterType="java.util.Map">
+        UPDATE chat_message SET
+            status = #{status,jdbcType=INTEGER},
+            read_time = #{readTime,jdbcType=TIMESTAMP}
+        WHERE id = #{id,jdbcType=BIGINT}
+    </update>
+    
+    <select id="findById" parameterType="java.lang.Long" resultMap="BaseResultMap">
+        SELECT * FROM chat_message WHERE id = #{id,jdbcType=BIGINT}
+    </select>
+    
+    <select id="findByChatId" parameterType="java.util.Map" resultMap="BaseResultMap">
+        SELECT * FROM chat_message 
+        WHERE chat_id = #{chatId,jdbcType=BIGINT}
+        <if test="lastMessageId != null and lastMessageId > 0">
+            AND id &lt; #{lastMessageId,jdbcType=BIGINT}
+        </if>
+        ORDER BY id DESC
+        LIMIT #{pageSize,jdbcType=INTEGER}
+    </select>
+    
+    <select id="countUnread" parameterType="java.util.Map" resultType="java.lang.Integer">
+        SELECT COUNT(*) FROM chat_message cm
+        JOIN chat_member chatMember ON cm.chat_id = chatMember.chat_id
+        WHERE chatMember.member_id = #{userId,jdbcType=BIGINT}
+        AND chatMember.member_type = #{userType,jdbcType=INTEGER}
+        AND cm.sender_id != #{userId,jdbcType=BIGINT}
+        AND cm.id &gt; COALESCE(chatMember.last_read_message_id, 0)
+    </select>
+    
+    <update id="batchUpdateReadStatus" parameterType="java.util.Map">
+        UPDATE chat_message SET
+            status = 3,
+            read_time = #{readTime,jdbcType=TIMESTAMP}
+        WHERE chat_id = #{chatId,jdbcType=BIGINT}
+        AND sender_id != #{userId,jdbcType=BIGINT}
+        <if test="lastReadMessageId != null">
+            AND id &gt; #{lastReadMessageId,jdbcType=BIGINT}
+        </if>
+    </update>
+</mapper>

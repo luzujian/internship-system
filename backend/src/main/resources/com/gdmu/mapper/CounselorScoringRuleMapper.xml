@@ -1,0 +1,146 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.gdmu.mapper.CounselorScoringRuleMapper">
+    
+    <resultMap id="CounselorScoringRuleResultMap" type="com.gdmu.entity.CounselorScoringRule">
+        <id property="id" column="id" />
+        <result property="counselorId" column="counselor_id" />
+        <result property="ruleName" column="rule_name" />
+        <result property="ruleCode" column="rule_code" />
+        <result property="category" column="category" />
+        <result property="weight" column="weight" />
+        <result property="minScore" column="min_score" />
+        <result property="maxScore" column="max_score" />
+        <result property="description" column="description" />
+        <result property="evaluationCriteria" column="evaluation_criteria" />
+        <result property="sortOrder" column="sort_order" />
+        <result property="status" column="status" />
+        <result property="createTime" column="create_time" />
+        <result property="updateTime" column="update_time" />
+        <result property="deleted" column="deleted" />
+        
+        <association property="counselor" javaType="com.gdmu.entity.TeacherUser">
+            <id property="id" column="tu_id" />
+            <result property="name" column="tu_name" />
+            <result property="teacherUserId" column="tu_teacher_user_id" />
+        </association>
+    </resultMap>
+    
+    <insert id="insert" parameterType="com.gdmu.entity.CounselorScoringRule" useGeneratedKeys="true" keyProperty="id">
+        insert into counselor_scoring_rule (counselor_id, rule_name, rule_code, category, weight, min_score, max_score, description, evaluation_criteria, sort_order, status, create_time, update_time, deleted)
+        values (#{counselorId}, #{ruleName}, #{ruleCode}, #{category}, #{weight}, #{minScore}, #{maxScore}, #{description}, #{evaluationCriteria}, #{sortOrder}, #{status}, #{createTime}, #{updateTime}, #{deleted})
+    </insert>
+    
+    <insert id="batchInsert" parameterType="java.util.List">
+        insert into counselor_scoring_rule (counselor_id, rule_name, rule_code, category, weight, min_score, max_score, description, evaluation_criteria, sort_order, status, create_time, update_time, deleted)
+        values
+        <foreach collection="rules" item="rule" separator=",">
+            (#{rule.counselorId}, #{rule.ruleName}, #{rule.ruleCode}, #{rule.category}, #{rule.weight}, #{rule.minScore}, #{rule.maxScore}, #{rule.description}, #{rule.evaluationCriteria}, #{rule.sortOrder}, #{rule.status}, #{rule.createTime}, #{rule.updateTime}, #{rule.deleted})
+        </foreach>
+    </insert>
+    
+    <select id="findById" resultMap="CounselorScoringRuleResultMap">
+        select csr.*, tu.id as tu_id, tu.name as tu_name, tu.teacher_user_id as tu_teacher_user_id
+        from counselor_scoring_rule csr
+        left join teacher_users tu on csr.counselor_id = tu.id
+        where csr.id = #{id}
+    </select>
+    
+    <select id="findByCounselorId" resultMap="CounselorScoringRuleResultMap">
+        select csr.*, tu.id as tu_id, tu.name as tu_name, tu.teacher_user_id as tu_teacher_user_id
+        from counselor_scoring_rule csr
+        left join teacher_users tu on csr.counselor_id = tu.id
+        where csr.counselor_id = #{counselorId} and csr.deleted = 0
+        order by csr.sort_order asc
+    </select>
+    
+    <select id="findByCounselorIdAndCategory" resultMap="CounselorScoringRuleResultMap">
+        select csr.*, tu.id as tu_id, tu.name as tu_name, tu.teacher_user_id as tu_teacher_user_id
+        from counselor_scoring_rule csr
+        left join teacher_users tu on csr.counselor_id = tu.id
+        where csr.counselor_id = #{counselorId} and csr.category = #{category} and csr.deleted = 0
+        order by csr.sort_order asc
+    </select>
+    
+    <select id="findActiveByCounselorId" resultMap="CounselorScoringRuleResultMap">
+        select csr.*, tu.id as tu_id, tu.name as tu_name, tu.teacher_user_id as tu_teacher_user_id
+        from counselor_scoring_rule csr
+        left join teacher_users tu on csr.counselor_id = tu.id
+        where csr.counselor_id = #{counselorId} and csr.status = 1 and csr.deleted = 0
+        order by csr.sort_order asc
+    </select>
+    
+    <select id="findCategoriesByCounselorId" resultType="java.lang.String">
+        select distinct category from counselor_scoring_rule 
+        where counselor_id = #{counselorId} and deleted = 0 and category is not null
+        order by category asc
+    </select>
+    
+    <update id="update" parameterType="com.gdmu.entity.CounselorScoringRule">
+        update counselor_scoring_rule
+        <set>
+            <if test="ruleName != null">
+                rule_name = #{ruleName},
+            </if>
+            <if test="ruleCode != null">
+                rule_code = #{ruleCode},
+            </if>
+            <if test="category != null">
+                category = #{category},
+            </if>
+            <if test="weight != null">
+                weight = #{weight},
+            </if>
+            <if test="minScore != null">
+                min_score = #{minScore},
+            </if>
+            <if test="maxScore != null">
+                max_score = #{maxScore},
+            </if>
+            <if test="description != null">
+                description = #{description},
+            </if>
+            <if test="evaluationCriteria != null">
+                evaluation_criteria = #{evaluationCriteria},
+            </if>
+            <if test="sortOrder != null">
+                sort_order = #{sortOrder},
+            </if>
+            <if test="status != null">
+                status = #{status},
+            </if>
+            <if test="deleted != null">
+                deleted = #{deleted},
+            </if>
+            update_time = #{updateTime}
+        </set>
+        where id = #{id}
+    </update>
+    
+    <delete id="deleteById">
+        update counselor_scoring_rule set deleted = 1 where id = #{id}
+    </delete>
+    
+    <delete id="deleteByCounselorId">
+        update counselor_scoring_rule set deleted = 1 where counselor_id = #{counselorId}
+    </delete>
+    
+    <delete id="deleteByCounselorIdAndCategory">
+        update counselor_scoring_rule set deleted = 1 
+        where counselor_id = #{counselorId} 
+        <choose>
+            <when test="category != null">
+                and category = #{category}
+            </when>
+            <otherwise>
+                and category is null
+            </otherwise>
+        </choose>
+    </delete>
+    
+    <select id="countByCounselorId" resultType="int">
+        select count(*) from counselor_scoring_rule where counselor_id = #{counselorId} and deleted = 0
+    </select>
+</mapper>

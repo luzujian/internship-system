@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.gdmu.mapper.InternshipAIAnalysisMapper">
+    
+    <resultMap id="InternshipAIAnalysisResultMap" type="com.gdmu.entity.InternshipAIAnalysis">
+        <id property="id" column="id" />
+        <result property="studentId" column="student_id" />
+        <result property="overallAnalysis" column="overall_analysis" />
+        <result property="keywords" column="keywords" typeHandler="com.gdmu.handler.JsonListTypeHandler" />
+        <result property="sentimentPositive" column="sentiment_positive" />
+        <result property="sentimentNeutral" column="sentiment_neutral" />
+        <result property="sentimentNegative" column="sentiment_negative" />
+        <result property="suggestedAttitudeScore" column="suggested_attitude_score" />
+        <result property="suggestedPerformanceScore" column="suggested_performance_score" />
+        <result property="suggestedReportScore" column="suggested_report_score" />
+        <result property="analysisTime" column="analysis_time" />
+        <result property="updateTime" column="update_time" />
+        
+        <association property="student" javaType="com.gdmu.entity.StudentUser">
+            <id property="id" column="su_id" />
+            <result property="name" column="su_name" />
+            <result property="studentId" column="su_student_id" />
+            <result property="gender" column="su_gender" />
+            <result property="grade" column="su_grade" />
+            <result property="majorId" column="su_major_id" />
+            <result property="classId" column="su_class_id" />
+        </association>
+    </resultMap>
+    
+    <insert id="insert" parameterType="com.gdmu.entity.InternshipAIAnalysis" useGeneratedKeys="true" keyProperty="id">
+        insert into internship_ai_analysis (student_id, overall_analysis, keywords, sentiment_positive, sentiment_neutral, sentiment_negative, suggested_attitude_score, suggested_performance_score, suggested_report_score, analysis_time, update_time)
+        values (#{studentId}, #{overallAnalysis}, #{keywords, typeHandler=com.gdmu.handler.JsonListTypeHandler}, #{sentimentPositive}, #{sentimentNeutral}, #{sentimentNegative}, #{suggestedAttitudeScore}, #{suggestedPerformanceScore}, #{suggestedReportScore}, #{analysisTime}, #{updateTime})
+    </insert>
+    
+    <select id="findById" resultMap="InternshipAIAnalysisResultMap">
+        select 
+            ia.*,
+            su.id as su_id, su.name as su_name, su.student_user_id as su_student_id, 
+            su.gender as su_gender, su.grade as su_grade, su.major_id as su_major_id, su.class_id as su_class_id
+        from internship_ai_analysis ia
+        left join student_users su on ia.student_id = su.id
+        where ia.id = #{id}
+    </select>
+    
+    <select id="findByStudentId" resultMap="InternshipAIAnalysisResultMap">
+        select 
+            ia.*,
+            su.id as su_id, su.name as su_name, su.student_user_id as su_student_id, 
+            su.gender as su_gender, su.grade as su_grade, su.major_id as su_major_id, su.class_id as su_class_id
+        from internship_ai_analysis ia
+        left join student_users su on ia.student_id = su.id
+        where ia.student_id = #{studentId}
+    </select>
+    
+    <update id="update" parameterType="com.gdmu.entity.InternshipAIAnalysis">
+        update internship_ai_analysis
+        <set>
+            <if test="overallAnalysis != null">
+                overall_analysis = #{overallAnalysis},
+            </if>
+            <if test="keywords != null">
+                keywords = #{keywords, typeHandler=com.gdmu.handler.JsonListTypeHandler},
+            </if>
+            <if test="sentimentPositive != null">
+                sentiment_positive = #{sentimentPositive},
+            </if>
+            <if test="sentimentNeutral != null">
+                sentiment_neutral = #{sentimentNeutral},
+            </if>
+            <if test="sentimentNegative != null">
+                sentiment_negative = #{sentimentNegative},
+            </if>
+            <if test="suggestedAttitudeScore != null">
+                suggested_attitude_score = #{suggestedAttitudeScore},
+            </if>
+            <if test="suggestedPerformanceScore != null">
+                suggested_performance_score = #{suggestedPerformanceScore},
+            </if>
+            <if test="suggestedReportScore != null">
+                suggested_report_score = #{suggestedReportScore},
+            </if>
+            update_time = #{updateTime}
+        </set>
+        where id = #{id}
+    </update>
+    
+    <delete id="deleteById">
+        delete from internship_ai_analysis where id = #{id}
+    </delete>
+    
+    <delete id="deleteByStudentId">
+        delete from internship_ai_analysis where student_id = #{studentId}
+    </delete>
+    
+    <select id="findAll" resultMap="InternshipAIAnalysisResultMap">
+        select 
+            ia.*,
+            su.id as su_id, su.name as su_name, su.student_user_id as su_student_id, 
+            su.gender as su_gender, su.grade as su_grade, su.major_id as su_major_id, su.class_id as su_class_id
+        from internship_ai_analysis ia
+        left join student_users su on ia.student_id = su.id
+        order by ia.analysis_time desc
+    </select>
+</mapper>

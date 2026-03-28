@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.gdmu.mapper.StudentJobApplicationMapper">
+
+    <resultMap id="BaseResultMap" type="com.gdmu.entity.StudentJobApplication">
+        <id column="id" property="id"/>
+        <result column="student_id" property="studentId"/>
+        <result column="position_id" property="positionId"/>
+        <result column="company_id" property="companyId"/>
+        <result column="position_name" property="positionName"/>
+        <result column="company_name" property="companyName"/>
+        <result column="location" property="location"/>
+        <result column="salary" property="salary"/>
+        <result column="duration" property="duration"/>
+        <result column="cover_letter" property="coverLetter"/>
+        <result column="resume_url" property="resumeUrl"/>
+        <result column="student_name" property="studentName"/>
+        <result column="student_no" property="studentNo"/>
+        <result column="phone" property="phone"/>
+        <result column="email" property="email"/>
+        <result column="major" property="major"/>
+        <result column="grade" property="grade"/>
+        <result column="self_introduction" property="selfIntroduction"/>
+        <result column="status" property="status"/>
+        <result column="reject_reason" property="rejectReason"/>
+        <result column="apply_date" property="applyDate"/>
+        <result column="create_time" property="createTime"/>
+        <result column="update_time" property="updateTime"/>
+        <!-- Position 表关联字段 -->
+        <result column="position_type" property="type"/>
+        <result column="description" property="description"/>
+        <result column="requirements" property="requirements"/>
+        <result column="view_count" property="viewCount"/>
+        <result column="publish_date" property="publishTime"/>
+        <!-- CompanyUser 表关联字段 - 联系人信息 -->
+        <result column="contact_person" property="contactPerson"/>
+        <result column="contact_phone" property="contactPhone"/>
+        <result column="contact_email" property="contactEmail"/>
+    </resultMap>
+
+    <select id="findByStudentId" resultMap="BaseResultMap">
+        SELECT sja.*, p.position_type, p.description, p.requirements, p.view_count, p.publish_date,
+               cu.contact_person, cu.contact_phone, cu.contact_email
+        FROM student_job_application sja
+        LEFT JOIN position p ON sja.position_id = p.id
+        LEFT JOIN company_users cu ON sja.company_id = cu.id
+        WHERE sja.student_id = #{studentId}
+        ORDER BY sja.create_time DESC
+    </select>
+
+    <select id="findById" resultMap="BaseResultMap">
+        SELECT sja.*, p.position_type, p.description, p.requirements, p.view_count, p.publish_date,
+               cu.contact_person, cu.contact_phone, cu.contact_email
+        FROM student_job_application sja
+        LEFT JOIN position p ON sja.position_id = p.id
+        LEFT JOIN company_users cu ON sja.company_id = cu.id
+        WHERE sja.id = #{id}
+    </select>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO student_job_application
+        (student_id, position_id, company_id, position_name, company_name, location, salary, duration,
+         cover_letter, resume_url, student_name, student_no, phone, email, major, grade,
+         self_introduction, status, apply_date, create_time, update_time)
+        VALUES
+        (#{studentId}, #{positionId}, #{companyId}, #{positionName}, #{companyName}, #{location}, #{salary}, #{duration},
+         #{coverLetter}, #{resumeUrl}, #{studentName}, #{studentNo}, #{phone}, #{email}, #{major}, #{grade},
+         #{selfIntroduction}, #{status}, #{applyDate}, NOW(), NOW())
+    </insert>
+
+    <update id="update">
+        UPDATE student_job_application
+        SET status = #{status},
+            reject_reason = #{rejectReason},
+            update_time = NOW()
+        WHERE id = #{id}
+    </update>
+
+    <delete id="deleteById">
+        DELETE FROM student_job_application WHERE id = #{id}
+    </delete>
+
+    <select id="findByCompanyId" resultMap="BaseResultMap">
+        SELECT sja.*, p.position_type, p.description, p.requirements, p.view_count, p.publish_date,
+               cu.contact_person, cu.contact_phone, cu.contact_email
+        FROM student_job_application sja
+        LEFT JOIN position p ON sja.position_id = p.id
+        LEFT JOIN company_users cu ON sja.company_id = cu.id
+        WHERE sja.company_id = #{companyId}
+        ORDER BY sja.create_time DESC
+    </select>
+
+    <!-- 获取学生首页统计数据（聚合查询，单次DB访问代替原来的4次独立查询） -->
+    <select id="getStudentHomeStats" resultType="map">
+        SELECT
+            (SELECT COUNT(*) FROM student_job_application WHERE student_id = #{studentId}) as applied,
+            (SELECT COUNT(*) FROM interview_invitation WHERE student_id = #{studentId}) as interviewInvites,
+            (SELECT COUNT(*) FROM internship_confirmation_record WHERE student_id = #{studentId}) as confirmedRecords,
+            (SELECT COUNT(*) FROM internship_reflection WHERE student_id = #{studentId} AND status != 0) as submittedReflections
+    </select>
+
+</mapper>

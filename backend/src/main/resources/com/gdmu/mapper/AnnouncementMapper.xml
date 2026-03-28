@@ -1,0 +1,243 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.gdmu.mapper.AnnouncementMapper">
+    
+    <!-- 定义通知公告结果映射 -->
+    <resultMap id="AnnouncementResultMap" type="com.gdmu.entity.Announcement">
+        <id property="id" column="id" />
+        <result property="title" column="title" />
+        <result property="content" column="content" />
+        <result property="publisher" column="publisher" />
+        <result property="publisherRole" column="publisher_role" />
+        <result property="publishTime" column="publish_time" />
+        <result property="validFrom" column="valid_from" />
+        <result property="validTo" column="valid_to" />
+        <result property="targetType" column="target_type" />
+        <result property="targetValue" column="target_value" />
+        <result property="priority" column="priority" />
+        <result property="attachments" column="attachments" />
+        <result property="status" column="status" />
+        <result property="readCount" column="read_count" />
+        <result property="isRead" column="is_read" />
+        <result property="createTime" column="create_time" />
+        <result property="updateTime" column="update_time" />
+    </resultMap>
+    
+    <!-- 插入通知公告 -->
+    <insert id="insert" parameterType="com.gdmu.entity.Announcement">
+        insert into announcements (title, content, publisher, publisher_role, publish_time, valid_from, valid_to, target_type, target_value, priority, attachments, status, create_time, update_time)
+        values (#{title}, #{content}, #{publisher}, #{publisherRole}, #{publishTime}, #{validFrom}, #{validTo}, #{targetType}, #{targetValue}, #{priority}, #{attachments}, #{status}, NOW(), NOW())
+    </insert>
+    
+    <!-- 根据ID查询通知公告（优化版 - 使用LEFT JOIN替代子查询） -->
+    <select id="findById" resultMap="AnnouncementResultMap">
+        SELECT a.*, COALESCE(read_counts.read_count, 0) as read_count
+        FROM announcements a
+        LEFT JOIN (
+            SELECT announcement_id, COUNT(*) as read_count
+            FROM announcement_read_records
+            GROUP BY announcement_id
+        ) read_counts ON a.id = read_counts.announcement_id
+        WHERE a.id = #{id}
+    </select>
+    
+    <!-- 更新通知公告 -->
+    <update id="update" parameterType="com.gdmu.entity.Announcement">
+        update announcements
+        <set>
+            <if test="title != null and title != ''">
+                title = #{title},
+            </if>
+            <if test="content != null and content != ''">
+                content = #{content},
+            </if>
+            <if test="publisher != null and publisher != ''">
+                publisher = #{publisher},
+            </if>
+            <if test="publisherRole != null and publisherRole != ''">
+                publisher_role = #{publisherRole},
+            </if>
+            <if test="publishTime != null">
+                publish_time = #{publishTime},
+            </if>
+            <if test="validFrom != null">
+                valid_from = #{validFrom},
+            </if>
+            <if test="validTo != null">
+                valid_to = #{validTo},
+            </if>
+            <if test="targetType != null and targetType != ''">
+                target_type = #{targetType},
+            </if>
+            <if test="targetValue != null and targetValue != ''">
+                target_value = #{targetValue},
+            </if>
+            <if test="priority != null and priority != ''">
+                priority = #{priority},
+            </if>
+            <if test="attachments != null">
+                attachments = #{attachments},
+            </if>
+            <if test="status != null and status != ''">
+                status = #{status},
+            </if>
+            update_time = NOW()
+        </set>
+        where id = #{id}
+    </update>
+    
+    <!-- 删除通知公告 -->
+    <delete id="deleteById">
+        delete from announcements where id = #{id}
+    </delete>
+    
+    <!-- 查询所有通知公告（优化版 - 使用LEFT JOIN替代子查询，消除N+1问题） -->
+    <select id="findAll" resultMap="AnnouncementResultMap">
+        SELECT a.*,
+            COALESCE(read_counts.read_count, 0) as read_count
+        FROM announcements a
+        LEFT JOIN (
+            SELECT announcement_id, COUNT(*) as read_count
+            FROM announcement_read_records
+            GROUP BY announcement_id
+        ) read_counts ON a.id = read_counts.announcement_id
+        ORDER BY
+            CASE WHEN a.priority = 'important' THEN 0 ELSE 1 END,
+            a.create_time DESC
+    </select>
+    
+    <!-- 动态条件查询通知公告（根据标题和状态，优化版 - 使用LEFT JOIN替代子查询） -->
+    <select id="listByTitleAndStatus" resultMap="AnnouncementResultMap">
+        SELECT a.*, COALESCE(read_counts.read_count, 0) as read_count
+        FROM announcements a
+        LEFT JOIN (
+            SELECT announcement_id, COUNT(*) as read_count
+            FROM announcement_read_records
+            GROUP BY announcement_id
+        ) read_counts ON a.id = read_counts.announcement_id
+        <where>
+            <if test="title != null and title != ''">
+                AND a.title LIKE CONCAT(#{title}, '%')
+            </if>
+            <if test="status != null and status != ''">
+                AND a.status = #{status}
+            </if>
+        </where>
+        ORDER BY
+            CASE WHEN a.priority = 'important' THEN 0 ELSE 1 END,
+            a.create_time DESC
+    </select>
+
+    <!-- 动态条件查询通知公告（根据标题、状态和发布者，优化版 - 使用LEFT JOIN替代子查询） -->
+    <select id="list" resultMap="AnnouncementResultMap">
+        SELECT a.*, COALESCE(read_counts.read_count, 0) as read_count
+        FROM announcements a
+        LEFT JOIN (
+            SELECT announcement_id, COUNT(*) as read_count
+            FROM announcement_read_records
+            GROUP BY announcement_id
+        ) read_counts ON a.id = read_counts.announcement_id
+        <where>
+            <if test="title != null and title != ''">
+                AND a.title LIKE CONCAT(#{title}, '%')
+            </if>
+            <if test="status != null and status != ''">
+                AND a.status = #{status}
+            </if>
+            <if test="publisher != null and publisher != ''">
+                AND a.publisher = #{publisher}
+            </if>
+            <if test="excludePublisherRole != null and excludePublisherRole != ''">
+                AND a.publisher_role != #{excludePublisherRole}
+            </if>
+        </where>
+        ORDER BY
+            CASE WHEN a.priority = 'important' THEN 0 ELSE 1 END,
+            a.create_time DESC
+    </select>
+    
+    <!-- 根据ID列表查询通知公告 -->
+    <select id="selectByIds" resultType="com.gdmu.entity.Announcement" parameterType="java.util.List">
+        SELECT * FROM announcements WHERE id IN
+        <foreach collection="list" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </select>
+    
+    <!-- 批量删除通知公告 -->
+    <delete id="batchDeleteByIds" parameterType="java.util.List">
+        DELETE FROM announcements WHERE id IN
+        <foreach collection="ids" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </delete>
+    
+    <!-- 查询通知公告总数 -->
+    <select id="count" resultType="java.lang.Long">
+        SELECT COUNT(*) FROM announcements
+    </select>
+    
+    <!-- 分页查询通知公告（优化版 - 使用LEFT JOIN替代子查询） -->
+    <select id="findPage" resultMap="AnnouncementResultMap">
+        SELECT a.*, COALESCE(read_counts.read_count, 0) as read_count
+        FROM announcements a
+        LEFT JOIN (
+            SELECT announcement_id, COUNT(*) as read_count
+            FROM announcement_read_records
+            GROUP BY announcement_id
+        ) read_counts ON a.id = read_counts.announcement_id
+        <where>
+            <if test="title != null and title != ''">
+                AND a.title LIKE CONCAT(#{title}, '%')
+            </if>
+            <if test="status != null and status != ''">
+                AND a.status = #{status}
+            </if>
+        </where>
+        ORDER BY
+            CASE WHEN a.priority = 'important' THEN 0 ELSE 1 END,
+            a.publish_time DESC
+        LIMIT #{offset}, #{pageSize}
+    </select>
+    
+    <!-- 根据用户类型和用户信息获取公告列表 -->
+    <select id="getAnnouncementsForUser" resultMap="AnnouncementResultMap">
+        SELECT a.*,
+            COALESCE((SELECT COUNT(*) FROM announcement_read_records r WHERE r.announcement_id = a.id), 0) as read_count,
+            CASE WHEN EXISTS(
+                SELECT 1 FROM announcement_read_records r
+                WHERE r.announcement_id = a.id
+                AND r.user_id = #{userId}
+            ) THEN 1 ELSE 0 END as is_read
+        FROM announcements a
+        WHERE a.status = 'PUBLISHED'
+        AND (a.valid_to IS NULL OR a.valid_to > NOW())
+        <choose>
+            <when test="userType == 'STUDENT'">
+                AND (
+                    a.target_type LIKE '%ALL%'
+                    OR a.target_type LIKE '%STUDENT%'
+                    OR (a.target_type LIKE '%MAJOR%' AND a.target_value = #{userInfo})
+                )
+            </when>
+            <when test="userType == 'TEACHER'">
+                AND (
+                    a.target_type LIKE '%ALL%'
+                    OR a.target_type LIKE '%TEACHER%'
+                    OR (a.target_type LIKE '%TEACHER_TYPE%' AND a.target_value = #{userInfo})
+                )
+            </when>
+        </choose>
+        ORDER BY
+            a.publish_time DESC
+    </select>
+    
+    <!-- 增加公告阅读次数 -->
+    <update id="incrementReadCount">
+        update announcements
+        set read_count = COALESCE(read_count, 0) + 1
+        where id = #{id}
+    </update>
+</mapper>

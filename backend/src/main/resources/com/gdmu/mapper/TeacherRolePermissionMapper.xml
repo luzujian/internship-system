@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.gdmu.mapper.TeacherRolePermissionMapper">
+    
+    <select id="findAll" resultType="com.gdmu.entity.TeacherRolePermission">
+        select * from teacher_role_permission where deleted = 0
+    </select>
+    
+    <select id="findById" resultType="com.gdmu.entity.TeacherRolePermission">
+        select * from teacher_role_permission where id = #{id} and deleted = 0
+    </select>
+    
+    <select id="findByRoleId" resultType="com.gdmu.entity.TeacherRolePermission">
+        select * from teacher_role_permission where role_id = #{roleId} and deleted = 0
+    </select>
+    
+    <select id="findByPermissionId" resultType="com.gdmu.entity.TeacherRolePermission">
+        select * from teacher_role_permission where permission_id = #{permissionId} and deleted = 0
+    </select>
+    
+    <insert id="insert" parameterType="com.gdmu.entity.TeacherRolePermission" useGeneratedKeys="true" keyProperty="id">
+        insert into teacher_role_permission (role_id, permission_id, sort_order, create_time, deleted)
+        values (#{roleId}, #{permissionId}, #{sortOrder}, NOW(), 0)
+    </insert>
+    
+    <update id="update" parameterType="com.gdmu.entity.TeacherRolePermission">
+        update teacher_role_permission
+        set role_id = #{roleId},
+            permission_id = #{permissionId}
+        where id = #{id}
+    </update>
+    
+    <update id="deleteById">
+        update teacher_role_permission set deleted = 1 where id = #{id}
+    </update>
+    
+    <update id="deleteByRoleId">
+        delete from teacher_role_permission where role_id = #{roleId}
+    </update>
+</mapper>

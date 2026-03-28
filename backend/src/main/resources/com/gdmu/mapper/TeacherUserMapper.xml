@@ -1,0 +1,147 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.gdmu.mapper.TeacherUserMapper">
+    
+    <!-- 根据教师编号查询教师用户 - 已重命名为findByTeacherUserId -->
+    
+    <!-- 插入教师用户 -->
+    <insert id="insert" parameterType="com.gdmu.entity.TeacherUser">
+        insert into teacher_users (username, password, name, gender, create_time, update_time, teacher_user_id, department_id, teacher_type, phone)
+        values (#{username}, #{password}, #{name}, #{gender}, #{createTime}, #{updateTime}, #{teacherUserId}, #{departmentId}, #{teacherType}, #{phone})
+    </insert>
+    
+    <!-- 根据ID查询教师用户 -->
+    <select id="findById" resultType="com.gdmu.entity.TeacherUser">
+        select * from teacher_users where id = #{id}
+    </select>
+    
+    <!-- 更新教师用户信息 -->
+    <update id="update" parameterType="com.gdmu.entity.TeacherUser">
+        update teacher_users
+        <set>
+            <if test="password != null and password != ''">
+                password = #{password},
+            </if>
+            <if test="name != null and name != ''">
+                name = #{name},
+            </if>
+            <if test="gender != null">
+                gender = #{gender},
+            </if>
+            <if test="departmentId != null">
+                department_id = #{departmentId},
+            </if>
+            <if test="teacherUserId != null">
+                teacher_user_id = #{teacherUserId},
+            </if>
+            <if test="teacherType != null and teacherType != ''">
+                teacher_type = #{teacherType},
+            </if>
+            <if test="role != null and role != ''">
+                role = #{role},
+            </if>
+            <if test="status != null">
+                status = #{status},
+            </if>
+            <if test="phone != null and phone != ''">
+                phone = #{phone},
+            </if>
+            <if test="updateTime != null">
+                update_time = #{updateTime}
+            </if>
+        </set>
+        where id = #{id}
+    </update>
+    
+    <!-- 查询所有满足条件的教师用户 -->
+    <select id="findAll" resultType="com.gdmu.entity.TeacherUser">
+        select * from teacher_users
+        <where>
+            <if test="teacherUserId != null and teacherUserId != ''">
+                and teacher_user_id like concat('%',#{teacherUserId},'%')
+            </if>
+            <if test="name != null and name != ''">
+                and name like concat('%',#{name},'%')
+            </if>
+            <if test="departmentId != null">
+                and department_id = #{departmentId}
+            </if>
+        </where>
+        order by update_time desc
+    </select>
+    
+    <!-- 根据工号列表查询教师用户 -->
+    <select id="findByTeacherIds" resultType="com.gdmu.entity.TeacherUser">
+        select * from teacher_users
+        where teacher_user_id in
+        <foreach collection="teacherIds" item="teacherUserId" open="(" separator="," close=")">
+            #{teacherUserId}
+        </foreach>
+    </select>
+    
+    <!-- 根据工号查询教师用户 -->
+    <select id="findByTeacherUserId" resultType="com.gdmu.entity.TeacherUser">
+        select * from teacher_users where teacher_user_id = #{teacherUserId}
+    </select>
+    
+    <!-- 批量插入教师用户 -->
+    <insert id="batchInsert" parameterType="java.util.List" useGeneratedKeys="true" keyProperty="id">
+        insert into teacher_users (username, password, name, gender, create_time, update_time, teacher_user_id, department_id, teacher_type, phone)
+        values
+        <foreach collection="teacherUsers" item="teacherUser" separator=",">
+            (#{teacherUser.username}, #{teacherUser.password}, #{teacherUser.name}, #{teacherUser.gender}, #{teacherUser.createTime}, #{teacherUser.updateTime}, #{teacherUser.teacherUserId}, #{teacherUser.departmentId}, #{teacherUser.teacherType}, #{teacherUser.phone})
+        </foreach>
+    </insert>
+    
+    <!-- 根据ID列表查询教师用户 -->
+    <select id="selectByIds" resultType="com.gdmu.entity.TeacherUser" parameterType="java.util.List">
+        SELECT * FROM teacher_users WHERE id IN
+        <foreach collection="list" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </select>
+
+    <!-- 动态条件查询 -->
+    <select id="list" resultType="com.gdmu.entity.TeacherUser">
+        select t.*, d.name departmentName from teacher_users t left join department d on t.department_id = d.id
+        <where>
+            <if test="teacherUserId != null and teacherUserId != ''">
+                and t.teacher_user_id like concat('%',#{teacherUserId},'%')
+            </if>
+            <if test="name != null and name != ''">
+                and t.name like concat('%',#{name},'%')
+            </if>
+            <if test="gender != null">
+                and t.gender = #{gender}
+            </if>
+            <if test="departmentId != null">
+                and t.department_id = #{departmentId}
+            </if>
+            <if test="status != null">
+                and t.status = #{status}
+            </if>
+            <if test="teacherType != null and teacherType != ''">
+                and t.teacher_type = #{teacherType}
+            </if>
+        </where>
+        order by t.update_time desc
+    </select>
+    
+    <!-- 批量删除教师用户 -->
+    <delete id="batchDeleteByIds" parameterType="java.util.List">
+        DELETE FROM teacher_users WHERE id IN
+        <foreach collection="ids" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </delete>
+    
+    <!-- 根据教师类型查询教师列表 -->
+    <select id="findByTeacherType" resultType="com.gdmu.entity.TeacherUser">
+        select * from teacher_users
+        where teacher_type = #{teacherType}
+        and status = 1
+        order by name asc
+    </select>
+</mapper>
