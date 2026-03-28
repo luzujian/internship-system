@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.gdmu.mapper.TeacherPermissionMapper">
+    
+    <select id="findAll" resultType="com.gdmu.entity.TeacherPermission">
+        select * from teacher_permission where deleted = 0 order by sort_order asc
+    </select>
+    
+    <select id="findById" resultType="com.gdmu.entity.TeacherPermission">
+        select * from teacher_permission where id = #{id} and deleted = 0
+    </select>
+    
+    <select id="findByPermissionCode" resultType="com.gdmu.entity.TeacherPermission">
+        select * from teacher_permission where permission_code = #{permissionCode} and deleted = 0
+    </select>
+    
+    <select id="findByParentId" resultType="com.gdmu.entity.TeacherPermission">
+        select * from teacher_permission where parent_id = #{parentId} and deleted = 0 order by sort_order asc
+    </select>
+    
+    <insert id="insert" parameterType="com.gdmu.entity.TeacherPermission" useGeneratedKeys="true" keyProperty="id">
+        insert into teacher_permission (permission_name, permission_code, permission_type, parent_id, path, icon, sort_order, create_time, update_time, deleted)
+        values (#{permissionName}, #{permissionCode}, #{permissionType}, #{parentId}, #{path}, #{icon}, #{sortOrder}, NOW(), NOW(), 0)
+    </insert>
+    
+    <update id="update" parameterType="com.gdmu.entity.TeacherPermission">
+        update teacher_permission
+        set permission_name = #{permissionName},
+            permission_code = #{permissionCode},
+            permission_type = #{permissionType},
+            parent_id = #{parentId},
+            path = #{path},
+            icon = #{icon},
+            sort_order = #{sortOrder},
+            update_time = NOW()
+        where id = #{id}
+    </update>
+    
+    <update id="deleteById">
+        update teacher_permission set deleted = 1 where id = #{id}
+    </update>
+</mapper>

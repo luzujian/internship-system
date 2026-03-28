@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.gdmu.mapper.TeacherRoleMapper">
+    
+    <select id="findAll" resultType="com.gdmu.entity.TeacherRole">
+        select * from teacher_role where deleted = 0 order by create_time desc
+    </select>
+    
+    <select id="findById" resultType="com.gdmu.entity.TeacherRole">
+        select * from teacher_role where id = #{id} and deleted = 0
+    </select>
+    
+    <select id="findByRoleCode" resultType="com.gdmu.entity.TeacherRole">
+        select * from teacher_role where role_code = #{roleCode} and deleted = 0
+    </select>
+    
+    <insert id="insert" parameterType="com.gdmu.entity.TeacherRole" useGeneratedKeys="true" keyProperty="id">
+        insert into teacher_role (role_name, role_code, description, create_time, update_time, deleted)
+        values (#{roleName}, #{roleCode}, #{description}, NOW(), NOW(), 0)
+    </insert>
+    
+    <update id="update" parameterType="com.gdmu.entity.TeacherRole">
+        update teacher_role
+        set role_name = #{roleName},
+            role_code = #{roleCode},
+            description = #{description},
+            update_time = NOW()
+        where id = #{id}
+    </update>
+    
+    <update id="deleteById">
+        update teacher_role set deleted = 1 where id = #{id}
+    </update>
+</mapper>

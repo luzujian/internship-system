@@ -1,0 +1,202 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.gdmu.mapper.ReportMapper">
+    
+    <resultMap id="CoreMetricsDTOResultMap" type="com.gdmu.entity.dto.CoreMetricsDTO">
+        <result property="companyCount" column="company_count" />
+        <result property="companyChange" column="company_change" />
+        <result property="internshipRate" column="internship_rate" />
+        <result property="internshipRateChange" column="internship_rate_change" />
+        <result property="approvalCount" column="approval_count" />
+        <result property="approvalCountChange" column="approval_count_change" />
+        <result property="resourceDownloads" column="resource_downloads" />
+        <result property="resourceDownloadsChange" column="resource_downloads_change" />
+    </resultMap>
+    
+    <resultMap id="CompanyDetailDTOResultMap" type="com.gdmu.entity.dto.CompanyDetailDTO">
+        <result property="id" column="id" />
+        <result property="name" column="company_name" />
+        <result property="joinDate" column="audit_time" />
+        <result property="positionCount" column="position_count" />
+        <result property="admittedCount" column="admitted_count" />
+        <result property="status" column="status" />
+        <result property="companyTag" column="company_tag" />
+    </resultMap>
+    
+    <resultMap id="StudentInternshipDetailDTOResultMap" type="com.gdmu.entity.dto.StudentInternshipDetailDTO">
+        <result property="id" column="id" />
+        <result property="college" column="college" />
+        <result property="major" column="major_name" />
+        <result property="totalCount" column="total_count" />
+        <result property="internshipCount" column="internship_count" />
+        <result property="internshipRate" column="internship_rate" />
+    </resultMap>
+    
+    <resultMap id="ApprovalDetailDTOResultMap" type="com.gdmu.entity.dto.ApprovalDetailDTO">
+        <result property="id" column="id" />
+        <result property="type" column="type" />
+        <result property="totalCount" column="total_count" />
+        <result property="approvedCount" column="approved_count" />
+        <result property="rejectedCount" column="rejected_count" />
+        <result property="approvalRate" column="approval_rate" />
+    </resultMap>
+    
+    <resultMap id="CompanyTrendDTOResultMap" type="com.gdmu.entity.dto.CompanyTrendDTO">
+        <result property="label" column="label" />
+        <result property="value" column="value" />
+    </resultMap>
+    
+    <select id="getCoreMetrics" resultMap="CoreMetricsDTOResultMap">
+        SELECT 
+            0 as company_count,
+            0 as company_change,
+            0.0 as internship_rate,
+            0 as internship_rate_change,
+            0 as approval_count,
+            0 as approval_count_change,
+            0 as resource_downloads,
+            0 as resource_downloads_change
+    </select>
+    
+    <select id="getCompanyTrendByQuarter" resultMap="CompanyTrendDTOResultMap">
+        SELECT 
+            CASE QUARTER(audit_time)
+                WHEN 1 THEN '第一季度'
+                WHEN 2 THEN '第二季度'
+                WHEN 3 THEN '第三季度'
+                WHEN 4 THEN '第四季度'
+            END as label,
+            COUNT(*) as value
+        FROM company_users
+        WHERE YEAR(audit_time) = #{year}
+          AND audit_status = 1
+          AND audit_time IS NOT NULL
+        GROUP BY 
+            CASE QUARTER(audit_time)
+                WHEN 1 THEN '第一季度'
+                WHEN 2 THEN '第二季度'
+                WHEN 3 THEN '第三季度'
+                WHEN 4 THEN '第四季度'
+            END,
+            QUARTER(audit_time)
+        ORDER BY QUARTER(audit_time)
+    </select>
+    
+    <select id="getCompanyDetails" resultMap="CompanyDetailDTOResultMap">
+        SELECT
+            cu.id,
+            cu.company_name,
+            cu.audit_time,
+            COALESCE(COUNT(p.id), 0) as position_count,
+            COALESCE(SUM(p.recruited_count), 0) as admitted_count,
+            CASE cu.status
+                WHEN 1 THEN '正常'
+                WHEN 0 THEN '待审核'
+                ELSE '未知'
+            END as status,
+            cu.company_tag
+        FROM company_users cu
+        LEFT JOIN position p ON cu.id = p.company_id
+        WHERE cu.status = 1
+          AND cu.audit_status = 1
+          AND cu.audit_time IS NOT NULL
+        GROUP BY cu.id, cu.company_name, cu.audit_time, cu.status, cu.company_tag
+        ORDER BY cu.audit_time DESC
+        LIMIT #{offset}, #{pageSize}
+    </select>
+    
+    <select id="getCompanyDetailsCount" resultType="java.lang.Long">
+        SELECT COUNT(DISTINCT cu.id)
+        FROM company_users cu
+        WHERE cu.status = 1
+          AND cu.audit_status = 1
+          AND cu.audit_time IS NOT NULL
+    </select>
+    
+    <select id="getStudentInternshipDetails" resultMap="StudentInternshipDetailDTOResultMap">
+        SELECT 
+            m.id,
+            d.name as college,
+            m.name as major_name,
+            COUNT(su.id) as total_count,
+            COALESCE(COUNT(CASE WHEN sis.status IN (1, 2, 3) THEN 1 END), 0) as internship_count,
+            CASE 
+                WHEN COUNT(su.id) > 0 
+                THEN ROUND(COALESCE(COUNT(CASE WHEN sis.status IN (1, 2, 3) THEN 1 END), 0) * 100.0 / COUNT(su.id), 1)
+                ELSE 0 
+            END as internship_rate
+        FROM major m
+        LEFT JOIN department d ON m.department_id = d.id
+        LEFT JOIN student_users su ON m.id = su.major_id
+        LEFT JOIN student_internship_status sis ON su.id = sis.student_id
+        GROUP BY m.id, d.name, m.name
+        ORDER BY m.id
+        LIMIT #{offset}, #{pageSize}
+    </select>
+    
+    <select id="getStudentInternshipDetailsCount" resultType="java.lang.Long">
+        SELECT COUNT(DISTINCT m.id)
+        FROM major m
+    </select>
+    
+    <select id="getApprovalDetails" resultMap="ApprovalDetailDTOResultMap">
+        SELECT 
+            id,
+            type,
+            total_count,
+            COALESCE(approved_count, 0) as approved_count,
+            COALESCE(rejected_count, 0) as rejected_count,
+            CASE 
+                WHEN total_count > 0 
+                THEN ROUND(COALESCE(approved_count, 0) * 100.0 / total_count, 1)
+                ELSE 0 
+            END as approval_rate
+        FROM (
+            SELECT 
+                1 as id,
+                '自主实习申请' as type,
+                COUNT(*) as total_count,
+                SUM(CASE WHEN status = 'approved' THEN 1 ELSE 0 END) as approved_count,
+                SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END) as rejected_count
+            FROM student_application
+            WHERE application_type = 'selfPractice'
+            
+            UNION ALL
+            
+            SELECT 
+                2 as id,
+                '单位变更申请' as type,
+                COUNT(*) as total_count,
+                SUM(CASE WHEN status = 'approved' THEN 1 ELSE 0 END) as approved_count,
+                SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END) as rejected_count
+            FROM student_application
+            WHERE application_type = 'unitChange'
+            
+            UNION ALL
+            
+            SELECT 
+                3 as id,
+                '考研延迟申请' as type,
+                COUNT(*) as total_count,
+                SUM(CASE WHEN status = 'approved' THEN 1 ELSE 0 END) as approved_count,
+                SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END) as rejected_count
+            FROM student_application
+            WHERE application_type = 'delay'
+        ) as approval_data
+        ORDER BY id
+        LIMIT #{offset}, #{pageSize}
+    </select>
+    
+    <select id="getApprovalDetailsCount" resultType="java.lang.Long">
+        SELECT 3
+    </select>
+    
+    <select id="getResourceDownloads" resultType="java.lang.Integer">
+        SELECT COALESCE(SUM(download_count), 0)
+        FROM learning_resources
+        WHERE created_time BETWEEN #{startDate} AND #{endDate}
+    </select>
+    
+</mapper>

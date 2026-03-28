@@ -1,0 +1,76 @@
+package com.gdmu.entity;
+
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
+import lombok.Data;
+import java.util.Date;
+
+/**
+ * 岗位实体类
+ */
+@Data
+public class Position {
+    private Long id;
+
+    private Long companyId;
+
+    private Long categoryId;
+
+    @NotBlank(message = "岗位名称不能为空")
+    @Size(min = 2, max = 100, message = "岗位名称长度必须在 2-100 个字符之间")
+    private String positionName;
+
+    private String department;
+
+    private String positionType;
+
+    private String province;
+
+    private String city;
+
+    private String district;
+
+    private String detailAddress;
+
+    @Min(value = 0, message = "最低薪资不能为负数")
+    private Integer salaryMin;
+
+    @Min(value = 0, message = "最高薪资不能为负数")
+    private Integer salaryMax;
+
+    private String description;
+
+    private String requirements;
+
+    @Min(value = 0, message = "计划招聘人数不能为负数")
+    private Integer plannedRecruit = 0;
+
+    @Min(value = 0, message = "已招人数不能为负数")
+    private Integer recruitedCount = 0;
+
+    @Min(value = 0, message = "剩余缺口不能为负数")
+    private Integer remainingQuota = 0;
+
+    private String status;
+
+    private Date publishDate;
+
+    private Date internshipStartDate;
+
+    private Date internshipEndDate;
+
+    private Date interviewTime;
+
+    private String interviewLocation;
+
+    private String interviewMethod;
+
+    private String interviewRemark;
+
+    @Min(value = 0, message = "浏览次数不能为负数")
+    private Integer viewCount = 0;
+
+    private Date createTime;
+    private Date updateTime;
+}

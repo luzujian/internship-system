@@ -1,0 +1,161 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.gdmu.mapper.CompanyQualificationMapper">
+    
+    <!-- 定义企业资质审核结果映射 -->
+    <resultMap id="CompanyQualificationResultMap" type="com.gdmu.entity.CompanyQualification">
+        <id property="id" column="id" />
+        <result property="companyId" column="company_id" />
+        <result property="companyName" column="company_name" />
+        <result property="companyAddress" column="company_address" />
+        <result property="contactPerson" column="contact_person" />
+        <result property="contactPhone" column="contact_phone" />
+        <result property="qualifications" column="qualifications" typeHandler="com.gdmu.handler.JsonMapTypeHandler" />
+        <result property="isPhoneVerified" column="is_phone_verified" />
+        <result property="isInternshipBase" column="is_internship_base" />
+        <result property="hasReceivedStudents" column="has_received_students" />
+        <result property="currentEmployeeCount" column="current_employee_count" />
+        <result property="internshipBaseLevel" column="internship_base_level" />
+        <result property="companyTags" column="company_tags" typeHandler="com.gdmu.handler.JsonListTypeHandler" />
+        <result property="status" column="status" />
+        <result property="rejectReason" column="reject_reason" />
+        <result property="reviewerId" column="reviewer_id" />
+        <result property="reviewTime" column="review_time" />
+        <result property="applyTime" column="apply_time" />
+        <result property="createTime" column="create_time" />
+        <result property="updateTime" column="update_time" />
+    </resultMap>
+    
+    <!-- 插入企业资质审核 -->
+    <insert id="insert" parameterType="com.gdmu.entity.CompanyQualification" useGeneratedKeys="true" keyProperty="id">
+        insert into company_qualification (company_id, company_name, company_address, contact_person, contact_phone, qualifications, is_phone_verified, is_internship_base, has_received_students, current_employee_count, internship_base_level, company_tags, status, reject_reason, reviewer_id, review_time, apply_time, create_time, update_time)
+        values (#{companyId}, #{companyName}, #{companyAddress}, #{contactPerson}, #{contactPhone}, #{qualifications, typeHandler=com.gdmu.handler.JsonMapTypeHandler}, #{isPhoneVerified}, #{isInternshipBase}, #{hasReceivedStudents}, #{currentEmployeeCount}, #{internshipBaseLevel}, #{companyTags, typeHandler=com.gdmu.handler.JsonListTypeHandler}, #{status}, #{rejectReason}, #{reviewerId}, #{reviewTime}, NOW(), NOW())
+    </insert>
+    
+    <!-- 根据ID查询企业资质审核 -->
+    <select id="findById" resultMap="CompanyQualificationResultMap">
+        select * from company_qualification where id = #{id}
+    </select>
+    
+    <!-- 根据企业ID查询资质审核 -->
+    <select id="findByCompanyId" resultMap="CompanyQualificationResultMap">
+        select * from company_qualification where company_id = #{companyId} order by apply_time desc limit 1
+    </select>
+    
+    <!-- 更新企业资质审核 -->
+    <update id="update" parameterType="com.gdmu.entity.CompanyQualification">
+        update company_qualification
+        <set>
+            <if test="companyId != null">
+                company_id = #{companyId},
+            </if>
+            <if test="companyName != null and companyName != ''">
+                company_name = #{companyName},
+            </if>
+            <if test="companyAddress != null">
+                company_address = #{companyAddress},
+            </if>
+            <if test="contactPerson != null and contactPerson != ''">
+                contact_person = #{contactPerson},
+            </if>
+            <if test="contactPhone != null and contactPhone != ''">
+                contact_phone = #{contactPhone},
+            </if>
+            <if test="qualifications != null">
+                qualifications = #{qualifications, typeHandler=com.gdmu.handler.JsonMapTypeHandler},
+            </if>
+            <if test="isPhoneVerified != null">
+                is_phone_verified = #{isPhoneVerified},
+            </if>
+            <if test="isInternshipBase != null">
+                is_internship_base = #{isInternshipBase},
+            </if>
+            <if test="hasReceivedStudents != null">
+                has_received_students = #{hasReceivedStudents},
+            </if>
+            <if test="currentEmployeeCount != null">
+                current_employee_count = #{currentEmployeeCount},
+            </if>
+            <if test="internshipBaseLevel != null">
+                internship_base_level = #{internshipBaseLevel},
+            </if>
+            <if test="companyTags != null">
+                company_tags = #{companyTags, typeHandler=com.gdmu.handler.JsonListTypeHandler},
+            </if>
+            <if test="status != null and status != ''">
+                status = #{status},
+            </if>
+            <if test="rejectReason != null">
+                reject_reason = #{rejectReason},
+            </if>
+            <if test="reviewerId != null">
+                reviewer_id = #{reviewerId},
+            </if>
+            <if test="reviewTime != null">
+                review_time = #{reviewTime},
+            </if>
+            update_time = NOW()
+        </set>
+        where id = #{id}
+    </update>
+    
+    <!-- 删除企业资质审核 -->
+    <delete id="deleteById">
+        delete from company_qualification where id = #{id}
+    </delete>
+    
+    <!-- 查询所有企业资质审核 -->
+    <select id="findAll" resultMap="CompanyQualificationResultMap">
+        select * from company_qualification order by apply_time desc
+    </select>
+    
+    <!-- 动态条件查询企业资质审核 -->
+    <select id="list" resultMap="CompanyQualificationResultMap">
+        select * from company_qualification
+        <where>
+            <if test="status != null and status != ''">
+                and status = #{status}
+            </if>
+            <if test="companyName != null and companyName != ''">
+                and company_name like concat('%',#{companyName},'%')
+            </if>
+        </where>
+        order by apply_time desc
+    </select>
+    
+    <!-- 根据ID列表查询企业资质审核 -->
+    <select id="selectByIds" resultType="com.gdmu.entity.CompanyQualification" parameterType="java.util.List">
+        SELECT * FROM company_qualification WHERE id IN
+        <foreach collection="list" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </select>
+    
+    <!-- 批量删除企业资质审核 -->
+    <delete id="batchDeleteByIds" parameterType="java.util.List">
+        DELETE FROM company_qualification WHERE id IN
+        <foreach collection="ids" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </delete>
+    
+    <!-- 查询企业资质审核总数 -->
+    <select id="count" resultType="java.lang.Long">
+        SELECT COUNT(*) FROM company_qualification
+    </select>
+    
+    <!-- 分页查询企业资质审核 -->
+    <select id="findPage" resultMap="CompanyQualificationResultMap">
+        SELECT * FROM company_qualification 
+        ORDER BY apply_time DESC 
+        LIMIT #{offset}, #{pageSize}
+    </select>
+    
+    <!-- 根据状态查询资质审核数量 -->
+    <select id="countByStatus" resultType="java.lang.Integer">
+        SELECT COUNT(*) FROM company_qualification 
+        WHERE status = #{status}
+    </select>
+</mapper>

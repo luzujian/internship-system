@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.gdmu.mapper.FileUploadMapper">
+    
+    <!-- 定义文件上传记录结果映射 -->
+    <resultMap id="FileUploadResultMap" type="com.gdmu.entity.FileUpload">
+        <id property="id" column="id" />
+        <result property="fileName" column="file_name" />
+        <result property="filePath" column="file_path" />
+        <result property="fileSize" column="file_size" />
+        <result property="fileType" column="file_type" />
+        <result property="uploaderId" column="uploader_id" />
+        <result property="uploaderType" column="uploader_type" />
+        <result property="uploadTime" column="upload_time" />
+        <result property="businessType" column="business_type" />
+    </resultMap>
+    
+    <!-- 插入文件上传记录 -->
+    <insert id="insert" parameterType="com.gdmu.entity.FileUpload">
+        insert into file_upload (file_name, file_path, file_size, file_type, uploader_id, uploader_type, upload_time, business_type)
+        values (#{fileName}, #{filePath}, #{fileSize}, #{fileType}, #{uploaderId}, #{uploaderType}, #{uploadTime}, #{businessType})
+    </insert>
+    
+    <!-- 根据ID查询文件上传记录 -->
+    <select id="findById" resultMap="FileUploadResultMap">
+        select * from file_upload where id = #{id}
+    </select>
+    
+    <!-- 更新文件上传记录 -->
+    <update id="update" parameterType="com.gdmu.entity.FileUpload">
+        update file_upload
+        <set>
+            <if test="fileName != null and fileName != ''">
+                file_name = #{fileName},
+            </if>
+            <if test="filePath != null and filePath != ''">
+                file_path = #{filePath},
+            </if>
+            <if test="fileSize != null">
+                file_size = #{fileSize},
+            </if>
+            <if test="fileType != null and fileType != ''">
+                file_type = #{fileType},
+            </if>
+            <if test="uploaderId != null">
+                uploader_id = #{uploaderId},
+            </if>
+            <if test="uploaderType != null and uploaderType != ''">
+                uploader_type = #{uploaderType},
+            </if>
+            <if test="uploadTime != null">
+                upload_time = #{uploadTime},
+            </if>
+            <if test="businessType != null and businessType != ''">
+                business_type = #{businessType}
+            </if>
+        </set>
+        where id = #{id}
+    </update>
+    
+    <!-- 删除文件上传记录 -->
+    <delete id="deleteById">
+        delete from file_upload where id = #{id}
+    </delete>
+    
+    <!-- 查询所有文件上传记录 -->
+    <select id="findAll" resultMap="FileUploadResultMap">
+        select * from file_upload order by upload_time desc
+    </select>
+    
+    <!-- 根据上传人ID和类型查询文件上传记录 -->
+    <select id="findByUploader" resultMap="FileUploadResultMap">
+        select * from file_upload where uploader_id = #{uploaderId} and uploader_type = #{uploaderType} order by upload_time desc
+    </select>
+    
+    <!-- 动态条件查询文件上传记录 -->
+    <select id="list" resultMap="FileUploadResultMap">
+        select * from file_upload
+        <where>
+            <if test="uploaderId != null">
+                uploader_id = #{uploaderId}
+            </if>
+            <if test="uploaderType != null and uploaderType != ''">
+                <if test="uploaderId != null">
+                    and
+                </if>
+                uploader_type = #{uploaderType}
+            </if>
+            <if test="businessType != null and businessType != ''">
+                <if test="uploaderId != null or uploaderType != null">
+                    and
+                </if>
+                business_type = #{businessType}
+            </if>
+        </where>
+        order by upload_time desc
+    </select>
+    
+    <!-- 根据ID列表查询文件上传记录 -->
+    <select id="selectByIds" resultType="com.gdmu.entity.FileUpload" parameterType="java.util.List">
+        SELECT * FROM file_upload WHERE id IN
+        <foreach collection="list" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </select>
+    
+    <!-- 批量删除文件上传记录 -->
+    <delete id="batchDeleteByIds" parameterType="java.util.List">
+        DELETE FROM file_upload WHERE id IN
+        <foreach collection="ids" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </delete>
+    
+    <!-- 查询文件上传记录总数 -->
+    <select id="count" resultType="java.lang.Long">
+        SELECT COUNT(*) FROM file_upload
+    </select>
+    
+    <!-- 分页查询文件上传记录 -->
+    <select id="findPage" resultMap="FileUploadResultMap">
+        SELECT * FROM file_upload ORDER BY upload_time DESC LIMIT #{offset}, #{pageSize}
+    </select>
+</mapper>

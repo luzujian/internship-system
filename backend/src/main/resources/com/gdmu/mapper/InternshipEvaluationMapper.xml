@@ -1,0 +1,163 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.gdmu.mapper.InternshipEvaluationMapper">
+    
+    <resultMap id="InternshipEvaluationResultMap" type="com.gdmu.entity.InternshipEvaluation">
+        <id property="id" column="id" />
+        <result property="studentId" column="student_id" />
+        <result property="attitudeScore" column="attitude_score" />
+        <result property="performanceScore" column="performance_score" />
+        <result property="reportScore" column="report_score" />
+        <result property="companyEvaluationScore" column="company_evaluation_score" />
+        <result property="totalScore" column="total_score" />
+        <result property="grade" column="grade" />
+        <result property="comment" column="comment" />
+        <result property="evaluatorId" column="evaluator_id" />
+        <result property="evaluateTime" column="evaluate_time" />
+        <result property="updateTime" column="update_time" />
+        <result property="gradePublished" column="grade_published" />
+
+        <association property="student" javaType="com.gdmu.entity.StudentUser">
+            <id property="id" column="su_id" />
+            <result property="name" column="su_name" />
+            <result property="studentId" column="su_student_id" />
+            <result property="gender" column="su_gender" />
+            <result property="grade" column="su_grade" />
+            <result property="majorId" column="su_major_id" />
+            <result property="classId" column="su_class_id" />
+        </association>
+        
+        <association property="evaluator" javaType="com.gdmu.entity.TeacherUser">
+            <id property="id" column="tu_id" />
+            <result property="name" column="tu_name" />
+            <result property="teacherUserId" column="tu_teacher_user_id" />
+        </association>
+    </resultMap>
+    
+    <insert id="insert" parameterType="com.gdmu.entity.InternshipEvaluation" useGeneratedKeys="true" keyProperty="id">
+        insert into internship_evaluation (student_id, attitude_score, performance_score, report_score, company_evaluation_score, total_score, grade, comment, evaluator_id, evaluate_time, update_time, grade_published)
+        values (#{studentId}, #{attitudeScore}, #{performanceScore}, #{reportScore}, #{companyEvaluationScore}, #{totalScore}, #{grade}, #{comment}, #{evaluatorId}, #{evaluateTime}, #{updateTime}, #{gradePublished})
+    </insert>
+    
+    <select id="findById" resultMap="InternshipEvaluationResultMap">
+        select 
+            ie.*,
+            su.id as su_id, su.name as su_name, su.student_user_id as su_student_id, 
+            su.gender as su_gender, su.grade as su_grade, su.major_id as su_major_id, su.class_id as su_class_id,
+            tu.id as tu_id, tu.name as tu_name, tu.teacher_user_id as tu_teacher_user_id
+        from internship_evaluation ie
+        left join student_users su on ie.student_id = su.id
+        left join teacher_users tu on ie.evaluator_id = tu.id
+        where ie.id = #{id}
+    </select>
+    
+    <select id="findByStudentId" resultMap="InternshipEvaluationResultMap">
+        select
+            ie.*,
+            su.id as su_id, su.name as su_name, su.student_user_id as su_student_id,
+            su.gender as su_gender, su.grade as su_grade, su.major_id as su_major_id, su.class_id as su_class_id,
+            tu.id as tu_id, tu.name as tu_name, tu.teacher_user_id as tu_teacher_user_id
+        from internship_evaluation ie
+        left join student_users su on ie.student_id = su.id
+        left join teacher_users tu on ie.evaluator_id = tu.id
+        where ie.student_id = #{studentId}
+        order by ie.update_time DESC
+        limit 1
+    </select>
+    
+    <update id="update" parameterType="com.gdmu.entity.InternshipEvaluation">
+        update internship_evaluation
+        <set>
+            <if test="attitudeScore != null">
+                attitude_score = #{attitudeScore},
+            </if>
+            <if test="performanceScore != null">
+                performance_score = #{performanceScore},
+            </if>
+            <if test="reportScore != null">
+                report_score = #{reportScore},
+            </if>
+            <if test="companyEvaluationScore != null">
+                company_evaluation_score = #{companyEvaluationScore},
+            </if>
+            <if test="totalScore != null">
+                total_score = #{totalScore},
+            </if>
+            <if test="grade != null">
+                grade = #{grade},
+            </if>
+            <if test="comment != null">
+                comment = #{comment},
+            </if>
+            <if test="evaluatorId != null">
+                evaluator_id = #{evaluatorId},
+            </if>
+            <if test="gradePublished != null">
+                grade_published = #{gradePublished},
+            </if>
+            update_time = #{updateTime}
+        </set>
+        where id = #{id}
+    </update>
+    
+    <delete id="deleteById">
+        delete from internship_evaluation where id = #{id}
+    </delete>
+    
+    <delete id="deleteByStudentId">
+        delete from internship_evaluation where student_id = #{studentId}
+    </delete>
+    
+    <select id="findAll" resultMap="InternshipEvaluationResultMap">
+        select 
+            ie.*,
+            su.id as su_id, su.name as su_name, su.student_user_id as su_student_id, 
+            su.gender as su_gender, su.grade as su_grade, su.major_id as su_major_id, su.class_id as su_class_id,
+            tu.id as tu_id, tu.name as tu_name, tu.teacher_user_id as tu_teacher_user_id
+        from internship_evaluation ie
+        left join student_users su on ie.student_id = su.id
+        left join teacher_users tu on ie.evaluator_id = tu.id
+        order by ie.evaluate_time desc
+    </select>
+    
+    <select id="findByEvaluatorId" resultMap="InternshipEvaluationResultMap">
+        select 
+            ie.*,
+            su.id as su_id, su.name as su_name, su.student_user_id as su_student_id, 
+            su.gender as su_gender, su.grade as su_grade, su.major_id as su_major_id, su.class_id as su_class_id,
+            tu.id as tu_id, tu.name as tu_name, tu.teacher_user_id as tu_teacher_user_id
+        from internship_evaluation ie
+        left join student_users su on ie.student_id = su.id
+        left join teacher_users tu on ie.evaluator_id = tu.id
+        where ie.evaluator_id = #{evaluatorId}
+        order by ie.evaluate_time desc
+    </select>
+    
+    <select id="countByEvaluatorId" resultType="int">
+        select count(*) from internship_evaluation where evaluator_id = #{evaluatorId}
+    </select>
+    
+    <select id="findByGrade" resultMap="InternshipEvaluationResultMap">
+        select 
+            ie.*,
+            su.id as su_id, su.name as su_name, su.student_user_id as su_student_id, 
+            su.gender as su_gender, su.grade as su_grade, su.major_id as su_major_id, su.class_id as su_class_id,
+            tu.id as tu_id, tu.name as tu_name, tu.teacher_user_id as tu_teacher_user_id
+        from internship_evaluation ie
+        left join student_users su on ie.student_id = su.id
+        left join teacher_users tu on ie.evaluator_id = tu.id
+        where ie.grade = #{grade}
+        order by ie.evaluate_time desc
+    </select>
+
+    <update id="publishGrades">
+        update internship_evaluation
+        set grade_published = 1, update_time = NOW()
+        where student_id in
+        <foreach collection="studentIds" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </update>
+</mapper>

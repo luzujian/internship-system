@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.gdmu.mapper.AnnouncementReadRecordMapper">
+    
+    <!-- 定义公告阅读记录结果映射 -->
+    <resultMap id="AnnouncementReadRecordResultMap" type="com.gdmu.entity.AnnouncementReadRecord">
+        <id property="id" column="id" />
+        <result property="announcementId" column="announcement_id" />
+        <result property="userId" column="user_id" />
+        <result property="userType" column="user_type" />
+        <result property="readTime" column="read_time" />
+    </resultMap>
+    
+    <!-- 插入公告阅读记录 -->
+    <insert id="insert" parameterType="com.gdmu.entity.AnnouncementReadRecord">
+        insert into announcement_read_records (announcement_id, user_id, user_type, read_time)
+        values (#{announcementId}, #{userId}, #{userType}, NOW())
+    </insert>
+    
+    <!-- 根据ID查询公告阅读记录 -->
+    <select id="findById" resultMap="AnnouncementReadRecordResultMap">
+        select * from announcement_read_records where id = #{id}
+    </select>
+    
+    <!-- 根据公告ID和用户ID查询阅读记录 -->
+    <select id="findByAnnouncementAndUser" resultMap="AnnouncementReadRecordResultMap">
+        select * from announcement_read_records 
+        where announcement_id = #{announcementId} 
+        and user_id = #{userId} 
+        and user_type = #{userType}
+    </select>
+    
+    <!-- 根据公告ID查询阅读记录列表 -->
+    <select id="findByAnnouncementId" resultMap="AnnouncementReadRecordResultMap">
+        select * from announcement_read_records 
+        where announcement_id = #{announcementId} 
+        order by read_time desc
+    </select>
+    
+    <!-- 根据用户ID查询阅读记录列表 -->
+    <select id="findByUserId" resultMap="AnnouncementReadRecordResultMap">
+        select * from announcement_read_records 
+        where user_id = #{userId} 
+        and user_type = #{userType} 
+        order by read_time desc
+    </select>
+    
+    <!-- 查询公告的已读人数 -->
+    <select id="countByAnnouncementId" resultType="java.lang.Long">
+        select count(*) from announcement_read_records 
+        where announcement_id = #{announcementId}
+    </select>
+
+    <select id="countUnreadByAnnouncementId" resultType="java.lang.Long">
+        SELECT COALESCE(
+            (CASE WHEN #{targetType} LIKE '%\"STUDENT\"%' THEN
+                (SELECT COUNT(*) FROM student_users) -
+                (SELECT COUNT(*) FROM announcement_read_records 
+                 WHERE announcement_id = #{announcementId} AND user_type = 'STUDENT')
+            ELSE 0 END) +
+            (CASE WHEN #{targetType} LIKE '%\"TEACHER\"%' THEN
+                (SELECT COUNT(*) FROM teacher_users) -
+                (SELECT COUNT(*) FROM announcement_read_records 
+                 WHERE announcement_id = #{announcementId} AND user_type = 'TEACHER')
+            ELSE 0 END) +
+            (CASE WHEN #{targetType} LIKE '%\"TEACHER_TYPE\"%' THEN
+                (SELECT COUNT(*) FROM teacher_users WHERE teacher_type = #{targetValue}) -
+                (SELECT COUNT(*) FROM announcement_read_records arr 
+                 JOIN teacher_users tu ON arr.user_id = tu.teacher_user_id
+                 WHERE arr.announcement_id = #{announcementId} AND arr.user_type = 'TEACHER' AND tu.teacher_type = #{targetValue})
+            ELSE 0 END) +
+            (CASE WHEN #{targetType} LIKE '%\"COMPANY\"%' THEN
+                (SELECT COUNT(*) FROM company_users) -
+                (SELECT COUNT(*) FROM announcement_read_records 
+                 WHERE announcement_id = #{announcementId} AND user_type = 'COMPANY')
+            ELSE 0 END), 0
+        )
+    </select>
+    
+    <!-- 批量插入公告阅读记录 -->
+    <insert id="batchInsert" parameterType="java.util.List">
+        insert into announcement_read_records (announcement_id, user_id, user_type, read_time)
+        values 
+        <foreach collection="records" item="record" separator=",">
+            (#{record.announcementId}, #{record.userId}, #{record.userType}, NOW())
+        </foreach>
+    </insert>
+</mapper>
