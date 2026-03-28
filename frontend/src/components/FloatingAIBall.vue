@@ -646,7 +646,8 @@ const sendStreamingMessage = (message) => {
       body: JSON.stringify({
         message: message,
         context: context,
-        model: selectedModel.value
+        model: selectedModel.value,
+        role: props.role
       }),
       signal: controller.signal
     })
