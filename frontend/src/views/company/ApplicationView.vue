@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { Document, Download } from '@element-plus/icons-vue'
 import { createWorkbook, jsonToSheet, appendSheet, writeWorkbook } from '../../utils/xlsx'
 import { usePositionStore } from '../../store/position'
 import { useAuthStore } from '@/store/auth'
 import applicationApi from '@/api/InternshipApplicationService'
+import studentArchiveService from '@/api/StudentArchiveService'
 
 const positionStore = usePositionStore()
 const authStore = useAuthStore()
@@ -52,6 +54,7 @@ onMounted(() => {
 
 const detailDialogVisible = ref(false)
 const currentStudent = ref(null)
+const studentArchives = ref([])
 
 const groupedApplications = computed(() => {
   const groups = {}
@@ -298,7 +301,65 @@ const handleViewDetail = async (row) => {
   currentStudent.value = row
   detailDialogVisible.value = true
 
+  // 获取学生申请材料
+  if (row.studentId) {
+    try {
+      const response = await studentArchiveService.getStudentArchives(row.studentId)
+      if (response.code === 200) {
+        studentArchives.value = response.data || []
+      } else {
+        studentArchives.value = []
+      }
+    } catch (error) {
+      console.error('获取学生材料失败:', error)
+      studentArchives.value = []
+    }
+  }
+
   console.log('查看学生详情:', row)
+}
+
+// 下载申请材料
+const handleDownloadArchive = async (archive) => {
+  try {
+    const response = await studentArchiveService.downloadArchive(archive.id)
+    // 根据文件类型设置正确的 MIME type
+    const fileExt = archive.fileName?.split('.').pop()?.toLowerCase() || ''
+    let mimeType = 'application/octet-stream'
+    if (['jpg', 'jpeg'].includes(fileExt)) mimeType = 'image/jpeg'
+    else if (fileExt === 'png') mimeType = 'image/png'
+    else if (fileExt === 'gif') mimeType = 'image/gif'
+    else if (fileExt === 'pdf') mimeType = 'application/pdf'
+    else if (fileExt === 'doc') mimeType = 'application/msword'
+    else if (fileExt === 'docx') mimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+
+    const blob = new Blob([response], { type: mimeType })
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = archive.fileName || '申请材料'
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    window.URL.revokeObjectURL(url)
+    ElMessage.success('下载成功')
+  } catch (error) {
+    console.error('下载失败:', error)
+    ElMessage.error('下载失败，请稍后重试')
+  }
+}
+
+// 预览申请材料
+const handlePreviewArchive = async (archive) => {
+  try {
+    const response = await studentArchiveService.previewArchive(archive.id)
+    const blob = new Blob([response.data])
+    const url = window.URL.createObjectURL(blob)
+    window.open(url, '_blank')
+  } catch (error) {
+    console.error('预览失败:', error)
+    ElMessage.error('预览失败，请稍后重试')
+  }
 }
 
 const handleExport = async () => {
@@ -668,6 +729,26 @@ const handleDownloadFile = async (archiveId, fileName) => {
             {{ currentStudent.selfIntroduction || '暂无' }}
           </div>
         </div>
+
+        <!-- 申请材料区域 -->
+        <div class="detail-section">
+          <h3 class="section-title">申请材料</h3>
+          <div v-if="studentArchives.length > 0" class="archives-list">
+            <div v-for="archive in studentArchives" :key="archive.id" class="archive-item">
+              <div class="archive-info">
+                <el-icon class="archive-icon"><Document /></el-icon>
+                <span class="archive-name">{{ archive.fileName }}</span>
+                <el-tag size="small" type="info">{{ archive.fileType }}</el-tag>
+              </div>
+              <div class="archive-actions">
+                <el-button size="small" type="primary" link @click="handleDownloadArchive(archive)">下载</el-button>
+              </div>
+            </div>
+          </div>
+          <div v-else class="no-archives">
+            <el-empty description="暂无申请材料" :image-size="60" />
+          </div>
+        </div>
       </div>
 
       <template #footer>
@@ -979,6 +1060,53 @@ const handleDownloadFile = async (archiveId, fileName) => {
   line-height: 1.8;
   color: #606266;
   font-size: 14px;
+}
+
+/* 申请材料样式 */
+.archives-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.archive-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background: #f5f7fa;
+  border-radius: 8px;
+  border: 1px solid #ebeef5;
+}
+
+.archive-item:hover {
+  background: #ecf5ff;
+  border-color: #409EFF;
+}
+
+.archive-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.archive-icon {
+  font-size: 20px;
+  color: #409EFF;
+}
+
+.archive-name {
+  color: #303133;
+  font-size: 14px;
+}
+
+.archive-actions {
+  display: flex;
+  gap: 12px;
+}
+
+.no-archives {
+  padding: 20px 0;
 }
 
 :deep(.el-table) {

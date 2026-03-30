@@ -316,14 +316,23 @@ public class EvaluationManagementController {
                 effectivePeriod = internshipReflectionService.calculatePeriodNumber(new Date());
             }
 
-            // 检查学生是否有指定阶段（当前阶段）的非草稿心得，并且AI分析已完成
-            // 只有当实习心得提交后AI分析也完成时，教师才能看到评分按钮
+            // 检查AI评分开关状态
+            boolean aiScoringEnabled = counselorAISettingsService.isAiScoringEnabled(currentUserId);
+
+            // 检查学生是否有指定阶段（当前阶段）的非草稿心得
+            // 如果开启了AI评分，必须等AI分析完成才能显示；如果未开启，有心得就显示
             if (effectivePeriod != null && reflections != null) {
                 for (InternshipReflection r : reflections) {
                     if (r.getPeriodNumber() != null && effectivePeriod.equals(r.getPeriodNumber())) {
-                        // 检查该心得是否已有AI分析结果
-                        StudentReflectionAIAnalysis aiResult = studentReflectionAIAnalysisService.findByReflectionId(r.getId());
-                        if (aiResult != null) {
+                        if (aiScoringEnabled) {
+                            // AI评分开启时，必须AI分析完成才算有当前阶段心得
+                            StudentReflectionAIAnalysis aiResult = studentReflectionAIAnalysisService.findByReflectionId(r.getId());
+                            if (aiResult != null) {
+                                hasCurrentPeriodReport = true;
+                                break;
+                            }
+                        } else {
+                            // AI评分未开启，有心得就显示
                             hasCurrentPeriodReport = true;
                             break;
                         }
@@ -727,7 +736,7 @@ public class EvaluationManagementController {
                 if (reflections != null && currentPeriod != null) {
                     for (InternshipReflection r : reflections) {
                         if (currentPeriod.equals(r.getPeriodNumber())) {
-                            progressRecordService.updateStatusByRelatedId(r.getId(), "reflection", "success");
+                            progressRecordService.updateStatusByRelatedId(r.getId(), "reflection_submit", "success");
                             break;
                         }
                     }

@@ -7,6 +7,7 @@ import com.gdmu.entity.InternshipConfirmationRecord;
 import com.gdmu.service.StudentInternshipStatusService;
 import com.gdmu.service.UserService;
 import com.gdmu.service.InternshipConfirmationRecordService;
+import com.gdmu.service.InternshipProgressRecordService;
 import com.gdmu.anno.Log;
 import com.gdmu.exception.BusinessException;
 import com.gdmu.utils.CurrentHolder;
@@ -50,6 +51,9 @@ public class StudentInternshipStatusController {
 
     @Autowired
     private InternshipConfirmationRecordService confirmationRecordService;
+
+    @Autowired
+    private InternshipProgressRecordService progressRecordService;
 
     /**
      * 获取实习状态列表（分页）
@@ -777,6 +781,8 @@ public class StudentInternshipStatusController {
                             record.setStatus(1); // 更新为已确认
                             confirmationRecordService.update(record);
                             log.info("更新确认记录 ID: {} 为已确认", record.getId());
+                            // 同步更新实习进展记录状态
+                            progressRecordService.updateStatusByRelatedId(record.getId(), "internship_confirmation", "success");
                             break;
                         }
                     }

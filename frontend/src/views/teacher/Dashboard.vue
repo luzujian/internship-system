@@ -219,6 +219,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { dashboardApi } from '../../api/teacherDashboard'
 import type { DashboardStats } from '../../api/teacherDashboard'
 import { getInternshipNodes } from '../../api/teacherSettings'
+import emitter from '../../utils/eventBus'
 
 // 时间范围
 const startDate = ref('')
@@ -329,6 +330,11 @@ const loadDashboardData = async () => {
 
 // 应用时间范围
 const applyDateRange = () => {
+  // 保存到 localStorage，供首页使用
+  localStorage.setItem('teacher_dashboard_startDate', startDate.value)
+  localStorage.setItem('teacher_dashboard_endDate', endDate.value)
+  // 通知首页刷新数据
+  emitter.emit('dashboard-date-range-changed')
   loadDashboardData()
 }
 
@@ -361,21 +367,22 @@ const loadInternshipTimeSettings = async () => {
     const response = await getInternshipNodes()
     if (response.data) {
       const data = response.data as any
-      if (data.startDate) {
-        startDate.value = data.startDate
+      // 使用应聘时间段，与首页保持一致
+      if (data.applicationStartTime) {
+        startDate.value = data.applicationStartTime
       }
-      if (data.endDate) {
-        endDate.value = data.endDate
+      if (data.applicationEndTime) {
+        endDate.value = data.applicationEndTime
       }
     }
   } catch (error) {
     console.error('加载实习时间设置失败:', error)
     // 如果加载失败，使用默认值
     if (!startDate.value) {
-      startDate.value = '2026-01-01'
+      startDate.value = '2026-03-01'
     }
     if (!endDate.value) {
-      endDate.value = '2026-01-31'
+      endDate.value = '2026-05-31'
     }
   }
 }

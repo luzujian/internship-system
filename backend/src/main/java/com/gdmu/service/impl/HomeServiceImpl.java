@@ -61,24 +61,31 @@ public class HomeServiceImpl implements HomeService {
     private InternshipTimeSettingsService internshipTimeSettingsService;
 
     @Override
-    public HomeStatsDTO getHomeStats(Long userId, String userType) {
+    public HomeStatsDTO getHomeStats(Long userId, String userType, String startDate, String endDate) {
         log.info("获取首页统计数据，用户 ID: {}, 用户类型：{}", userId, userType);
 
         HomeStatsDTO homeStats = new HomeStatsDTO();
 
         try {
-            // 获取当前学期的时间范围（从应聘开始到实习结束）
-            InternshipTimeSettings timeSettings = internshipTimeSettingsService.findLatest();
-            String startDate = null;
-            String endDate = null;
-            if (timeSettings != null) {
-                startDate = timeSettings.getApplicationStartDate();
-                endDate = timeSettings.getApplicationEndDate();
-                log.info("当前学期时间范围（应聘开始~应聘结束）: {} ~ {}", startDate, endDate);
+            // 如果外部没有传入时间范围，则从配置中获取
+            if (startDate == null || endDate == null) {
+                InternshipTimeSettings timeSettings = internshipTimeSettingsService.findLatest();
+                if (timeSettings != null) {
+                    if (startDate == null) {
+                        startDate = timeSettings.getApplicationStartDate();
+                    }
+                    if (endDate == null) {
+                        endDate = timeSettings.getApplicationEndDate();
+                    }
+                    log.info("当前学期时间范围（应聘开始~应聘结束）: {} ~ {}", startDate, endDate);
+                }
+            } else {
+                log.info("使用外部传入时间范围: {} ~ {}", startDate, endDate);
             }
 
             Map<String, Object> dashboardStats;
 
+            // 根据teacherType判断身份：辅导员显示负责班级数据，系室和学院教师显示所有数据
             if ("COUNSELOR".equals(userType) && userId != null && userId > 0) {
                 List<ClassCounselorRelation> relations = classCounselorRelationMapper.findByCounselorId(userId);
                 if (relations != null && !relations.isEmpty()) {

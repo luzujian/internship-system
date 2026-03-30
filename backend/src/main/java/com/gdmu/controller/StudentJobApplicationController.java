@@ -9,6 +9,7 @@ import com.gdmu.service.StudentJobApplicationService;
 import com.gdmu.service.UserService;
 
 import java.util.Date;
+import java.util.List;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -45,7 +46,14 @@ public class StudentJobApplicationController {
         try {
             User user = getCurrentUser();
             if (user == null) return Result.error("未登录");
-            return Result.success(applicationService.findByStudentId(user.getId()));
+            List<StudentJobApplication> applications = applicationService.findByStudentId(user.getId());
+            // 转换行业英文为中文
+            for (StudentJobApplication app : applications) {
+                if (app.getIndustryName() != null) {
+                    app.setIndustryName(convertIndustryToChinese(app.getIndustryName()));
+                }
+            }
+            return Result.success(applications);
         } catch (Exception e) {
             log.error("获取申请列表失败: {}", e.getMessage(), e);
             return Result.error("获取失败");
@@ -89,6 +97,55 @@ public class StudentJobApplicationController {
         } catch (Exception e) {
             log.error("删除申请失败: {}", e.getMessage(), e);
             return Result.error("删除失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 将英文行业名称转换为中文
+     */
+    private String convertIndustryToChinese(String industry) {
+        if (industry == null) {
+            return null;
+        }
+        switch (industry.toLowerCase()) {
+            case "internet":
+                return "互联网";
+            case "finance":
+            case "financial":
+                return "金融";
+            case "manufacturing":
+                return "制造业";
+            case "education":
+                return "教育";
+            case "healthcare":
+            case "medical":
+            case "health":
+                return "医疗健康";
+            case "retail":
+                return "零售";
+            case "media":
+                return "传媒";
+            case "telecom":
+            case "telecommunication":
+                return "通信";
+            case "real_estate":
+            case "property":
+                return "房地产";
+            case "logistics":
+            case "supply_chain":
+                return "物流";
+            case "energy":
+                return "能源";
+            case "construction":
+                return "建筑";
+            case "government":
+                return "政府";
+            case "nonprofit":
+            case "ngo":
+                return "非营利组织";
+            case "other":
+            default:
+                return "其他";
         }
     }
 }

@@ -498,4 +498,11 @@
             update_time = NOW()
         WHERE id = #{id}
     </update>
+
+    <!-- 根据公司名称查找公司 -->
+    <select id="findByCompanyName" resultType="com.gdmu.entity.CompanyUser">
+        SELECT * FROM company_users
+        WHERE company_name = #{companyName}
+        LIMIT 1
+    </select>
 </mapper>

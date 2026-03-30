@@ -371,6 +371,9 @@ public class StudentInternshipConfirmationController {
             status.setInternshipDuration(record.getInternshipDuration());
             // 设置企业确认状态为待确认(0)
             status.setCompanyConfirmStatus(0);
+            // 同步联系电话和备注
+            status.setContactPhone(record.getContactPhone());
+            status.setRemark(record.getRemark());
 
             if (status.getId() == null) {
                 internshipStatusService.insert(status);

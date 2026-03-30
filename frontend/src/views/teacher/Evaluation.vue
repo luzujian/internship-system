@@ -180,7 +180,6 @@
       </el-tabs>
 
       <el-table
-        v-loading="loading"
         :data="displayedStudents"
         style="width: 100%"
         @selection-change="handleSelectionChange"
@@ -462,8 +461,8 @@
               <button
                 v-if="!isViewOnly"
                 class="btn btn-primary"
-                @click="submitEvaluation"
-                :disabled="!isFormValid"
+                @click.stop.prevent="submitEvaluation"
+                :disabled="!isFormValid || isSubmitting"
               >
                 {{ currentStudent?.isEvaluated ? '更新评价' : '提交评价' }}
               </button>
@@ -895,15 +894,18 @@ const showEvaluationModal = ref(false)
 const isViewOnly = ref(false) // 只读模式，用于已评分查看
 const loading = ref(false)
 const statsLoading = ref(false)
+const isSubmitting = ref(false) // 防止重复提交
 
-// 统计数据
+// 统计数据 - 学生总数显示所有学生，其他统计只显示当前阶段的数据
 const statistics = computed(() => {
-  const total = students.value.length
-  const evaluated = students.value.filter(s => s.isEvaluated).length
-  const unevaluated = total - evaluated
-  const hasReport = students.value.filter(s => s.hasReports).length
-  // 已评分但未发布（上传）的数量
-  const unpublished = students.value.filter(s => s.isEvaluated && !s.gradePublished).length
+  // 只统计当前阶段有心得的学生（hasCurrentPeriodReport=true）
+  const studentsWithCurrentPeriodReport = students.value.filter(s => s.hasCurrentPeriodReport)
+  const total = students.value.length // 学生总数：所有学生
+  const evaluated = studentsWithCurrentPeriodReport.filter(s => s.isEvaluated).length
+  const unevaluated = studentsWithCurrentPeriodReport.filter(s => !s.isEvaluated).length
+  const hasReport = studentsWithCurrentPeriodReport.length // 有当前阶段心得的学生数
+  // 有当前阶段心得、已评分但未发布（上传）的数量
+  const unpublished = studentsWithCurrentPeriodReport.filter(s => s.isEvaluated && !s.gradePublished).length
   return {
     totalStudents: total,
     evaluatedCount: evaluated,
@@ -1108,7 +1110,7 @@ const loadStudentList = async () => {
       return 0
     })
   } catch (error) {
-    ElMessage.error('加载学生列表失败：' + (error.message || '未知错误'))
+    console.warn('刷新学生列表失败：', error.message || error)
   } finally {
     loading.value = false
   }
@@ -1431,40 +1433,49 @@ const toggleActionPanel = (student: Student) => {
 
 // 提交评价
 const submitEvaluation = async () => {
-  if (currentStudent.value && isFormValid.value) {
-    try {
-      const params: any = {
-        studentId: currentStudent.value.id,
-        comment: evaluationForm.value.comment
+  // 双重保护：检查 isSubmitting 并在函数入口处立即设置为 true
+  if (!currentStudent.value || !isFormValid.value || isSubmitting.value) {
+    return
+  }
+  isSubmitting.value = true
+
+  try {
+    const params: any = {
+      studentId: currentStudent.value.id,
+      comment: evaluationForm.value.comment
+    }
+
+    // 动态添加评分项
+    scoreItems.value.forEach(item => {
+      params[item.key] = evaluationForm.value[item.key]
+    })
+
+    await evaluationApi.submitEvaluation(params)
+
+    // 更新当前学生的评价状态
+    if (currentStudent.value) {
+      currentStudent.value.isEvaluated = true
+      currentStudent.value.evaluation = {
+        scores: { ...evaluationForm.value },
+        comment: evaluationForm.value.comment,
+        totalScore: totalScore.value,
+        grade: grade.value
       }
+    }
 
-      // 动态添加评分项
-      scoreItems.value.forEach(item => {
-        params[item.key] = evaluationForm.value[item.key]
-      })
+    ElMessage.success('评价提交成功')
 
-      const response = await evaluationApi.submitEvaluation(params)
-
-      // 更新当前学生的评价状态
-      if (currentStudent.value) {
-        currentStudent.value.isEvaluated = true
-        currentStudent.value.evaluation = {
-          scores: { ...evaluationForm.value },
-          comment: evaluationForm.value.comment,
-          totalScore: totalScore.value,
-          grade: grade.value
-        }
-      }
-
-      ElMessage.success('评价提交成功')
-
-      // 不关闭弹窗，等待用户点击"下一篇"或"关闭"
-      await loadStudentList()
-      await nextTick()
-
-    } catch (error) {
+  } catch (error: any) {
+    // 响应拦截器已经处理了错误消息的显示（如果有后端消息）
+    // 这里只处理其他类型的错误（无后端消息时）
+    const errorMsg = error?.response?.data?.message || error?.response?.data?.msg
+    if (!errorMsg) {
       ElMessage.error('评价提交失败，请重试')
     }
+  } finally {
+    isSubmitting.value = false
+    // 刷新列表不阻塞，失败不影响提交成功的提示
+    loadStudentList()
   }
 }
 

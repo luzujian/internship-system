@@ -37,11 +37,16 @@
         <result column="contact_person" property="contactPerson"/>
         <result column="contact_phone" property="contactPhone"/>
         <result column="contact_email" property="contactEmail"/>
+        <!-- CompanyUser 表关联字段 - 行业信息 -->
+        <result column="industry" property="industryName"/>
+        <!-- 申请人数 -->
+        <result column="apply_count" property="applyCount"/>
     </resultMap>
 
     <select id="findByStudentId" resultMap="BaseResultMap">
         SELECT sja.*, p.position_type, p.description, p.requirements, p.view_count, p.publish_date,
-               cu.contact_person, cu.contact_phone, cu.contact_email
+               cu.contact_person, cu.contact_phone, cu.contact_email, cu.industry,
+               (SELECT COUNT(*) FROM student_job_application WHERE position_id = sja.position_id) as apply_count
         FROM student_job_application sja
         LEFT JOIN position p ON sja.position_id = p.id
         LEFT JOIN company_users cu ON sja.company_id = cu.id
@@ -51,7 +56,8 @@
 
     <select id="findById" resultMap="BaseResultMap">
         SELECT sja.*, p.position_type, p.description, p.requirements, p.view_count, p.publish_date,
-               cu.contact_person, cu.contact_phone, cu.contact_email
+               cu.contact_person, cu.contact_phone, cu.contact_email, cu.industry,
+               (SELECT COUNT(*) FROM student_job_application WHERE position_id = sja.position_id) as apply_count
         FROM student_job_application sja
         LEFT JOIN position p ON sja.position_id = p.id
         LEFT JOIN company_users cu ON sja.company_id = cu.id
@@ -83,7 +89,8 @@
 
     <select id="findByCompanyId" resultMap="BaseResultMap">
         SELECT sja.*, p.position_type, p.description, p.requirements, p.view_count, p.publish_date,
-               cu.contact_person, cu.contact_phone, cu.contact_email
+               cu.contact_person, cu.contact_phone, cu.contact_email, cu.industry,
+               (SELECT COUNT(*) FROM student_job_application WHERE position_id = sja.position_id) as apply_count
         FROM student_job_application sja
         LEFT JOIN position p ON sja.position_id = p.id
         LEFT JOIN company_users cu ON sja.company_id = cu.id

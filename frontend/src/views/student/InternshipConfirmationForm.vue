@@ -873,14 +873,23 @@ const fetchPendingConfirmation = async () => {
       // 检查学生当前实习状态
       // internshipStatus: 0=无offer, 1=待确认, 2=已确定, 3=实习中, 5=已中断
       const currentStatus = historyList.value.length > 0 ? historyList.value[0].internshipStatus : null
+      // 检查确认记录状态：0=待企业确认, 1=已确认, 2=已拒绝
+      const confirmationStatus = historyList.value.length > 0 ? historyList.value[0].status : null
 
-      // 如果学生当前正在实习中（status=2已确定 或 status=3实习中），不允许再次填写
+      // 如果学生当前正在实习中（internshipStatus=2已确定 或 internshipStatus=3实习中），不允许再次填写
       if (currentStatus === 2 || currentStatus === 3) {
         hasPendingConfirmation.value = false
         return
       }
 
-      // 只有状态为 0（无offer）、1（待确认）、5（已中断）时才允许填写
+      // 如果已有待确认或已确认的记录（status=0待确认 或 status=1已确认），不允许再次填写
+      // 只有 status=2（已拒绝）时才允许修改
+      if (confirmationStatus === 0 || confirmationStatus === 1) {
+        hasPendingConfirmation.value = false
+        return
+      }
+
+      // 只有状态为 0（无offer）、5（已中断）或 status=2（已拒绝）时才允许填写
       hasPendingConfirmation.value = true
       // 填充学生信息（从当前用户信息）
       const user = authStore.user

@@ -34,7 +34,7 @@
             <span class="progress-text">{{ currentInternship.progress }}%</span>
           </div>
           <el-tooltip :content="submitReason || '提交实习心得'" placement="top" :disabled="canSubmit">
-            <button class="submit-log-button" :class="{ disabled: !canSubmit }" @click="submitLog" :disabled="!canSubmit">
+            <button class="submit-log-button" :class="{ disabled: !canSubmit }" @click.stop="submitLog" :disabled="!canSubmit" style="position: relative; z-index: 10;">
               <el-icon class="button-icon"><Edit /></el-icon>
               提交实习心得
             </button>

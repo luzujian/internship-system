@@ -503,7 +503,7 @@ public class StudentPositionController {
                 }
 
                 if (company.getIndustry() != null) {
-                    vo.setIndustryName(company.getIndustry());
+                    vo.setIndustryName(convertIndustryToChinese(company.getIndustry()));
                 }
 
                 vo.setScale(company.getScale());
@@ -531,5 +531,54 @@ public class StudentPositionController {
         }
 
         return vo;
+    }
+
+    /**
+     * 将英文行业名称转换为中文
+     */
+    private String convertIndustryToChinese(String industry) {
+        if (industry == null) {
+            return null;
+        }
+        switch (industry.toLowerCase()) {
+            case "internet":
+                return "互联网";
+            case "finance":
+            case "financial":
+                return "金融";
+            case "manufacturing":
+                return "制造业";
+            case "education":
+                return "教育";
+            case "healthcare":
+            case "medical":
+            case "health":
+                return "医疗健康";
+            case "retail":
+                return "零售";
+            case "media":
+                return "传媒";
+            case "telecom":
+            case "telecommunication":
+                return "通信";
+            case "real_estate":
+            case "property":
+                return "房地产";
+            case "logistics":
+            case "supply_chain":
+                return "物流";
+            case "energy":
+                return "能源";
+            case "construction":
+                return "建筑";
+            case "government":
+                return "政府";
+            case "nonprofit":
+            case "ngo":
+                return "非营利组织";
+            case "other":
+            default:
+                return "其他";
+        }
     }
 }

@@ -352,6 +352,18 @@ request.interceptors.response.use(
     console.log('[request] 响应拦截器 - URL:', response.config.url)
     console.log('[request] 响应拦截器 - 状态码:', response.status)
     console.log('[request] 响应拦截器 - 响应数据:', response.data)
+
+    // 检查业务状态码
+    const responseData = response.data
+    if (responseData && responseData.code !== undefined && responseData.code !== 200) {
+      // 业务状态码表示失败，抛出错误让 catch 捕获
+      // 标记 skipErrorMessage=true，避免错误分支重复显示消息
+      const error = new Error(responseData.message || '请求失败')
+      ;(error as any).response = response
+      ;(error as any).skipErrorMessage = true
+      return Promise.reject(error)
+    }
+
     return response.data
   },
   async (error) => {
@@ -432,7 +444,9 @@ request.interceptors.response.use(
     if (error.response) {
       const message = error.response.data?.message || error.response.data?.msg || ERROR_MESSAGES.SERVER_ERROR
 
-      if (!config?.skipErrorMessage) {
+      // skipErrorMessage 标记在 error 对象上（来自业务错误）或 config 上（来自请求配置）
+      const shouldSkipMessage = (error as any).skipErrorMessage || config?.skipErrorMessage
+      if (!shouldSkipMessage) {
         ElMessage.error(message)
       }
     } else if (error.request) {

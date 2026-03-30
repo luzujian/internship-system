@@ -99,7 +99,7 @@
             </div>
             <div class="info-item">
               <el-icon><Clock /></el-icon>
-              <span>{{ application.duration }}</span>
+              <span>{{ getDurationDisplay(application.duration) }}</span>
             </div>
           </div>
           <div class="card-footer">
@@ -199,11 +199,7 @@
               </div>
               <div class="info-item">
                 <span class="info-label">时长：</span>
-                <span class="info-value">{{ currentApplication.duration }}</span>
-              </div>
-              <div class="info-item">
-                <span class="info-label">类型：</span>
-                <span class="info-value">{{ currentApplication.type }}</span>
+                <span class="info-value">{{ getDurationDisplay(currentApplication.duration) }}</span>
               </div>
               <div class="info-item">
                 <span class="info-label">行业：</span>
@@ -336,23 +332,71 @@
               </div>
               <h2 class="module-title">我的申请材料</h2>
             </div>
-            <div class="material-list">
-              <div class="material-item">
-                <el-icon class="material-icon"><Document /></el-icon>
-                <span>个人简历.pdf</span>
-                <el-button type="primary" size="small" link>下载</el-button>
-              </div>
-              <div class="material-item">
-                <el-icon class="material-icon"><Document /></el-icon>
-                <span>成绩单.pdf</span>
-                <el-button type="primary" size="small" link>下载</el-button>
-              </div>
-              <div class="material-item">
-                <el-icon class="material-icon"><Document /></el-icon>
-                <span>自荐信.pdf</span>
-                <el-button type="primary" size="small" link>下载</el-button>
-              </div>
+
+            <div v-if="materialsLoading" class="materials-loading">
+              <el-icon class="is-loading"><Loading /></el-icon>
+              <span>加载材料中...</span>
             </div>
+
+            <template v-else>
+              <!-- 简历列表 -->
+              <div v-if="applicationMaterials.resumes.length > 0" class="materials-section">
+                <div class="materials-subtitle">简历</div>
+                <div class="material-list">
+                  <div
+                    v-for="resume in applicationMaterials.resumes"
+                    :key="resume.id"
+                    class="material-item"
+                  >
+                    <div class="material-info">
+                      <el-icon class="material-icon"><Document /></el-icon>
+                      <span class="material-name">{{ resume.name }}</span>
+                    </div>
+                    <div class="material-actions">
+                      <el-tag v-if="resume.uploadTime" size="small" type="info" class="upload-time-tag">
+                        {{ resume.uploadTime }}
+                      </el-tag>
+                      <el-button type="primary" size="small" link @click="downloadResume(resume)">
+                        <el-icon><Download /></el-icon>
+                        下载
+                      </el-button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 证书列表 -->
+              <div v-if="applicationMaterials.certificates.length > 0" class="materials-section">
+                <div class="materials-subtitle">证书</div>
+                <div class="material-list">
+                  <div
+                    v-for="cert in applicationMaterials.certificates"
+                    :key="cert.id"
+                    class="material-item"
+                  >
+                    <div class="material-info">
+                      <el-icon class="material-icon"><Medal /></el-icon>
+                      <span class="material-name">{{ cert.name }}</span>
+                    </div>
+                    <div class="material-actions">
+                      <el-tag v-if="cert.uploadTime" size="small" type="info" class="upload-time-tag">
+                        {{ cert.uploadTime }}
+                      </el-tag>
+                      <el-button type="primary" size="small" link @click="downloadCertificate(cert)">
+                        <el-icon><Download /></el-icon>
+                        下载
+                      </el-button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 无材料提示 -->
+              <div v-if="applicationMaterials.resumes.length === 0 && applicationMaterials.certificates.length === 0" class="no-materials">
+                <el-empty description="暂无已上传的申请材料" :image-size="60" />
+                <p class="no-materials-tip">请前往个人中心的简历管理页面上传简历和证书</p>
+              </div>
+            </template>
           </div>
         </div>
       </div>
@@ -674,6 +718,9 @@ import {
   TrendCharts,
   InfoFilled,
   CircleCheckFilled,
+  Download,
+  Medal,
+  Loading,
 } from "@element-plus/icons-vue";
 
 import request from '@/utils/request';
@@ -694,6 +741,19 @@ const showJobApplicationForm = ref(false);
 const selectedFilter = ref("all");
 const selectedType = ref("all");
 const currentApplication = ref(null);
+
+// 申请详情中的简历和证书数据
+const applicationMaterials = ref({
+  resumes: [],
+  certificates: []
+});
+const materialsLoading = ref(false);
+
+// 系统默认实习时间设置
+const systemInternshipTime = ref({
+  startDate: '',
+  endDate: ''
+});
 
 // 岗位申请表表单数据
 const jobApplicationForm = ref({
@@ -1054,7 +1114,7 @@ const getStatusText = (status) => {
 };
 
 // 方法：查看申请详情
-const viewApplicationDetail = (application) => {
+const viewApplicationDetail = async (application) => {
   // 处理 requirements 字段，确保是数组格式
   let requirements = application.requirements
   if (typeof requirements === 'string') {
@@ -1080,12 +1140,79 @@ const viewApplicationDetail = (application) => {
     company: application.company || application.companyName
   };
   showDetailDialog.value = true;
+
+  // 加载申请人的简历和证书材料
+  await loadApplicationMaterials();
+};
+
+// 加载申请人的简历和证书材料
+const loadApplicationMaterials = async () => {
+  materialsLoading.value = true;
+  try {
+    // 并行加载简历、证书和系统实习时间设置
+    const [resumeRes, certRes, timeRes] = await Promise.all([
+      request.get('/student/profile/resumes'),
+      request.get('/student/profile/certificates'),
+      request.get('/settings/internship-time')
+    ]);
+
+    if (resumeRes.code === 200) {
+      applicationMaterials.value.resumes = resumeRes.data || [];
+    }
+
+    if (certRes.code === 200) {
+      applicationMaterials.value.certificates = certRes.data || [];
+    }
+
+    // 获取系统实习时间设置
+    if (timeRes.code === 200) {
+      systemInternshipTime.value = {
+        startDate: timeRes.data?.startDate || '',
+        endDate: timeRes.data?.endDate || ''
+      };
+    }
+  } catch (error) {
+    console.error('加载申请材料失败:', error);
+    applicationMaterials.value = { resumes: [], certificates: [] };
+  } finally {
+    materialsLoading.value = false;
+  }
+};
+
+// 计算实习时长显示
+const getDurationDisplay = (duration) => {
+  // 如果企业没有设置时长（为空或"不限"），但系统设置了起止时间，显示系统的时间范围
+  if (!duration || duration.trim() === '' || duration === '不限') {
+    if (systemInternshipTime.value.startDate && systemInternshipTime.value.endDate) {
+      return `${systemInternshipTime.value.startDate} 至 ${systemInternshipTime.value.endDate}`;
+    }
+    return '未设置';
+  }
+  return duration;
+};
+
+// 下载简历
+const downloadResume = (resume) => {
+  if (!resume || !resume.url) {
+    ElMessage.error('简历信息不存在')
+    return
+  }
+  window.open(resume.url, '_blank')
+};
+
+// 下载证书
+const downloadCertificate = (cert) => {
+  if (!cert || !cert.url) {
+    ElMessage.error('证书信息不存在')
+    return
+  }
+  window.open(cert.url, '_blank')
 };
 
 // 方法：撤回申请
 const withdrawApplication = async (id) => {
   try {
-    const response = await request.delete(`/student/applications/${id}`);
+    const response = await request.delete(`/student/job-applications/${id}`);
     if (response.code === 200) {
       const application = applications.value.find((app) => app.id === id);
       if (application) {
@@ -1261,10 +1388,28 @@ const submitJobApplication = async () => {
 };
 
 // 生命周期钩子
-onMounted(() => {
+onMounted(async () => {
   initFormData();
-  fetchApplications();
+  await Promise.all([
+    fetchApplications(),
+    fetchSystemInternshipTime()
+  ]);
 });
+
+// 获取系统实习时间设置
+const fetchSystemInternshipTime = async () => {
+  try {
+    const timeRes = await request.get('/settings/internship-time');
+    if (timeRes.code === 200) {
+      systemInternshipTime.value = {
+        startDate: timeRes.data?.startDate || '',
+        endDate: timeRes.data?.endDate || ''
+      };
+    }
+  } catch (error) {
+    console.error('获取系统实习时间设置失败:', error);
+  }
+};
 </script>
 
 <style scoped>
@@ -2640,6 +2785,66 @@ onMounted(() => {
   color: #409eff;
 }
 
+/* 材料模块新样式 */
+.materials-section {
+  margin-bottom: 20px;
+}
+
+.materials-section:last-child {
+  margin-bottom: 0;
+}
+
+.materials-subtitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: #606266;
+  margin-bottom: 12px;
+  padding-left: 4px;
+}
+
+.material-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.material-name {
+  font-size: 14px;
+  color: #303133;
+  font-weight: 500;
+}
+
+.material-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.upload-time-tag {
+  font-size: 12px;
+}
+
+.materials-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 30px;
+  color: #909399;
+  font-size: 14px;
+}
+
+.no-materials {
+  text-align: center;
+  padding: 20px;
+}
+
+.no-materials-tip {
+  font-size: 13px;
+  color: #909399;
+  margin-top: 8px;
+}
+
 /* 对话框底部 */
 .dialog-footer {
   display: flex;
@@ -2969,6 +3174,66 @@ onMounted(() => {
 .material-item:hover .material-icon {
   transform: scale(1.1);
   color: #409eff;
+}
+
+/* 材料模块新样式 */
+.materials-section {
+  margin-bottom: 20px;
+}
+
+.materials-section:last-child {
+  margin-bottom: 0;
+}
+
+.materials-subtitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: #606266;
+  margin-bottom: 12px;
+  padding-left: 4px;
+}
+
+.material-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.material-name {
+  font-size: 14px;
+  color: #303133;
+  font-weight: 500;
+}
+
+.material-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.upload-time-tag {
+  font-size: 12px;
+}
+
+.materials-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 30px;
+  color: #909399;
+  font-size: 14px;
+}
+
+.no-materials {
+  text-align: center;
+  padding: 20px;
+}
+
+.no-materials-tip {
+  font-size: 13px;
+  color: #909399;
+  margin-top: 8px;
 }
 
 .dialog-footer {

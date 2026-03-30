@@ -1,9 +1,11 @@
 package com.gdmu.service.impl;
 
+import com.gdmu.entity.CompanyUser;
 import com.gdmu.entity.InternshipApplicationEntity;
 import com.gdmu.entity.InternshipTimeSettings;
 import com.gdmu.entity.StudentJobApplication;
 import com.gdmu.exception.BusinessException;
+import com.gdmu.mapper.CompanyUserMapper;
 import com.gdmu.mapper.InternshipApplicationMapper;
 import com.gdmu.mapper.StudentJobApplicationMapper;
 import com.gdmu.service.InternshipTimeSettingsService;
@@ -27,6 +29,9 @@ public class StudentJobApplicationServiceImpl implements StudentJobApplicationSe
 
     @Autowired
     private InternshipTimeSettingsService internshipTimeSettingsService;
+
+    @Autowired
+    private CompanyUserMapper companyUserMapper;
 
     /**
      * 校验学生申请时间是否在应聘时间范围内
@@ -70,6 +75,14 @@ public class StudentJobApplicationServiceImpl implements StudentJobApplicationSe
     public int create(StudentJobApplication application) {
         // 校验应聘时间范围
         validateApplicationTime();
+
+        // 如果 companyId 为 null 但 companyName 不为空，尝试通过公司名查找 companyId
+        if (application.getCompanyId() == null && application.getCompanyName() != null && !application.getCompanyName().isEmpty()) {
+            CompanyUser company = companyUserMapper.findByCompanyName(application.getCompanyName());
+            if (company != null) {
+                application.setCompanyId(company.getId());
+            }
+        }
 
         if (application.getStatus() == null) {
             application.setStatus("pending");

@@ -217,33 +217,61 @@
                     </el-tag>
                   </div>
                   <div class="job-footer">
-                    <el-button 
-                      type="primary" 
+                    <el-button
+                      type="primary"
                       plain
                       @click.stop="viewJobDetail(job)"
                       class="view-detail-button"
                     >
                       查看详情
                     </el-button>
-                    <el-button
-                      v-if="!job.isApplied && job.remainingQuota > 0 && (studentStatus < 2 || studentStatus === 5)"
-                      type="primary"
-                      @click.stop="applyJob(job)"
-                      class="apply-button"
-                    >
-                      立即申请
-                    </el-button>
-                    <el-tag v-else-if="job.remainingQuota === 0" type="info">
-                      已招满
+                    <!-- 学生已确认实习岗位后，不显示任何申请按钮 -->
+                    <template v-if="statusLoaded && studentStatus !== 2">
+                      <el-button
+                        v-if="!job.isApplied && job.remainingQuota > 0"
+                        type="primary"
+                        @click.stop="applyJob(job)"
+                        class="apply-button"
+                      >
+                        立即申请
+                      </el-button>
+                      <el-tag v-else-if="job.remainingQuota === 0" type="info">
+                        已招满
+                      </el-tag>
+                      <!-- 待审核状态：可以取消 -->
+                      <el-button
+                        v-else-if="job.applicationStatus === 'pending'"
+                        type="warning"
+                        @click.stop="cancelApply(job)"
+                        class="cancel-apply-button"
+                      >
+                        取消申请
+                      </el-button>
+                      <!-- 面试通过：显示状态，不显示取消 -->
+                      <el-tag v-else-if="job.applicationStatus === 'interview_passed'" type="success">
+                        面试通过
+                      </el-tag>
+                      <!-- 面试未通过：显示状态 -->
+                      <el-tag v-else-if="job.applicationStatus === 'interview_failed'" type="danger">
+                        面试未通过
+                      </el-tag>
+                      <!-- 已通过：显示状态，不显示取消 -->
+                      <el-tag v-else-if="job.applicationStatus === 'approved'" type="success">
+                        已通过
+                      </el-tag>
+                      <!-- 已拒绝：显示状态 -->
+                      <el-tag v-else-if="job.applicationStatus === 'rejected'" type="danger">
+                        已拒绝
+                      </el-tag>
+                      <!-- 已撤回：显示状态 -->
+                      <el-tag v-else-if="job.applicationStatus === 'withdrawn'" type="info">
+                        已撤回
+                      </el-tag>
+                    </template>
+                    <!-- 已确认实习岗位后显示此标签 -->
+                    <el-tag v-else type="success">
+                      已确认实习
                     </el-tag>
-                    <el-button
-                      v-else-if="job.isApplied"
-                      type="warning"
-                      @click.stop="cancelApply(job)"
-                      class="cancel-apply-button"
-                    >
-                      取消申请
-                    </el-button>
                   </div>
                 </div>
             </div>
@@ -319,11 +347,6 @@
               </div>
               <div class="info-item">
                 <el-icon><OfficeBuilding /></el-icon>
-                <span class="info-label">类型：</span>
-                <span class="info-value">{{ selectedJob.type }}</span>
-              </div>
-              <div class="info-item">
-                <el-icon><OfficeBuilding /></el-icon>
                 <span class="info-label">行业：</span>
                 <span class="info-value">{{ selectedJob.industryName }}</span>
               </div>
@@ -377,27 +400,55 @@
           </div>
 
           <div class="detail-footer">
-            <el-button
-              v-if="!selectedJob.isApplied && selectedJob.remainingQuota > 0 && (studentStatus < 2 || studentStatus === 5)"
-              type="primary"
-              size="large"
-              @click="applyJob(selectedJob)"
-              class="detail-apply-button"
-            >
-              立即申请
-            </el-button>
-            <el-tag v-else-if="selectedJob.remainingQuota === 0" type="info">
-              已招满
+            <!-- 学生已确认实习岗位后，不显示任何申请按钮 -->
+            <template v-if="statusLoaded && studentStatus !== 2">
+              <el-button
+                v-if="!selectedJob.isApplied && selectedJob.remainingQuota > 0"
+                type="primary"
+                size="large"
+                @click="applyJob(selectedJob)"
+                class="detail-apply-button"
+              >
+                立即申请
+              </el-button>
+              <el-tag v-else-if="selectedJob.remainingQuota === 0" type="info">
+                已招满
+              </el-tag>
+              <!-- 待审核状态：可以取消 -->
+              <el-button
+                v-else-if="selectedJob.applicationStatus === 'pending'"
+                type="warning"
+                size="large"
+                @click="cancelApply(selectedJob)"
+                class="detail-cancel-apply-button"
+              >
+                取消申请
+              </el-button>
+              <!-- 面试通过：显示状态，不显示取消 -->
+              <el-tag v-else-if="selectedJob.applicationStatus === 'interview_passed'" type="success">
+                面试通过
+              </el-tag>
+              <!-- 面试未通过：显示状态 -->
+              <el-tag v-else-if="selectedJob.applicationStatus === 'interview_failed'" type="danger">
+                面试未通过
+              </el-tag>
+              <!-- 已通过：显示状态，不显示取消 -->
+              <el-tag v-else-if="selectedJob.applicationStatus === 'approved'" type="success">
+                已通过
+              </el-tag>
+              <!-- 已拒绝：显示状态 -->
+              <el-tag v-else-if="selectedJob.applicationStatus === 'rejected'" type="danger">
+                已拒绝
+              </el-tag>
+              <!-- 已撤回：显示状态 -->
+              <el-tag v-else-if="selectedJob.applicationStatus === 'withdrawn'" type="info">
+                已撤回
+              </el-tag>
+            </template>
+            <!-- 已确认实习岗位后显示此标签 -->
+            <el-tag v-else type="success">
+              已确认实习
             </el-tag>
-            <el-button
-              v-else-if="selectedJob.isApplied"
-              type="warning"
-              size="large"
-              @click="cancelApply(selectedJob)"
-              class="detail-cancel-apply-button"
-            >
-              取消申请
-            </el-button>
           </div>
         </div>
       </el-dialog>
@@ -546,6 +597,7 @@ import studentJobApplicationService from '@/api/StudentJobApplicationService'
 import positionService from '@/api/PositionService'
 import { initAnnouncementWebSocket, onPositionUpdate, onPositionDelete, offPositionUpdate, offPositionDelete } from '@/utils/websocket'
 import type { PositionUpdateData } from '@/utils/websocket'
+import eventBus from '@/utils/eventBus'
 
 const authStore = useAuthStore()
 
@@ -577,6 +629,26 @@ const handlePositionDelete = (data: { positionId: number }) => {
   if (index !== -1) {
     jobs.value.splice(index, 1)
     ElMessage.warning('该岗位已下架')
+  }
+}
+
+// 处理其他页面提交的申请（从收藏页面等）
+const handleApplicationSubmitted = (data: { positionId: number }) => {
+  console.log('收到申请提交事件:', data)
+  const job = jobs.value.find(j => j.id === data.positionId)
+  if (job) {
+    job.isApplied = true
+    ElMessage.success('申请提交成功！')
+  }
+}
+
+// 处理其他页面取消的申请（从收藏页面等）
+const handleApplicationCancelled = (data: { positionId: number }) => {
+  console.log('收到取消申请事件:', data)
+  const job = jobs.value.find(j => j.id === data.positionId)
+  if (job) {
+    job.isApplied = false
+    ElMessage.success('已取消申请！')
   }
 }
 
@@ -668,6 +740,7 @@ const cascaderProps = {
 const jobs = ref([])
 const originalJobs = ref([])
 const studentStatus = ref(0) // 学生实习状态：0=无offer, 1=待确认, 2=已确定, 3=实习中, 4=已结束
+const statusLoaded = ref(false) // 状态是否已加载，默认false防止初始状态显示申请按钮
 
 const filteredJobs = computed(() => {
   let result = [...jobs.value]
@@ -927,6 +1000,8 @@ const submitApplication = async () => {
       ElMessage.success('申请提交成功！')
       // 关闭详情对话框
       showJobDetailDialog.value = false
+      // 触发申请成功事件，通知其他页面更新状态
+      eventBus.emit('applicationSubmitted', { positionId: currentApplyingJob.value.id })
     } else {
       ElMessage.error(response.message || '申请失败')
     }
@@ -945,6 +1020,8 @@ const cancelApply = (job) => {
   }).then(() => {
     job.isApplied = false
     ElMessage.success('已取消申请！')
+    // 触发取消申请事件，通知其他页面更新状态
+    eventBus.emit('applicationCancelled', { positionId: job.id })
   }).catch(() => {
     ElMessage.info('已取消操作')
   })
@@ -954,11 +1031,15 @@ const cancelApply = (job) => {
 const fetchStudentStatus = async () => {
   try {
     const response = await request.get('/student/internship-status')
+    console.log('【DEBUG】学生实习状态响应:', response)
     if (response.code === 200 && response.data) {
       studentStatus.value = response.data.status || 0
+      console.log('【DEBUG】studentStatus 已设置为:', studentStatus.value)
     }
+    statusLoaded.value = true // 状态加载完成
   } catch (error) {
     console.error('获取学生实习状态失败:', error)
+    statusLoaded.value = true // 即使失败也标记为加载完成，避免一直不显示
   }
 }
 
@@ -988,20 +1069,30 @@ const formatArrayOrString = (value) => {
   return value || ''
 }
 
-// 标记已申请的职位
+// 标记已申请的职位及其状态
 const markAppliedJobs = async () => {
   try {
-    const response = await request.get('/student/applications')
+    // 使用与 StudentJobApplicationService.list() 相同的 API
+    const response = await studentJobApplicationService.list()
     if (response.code === 200) {
-      const appliedPositionIds = new Set(response.data.map(app => app.positionId))
+      // 创建一个 Map 用于快速查找职位对应的申请状态
+      const applicationStatusMap = new Map()
+      response.data.forEach((app) => {
+        applicationStatusMap.set(String(app.positionId), app.status)
+      })
+
       jobs.value.forEach(job => {
-        if (appliedPositionIds.has(job.id)) {
+        const positionIdStr = String(job.id)
+        if (applicationStatusMap.has(positionIdStr)) {
           job.isApplied = true
+          job.applicationStatus = applicationStatusMap.get(positionIdStr)
         }
       })
       originalJobs.value.forEach(job => {
-        if (appliedPositionIds.has(job.id)) {
+        const positionIdStr = String(job.id)
+        if (applicationStatusMap.has(positionIdStr)) {
           job.isApplied = true
+          job.applicationStatus = applicationStatusMap.get(positionIdStr)
         }
       })
     }
@@ -1083,10 +1174,12 @@ const loadPositions = async () => {
 
 onMounted(async () => {
   console.log('Jobs component mounted')
-  // 并行加载所有初始化数据，提升加载速度
-  // 注意：fetchStudentStatus、loadIndustryOptions 等函数通过 ref 直接更新状态，不需要等待返回值
+  // 先获取学生状态，确保后续逻辑能拿到正确的 studentStatus
+  await fetchStudentStatus()
+  console.log('【DEBUG】studentStatus after fetch:', studentStatus.value)
+
+  // 并行加载其他初始化数据
   Promise.all([
-    fetchStudentStatus(),
     loadIndustryOptions(),
     loadCompanyOptions(),
     loadRegionOptions(),
@@ -1100,12 +1193,19 @@ onMounted(async () => {
     onPositionUpdate(handlePositionUpdate)
     onPositionDelete(handlePositionDelete)
   }
+
+  // 监听收藏页面或其他页面的申请状态变化
+  eventBus.on('applicationSubmitted', handleApplicationSubmitted)
+  eventBus.on('applicationCancelled', handleApplicationCancelled)
 })
 
 onUnmounted(() => {
   // 【新增】移除WebSocket监听器
   offPositionUpdate(handlePositionUpdate)
   offPositionDelete(handlePositionDelete)
+  // 移除申请状态监听
+  eventBus.off('applicationSubmitted', handleApplicationSubmitted)
+  eventBus.off('applicationCancelled', handleApplicationCancelled)
 })
 </script>
 
@@ -1486,7 +1586,7 @@ onUnmounted(() => {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
   gap: 16px;
-  max-height: calc(100vh - 560px);
+  max-height: calc(100vh - 420px);
   overflow-y: auto;
   padding-right: 4px;
 }
@@ -1495,7 +1595,7 @@ onUnmounted(() => {
 .job-card {
   background: #ffffff;
   border-radius: 16px;
-  padding: 16px;
+  padding: 20px;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
   transition: all 0.3s ease;
   display: flex;

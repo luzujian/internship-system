@@ -43,4 +43,10 @@ public class StudentJobApplication {
     private String contactPerson; // contact_person
     private String contactPhone; // contact_phone
     private String contactEmail; // contact_email
+
+    // 企业行业字段（从 CompanyUser 表关联查询）
+    private String industryName; // industry
+
+    // 申请人数（聚合查询）
+    private Integer applyCount; // 该职位的申请人数
 }

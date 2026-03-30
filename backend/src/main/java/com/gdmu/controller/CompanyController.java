@@ -707,6 +707,37 @@ public class CompanyController {
                     // 【修复】同时更新投递申请进展记录状态
                     progressRecordService.updateStatusByRelatedId(application.getId(), "job_application", progressStatus);
 
+                    // 面试通过时，创建或更新学生实习状态为待确认
+                    if ("interview_passed".equals(newStatus)) {
+                        StudentInternshipStatus existingStatus = studentInternshipStatusService.findByStudentId(application.getStudentId());
+                        if (existingStatus != null) {
+                            // 已存在记录，更新
+                            existingStatus.setPositionId(application.getPositionId());
+                            existingStatus.setCompanyId(application.getCompanyId());
+                            existingStatus.setStatus(1); // 待确认
+                            existingStatus.setCompanyConfirmStatus(1);
+                            existingStatus.setUpdateTime(new Date());
+                            existingStatus.setStudentName(application.getStudentName());
+                            existingStatus.setPositionName(application.getPositionName());
+                            studentInternshipStatusService.update(existingStatus);
+                            log.info("【面试通过】更新实习状态记录为待确认，学生ID: {}", application.getStudentId());
+                        } else {
+                            // 不存在记录，创建新记录
+                            StudentInternshipStatus internshipStatus = new StudentInternshipStatus();
+                            internshipStatus.setStudentId(application.getStudentId());
+                            internshipStatus.setPositionId(application.getPositionId());
+                            internshipStatus.setCompanyId(application.getCompanyId());
+                            internshipStatus.setStatus(1); // 待确认
+                            internshipStatus.setCompanyConfirmStatus(1);
+                            internshipStatus.setCreateTime(new Date());
+                            internshipStatus.setUpdateTime(new Date());
+                            internshipStatus.setStudentName(application.getStudentName());
+                            internshipStatus.setPositionName(application.getPositionName());
+                            studentInternshipStatusService.insert(internshipStatus);
+                            log.info("【面试通过】创建实习状态记录为待确认，学生ID: {}", application.getStudentId());
+                        }
+                    }
+
                     // WebSocket推送面试状态更新给学生（handler内部会转换statusText）
                     webSocketHandler.sendInterviewStatusUpdateToUser(application.getStudentId(), invitation.getId(), newStatus);
 
@@ -1002,6 +1033,17 @@ public class CompanyController {
             invitation.setContactPerson(contactPerson);
             invitation.setContactPhone(contactPhone);
             interviewInvitationService.create(invitation);
+
+            // 创建面试进度记录（待处理状态）
+            InternshipProgressRecord interviewRecord = new InternshipProgressRecord();
+            interviewRecord.setStudentId(application.getStudentId());
+            interviewRecord.setEventType("interview");
+            interviewRecord.setEventTitle("面试邀请");
+            interviewRecord.setDescription("收到来自 " + companyName + " 的面试邀请，岗位: " + position.getPositionName());
+            interviewRecord.setStatus("pending");
+            interviewRecord.setRelatedId(invitation.getId());
+            interviewRecord.setEventTime(new Date());
+            progressRecordService.saveRecord(interviewRecord);
 
             // WebSocket推送面试邀请给学生
             Map<String, Object> data = new HashMap<>();

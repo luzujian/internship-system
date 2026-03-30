@@ -25,9 +25,9 @@ export interface HomeStats {
 }
 
 export const homeApi = {
-  getHomeStats: async (): Promise<HomeStats> => {
+  getHomeStats: async (params?: { startDate?: string; endDate?: string }): Promise<HomeStats> => {
     try {
-      const response = await request.get<{ code: number; message: string; data: HomeStats }>('/home/stats')
+      const response = await request.get<{ code: number; message: string; data: HomeStats }>('/home/stats', { params })
       return response.data
     } catch (error) {
       throw new Error(`Failed to fetch home stats: ${error}`)

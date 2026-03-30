@@ -98,4 +98,9 @@ public interface CompanyUserMapper {
                                         @Param("endTime") String endTime);
 
     int clearRecallDataById(@Param("id") Long id);
+
+    /**
+     * 根据公司名称查找公司
+     */
+    CompanyUser findByCompanyName(@Param("companyName") String companyName);
 }

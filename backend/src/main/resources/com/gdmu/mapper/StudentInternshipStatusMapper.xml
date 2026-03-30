@@ -693,6 +693,7 @@
         FROM student_users su
         LEFT JOIN student_internship_status sis ON su.id = sis.student_id
         <where>
+            AND su.status = 1
             <if test="startDate != null and startDate != ''">
                 AND (sis.update_time &gt;= #{startDate} OR sis.update_time IS NULL)
             </if>

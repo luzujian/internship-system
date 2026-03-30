@@ -1,7 +1,9 @@
 package com.gdmu.controller;
 
 import com.gdmu.entity.Result;
+import com.gdmu.entity.TeacherUser;
 import com.gdmu.entity.dto.HomeStatsDTO;
+import com.gdmu.mapper.TeacherUserMapper;
 import com.gdmu.service.HomeService;
 import com.gdmu.utils.CurrentHolder;
 import lombok.extern.slf4j.Slf4j;
@@ -12,27 +14,45 @@ import org.springframework.web.bind.annotation.*;
 @RestController
 @RequestMapping("/api/home")
 public class HomeController {
-    
+
     @Autowired
     private HomeService homeService;
+
+    @Autowired
+    private TeacherUserMapper teacherUserMapper;
     
     @GetMapping("/stats")
-    public Result getHomeStats() {
-        log.info("获取首页统计数据");
-        
+    public Result getHomeStats(@RequestParam(required = false) String startDate,
+                               @RequestParam(required = false) String endDate) {
+        log.info("获取首页统计数据，时间范围：{} - {}", startDate, endDate);
+
         try {
             Long userId = CurrentHolder.getUserId();
             String userRole = CurrentHolder.getUserRole();
-            
-            String userType = mapRoleToUserType(userRole);
-            
+
+            // 获取用户的实际身份类型（teacher_type字段）
+            String teacherType = null;
+            if (userId != null) {
+                TeacherUser teacher = teacherUserMapper.findById(userId);
+                if (teacher != null) {
+                    teacherType = teacher.getTeacherType();
+                    log.info("用户 {} 的实际身份类型：{}", userId, teacherType);
+                }
+            }
+
+            // 如果没有查到teacherType，回退到基于role的判断
+            if (teacherType == null) {
+                teacherType = mapRoleToUserType(userRole);
+                log.info("未查到teacherType，回退到role判断：{}", teacherType);
+            }
+
             if (userId == null) {
                 userId = 0L;
-                userType = "TEACHER";
+                teacherType = "TEACHER";
             }
-            
-            HomeStatsDTO homeStats = homeService.getHomeStats(userId, userType);
-            
+
+            HomeStatsDTO homeStats = homeService.getHomeStats(userId, teacherType, startDate, endDate);
+
             return Result.success(homeStats);
         } catch (Exception e) {
             log.error("获取首页统计数据失败: {}", e.getMessage(), e);

@@ -4,6 +4,7 @@ import com.gdmu.entity.Class;
 import com.gdmu.entity.ClassCounselorRelation;
 import com.gdmu.mapper.ClassCounselorRelationMapper;
 import com.gdmu.mapper.ClassMapper;
+import com.gdmu.mapper.StudentInternshipStatusMapper;
 import com.gdmu.mapper.StudentUserMapper;
 import com.gdmu.mapper.TeacherUserMapper;
 import com.gdmu.service.ClassCounselorRelationService;
@@ -13,6 +14,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.*;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -29,6 +31,9 @@ public class ClassCounselorRelationServiceImpl implements ClassCounselorRelation
 
     @Autowired
     private TeacherUserMapper teacherUserMapper;
+
+    @Autowired
+    private StudentInternshipStatusMapper studentInternshipStatusMapper;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -158,19 +163,55 @@ public class ClassCounselorRelationServiceImpl implements ClassCounselorRelation
     @Override
     public Map<String, Object> getCounselorStatistics(Long counselorId) {
         Map<String, Object> statistics = new HashMap<>();
-        
+
         List<ClassCounselorRelation> relations = classCounselorRelationMapper.findByCounselorId(counselorId);
         statistics.put("classCount", relations.size());
-        
-        int totalStudents = 0;
-        for (ClassCounselorRelation relation : relations) {
-            Class classEntity = classMapper.findById(relation.getClassId());
-            if (classEntity != null && classEntity.getStudentCount() != null) {
-                totalStudents += classEntity.getStudentCount();
-            }
+
+        if (relations.isEmpty()) {
+            statistics.put("studentCount", 0);
+            statistics.put("noOfferCount", 0);
+            statistics.put("pendingCount", 0);
+            statistics.put("confirmedCount", 0);
+            statistics.put("interningCount", 0);
+            statistics.put("finishedCount", 0);
+            statistics.put("interruptedCount", 0);
+            statistics.put("delayedCount", 0);
+            return statistics;
         }
+
+        List<Long> classIds = relations.stream()
+                .map(ClassCounselorRelation::getClassId)
+                .collect(Collectors.toList());
+
+        // 使用 StudentInternshipStatusMapper 获取统计数据
+        Map<String, Object> dashboardStats = studentInternshipStatusMapper.getDashboardStatsByClassIds(classIds, null, null);
+
+        int totalStudents = dashboardStats != null && dashboardStats.get("totalStudents") != null
+                ? ((Number) dashboardStats.get("totalStudents")).intValue() : 0;
+        int confirmed = dashboardStats != null && dashboardStats.get("confirmed") != null
+                ? ((Number) dashboardStats.get("confirmed")).intValue() : 0;
+        int offer = dashboardStats != null && dashboardStats.get("offer") != null
+                ? ((Number) dashboardStats.get("offer")).intValue() : 0;
+        int noOffer = dashboardStats != null && dashboardStats.get("noOffer") != null
+                ? ((Number) dashboardStats.get("noOffer")).intValue() : 0;
+        int delay = dashboardStats != null && dashboardStats.get("delay") != null
+                ? ((Number) dashboardStats.get("delay")).intValue() : 0;
+
         statistics.put("studentCount", totalStudents);
-        
+        // confirmed 包含已确定实习(status=2,3)
+        statistics.put("confirmedCount", confirmed);
+        // pendingCount 对应有offer但未确定(status=1)
+        statistics.put("pendingCount", offer);
+        statistics.put("noOfferCount", noOffer);
+        // 延期
+        statistics.put("delayedCount", delay);
+        // 实习中
+        statistics.put("interningCount", 0);
+        // 已结束
+        statistics.put("finishedCount", 0);
+        // 已中断
+        statistics.put("interruptedCount", 0);
+
         return statistics;
     }
 

@@ -223,6 +223,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
+import emitter from '../../utils/eventBus'
 import { homeApi, type HomeStats, type AnnouncementWithReadStatus } from '../../api/teacherHome'
 import * as announcementApi from '../../api/announcement'
 import store from '../../store/teacherStore'
@@ -278,6 +279,17 @@ const operationData = ref({
 
 const backendInternshipRate = ref(0)
 
+const startDate = ref('')
+const endDate = ref('')
+
+// 从 localStorage 读取看板设置的时间范围
+const loadDateRangeFromStorage = () => {
+  const savedStartDate = localStorage.getItem('teacher_dashboard_startDate')
+  const savedEndDate = localStorage.getItem('teacher_dashboard_endDate')
+  if (savedStartDate) startDate.value = savedStartDate
+  if (savedEndDate) endDate.value = savedEndDate
+}
+
 const teacherType = ref<string>('')
 
 const viewDialogVisible = ref(false)
@@ -325,12 +337,17 @@ const loadTeacherInfo = async () => {
 
 const loadHomeData = async () => {
   try {
-    const response = await homeApi.getHomeStats()
-    
+    // 每次加载都从 localStorage 读取最新时间范围
+    loadDateRangeFromStorage()
+    const response = await homeApi.getHomeStats({
+      startDate: startDate.value || undefined,
+      endDate: endDate.value || undefined
+    })
+
     if (response.statusData && response.statusData.length > 0) {
       statusData.value = response.statusData
     }
-    
+
     backendInternshipRate.value = response.internshipRate || 0
     approvalData.value.pending = response.pendingApprovalCount || 0
     operationData.value.companies = response.companyCount || 0
@@ -584,17 +601,27 @@ onMounted(() => {
   loadHomeData()
   loadAnnouncements()
   initWebSocket()
+  // 监听看板日期范围变化（跨标签页通信）
+  window.addEventListener('storage', handleStorageChange)
   updateInterval = window.setInterval(() => {
     loadHomeData()
     loadAnnouncements()
   }, 60000)
 })
 
+const handleStorageChange = (e: StorageEvent) => {
+  if (e.key === 'teacher_dashboard_startDate' || e.key === 'teacher_dashboard_endDate') {
+    loadDateRangeFromStorage()
+    loadHomeData()
+  }
+}
+
 onUnmounted(() => {
   if (updateInterval) {
     clearInterval(updateInterval)
   }
   disconnectAnnouncementWebSocket()
+  window.removeEventListener('storage', handleStorageChange)
 })
 </script>
 

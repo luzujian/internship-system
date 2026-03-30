@@ -297,9 +297,58 @@
               <div class="favorite-footer">
                 <span class="collect-time">收藏时间：{{ item.collectTime }}</span>
                 <div class="footer-buttons">
-                  <el-button type="primary" size="small" @click="viewJobDetail(item)">
+                  <el-button type="primary" size="small" plain @click="viewJobDetail(item)">
                     查看详情
                   </el-button>
+                  <!-- 学生已确认实习岗位后，不显示任何申请按钮 -->
+                  <template v-if="statusLoaded && internshipStatus.status !== 2">
+                    <!-- 未申请：显示申请按钮 -->
+                    <el-button
+                      v-if="!item.isApplied"
+                      type="primary"
+                      size="small"
+                      @click="applyJob(item)"
+                    >
+                      立即申请
+                    </el-button>
+                    <!-- 已招满 -->
+                    <el-tag v-else-if="item.remainingQuota === 0" type="info" size="small">
+                      已招满
+                    </el-tag>
+                    <!-- 待审核状态：可以取消 -->
+                    <el-button
+                      v-else-if="item.applicationStatus === 'pending'"
+                      type="warning"
+                      size="small"
+                      @click="cancelApply(item)"
+                    >
+                      取消申请
+                    </el-button>
+                    <!-- 面试通过：显示状态，不显示取消 -->
+                    <el-tag v-else-if="item.applicationStatus === 'interview_passed'" type="success" size="small">
+                      面试通过
+                    </el-tag>
+                    <!-- 面试未通过：显示状态 -->
+                    <el-tag v-else-if="item.applicationStatus === 'interview_failed'" type="danger" size="small">
+                      面试未通过
+                    </el-tag>
+                    <!-- 已通过：显示状态，不显示取消 -->
+                    <el-tag v-else-if="item.applicationStatus === 'approved'" type="success" size="small">
+                      已通过
+                    </el-tag>
+                    <!-- 已拒绝：显示状态 -->
+                    <el-tag v-else-if="item.applicationStatus === 'rejected'" type="danger" size="small">
+                      已拒绝
+                    </el-tag>
+                    <!-- 已撤回：显示状态 -->
+                    <el-tag v-else-if="item.applicationStatus === 'withdrawn'" type="info" size="small">
+                      已撤回
+                    </el-tag>
+                  </template>
+                  <!-- 已确认实习岗位后显示此标签 -->
+                  <el-tag v-else type="success" size="small">
+                    已确认实习
+                  </el-tag>
                   <el-button type="danger" size="small" @click="removeFavorite(item.id)">
                     <el-icon><Delete /></el-icon>
                     取消收藏
@@ -318,6 +367,123 @@
             <div class="empty-desc">您还没有收藏任何职位，去职位浏览页面看看吧</div>
           </div>
         </template>
+      </div>
+    </el-dialog>
+
+    <!-- 岗位申请对话框 -->
+    <el-dialog
+      v-model="showApplicationDialog"
+      width="700px"
+      class="application-dialog"
+      append-to-body
+      lock-scroll
+      modal-class="global-modal"
+      :title="''"
+    >
+      <div class="dialog-content">
+        <div class="header-section">
+          <h1 class="header-title">申请职位</h1>
+        </div>
+
+        <el-form :model="applicationForm" :rules="applicationRules" ref="applicationFormRef" label-width="100px">
+          <div class="form-content">
+            <div class="form-module">
+              <div class="module-header">
+                <div class="module-icon-container">
+                  <el-icon class="module-icon"><User /></el-icon>
+                </div>
+                <h2 class="module-title">基本信息</h2>
+              </div>
+              <div class="form-grid">
+                <el-form-item label="学生姓名" prop="studentName">
+                  <el-input v-model="applicationForm.studentName" placeholder="请输入姓名" clearable />
+                </el-form-item>
+                <el-form-item label="学号" prop="studentNo">
+                  <el-input v-model="applicationForm.studentNo" placeholder="请输入学号" clearable />
+                </el-form-item>
+                <el-form-item label="专业" prop="major">
+                  <el-input v-model="applicationForm.major" placeholder="请输入专业" clearable />
+                </el-form-item>
+                <el-form-item label="年级" prop="grade">
+                  <el-select v-model="applicationForm.grade" placeholder="请选择年级" clearable style="width: 100%">
+                    <el-option label="一年级" value="一年级" />
+                    <el-option label="二年级" value="二年级" />
+                    <el-option label="三年级" value="三年级" />
+                    <el-option label="四年级" value="四年级" />
+                  </el-select>
+                </el-form-item>
+                <el-form-item label="联系电话" prop="phone">
+                  <el-input v-model="applicationForm.phone" placeholder="请输入联系电话" clearable />
+                </el-form-item>
+              </div>
+            </div>
+
+            <div class="form-module">
+              <div class="module-header">
+                <div class="module-icon-container">
+                  <el-icon class="module-icon"><Briefcase /></el-icon>
+                </div>
+                <h2 class="module-title">申请信息</h2>
+              </div>
+              <div class="form-grid">
+                <el-form-item label="应聘岗位">
+                  <el-input :model-value="applicationForm.positionName" disabled />
+                </el-form-item>
+                <el-form-item label="应聘单位">
+                  <el-input :model-value="applicationForm.companyName" disabled />
+                </el-form-item>
+              </div>
+            </div>
+
+            <div class="form-module">
+              <div class="module-header">
+                <div class="module-icon-container">
+                  <el-icon class="module-icon"><Document /></el-icon>
+                </div>
+                <h2 class="module-title">自我介绍</h2>
+              </div>
+              <el-form-item label="自我简介" prop="selfIntroduction">
+                <el-input
+                  v-model="applicationForm.selfIntroduction"
+                  type="textarea"
+                  :rows="4"
+                  placeholder="请简要介绍你的个人特点、学习能力和职业规划等"
+                  resize="vertical"
+                />
+              </el-form-item>
+            </div>
+
+            <!-- 我的申请材料模块 -->
+            <div class="form-module">
+              <div class="module-header">
+                <div class="module-icon-container">
+                  <el-icon class="module-icon"><Upload /></el-icon>
+                </div>
+                <h2 class="module-title">我的申请材料</h2>
+              </div>
+              <div class="material-list">
+                <div v-if="resumeList.length === 0 && certificateList.length === 0" class="no-material-tip">
+                  暂无可用的申请材料，请在个人中心上传简历和证书
+                </div>
+                <div v-for="resume in resumeList" :key="resume.id" class="material-item">
+                  <el-icon class="material-icon"><Document /></el-icon>
+                  <span class="material-name">{{ resume.name || '个人简历' }}</span>
+                </div>
+                <div v-for="cert in certificateList" :key="cert.id" class="material-item">
+                  <el-icon class="material-icon"><Document /></el-icon>
+                  <span class="material-name">{{ cert.name || '证书文件' }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="form-actions">
+            <el-button @click="showApplicationDialog = false" class="reset-btn">取消</el-button>
+            <el-button type="primary" @click="submitApplication" :loading="submitting" class="submit-btn">
+              提交申请
+            </el-button>
+          </div>
+        </el-form>
       </div>
     </el-dialog>
 
@@ -448,23 +614,26 @@
         </div>
 
         <div class="detail-footer">
-          <el-button 
-            v-if="!selectedJob.isApplied" 
-            type="primary" 
+          <el-button
+            v-if="!selectedJob.isApplied && selectedJob.remainingQuota > 0 && (studentStatus < 2 || studentStatus === 5)"
+            type="primary"
             size="large"
             @click="applyJob(selectedJob)"
             class="detail-apply-button"
           >
             立即申请
           </el-button>
-          <el-button 
-            v-else 
-            type="success" 
+          <el-tag v-else-if="selectedJob.remainingQuota === 0" type="info">
+            已招满
+          </el-tag>
+          <el-button
+            v-else-if="selectedJob.isApplied"
+            type="warning"
             size="large"
-            disabled
-            class="detail-applied-button"
+            @click="cancelApply(selectedJob)"
+            class="detail-cancel-apply-button"
           >
-            已申请
+            取消申请
           </el-button>
         </div>
       </div>
@@ -938,9 +1107,9 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted, watch } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   User,
   Edit,
@@ -971,15 +1140,18 @@ import {
   Paperclip,
   ZoomIn,
   Loading,
-  Search
+  Search,
+  Briefcase
 } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/store/auth'
 import request from '@/utils/request'
 import positionService from '@/api/PositionService'
+import studentJobApplicationService from '@/api/StudentJobApplicationService'
 import { resourceApi } from '@/api/resource'
 import { getPublishedResourceDocuments } from '@/api/resourceDocument'
 import { getAnnouncementsForUser, createAnnouncementReadRecord } from '@/api/announcement'
 import FilePreviewDialog from '@/components/FilePreviewDialog.vue'
+import eventBus from '@/utils/eventBus'
 
 const authStore = useAuthStore()
 
@@ -1006,10 +1178,37 @@ const avatarUrl = ref('')
 const showResumeUploadArea = ref(false)
 const showCertificateUploadArea = ref(false)
 
+// 申请相关变量
+const showApplicationDialog = ref(false)
+const submitting = ref(false)
+const applicationFormRef = ref(null)
+const currentApplyingJob = ref(null)
+const applicationForm = ref({
+  studentName: '',
+  studentNo: '',
+  major: '',
+  grade: '',
+  phone: '',
+  positionName: '',
+  companyName: '',
+  selfIntroduction: ''
+})
+const applicationRules = {
+  studentName: [{ required: true, message: '请输入姓名', trigger: 'blur' }],
+  studentNo: [{ required: true, message: '请输入学号', trigger: 'blur' }],
+  major: [{ required: true, message: '请输入专业', trigger: 'blur' }],
+  grade: [{ required: true, message: '请选择年级', trigger: 'change' }],
+  phone: [{ required: true, message: '请输入联系电话', trigger: 'blur' }]
+}
+
+// 学生实习状态：0=无offer, 1=待确认, 2=已确定, 3=实习中, 4=已结束
+const studentStatus = ref(0)
+
 // 实习状态
 const internshipStatus = ref({
   status: null
 })
+const statusLoaded = ref(false) // 状态是否已加载，默认false防止初始状态显示申请按钮
 
 // 初始化默认用户信息，确保页面加载时立即显示
 const userInfo = ref({
@@ -1228,11 +1427,14 @@ const loadFavorites = async () => {
     if (response.code === 200) {
       favoritesList.value = (response.data || []).map((item) => ({
         id: item.positionId,
+        companyId: item.companyId,
         companyName: item.companyName,
         position: item.positionName,
+        title: item.positionName,
         salary: item.salary,
         location: item.location,
         industryName: item.industryName,
+        industry: item.industry,
         duration: item.duration,
         internshipBase: item.internshipBase,
         description: item.description,
@@ -1245,11 +1447,78 @@ const loadFavorites = async () => {
         viewCount: item.viewCount,
         applyCount: item.applyCount,
         collectTime: item.collectTime,
-        isFavorite: true
+        remainingQuota: item.remainingQuota !== undefined && item.remainingQuota !== null ? Number(item.remainingQuota) : 1,
+        tags: item.tags || [],
+        isFavorite: true,
+        isApplied: false,
+        applicationStatus: null // pending, approved, rejected, withdrawn
       }))
+
+      // 直接在同一个函数中标记已申请的职位及其状态
+      try {
+        const appResponse = await studentJobApplicationService.list()
+        console.log('申请列表响应:', appResponse)
+        if (appResponse.code === 200 && appResponse.data) {
+          // 创建一个 Map 用于快速查找职位对应的申请状态
+          const applicationStatusMap = new Map()
+          appResponse.data.forEach((app) => {
+            applicationStatusMap.set(String(app.positionId), app.status)
+          })
+          console.log('申请状态映射:', Array.from(applicationStatusMap.entries()))
+
+          // 创建新的数组确保响应式更新
+          favoritesList.value = favoritesList.value.map(item => {
+            const positionIdStr = String(item.id)
+            const isApplied = applicationStatusMap.has(positionIdStr)
+            const applicationStatus = applicationStatusMap.get(positionIdStr) || null
+            console.log('设置职位:', item.position, 'ID:', item.id, 'isApplied:', isApplied, 'status:', applicationStatus)
+            return { ...item, isApplied, applicationStatus }
+          })
+        }
+      } catch (error) {
+        console.error('获取申请列表失败:', error)
+      }
     }
   } catch (error) {
     console.error('加载收藏列表失败:', error)
+  }
+}
+
+// 标记收藏中已申请的职位
+const markAppliedFavorites = async () => {
+  try {
+    // 使用与 StudentJobApplicationService.list() 相同的 API
+    const response = await studentJobApplicationService.list()
+    console.log('申请列表响应:', response)
+    console.log('当前用户信息:', authStore.user)
+    console.log('当前用户ID:', authStore.user?.id)
+    if (response.code === 200 && response.data) {
+      // 将 appliedPositionIds 转为字符串类型，避免类型不一致
+      const appliedPositionIds = new Set(response.data.map((app) => String(app.positionId)))
+      console.log('已申请的职位ID集合:', Array.from(appliedPositionIds))
+      console.log('收藏列表的职位ID:', favoritesList.value.map(item => ({ id: item.id, idType: typeof item.id, position: item.position })))
+
+      // 先将所有设为未申请，再根据申请记录标记
+      favoritesList.value.forEach(item => {
+        item.isApplied = false
+      })
+
+      // 标记已申请的职位
+      favoritesList.value.forEach(item => {
+        const itemIdStr = String(item.id)
+        const isApplied = appliedPositionIds.has(itemIdStr) || response.data.some((app) => String(app.positionId) === itemIdStr)
+        console.log('检查职位:', item.position, 'ID:', item.id, '是否已申请:', isApplied, 'appliedPositionIds包含:', appliedPositionIds.has(itemIdStr))
+        if (isApplied) {
+          item.isApplied = true
+          console.log('标记为已申请:', item.position, 'ID:', item.id)
+        }
+      })
+
+      // 强制触发响应式更新
+      favoritesList.value = [...favoritesList.value]
+    }
+  } catch (error) {
+    console.error('获取申请列表失败:', error)
   }
 }
 
@@ -1747,8 +2016,10 @@ const fetchInternshipStatus = async () => {
       internshipStatus.value.internshipStartTime = response.data.internshipStartTime
       internshipStatus.value.internshipEndTime = response.data.internshipEndTime
     }
+    statusLoaded.value = true // 状态加载完成
   } catch (error) {
     console.error('获取实习状态失败:', error)
+    statusLoaded.value = true // 即使失败也标记为加载完成
   }
 }
 
@@ -2316,9 +2587,109 @@ const toggleFavorite = (job) => {
 }
 
 const applyJob = (job) => {
-  job.isApplied = true
-  job.applyCount++
-  ElMessage.success('申请成功')
+  // 初始化表单数据，从用户信息中获取默认值
+  currentApplyingJob.value = job
+  applicationForm.value = {
+    studentName: authStore.user?.name || '',
+    studentNo: authStore.user?.studentId || authStore.user?.username || '',
+    major: authStore.user?.major || '',
+    grade: authStore.user?.grade || '',
+    phone: authStore.user?.phone || '',
+    positionName: job.title || job.position,
+    companyName: job.companyName,
+    selfIntroduction: ''
+  }
+  // 加载学生的简历和证书列表
+  loadStudentMaterials()
+  showApplicationDialog.value = true
+}
+
+// 加载学生简历和证书列表
+const loadStudentMaterials = async () => {
+  try {
+    // 加载简历列表
+    const resumeResponse = await request.get('/student/profile/resumes')
+    if (resumeResponse.code === 200) {
+      resumeList.value = resumeResponse.data || []
+    }
+    // 加载证书列表
+    const certResponse = await request.get('/student/profile/certificates')
+    if (certResponse.code === 200) {
+      certificateList.value = certResponse.data || []
+    }
+  } catch (error) {
+    console.error('加载学生材料失败:', error)
+  }
+}
+
+// 提交申请
+const submitApplication = async () => {
+  if (!applicationFormRef.value) return
+
+  try {
+    await applicationFormRef.value.validate()
+
+    submitting.value = true
+
+    const applicationData = {
+      positionId: currentApplyingJob.value.id,
+      companyId: currentApplyingJob.value.companyId,
+      positionName: applicationForm.value.positionName,
+      companyName: applicationForm.value.companyName,
+      location: currentApplyingJob.value.location || '',
+      salary: currentApplyingJob.value.salary || '',
+      duration: currentApplyingJob.value.duration || '',
+      phone: applicationForm.value.phone,
+      studentName: applicationForm.value.studentName,
+      studentNo: applicationForm.value.studentNo,
+      major: applicationForm.value.major,
+      grade: applicationForm.value.grade,
+      selfIntroduction: applicationForm.value.selfIntroduction
+    }
+
+    const response = await studentJobApplicationService.create(applicationData)
+    if (response.code === 200) {
+      currentApplyingJob.value.isApplied = true
+      showApplicationDialog.value = false
+      ElMessage.success('申请提交成功！')
+      // 触发申请成功事件，通知其他页面更新状态
+      eventBus.emit('applicationSubmitted', { positionId: currentApplyingJob.value.id })
+    } else {
+      ElMessage.error(response.message || '申请失败')
+    }
+  } catch (error) {
+    console.error('申请失败:', error)
+  } finally {
+    submitting.value = false
+  }
+}
+
+// 取消申请
+const cancelApply = (job) => {
+  ElMessageBox.confirm('确定要取消申请这个职位吗？', '取消申请', {
+    confirmButtonText: '确定',
+    cancelButtonText: '取消',
+    type: 'warning'
+  }).then(() => {
+    job.isApplied = false
+    ElMessage.success('已取消申请！')
+    // 触发取消申请事件，通知其他页面更新状态
+    eventBus.emit('applicationCancelled', { positionId: job.id })
+  }).catch(() => {
+    ElMessage.info('已取消操作')
+  })
+}
+
+// 获取学生实习状态
+const fetchStudentStatus = async () => {
+  try {
+    const response = await request.get('/student/internship-status')
+    if (response.code === 200 && response.data) {
+      studentStatus.value = response.data.status || 0
+    }
+  } catch (error) {
+    console.error('获取学生实习状态失败:', error)
+  }
 }
 
 const deleteArchive = (id) => {
@@ -2472,6 +2843,32 @@ watch(showFavoritesDialog, async (newVal) => {
   }
 })
 
+// 监听申请状态变化事件
+const handleApplicationSubmitted = async (data) => {
+  console.log('收到申请成功事件，职位ID:', data.positionId)
+  // 重新加载收藏列表以获取最新状态
+  if (showFavoritesDialog.value) {
+    await loadFavorites()
+  }
+}
+
+const handleApplicationCancelled = async (data) => {
+  console.log('收到取消申请事件，职位ID:', data.positionId)
+  // 重新加载收藏列表以获取最新状态
+  if (showFavoritesDialog.value) {
+    await loadFavorites()
+  }
+}
+
+eventBus.on('applicationSubmitted', handleApplicationSubmitted)
+eventBus.on('applicationCancelled', handleApplicationCancelled)
+
+// 组件卸载时移除事件监听器
+onUnmounted(() => {
+  eventBus.off('applicationSubmitted', handleApplicationSubmitted)
+  eventBus.off('applicationCancelled', handleApplicationCancelled)
+})
+
 // 监听简历管理对话框打开，加载简历和证书列表
 watch(showResumeManagementDialog, async (newVal) => {
   if (newVal) {
@@ -2488,6 +2885,7 @@ watch(showResumeManagementDialog, async (newVal) => {
 onMounted(() => {
   fetchUserInfo()
   fetchInternshipStatus()
+  fetchStudentStatus()
 })
 </script>
 
@@ -5465,6 +5863,7 @@ onMounted(() => {
   justify-content: space-between;
   padding-top: 12px;
   border-top: 1px solid #f0f2f5;
+  gap: 12px;
 }
 
 .collect-time {
@@ -5498,6 +5897,256 @@ onMounted(() => {
   padding: 6px 12px;
   font-size: 12px;
   border-radius: 6px;
+}
+
+.favorite-footer .apply-button {
+  background: linear-gradient(135deg, #409EFF, #67C23A);
+  border: none;
+  box-shadow: 0 4px 16px rgba(64, 158, 255, 0.3);
+}
+
+.favorite-footer .apply-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 24px rgba(64, 158, 255, 0.4);
+}
+
+.favorite-footer .cancel-apply-button {
+  background: linear-gradient(135deg, #faad14, #ffc53d);
+  border: none;
+  box-shadow: 0 4px 16px rgba(250, 173, 20, 0.3);
+}
+
+.favorite-footer .cancel-apply-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 24px rgba(250, 173, 20, 0.4);
+}
+
+/* 申请表单对话框样式 */
+.application-dialog :deep(.el-dialog) {
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
+}
+
+.application-dialog :deep(.el-dialog__header) {
+  padding: 0;
+  border-bottom: none;
+}
+
+.application-dialog :deep(.el-dialog__title) {
+  display: none;
+}
+
+.application-dialog :deep(.el-dialog__headerbtn .el-dialog__close) {
+  color: white;
+  font-size: 20px;
+  top: 15px;
+  right: 20px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 50%;
+  width: 30px;
+  height: 30px;
+  transition: all 0.3s ease;
+}
+
+.application-dialog :deep(.el-dialog__headerbtn .el-dialog__close:hover) {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.application-dialog :deep(.el-dialog__body) {
+  padding: 0;
+  background-color: #ffffff;
+}
+
+.application-dialog :deep(.el-dialog__footer) {
+  display: none;
+}
+
+.application-dialog .header-section {
+  background: linear-gradient(90deg, #1e88e5 0%, #4caf50 100%);
+  padding: 20px;
+  margin-bottom: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.application-dialog .header-title {
+  color: white;
+  font-size: 24px;
+  font-weight: 600;
+  text-align: center;
+  margin: 0;
+}
+
+.application-dialog .form-content {
+  padding: 20px;
+  max-height: 55vh;
+  overflow-y: auto;
+}
+
+.application-dialog .form-module {
+  background-color: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  margin-bottom: 24px;
+  box-shadow: none;
+}
+
+.application-dialog .module-header {
+  display: flex;
+  align-items: center;
+  margin-bottom: 16px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.application-dialog .module-icon-container {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #409eff 0%, #66b1ff 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 12px;
+}
+
+.application-dialog .module-icon {
+  color: white;
+  font-size: 14px;
+}
+
+.application-dialog .module-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #1e293b;
+  margin: 0;
+}
+
+.application-dialog .form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+}
+
+.application-dialog .form-actions {
+  display: flex;
+  justify-content: center;
+  gap: 20px;
+  padding: 20px;
+  background-color: #ffffff;
+  border-top: 1px solid #f0f0f0;
+}
+
+.application-dialog .submit-btn {
+  background: linear-gradient(90deg, #1e88e5 0%, #4caf50 100%) !important;
+  color: #ffffff !important;
+  border: none !important;
+  border-radius: 4px !important;
+  padding: 8px 20px !important;
+  transition: all 0.2s ease !important;
+}
+
+.application-dialog .submit-btn:hover {
+  background: linear-gradient(90deg, #1565c0 0%, #388e3c 100%) !important;
+}
+
+.application-dialog .reset-btn {
+  background: #ffffff !important;
+  color: #64748b !important;
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 4px !important;
+  padding: 8px 20px !important;
+}
+
+.application-dialog .reset-btn:hover {
+  border-color: #409eff !important;
+  color: #409eff !important;
+}
+
+.application-dialog :deep(.el-form-item) {
+  margin-bottom: 16px;
+}
+
+.application-dialog :deep(.el-form-item__label) {
+  font-size: 14px;
+  color: #334155;
+  font-weight: 500;
+}
+
+.application-dialog :deep(.el-input__wrapper),
+.application-dialog :deep(.el-select__wrapper),
+.application-dialog :deep(.el-textarea__inner) {
+  border-radius: 4px;
+  border: 1px solid #e2e8f0;
+  padding: 6px 12px;
+  background-color: #ffffff;
+  box-shadow: none;
+  transition: all 0.2s ease;
+}
+
+.application-dialog :deep(.el-input__wrapper:focus-within),
+.application-dialog :deep(.el-select__wrapper:focus-within),
+.application-dialog :deep(.el-textarea__inner:focus) {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+}
+
+.application-dialog :deep(.el-input.is-disabled .el-input__inner) {
+  background-color: #f5f7fa;
+  color: #909399;
+}
+
+/* 申请材料列表样式 */
+.application-dialog .material-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px 16px;
+  background-color: #f8fafc;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+}
+
+.application-dialog .no-material-tip {
+  color: #909399;
+  font-size: 13px;
+  text-align: center;
+  padding: 16px 0;
+}
+
+.application-dialog .material-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  background-color: #ffffff;
+  border-radius: 6px;
+  border: 1px solid #e2e8f0;
+  transition: all 0.2s ease;
+}
+
+.application-dialog .material-item:hover {
+  border-color: #409EFF;
+  box-shadow: 0 2px 8px rgba(64, 158, 255, 0.1);
+}
+
+.application-dialog .material-icon {
+  font-size: 18px;
+  color: #409EFF;
+  background: linear-gradient(135deg, #e6f7ff 0%, #bae7ff 100%);
+  padding: 6px;
+  border-radius: 6px;
+}
+
+.application-dialog .material-name {
+  flex: 1;
+  font-size: 13px;
+  color: #303133;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* 职位详情对话框样式 */
