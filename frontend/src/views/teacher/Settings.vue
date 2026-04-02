@@ -283,15 +283,15 @@ onMounted(() => {
 .settings-container {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 12px;
 }
 
 .page-header {
-  margin-bottom: 16px;
+  margin-bottom: 8px;
 }
 
 .page-header h2 {
-  font-size: 28px;
+  font-size: 24px;
   font-weight: 600;
   color: #333;
   margin: 0;
@@ -346,7 +346,7 @@ onMounted(() => {
 
 /* 设置区域 */
 .settings-section {
-  padding: 28px;
+  padding: 16px;
   border-radius: var(--radius-lg);
   transition: all var(--transition-normal);
 }
@@ -365,21 +365,21 @@ onMounted(() => {
   font-size: 20px;
   font-weight: 600;
   color: var(--color-primary);
-  margin: 0 0 32px 0;
+  margin: 0 0 16px 0;
 }
 
 /* 设置表单 */
 .settings-form {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
-  gap: 20px;
+  gap: 12px;
 }
 
 .form-group {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 24px;
+  gap: 8px;
+  padding: 16px;
   background-color: white;
   border-radius: 12px;
   transition: all 0.3s ease;
@@ -529,7 +529,7 @@ onMounted(() => {
 .settings-form {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
-  gap: 24px;
+  gap: 12px;
 }
 
 /* AI评分配置表单 - 居中显示 */
@@ -934,7 +934,7 @@ onMounted(() => {
   border: none; /* 移除边框 */
   transition: all var(--transition-normal);
   max-width: 400px;
-  margin: 20px auto;
+  margin: 12px auto;
   box-shadow: none; /* 移除阴影 */
 }
 

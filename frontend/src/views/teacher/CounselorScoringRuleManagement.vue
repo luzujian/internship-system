@@ -638,16 +638,14 @@ onMounted(() => {
 
 <style scoped>
 .scoring-rule-container {
-  padding: 20px;
+  padding: 4px 20px;
 }
 
 .page-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 24px 32px;
-  margin-bottom: 24px;
-  position: relative;
+  margin-bottom: 0px;
 }
 
 .header-content {
@@ -655,7 +653,7 @@ onMounted(() => {
 }
 
 .page-title {
-  font-size: 28px;
+  font-size: 24px;
   font-weight: 700;
   margin: 0 0 8px 0;
   color: #303133;
@@ -718,10 +716,11 @@ onMounted(() => {
 
 .search-card {
   padding: 24px;
+  margin-top: 0;
 }
 
 .table-card {
-  padding: 0;
+  padding: 20px 24px;
 }
 
 .summary-content {
@@ -735,7 +734,7 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 16px 24px;
+  padding: 12px 16px;
   background: #f8f9fa;
   border-bottom: 1px solid #e4e7ed;
   border-radius: 8px 8px 0 0;

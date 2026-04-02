@@ -201,7 +201,7 @@ onMounted(() => {
           </el-icon>
         </el-button>
         <div class="logo">
-          <span class="logo-text">deepintern</span>
+          <span class="logo-text">DeepIntern</span>
           <div class="logo-subtitle">企业端</div>
         </div>
       </div>
@@ -365,14 +365,24 @@ onMounted(() => {
 }
 
 .logo-text {
-  font-size: 24px;
-  font-weight: bold;
-  letter-spacing: 1px;
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: 3px;
+  color: #ffffff;
+  text-shadow:
+    0 0 6px rgba(255, 255, 255, 0.5),
+    0 0 12px rgba(255, 255, 255, 0.3),
+    0 2px 4px rgba(0, 0, 0, 0.3);
 }
 
 .logo-subtitle {
-  font-size: 12px;
-  opacity: 0.9;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 4px;
+  color: rgba(255, 255, 255, 0.9);
+  text-shadow:
+    0 0 5px rgba(255, 255, 255, 0.4),
+    0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
 .user-actions {

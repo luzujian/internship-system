@@ -1,7 +1,10 @@
 <template>
   <div class="dashboard-container">
     <div class="page-header fade-in">
-      <h2>实习状态看板</h2>
+      <div class="header-content">
+        <h2 class="page-title">实习状态看板</h2>
+        <p class="page-description">实时监控学生的实习状态分布情况</p>
+      </div>
       <div class="time-range-selector">
         <label>时间范围：</label>
         <input type="date" v-model="startDate" />
@@ -417,15 +420,28 @@ const calculatePercentage = (value: number, total: number) => {
 .page-header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
   flex-wrap: wrap;
   gap: 16px;
+  padding: 0 4px;
 }
 
-.page-header h2 {
-  font-size: 28px;
-  font-weight: 600;
-  color: #333;
+.header-content {
+  z-index: 1;
+}
+
+.page-title {
+  font-size: 24px;
+  font-weight: 700;
+  color: #000;
+  margin: 0 0 8px 0;
+}
+
+.page-description {
+  font-size: 14px;
+  color: #606266;
+  opacity: 0.95;
+  font-weight: 500;
   margin: 0;
 }
 

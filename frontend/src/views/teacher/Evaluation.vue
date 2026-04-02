@@ -1736,7 +1736,7 @@ const downloadAIAnalysisReport = () => {
 
 <style scoped>
 .evaluation-container {
-  padding: 20px;
+  padding: 12px;
   background: #f5f7fa;
   min-height: 100vh;
   position: relative;
@@ -1746,10 +1746,10 @@ const downloadAIAnalysisReport = () => {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  margin-bottom: 16px;
-  padding: 24px 32px;
+  margin-bottom: 12px;
+  padding: 8px 16px;
   flex-wrap: wrap;
-  gap: 20px;
+  gap: 12px;
 }
 
 .header-content {
@@ -1776,7 +1776,7 @@ const downloadAIAnalysisReport = () => {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   grid-template-rows: auto auto;
-  gap: 16px;
+  gap: 12px;
   align-items: start;
 }
 
@@ -1790,7 +1790,7 @@ const downloadAIAnalysisReport = () => {
   background-color: white;
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-md);
-  padding: 20px;
+  padding: 16px;
   display: flex;
   align-items: center;
   gap: 16px;
@@ -1833,7 +1833,7 @@ const downloadAIAnalysisReport = () => {
 
 /* AI评分配置按钮 */
 .ai-config-btn {
-  padding: 16px 24px;
+  padding: 10px 16px;
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-md);
   font-size: 14px;
@@ -1964,16 +1964,17 @@ const downloadAIAnalysisReport = () => {
 .search-card,
 .table-card,
 .actions-card {
-  border-radius: 16px;
+  border-radius: 12px;
   border: none;
   background: white;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
   margin-bottom: 16px;
+  margin-top: 0px;
   overflow: hidden;
 }
 
 .search-card {
-  padding: 24px;
+  padding: 16px;
 }
 
 .table-card {
@@ -1983,13 +1984,13 @@ const downloadAIAnalysisReport = () => {
 .search-form {
   display: flex;
   flex-wrap: wrap;
-  gap: 16px;
+  gap: 12px;
 }
 
 .search-row {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 12px;
   width: 100%;
 }
 

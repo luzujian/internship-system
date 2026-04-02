@@ -79,34 +79,35 @@
     <!-- 详细数据表格 -->
     <div class="details-section card fade-in" style="animation-delay: 0.7s">
       <h3>详细数据</h3>
-      
-      <!-- 导出按钮区域 -->
-      <div class="export-section">
-        <div class="export-buttons">
-          <button class="btn-primary export-btn" @click="exportReport">
-            <span class="btn-icon">📊</span>导出综合报表
-          </button>
-          <button class="btn-success export-btn" @click="exportCompanyReport" v-if="activeDetailTab === 'companies'">
-            <span class="btn-icon">🏢</span>导出企业报表
-          </button>
-          <button class="btn-success export-btn" @click="exportStudentReport" v-if="activeDetailTab === 'students'">
-            <span class="btn-icon">👥</span>导出学生报表
-          </button>
-          <button class="btn-success export-btn" @click="exportApprovalReport" v-if="activeDetailTab === 'approvals'">
-            <span class="btn-icon">📋</span>导出审核报表
+
+      <div class="details-tabs-header">
+        <div class="details-tabs">
+          <button
+            v-for="tab in detailTabs"
+            :key="tab.key"
+            :class="['tab-btn', { active: activeDetailTab === tab.key }]"
+            @click="activeDetailTab = tab.key"
+          >
+            {{ tab.name }}
           </button>
         </div>
-      </div>
-
-      <div class="details-tabs">
-        <button 
-          v-for="tab in detailTabs" 
-          :key="tab.key"
-          :class="['tab-btn', { active: activeDetailTab === tab.key }]"
-          @click="activeDetailTab = tab.key"
-        >
-          {{ tab.name }}
-        </button>
+        <!-- 导出按钮区域 -->
+        <div class="export-section">
+          <div class="export-buttons">
+            <button class="btn-primary export-btn" @click="exportReport">
+              <span class="btn-icon">📊</span>导出综合报表
+            </button>
+            <button class="btn-success export-btn" @click="exportCompanyReport" v-if="activeDetailTab === 'companies'">
+              <span class="btn-icon">🏢</span>导出企业报表
+            </button>
+            <button class="btn-success export-btn" @click="exportStudentReport" v-if="activeDetailTab === 'students'">
+              <span class="btn-icon">👥</span>导出学生报表
+            </button>
+            <button class="btn-success export-btn" @click="exportApprovalReport" v-if="activeDetailTab === 'approvals'">
+              <span class="btn-icon">📋</span>导出审核报表
+            </button>
+          </div>
+        </div>
       </div>
 
       <!-- 企业入驻详情 -->
@@ -690,7 +691,7 @@ const getTagClass = (tag: string) => {
 }
 
 .page-header h2 {
-  font-size: 28px;
+  font-size: 24px;
   font-weight: 600;
   color: #333;
   margin: 0;
@@ -1286,37 +1287,48 @@ const getTagClass = (tag: string) => {
 
 /* 详细数据区域 */
 .details-section {
-  padding: 24px;
+  padding: 16px;
   transition: all var(--transition-normal);
-  margin-bottom: 24px;
-  margin-top: 0;
+  margin-bottom: 12px;
+  margin-top: -16px;
 }
 
 .details-section h3 {
   font-size: 22px;
   font-weight: 600;
   color: var(--color-primary);
-  margin: 0 0 32px 0;
+  margin: 0 0 16px 0;
   display: flex;
   align-items: center;
   gap: 16px;
 }
 
+.details-tabs-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid #e8e8e8;
+  padding-bottom: 12px;
+}
+
 .details-tabs {
   display: flex;
-  gap: 24px;
-  margin-bottom: 32px;
-  border-bottom: 1px solid #e8e8e8;
-  padding-bottom: 16px;
+  gap: 16px;
+  margin-bottom: 0;
+  border-bottom: none;
+  padding-bottom: 0;
   flex-wrap: wrap;
 }
 
 .tab-btn {
-  padding: 12px 24px;
+  padding: 8px 16px;
   background-color: transparent;
   border: none;
   border-bottom: 3px solid transparent;
-  font-size: 16px;
+  font-size: 14px;
   color: #666;
   cursor: pointer;
   transition: all var(--transition-normal);
@@ -1344,7 +1356,7 @@ const getTagClass = (tag: string) => {
   background-color: white;
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-sm);
-  padding: 16px;
+  padding: 8px;
   transition: all var(--transition-normal);
 }
 
@@ -1362,7 +1374,7 @@ const getTagClass = (tag: string) => {
 }
 
 .details-table th, .details-table td {
-  padding: 16px 20px;
+  padding: 8px 12px;
   text-align: left;
   border-bottom: 1px solid #f0f0f0;
   transition: all var(--transition-normal);

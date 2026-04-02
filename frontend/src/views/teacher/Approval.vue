@@ -829,15 +829,15 @@ watch(() => route.state?.fromHome, (fromHome) => {
 .approval-container {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 12px;
 }
 
 .page-header {
-  margin-bottom: 16px;
+  margin-bottom: 8px;
 }
 
 .page-header h2 {
-  font-size: 28px;
+  font-size: 24px;
   font-weight: 600;
   color: #333;
   margin: 0 0 8px 0;
@@ -850,7 +850,7 @@ watch(() => route.state?.fromHome, (fromHome) => {
 }
 
 .approval-tabs-card {
-  margin-bottom: 20px;
+  margin-bottom: 12px;
 }
 
 .approval-tabs {
@@ -894,7 +894,7 @@ watch(() => route.state?.fromHome, (fromHome) => {
 }
 
 .table-card {
-  margin-bottom: 20px;
+  margin-bottom: 12px;
 }
 
 .search-form {
@@ -921,7 +921,7 @@ watch(() => route.state?.fromHome, (fromHome) => {
 }
 
 .data-table {
-  margin-top: 16px;
+  margin-top: 8px;
 }
 
 .action-buttons {
@@ -936,7 +936,7 @@ watch(() => route.state?.fromHome, (fromHome) => {
 }
 
 .pagination-container {
-  margin-top: 20px;
+  margin-top: 12px;
   display: flex;
   justify-content: center;
 }

@@ -202,6 +202,7 @@ onMounted(() => {
 
 .page-header {
   margin-bottom: 16px;
+  padding-left: 8px;
 }
 
 .page-header h2 {

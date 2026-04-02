@@ -362,8 +362,8 @@ onMounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 16px;
-  padding: 24px 32px;
+  margin-bottom: 0px;
+  padding: 4px 4px;
   position: relative;
 }
 
@@ -372,7 +372,7 @@ onMounted(() => {
 }
 
 .page-title {
-  font-size: 28px;
+  font-size: 24px;
   font-weight: 700;
   color: #000;
   margin: 0 0 8px 0;
@@ -389,16 +389,16 @@ onMounted(() => {
 .stats-card {
   border-radius: 12px;
   border: none;
-  padding: 12px 24px;
+  padding: 0px 24px;
   position: absolute;
-  top: 20px;
+  top: 4px;
   right: 20px;
   z-index: 10;
 }
 
 .stats-container {
   display: flex;
-  gap: 30px;
+  gap: 20px;
   align-items: center;
 }
 
@@ -422,16 +422,17 @@ onMounted(() => {
 
 .search-card,
 .table-card {
-  border-radius: 16px;
+  border-radius: 12px;
   border: none;
   background: white;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
-  margin-bottom: 24px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  margin-bottom: 16px;
   overflow: hidden;
 }
 
 .search-card {
-  padding: 24px;
+  padding: 8px 20px;
+  margin-top: 30px;
 }
 
 .table-card {
