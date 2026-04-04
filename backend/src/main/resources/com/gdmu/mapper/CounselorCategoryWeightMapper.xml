@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.gdmu.mapper.CounselorCategoryWeightMapper">
+    
+    <resultMap id="CounselorCategoryWeightResultMap" type="com.gdmu.entity.CounselorCategoryWeight">
+        <id property="id" column="id" />
+        <result property="counselorId" column="counselor_id" />
+        <result property="categoryCode" column="category_code" />
+        <result property="categoryName" column="category_name" />
+        <result property="weight" column="weight" />
+        <result property="status" column="status" />
+        <result property="createTime" column="create_time" />
+        <result property="updateTime" column="update_time" />
+        <result property="deleted" column="deleted" />
+    </resultMap>
+    
+    <insert id="insert" parameterType="com.gdmu.entity.CounselorCategoryWeight" useGeneratedKeys="true" keyProperty="id">
+        insert into counselor_category_weight (counselor_id, category_code, category_name, weight, status, create_time, update_time, deleted)
+        values (#{counselorId}, #{categoryCode}, #{categoryName}, #{weight}, #{status}, #{createTime}, #{updateTime}, #{deleted})
+    </insert>
+    
+    <insert id="batchInsert" parameterType="java.util.List">
+        insert into counselor_category_weight (counselor_id, category_code, category_name, weight, status, create_time, update_time, deleted)
+        values
+        <foreach collection="weights" item="weight" separator=",">
+            (#{weight.counselorId}, #{weight.categoryCode}, #{weight.categoryName}, #{weight.weight}, #{weight.status}, #{weight.createTime}, #{weight.updateTime}, #{weight.deleted})
+        </foreach>
+    </insert>
+    
+    <select id="findById" resultMap="CounselorCategoryWeightResultMap">
+        select * from counselor_category_weight where id = #{id} and deleted = 0
+    </select>
+    
+    <select id="findByCounselorId" resultMap="CounselorCategoryWeightResultMap">
+        select * from counselor_category_weight where counselor_id = #{counselorId} and deleted = 0
+        order by category_code asc
+    </select>
+    
+    <select id="findActiveByCounselorId" resultMap="CounselorCategoryWeightResultMap">
+        select * from counselor_category_weight where counselor_id = #{counselorId} and status = 1 and deleted = 0
+        order by category_code asc
+    </select>
+    
+    <select id="findByCounselorIdAndCategoryCode" resultMap="CounselorCategoryWeightResultMap">
+        select * from counselor_category_weight where counselor_id = #{counselorId} and category_code = #{categoryCode} and deleted = 0
+    </select>
+    
+    <update id="update" parameterType="com.gdmu.entity.CounselorCategoryWeight">
+        update counselor_category_weight
+        <set>
+            <if test="categoryCode != null">
+                category_code = #{categoryCode},
+            </if>
+            <if test="categoryName != null">
+                category_name = #{categoryName},
+            </if>
+            <if test="weight != null">
+                weight = #{weight},
+            </if>
+            <if test="status != null">
+                status = #{status},
+            </if>
+            <if test="deleted != null">
+                deleted = #{deleted},
+            </if>
+            update_time = #{updateTime}
+        </set>
+        where id = #{id}
+    </update>
+    
+    <delete id="deleteById">
+        update counselor_category_weight set deleted = 1 where id = #{id}
+    </delete>
+    
+    <delete id="deleteByCounselorId">
+        update counselor_category_weight set deleted = 1 where counselor_id = #{counselorId}
+    </delete>
+    
+    <delete id="deleteByCounselorIdAndCategoryCode">
+        update counselor_category_weight set deleted = 1 where counselor_id = #{counselorId} and category_code = #{categoryCode}
+    </delete>
+    
+    <select id="getTotalWeightByCounselorId" resultType="int">
+        select COALESCE(sum(weight), 0) from counselor_category_weight where counselor_id = #{counselorId} and status = 1 and deleted = 0
+    </select>
+</mapper>

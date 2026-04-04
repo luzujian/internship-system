@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.gdmu.mapper.PositionFavoriteMapper">
+
+    <insert id="insert" parameterType="com.gdmu.entity.PositionFavorite">
+        INSERT INTO position_favorite (position_id, student_id, create_time)
+        VALUES (#{positionId}, #{studentId}, #{createTime})
+    </insert>
+
+    <delete id="deleteByPositionIdAndStudentId">
+        DELETE FROM position_favorite WHERE position_id = #{positionId} AND student_id = #{studentId}
+    </delete>
+
+    <select id="countByPositionIdAndStudentId" resultType="int">
+        SELECT COUNT(*) FROM position_favorite WHERE position_id = #{positionId} AND student_id = #{studentId}
+    </select>
+
+    <select id="findFavoritePositionIdsByStudentId" resultType="java.lang.Long">
+        SELECT position_id FROM position_favorite WHERE student_id = #{studentId}
+    </select>
+
+    <select id="findFavoritePositionIds" resultType="java.lang.Long">
+        SELECT position_id FROM position_favorite
+        WHERE student_id = #{studentId}
+        AND position_id IN
+        <foreach collection="positionIds" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </select>
+
+    <delete id="deleteByStudentId">
+        DELETE FROM position_favorite WHERE student_id = #{studentId}
+    </delete>
+
+    <select id="findFavoriteDetailsByStudentId" resultType="com.gdmu.entity.PositionFavorite">
+        SELECT id, position_id AS positionId, student_id AS studentId, create_time AS createTime
+        FROM position_favorite
+        WHERE student_id = #{studentId}
+        ORDER BY create_time DESC
+    </select>
+
+</mapper>

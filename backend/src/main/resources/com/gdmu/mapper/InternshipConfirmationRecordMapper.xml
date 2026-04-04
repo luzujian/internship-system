@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.gdmu.mapper.InternshipConfirmationRecordMapper">
+
+    <resultMap id="BaseResultMap" type="com.gdmu.entity.InternshipConfirmationRecord">
+        <id property="id" column="id"/>
+        <result property="studentId" column="student_id"/>
+        <result property="studentName" column="student_name"/>
+        <result property="studentUserId" column="student_user_id"/>
+        <result property="gender" column="gender"/>
+        <result property="grade" column="grade"/>
+        <result property="major" column="major"/>
+        <result property="className" column="class_name"/>
+        <result property="contactPhone" column="contact_phone"/>
+        <result property="email" column="email"/>
+        <result property="companyId" column="company_id"/>
+        <result property="companyName" column="company_name"/>
+        <result property="companyAddress" column="company_address"/>
+        <result property="companyPhone" column="company_phone"/>
+        <result property="positionId" column="position_id"/>
+        <result property="positionName" column="position_name"/>
+        <result property="internshipStartTime" column="internship_start_time"/>
+        <result property="internshipEndTime" column="internship_end_time"/>
+        <result property="internshipDuration" column="internship_duration"/>
+        <result property="remark" column="remark"/>
+        <result property="status" column="status"/>
+        <result property="recallStatus" column="recall_status"/>
+        <result property="recallReason" column="recall_reason"/>
+        <result property="recallApplyTime" column="recall_apply_time"/>
+        <result property="createTime" column="create_time"/>
+        <result property="updateTime" column="update_time"/>
+    </resultMap>
+
+    <insert id="insert" parameterType="com.gdmu.entity.InternshipConfirmationRecord" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO internship_confirmation_record (
+            student_id, student_name, student_user_id, gender, grade, major, class_name,
+            contact_phone, email, company_id, company_name, company_address, company_phone,
+            position_id, position_name, internship_start_time, internship_end_time,
+            internship_duration, remark, status, recall_status, recall_reason, recall_apply_time,
+            create_time, update_time
+        ) VALUES (
+            #{studentId}, #{studentName}, #{studentUserId}, #{gender}, #{grade}, #{major}, #{className},
+            #{contactPhone}, #{email}, #{companyId}, #{companyName}, #{companyAddress}, #{companyPhone},
+            #{positionId}, #{positionName}, #{internshipStartTime}, #{internshipEndTime},
+            #{internshipDuration}, #{remark}, #{status}, #{recallStatus}, #{recallReason}, #{recallApplyTime},
+            NOW(), NOW()
+        )
+    </insert>
+
+    <update id="update" parameterType="com.gdmu.entity.InternshipConfirmationRecord">
+        UPDATE internship_confirmation_record SET
+            student_name = #{studentName},
+            student_user_id = #{studentUserId},
+            gender = #{gender},
+            grade = #{grade},
+            major = #{major},
+            class_name = #{className},
+            contact_phone = #{contactPhone},
+            email = #{email},
+            company_id = #{companyId},
+            company_name = #{companyName},
+            company_address = #{companyAddress},
+            company_phone = #{companyPhone},
+            position_id = #{positionId},
+            position_name = #{positionName},
+            internship_start_time = #{internshipStartTime},
+            internship_end_time = #{internshipEndTime},
+            internship_duration = #{internshipDuration},
+            remark = #{remark},
+            status = #{status},
+            recall_status = #{recallStatus},
+            recall_reason = #{recallReason},
+            recall_apply_time = #{recallApplyTime},
+            update_time = NOW()
+        WHERE id = #{id}
+    </update>
+
+    <select id="findById" resultMap="BaseResultMap">
+        SELECT * FROM internship_confirmation_record WHERE id = #{id}
+    </select>
+
+    <select id="findByStudentId" resultMap="BaseResultMap">
+        SELECT * FROM internship_confirmation_record WHERE student_id = #{studentId}
+    </select>
+
+    <select id="findByStudentIdOrderByCreateTimeDesc" resultMap="BaseResultMap">
+        SELECT * FROM internship_confirmation_record WHERE student_id = #{studentId} ORDER BY create_time DESC
+    </select>
+
+    <select id="findByCompanyId" resultMap="BaseResultMap">
+        SELECT * FROM internship_confirmation_record WHERE company_id = #{companyId} ORDER BY create_time DESC
+    </select>
+
+    <select id="findByCompanyIdAndStatus" resultMap="BaseResultMap">
+        SELECT * FROM internship_confirmation_record WHERE company_id = #{companyId} AND status = #{status} ORDER BY create_time DESC
+    </select>
+
+    <select id="findByStudentIdAndStatus" resultMap="BaseResultMap">
+        SELECT * FROM internship_confirmation_record WHERE student_id = #{studentId} AND status = #{status} ORDER BY create_time DESC
+    </select>
+
+</mapper>

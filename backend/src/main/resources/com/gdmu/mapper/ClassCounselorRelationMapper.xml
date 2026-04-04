@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.gdmu.mapper.ClassCounselorRelationMapper">
+    
+    <resultMap id="ClassCounselorRelationResultMap" type="com.gdmu.entity.ClassCounselorRelation">
+        <id property="id" column="id" />
+        <result property="classId" column="class_id" />
+        <result property="className" column="class_name" />
+        <result property="counselorId" column="counselor_id" />
+        <result property="counselorName" column="counselor_name" />
+        <result property="createTime" column="create_time" />
+        <result property="updateTime" column="update_time" />
+    </resultMap>
+    
+    <insert id="insert" parameterType="com.gdmu.entity.ClassCounselorRelation" useGeneratedKeys="true" keyProperty="id">
+        insert into class_counselor_relation (class_id, class_name, counselor_id, counselor_name, create_time, update_time)
+        values (#{classId}, #{className}, #{counselorId}, #{counselorName}, #{createTime}, #{updateTime})
+    </insert>
+    
+    <insert id="batchInsert" parameterType="java.util.List">
+        insert into class_counselor_relation (class_id, class_name, counselor_id, counselor_name, create_time, update_time)
+        values
+        <foreach collection="relations" item="relation" separator=",">
+            (#{relation.classId}, #{relation.className}, #{relation.counselorId}, #{relation.counselorName}, #{relation.createTime}, #{relation.updateTime})
+        </foreach>
+    </insert>
+    
+    <select id="findById" resultMap="ClassCounselorRelationResultMap">
+        select * from class_counselor_relation where id = #{id}
+    </select>
+    
+    <select id="findByClassId" resultMap="ClassCounselorRelationResultMap">
+        select * from class_counselor_relation where class_id = #{classId}
+    </select>
+    
+    <select id="findByCounselorId" resultMap="ClassCounselorRelationResultMap">
+        select * from class_counselor_relation where counselor_id = #{counselorId}
+    </select>
+    
+    <delete id="deleteById">
+        delete from class_counselor_relation where id = #{id}
+    </delete>
+    
+    <delete id="deleteByClassId">
+        delete from class_counselor_relation where class_id = #{classId}
+    </delete>
+    
+    <delete id="deleteByCounselorId">
+        delete from class_counselor_relation where counselor_id = #{counselorId}
+    </delete>
+    
+    <delete id="deleteByClassAndCounselor">
+        delete from class_counselor_relation where class_id = #{classId} and counselor_id = #{counselorId}
+    </delete>
+</mapper>

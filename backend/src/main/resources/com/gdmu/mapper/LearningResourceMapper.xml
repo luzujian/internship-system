@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.gdmu.mapper.LearningResourceMapper">
+    
+    <select id="selectById" resultType="com.gdmu.entity.LearningResource">
+        SELECT * FROM learning_resources WHERE id = #{id}
+    </select>
+    
+    <select id="selectByStatus" resultType="com.gdmu.entity.LearningResource">
+        SELECT * FROM learning_resources WHERE status = #{status} ORDER BY created_time DESC
+    </select>
+    
+    <select id="selectByUploaderId" resultType="com.gdmu.entity.LearningResource">
+        SELECT * FROM learning_resources WHERE uploader_id = #{uploaderId} ORDER BY created_time DESC
+    </select>
+    
+    <select id="selectByUploaderRole" resultType="com.gdmu.entity.LearningResource">
+        SELECT * FROM learning_resources WHERE uploader_role = #{uploaderRole} ORDER BY created_time DESC
+    </select>
+    
+    <!-- 语义搜索相关查询 - 适配Spring AI向量嵌入 -->
+    <select id="findSimilarResourcesByType" parameterType="java.util.Map" resultType="com.gdmu.entity.LearningResource">
+        SELECT * FROM learning_resources
+        WHERE status = 'PUBLISHED'
+        <!-- 只有在fileType不为null且不为空时才添加fileType条件 -->
+        <if test="fileType != null and fileType != ''">
+            AND file_type = #{fileType}
+        </if>
+        <!-- 查询条件处理，使用更宽松的匹配逻辑 -->
+        <if test="query != null and query != ''">
+            AND (
+                title LIKE CONCAT('%', #{query}, '%') 
+                OR description LIKE CONCAT('%', #{query}, '%')
+                OR file_url LIKE CONCAT('%', #{query}, '%')
+            )
+        </if>
+        ORDER BY 
+            <!-- 按创建时间降序排列，确保最新的资源优先显示 -->
+            created_time DESC
+        LIMIT #{offset}, #{limit}
+    </select>
+    
+    <select id="countSimilarResourcesByType" parameterType="java.util.Map" resultType="long">
+        SELECT COUNT(*) FROM learning_resources
+        WHERE status = 'PUBLISHED'
+        <if test="fileType != null and fileType != ''">
+            AND file_type = #{fileType}
+        </if>
+        <if test="query != null and query != ''">
+            AND (title LIKE CONCAT('%', #{query}, '%') OR description LIKE CONCAT('%', #{query}, '%') OR file_url LIKE CONCAT('%', #{query}, '%'))
+        </if>
+    </select>
+    
+    <select id="findSimilarResources" parameterType="java.util.Map" resultType="com.gdmu.entity.LearningResource">
+        SELECT * FROM learning_resources
+        WHERE status = 'PUBLISHED'
+        AND ( (#{query} IS NULL OR #{query} = '') OR (title LIKE CONCAT('%', #{query}, '%') OR description LIKE CONCAT('%', #{query}, '%')) )
+        ORDER BY 
+            <!-- 优化排序逻辑，优先展示包含查询词的结果 -->
+            (CASE 
+                WHEN #{query} IS NULL OR #{query} = '' THEN 1
+                WHEN title LIKE CONCAT('%', #{query}, '%') THEN 3
+                WHEN description LIKE CONCAT('%', #{query}, '%') THEN 2
+                ELSE 1
+            END) DESC,
+            created_time DESC
+        <if test="offset != null and limit != null">
+            LIMIT #{offset}, #{limit}
+        </if>
+    </select>
+    
+    <select id="countSimilarResources" parameterType="java.util.Map" resultType="int">
+        SELECT COUNT(*) FROM learning_resources
+        WHERE status = 'PUBLISHED'
+        AND ( (#{query} IS NULL OR #{query} = '') OR (title LIKE CONCAT('%', #{query}, '%') OR description LIKE CONCAT('%', #{query}, '%')) )
+    </select>
+    
+    <select id="selectByTypeAndStatus" resultType="com.gdmu.entity.LearningResource">
+        SELECT * FROM learning_resources
+        WHERE (file_type = #{fileType} OR #{fileType} IS NULL OR #{fileType} = '')
+        AND status = #{status}
+        ORDER BY created_time DESC
+        LIMIT #{offset}, #{limit}
+    </select>
+    
+    <select id="countByTypeAndStatus" resultType="int">
+        SELECT COUNT(*) FROM learning_resources 
+        WHERE status = #{status}
+        <if test="fileType != null and fileType != ''">
+            AND file_type = #{fileType}
+        </if>
+    </select>
+</mapper>

@@ -1,0 +1,71 @@
+-- 学生端新增表：求职申请、面试邀请、实习周志
+
+CREATE TABLE IF NOT EXISTS student_job_application (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    student_id BIGINT NOT NULL,
+    position_id BIGINT,
+    company_id BIGINT,
+    position_name VARCHAR(200),
+    company_name VARCHAR(200),
+    location VARCHAR(300),
+    salary VARCHAR(100),
+    duration VARCHAR(100),
+    cover_letter TEXT,
+    resume_url VARCHAR(500),
+    student_name VARCHAR(100),
+    student_no VARCHAR(50),
+    phone VARCHAR(50),
+    email VARCHAR(200),
+    major VARCHAR(200),
+    grade VARCHAR(50),
+    self_introduction TEXT,
+    status VARCHAR(30) NOT NULL DEFAULT 'pending',
+    reject_reason VARCHAR(500),
+    apply_date DATE,
+    create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+    update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_student_id (student_id),
+    INDEX idx_status (status)
+) COMMENT='学生求职申请表';
+
+CREATE TABLE IF NOT EXISTS interview_invitation (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    student_id BIGINT NOT NULL,
+    company_id BIGINT,
+    position_id BIGINT,
+    position_name VARCHAR(200),
+    company_name VARCHAR(200),
+    interview_time DATETIME,
+    interview_location VARCHAR(500),
+    interview_type VARCHAR(50),
+    contact_person VARCHAR(100),
+    contact_phone VARCHAR(50),
+    status VARCHAR(30) NOT NULL DEFAULT 'pending',
+    reject_reason VARCHAR(500),
+    remark TEXT,
+    create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+    update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_student_id (student_id),
+    INDEX idx_status (status)
+) COMMENT='面试邀请表';
+
+CREATE TABLE IF NOT EXISTS internship_weekly_log (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    student_id BIGINT NOT NULL,
+    internship_status_id BIGINT,
+    week_number INT NOT NULL,
+    week_start_date DATE,
+    week_end_date DATE,
+    work_content TEXT,
+    work_summary TEXT,
+    next_week_plan TEXT,
+    problems TEXT,
+    hours_worked DECIMAL(5,1),
+    status VARCHAR(30) NOT NULL DEFAULT 'draft',
+    submit_time DATETIME,
+    teacher_comment TEXT,
+    create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+    update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_student_id (student_id),
+    INDEX idx_status (status)
+) COMMENT='实习周志表';

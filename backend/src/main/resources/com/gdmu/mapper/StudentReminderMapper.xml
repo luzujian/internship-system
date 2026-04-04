@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.gdmu.mapper.StudentReminderMapper">
+
+    <resultMap id="BaseResultMap" type="com.gdmu.entity.StudentReminder">
+        <id column="id" property="id"/>
+        <result column="student_id" property="studentId"/>
+        <result column="teacher_id" property="teacherId"/>
+        <result column="content" property="content"/>
+        <result column="is_confirmed" property="isConfirmed"/>
+        <result column="create_time" property="createTime"/>
+        <result column="confirm_time" property="confirmTime"/>
+    </resultMap>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO student_reminder (student_id, teacher_id, content, is_confirmed, create_time)
+        VALUES (#{studentId}, #{teacherId}, #{content}, #{isConfirmed}, #{createTime})
+    </insert>
+
+    <select id="selectById" resultMap="BaseResultMap">
+        SELECT * FROM student_reminder WHERE id = #{id}
+    </select>
+
+    <update id="updateById">
+        UPDATE student_reminder
+        SET is_confirmed = #{isConfirmed}, confirm_time = #{confirmTime}
+        WHERE id = #{id}
+    </update>
+
+    <select id="selectPendingByStudentId" resultMap="BaseResultMap">
+        SELECT * FROM student_reminder
+        WHERE student_id = #{studentId} AND is_confirmed = 0
+        ORDER BY create_time DESC
+    </select>
+</mapper>
