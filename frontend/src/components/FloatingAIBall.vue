@@ -124,11 +124,29 @@
       </div>
     </div>
 
+    <!-- 左下角调整大小手柄 -->
+    <div
+      class="resize-handle resize-handle-left"
+      @mousedown="startResize"
+      @click.stop
+    >
+      <svg class="resize-svg" viewBox="0 0 50 35">
+        <!-- 左下角调整大小手柄的弧线，与 24px 圆角匹配，和右下角关于中线对称 -->
+        <path d="M 7 19 A 15 15 0 0 0 18 29" stroke="#606060" stroke-width="3.5" fill="none" stroke-linecap="round" opacity="0.8"/>
+      </svg>
+    </div>
+
     <!-- 右下角调整大小手柄 -->
     <div
       class="resize-handle"
       @mousedown="startResize"
-    ></div>
+      @click.stop
+    >
+      <svg class="resize-svg" viewBox="0 0 50 35">
+        <!-- 调整大小手柄的弧线，与 24px 圆角匹配 -->
+        <path d="M 43 19 A 15 15 0 0 1 32 29" stroke="#606060" stroke-width="3.5" fill="none" stroke-linecap="round" opacity="0.8"/>
+      </svg>
+    </div>
   </div>
 </template>
 
@@ -400,37 +418,68 @@ const startResize = (e) => {
   e.preventDefault()
   panelState.isResizing = true
 
-  // 添加拖拽类，禁用CSS transition
-  document.body.classList.add('panel-resizing')
+  // 判断是从哪个角开始调整大小
+  const handleEl = e.target.closest('.resize-handle')
+  const handleClass = handleEl?.getAttribute('class') || ''
+  const isLeftResize = handleClass.includes('resize-handle-left')
 
   const startX = e.clientX
   const startY = e.clientY
   const startWidth = panelState.width
   const startHeight = panelState.height
+  const startXPosition = panelState.x
 
   let rafId = null
 
   handleResizeMove = (e) => {
     if (!panelState.isResizing) return
 
-    // 使用requestAnimationFrame节流，避免频繁更新
+    // 使用 requestAnimationFrame 节流，避免频繁更新
     if (rafId) return
 
     rafId = requestAnimationFrame(() => {
       rafId = null
 
-      // 直接计算新尺寸
-      let newWidth = startWidth + (e.clientX - startX)
-      let newHeight = startHeight + (e.clientY - startY)
+      let newWidth, newHeight
 
-      newWidth = Math.max(newWidth, panelState.minWidth)
-      newHeight = Math.max(newHeight, panelState.minHeight)
+      if (isLeftResize) {
+        // 左下角调整：右侧固定不动，只有左侧边缘移动
+        // 向左拖动：宽度增加（左侧向左移动）
+        // 向右拖动：宽度减小（左侧向右移动）
+        const deltaX = startX - e.clientX
+        newWidth = startWidth + deltaX
+        newHeight = startHeight + (e.clientY - startY)
+        
+        // 限制最小宽度
+        newWidth = Math.max(newWidth, panelState.minWidth)
+        newHeight = Math.max(newHeight, panelState.minHeight)
+        
+        // 限制最大宽度，不能超出屏幕右边界
+        newWidth = Math.min(newWidth, window.innerWidth - startXPosition)
+        
+        // 限制高度
+        newHeight = Math.min(newHeight, window.innerHeight - panelState.y)
+        
+        // 计算新的 x 位置，确保右侧边缘固定
+        panelState.x = startXPosition + startWidth - newWidth
+        panelState.width = newWidth
+        panelState.height = newHeight
+      } else {
+        // 右下角调整：向右拖动时增加宽度
+        newWidth = startWidth + (e.clientX - startX)
+        newHeight = startHeight + (e.clientY - startY)
 
-      newWidth = Math.min(newWidth, window.innerWidth - panelState.x)
-      newHeight = Math.min(newHeight, window.innerHeight - panelState.y)
+        // 限制最小尺寸
+        newWidth = Math.max(newWidth, panelState.minWidth)
+        newHeight = Math.max(newHeight, panelState.minHeight)
 
-      panelState.width = newWidth
-      panelState.height = newHeight
+        // 限制最大尺寸，不能超出屏幕
+        newWidth = Math.min(newWidth, window.innerWidth - panelState.x)
+        newHeight = Math.min(newHeight, window.innerHeight - panelState.y)
+
+        panelState.width = newWidth
+        panelState.height = newHeight
+      }
     })
   }
 
@@ -443,7 +492,7 @@ const startResize = (e) => {
       rafId = null
     }
 
-    // 移除拖拽类，恢复CSS transition
+    // 移除拖拽类，恢复 CSS transition
     document.body.classList.remove('panel-resizing')
     document.body.style.cursor = ''
 
@@ -453,7 +502,7 @@ const startResize = (e) => {
 
   document.addEventListener('mousemove', handleResizeMove)
   document.addEventListener('mouseup', handleResizeUp)
-  document.body.style.cursor = 'nwse-resize'
+  document.body.style.cursor = isLeftResize ? 'nesw-resize' : 'nwse-resize'
 }
 
 // 切换聊天面板
@@ -1356,36 +1405,36 @@ body.panel-resizing .chat-panel {
   cursor: not-allowed;
 }
 
-/* 调整大小手柄 */
+/* 调整大小手柄 - 胶囊形状贴合右下角 */
 .resize-handle {
   position: absolute;
-  right: 0;
-  bottom: 0;
-  width: 20px;
-  height: 20px;
+  right: 2px;
+  bottom: 2px;
+  width: 50px;
+  height: 35px;
   cursor: nwse-resize;
-  background: linear-gradient(135deg, transparent 50%, #dcdfe6 50%);
-  border-top-left-radius: 12px;
-  opacity: 0.7;
-  transition: opacity 0.2s, background 0.2s;
+  opacity: 0.5;
+  transition: opacity 0.2s;
   z-index: 20;
+  background: none;
+  padding: 0;
+}
+
+/* 左下角调整大小手柄 */
+.resize-handle-left {
+  left: 2px;
+  right: auto;
+  cursor: nesw-resize;
 }
 
 .resize-handle:hover {
-  opacity: 1;
-  background: linear-gradient(135deg, transparent 50%, #c0c4cc 50%);
+  opacity: 0.85;
 }
 
-.resize-handle::before {
-  content: '';
-  position: absolute;
-  bottom: 3px;
-  right: 3px;
-  width: 10px;
-  height: 10px;
-  background-image: radial-gradient(circle, #909399 2px, transparent 2px);
-  background-size: 4px 4px;
-  background-position: 0 0, 4px 4px;
+.resize-svg {
+  width: 100%;
+  height: 100%;
+  display: block;
 }
 
 /* 文本选择样式 */

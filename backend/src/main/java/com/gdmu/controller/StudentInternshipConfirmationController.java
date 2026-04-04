@@ -1,5 +1,6 @@
 package com.gdmu.controller;
 
+import com.gdmu.anno.Log;
 import com.gdmu.entity.InternshipConfirmationRecord;
 import com.gdmu.entity.InternshipProgressRecord;
 import com.gdmu.entity.InternshipTimeSettings;
@@ -297,6 +298,7 @@ public class StudentInternshipConfirmationController {
     }
 
     @PostMapping("/submit")
+    @Log(operationType = "ADD", module = "INTERNSHIP_MANAGEMENT", description = "提交实习确认表")
     public Result submit(@RequestBody Map<String, Object> body) {
         try {
             User user = getCurrentUser();
@@ -539,6 +541,7 @@ public class StudentInternshipConfirmationController {
      * 提交单位变更申请
      */
     @PostMapping("/unit-change/submit")
+    @Log(operationType = "UPDATE", module = "INTERNSHIP_MANAGEMENT", description = "提交单位变更申请")
     public Result submitUnitChange(@RequestBody Map<String, Object> body) {
         try {
             User user = getCurrentUser();
@@ -623,6 +626,7 @@ public class StudentInternshipConfirmationController {
      * 再次申请（更新被驳回的申请）
      */
     @PutMapping("/unit-change/resubmit/{id}")
+    @Log(operationType = "UPDATE", module = "INTERNSHIP_MANAGEMENT", description = "重新提交单位变更申请")
     public Result resubmitUnitChange(@PathVariable Long id, @RequestBody Map<String, Object> body) {
         try {
             User user = getCurrentUser();
@@ -690,6 +694,7 @@ public class StudentInternshipConfirmationController {
      * 撤回实习确认申请
      */
     @PostMapping("/{id}/recall")
+    @Log(operationType = "DELETE", module = "INTERNSHIP_MANAGEMENT", description = "撤回实习确认申请")
     public Result recall(@PathVariable Long id, @RequestBody Map<String, String> body) {
         try {
             User user = getCurrentUser();

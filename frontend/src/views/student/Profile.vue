@@ -57,6 +57,10 @@
               <el-icon class="tag-icon"><User /></el-icon>
               <span class="tag-text">{{ userInfo.studentId }}</span>
             </div>
+            <div v-if="userInfo.supervisorTeacher" class="info-tag">
+              <el-icon class="tag-icon"><UserFilled /></el-icon>
+              <span class="tag-text">负责教师：{{ userInfo.supervisorTeacher }}</span>
+            </div>
             <div v-if="internshipStatus.companyName" class="info-tag">
               <el-icon class="tag-icon"><OfficeBuilding /></el-icon>
               <span class="tag-text">{{ internshipStatus.companyName }}</span>
@@ -301,7 +305,7 @@
                     查看详情
                   </el-button>
                   <!-- 学生已确认实习岗位后，不显示任何申请按钮 -->
-                  <template v-if="statusLoaded && internshipStatus.status !== 2">
+                  <template v-if="statusLoaded && internshipStatus.status < 2">
                     <!-- 未申请：显示申请按钮 -->
                     <el-button
                       v-if="!item.isApplied"
@@ -345,8 +349,8 @@
                       已撤回
                     </el-tag>
                   </template>
-                  <!-- 已确认实习岗位后显示此标签 -->
-                  <el-tag v-else type="success" size="small">
+                  <!-- 仅对学生已确认的职位显示此标签 -->
+                  <el-tag v-else-if="item.id === internshipStatus.positionId" type="success" size="small">
                     已确认实习
                   </el-tag>
                   <el-button type="danger" size="small" @click="removeFavorite(item.id)">
@@ -1059,6 +1063,7 @@
         </el-form-item>
         <el-form-item label="新密码">
           <el-input v-model="changePasswordForm.newPassword" type="password" placeholder="请输入新密码" />
+          <div class="password-rules-hint">密码规则：{{ passwordRulesText }}</div>
         </el-form-item>
         <el-form-item label="确认密码">
           <el-input v-model="changePasswordForm.confirmPassword" type="password" placeholder="请再次输入新密码" />
@@ -1108,7 +1113,7 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   User,
@@ -1141,7 +1146,8 @@ import {
   ZoomIn,
   Loading,
   Search,
-  Briefcase
+  Briefcase,
+  UserFilled
 } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/store/auth'
 import request from '@/utils/request'
@@ -1161,6 +1167,7 @@ const getStudentId = () => {
 }
 
 const router = useRouter()
+const route = useRoute()
 
 const showEditProfileDialog = ref(false)
 const showTemplateCenterDialog = ref(false)
@@ -1206,30 +1213,33 @@ const studentStatus = ref(0)
 
 // 实习状态
 const internshipStatus = ref({
-  status: null
+  status: null,
+  positionId: null
 })
 const statusLoaded = ref(false) // 状态是否已加载，默认false防止初始状态显示申请按钮
 
 // 初始化默认用户信息，确保页面加载时立即显示
 const userInfo = ref({
-  name: '李四',
-  studentId: '2020001',
-  department: '临床医学系 - 临床医学 1班',
-  motto: '天道酬勤，厚德载物',
-  bio: ''
+  name: '',
+  studentId: '',
+  department: '',
+  motto: '',
+  bio: '',
+  supervisorTeacher: '',
+  supervisorPhone: ''
 })
 
 // 初始化编辑表单数据
 const editProfileForm = ref({
-  name: '李四',
-  studentId: '2020001',
-  department: '临床医学系',
-  major: '临床医学',
-  class: '1班',
-  gender: '男',
-  phone: '13800138000',
-  grade: '四年级',
-  motto: '天道酬勤，厚德载物'
+  name: '',
+  studentId: '',
+  department: '',
+  major: '',
+  class: '',
+  gender: '',
+  phone: '',
+  grade: '',
+  motto: ''
 })
 
 // 院系选项
@@ -1806,6 +1816,38 @@ const changePasswordForm = ref({
   confirmPassword: ''
 })
 
+// 密码规则
+const passwordRules = ref({
+  minLength: 6,
+  complexity: 'lowercase,number'
+})
+
+// 获取密码规则
+const fetchPasswordRules = async () => {
+  try {
+    const response = await request.get('/auth/password-rules')
+    if (response.code === 200) {
+      passwordRules.value = response.data
+    }
+  } catch (error) {
+    console.error('获取密码规则失败:', error)
+  }
+}
+
+// 密码规则描述
+const passwordRulesText = computed(() => {
+  const rules = []
+  rules.push(`最少 ${passwordRules.value.minLength} 位`)
+  if (passwordRules.value.complexity) {
+    const complexity = passwordRules.value.complexity
+    if (complexity.includes('uppercase')) rules.push('大写字母')
+    if (complexity.includes('lowercase')) rules.push('小写字母')
+    if (complexity.includes('number')) rules.push('数字')
+    if (complexity.includes('special')) rules.push('特殊字符')
+  }
+  return rules.join('、')
+})
+
 // 绑定手机表单
 const bindPhoneForm = ref({
   phone: '',
@@ -1995,7 +2037,9 @@ const fetchUserInfo = async () => {
         studentId: user.studentId || '',
         department: `${user.department || ''} - ${user.major || ''} ${user.class || ''}`,
         motto: user.motto || '',
-        bio: user.bio || ''
+        bio: user.bio || '',
+        supervisorTeacher: user.supervisorTeacher || '',
+        supervisorPhone: user.supervisorPhone || ''
       }
       avatarUrl.value = user.avatar || ''
     }
@@ -2011,6 +2055,7 @@ const fetchInternshipStatus = async () => {
     const response = await request.get(`/student/internship-status`)
     if (response.code === 200 && response.data) {
       internshipStatus.value.status = response.data.status
+      internshipStatus.value.positionId = response.data.positionId || null
       internshipStatus.value.companyName = response.data.companyName
       internshipStatus.value.positionName = response.data.positionName
       internshipStatus.value.internshipStartTime = response.data.internshipStartTime
@@ -2526,6 +2571,7 @@ const handleOptionClick = (option) => {
       fetchResources()
       break
     case 'changePassword':
+      fetchPasswordRules()
       showChangePasswordDialog.value = true
       break
     case 'bindPhone':
@@ -2740,6 +2786,11 @@ const handleChangePassword = async () => {
         newPassword: '',
         confirmPassword: ''
       }
+      await authStore.logout(true)
+      localStorage.removeItem('token')
+      localStorage.removeItem('role')
+      localStorage.removeItem('userId')
+      localStorage.removeItem('current_role')
       router.push('/login')
     } else {
       ElMessage.error(response.data.message || '密码修改失败，请稍后重试')
@@ -2886,6 +2937,14 @@ onMounted(() => {
   fetchUserInfo()
   fetchInternshipStatus()
   fetchStudentStatus()
+
+  // 检查路由query参数，处理修改密码等操作
+  const action = route.query.action
+  if (action) {
+    handleOptionClick({ action })
+    // 清除URL参数，避免刷新后重复执行
+    router.replace({ query: {} })
+  }
 })
 </script>
 
@@ -7140,6 +7199,13 @@ onMounted(() => {
   .archive-footer :deep(.el-button) {
     width: 100%;
   }
+}
+
+.password-rules-hint {
+  font-size: 12px;
+  color: #909399;
+  margin-top: 4px;
+  line-height: 1.4;
 }
 </style>
 

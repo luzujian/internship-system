@@ -214,6 +214,7 @@ const handleCommand = async (command) => {
       router.push('/student/profile')
       break
     case 'password':
+      router.push('/student/profile?action=changePassword')
       break
     case 'clear':
       break
@@ -361,13 +362,6 @@ onUnmounted(() => {
           </el-button>
           <template #dropdown>
             <el-dropdown-menu class="user-dropdown-menu">
-              <el-dropdown-item command="edit" class="dropdown-item">
-                <el-icon>
-                  <User />
-                </el-icon>
-                <span>编辑资料</span>
-              </el-dropdown-item>
-
               <el-dropdown-item command="password" class="dropdown-item">
                 <el-icon>
                   <Lock />

@@ -71,6 +71,7 @@ public class ResourceController {
      * 语义搜索
      */
     @PostMapping("/search")
+    @Log(operationType = "SELECT", module = "RESOURCE_MANAGEMENT", description = "搜索学习资源")
     public ResponseEntity<?> searchResources(
             @RequestBody SearchRequest request) {
         try {
@@ -85,6 +86,7 @@ public class ResourceController {
      * 获取资源详情
      */
     @GetMapping("/{id}")
+    @Log(operationType = "SELECT", module = "RESOURCE_MANAGEMENT", description = "查看资源详情")
     public ResponseEntity<?> getResource(@PathVariable Long id) {
         try {
             LearningResource resource = resourceService.getResourceById(id);

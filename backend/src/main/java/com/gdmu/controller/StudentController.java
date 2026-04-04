@@ -5,6 +5,7 @@ import com.gdmu.entity.*;
 import com.gdmu.entity.Result;
 import com.gdmu.service.*;
 import com.gdmu.utils.AliyunOSSOperator;
+import com.gdmu.utils.PasswordValidator;
 import com.gdmu.exception.BusinessException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -60,11 +61,24 @@ public class StudentController {
     private PositionService positionService;
 
     @Autowired
+    private ClassService classService;
+
+    @Autowired
+    private TeacherUserService teacherUserService;
+
+    @Autowired
+    private DepartmentService departmentService;
+
+    @Autowired
+    private MajorService majorService;
+
+    @Autowired
     private org.springframework.security.crypto.password.PasswordEncoder passwordEncoder;
 
     // 获取学生信息
     @GetMapping("/info")
     @PreAuthorize("hasRole('STUDENT')")
+    @Log(operationType = "SELECT", module = "STUDENT_INTERNSHIP", description = "查看学生信息")
     public Result getStudentInfo(@RequestParam @NotNull(message = "学生 ID 不能为空") Long studentId) {
         log.info("获取学生信息：{}", studentId);
         try {
@@ -94,6 +108,7 @@ public class StudentController {
 
     @GetMapping("/internship-status")
     @PreAuthorize("hasRole('STUDENT')")
+    @Log(operationType = "SELECT", module = "STUDENT_INTERNSHIP", description = "查看实习状态")
     public Result getMyInternshipStatus() {
         log.info("获取当前学生的实习状态");
         try {
@@ -217,6 +232,7 @@ public class StudentController {
     // ==================== 学生个人中心接口 ====================
 
     @GetMapping("/profile")
+    @Log(operationType = "SELECT", module = "STUDENT_INTERNSHIP", description = "查看个人资料")
     public Result getProfile() {
         try {
             Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
@@ -230,6 +246,29 @@ public class StudentController {
             StudentUser studentUser = studentUserService.findById(user.getId());
             if (studentUser == null) return Result.error("学生信息不存在");
 
+            // 解析department：如果存储的是数字ID，则查询数据库获取名称
+            String departmentName = studentUser.getDepartment();
+            if (departmentName != null && !departmentName.isEmpty()) {
+                try {
+                    Long deptId = Long.parseLong(departmentName);
+                    Department dept = departmentService.findById(deptId);
+                    if (dept != null) {
+                        departmentName = dept.getName();
+                    }
+                } catch (NumberFormatException e) {
+                    // 不是数字ID，保持原值
+                }
+            }
+
+            // 解析major：如果majorId存在，从major表获取专业名称
+            String majorName = studentUser.getMajor();
+            if (studentUser.getMajorId() != null && (majorName == null || majorName.isEmpty())) {
+                Major major = majorService.findById(studentUser.getMajorId());
+                if (major != null) {
+                    majorName = major.getName();
+                }
+            }
+
             Map<String, Object> profile = new HashMap<>();
             profile.put("id", studentUser.getId());
             profile.put("name", studentUser.getName());
@@ -241,12 +280,25 @@ public class StudentController {
             profile.put("classId", studentUser.getClassId());
             profile.put("className", studentUser.getClassName());
             profile.put("school", studentUser.getSchool());
-            profile.put("department", studentUser.getDepartment());
-            profile.put("major", studentUser.getMajor());
+            profile.put("department", departmentName);
+            profile.put("major", majorName);
             profile.put("class", studentUser.getClasses());
             profile.put("phone", studentUser.getPhone());
             profile.put("email", studentUser.getEmail());
             profile.put("avatar", studentUser.getAvatar());
+
+            // 获取负责教师信息
+            if (studentUser.getClassId() != null) {
+                com.gdmu.entity.Class classEntity = classService.findById(studentUser.getClassId());
+                if (classEntity != null && classEntity.getTeacherId() != null) {
+                    TeacherUser teacher = teacherUserService.findByTeacherUserId(classEntity.getTeacherId());
+                    if (teacher != null) {
+                        profile.put("supervisorTeacher", teacher.getName());
+                        profile.put("supervisorPhone", teacher.getPhone());
+                    }
+                }
+            }
+
             return Result.success(profile);
         } catch (Exception e) {
             log.error("获取个人信息失败: {}", e.getMessage(), e);
@@ -255,6 +307,7 @@ public class StudentController {
     }
 
     @PostMapping("/profile/update")
+    @Log(operationType = "UPDATE", module = "STUDENT_INTERNSHIP", description = "更新个人信息")
     public Result updateProfile(@RequestBody Map<String, Object> body) {
         try {
             Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
@@ -294,6 +347,7 @@ public class StudentController {
     }
 
     @PostMapping("/profile/change-password")
+    @Log(operationType = "UPDATE", module = "STUDENT_INTERNSHIP", description = "修改密码")
     public Result changePassword(@RequestBody Map<String, String> body) {
         try {
             Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
@@ -314,7 +368,11 @@ public class StudentController {
             if (!passwordEncoder.matches(oldPassword, studentUser.getPassword())) {
                 return Result.error("旧密码不正确");
             }
-            studentUser.setPassword(passwordEncoder.encode(newPassword));
+            PasswordValidator.ValidationResult validationResult = PasswordValidator.validatePassword(newPassword);
+            if (!validationResult.isValid()) {
+                return Result.error(validationResult.getMessage());
+            }
+            studentUser.setPassword(newPassword);
             studentUserService.update(studentUser);
             return Result.success("密码修改成功");
         } catch (Exception e) {
@@ -324,6 +382,7 @@ public class StudentController {
     }
 
     @GetMapping("/internship-record")
+    @Log(operationType = "SELECT", module = "STUDENT_INTERNSHIP", description = "查看实习记录")
     public Result getInternshipRecord() {
         try {
             Authentication authentication = SecurityContextHolder.getContext().getAuthentication();

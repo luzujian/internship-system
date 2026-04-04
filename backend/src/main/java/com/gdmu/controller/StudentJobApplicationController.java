@@ -1,5 +1,6 @@
 package com.gdmu.controller;
 
+import com.gdmu.anno.Log;
 import com.gdmu.entity.InternshipProgressRecord;
 import com.gdmu.entity.Result;
 import com.gdmu.entity.StudentJobApplication;
@@ -61,6 +62,7 @@ public class StudentJobApplicationController {
     }
 
     @PostMapping
+    @Log(operationType = "ADD", module = "APPLICATION_MANAGEMENT", description = "申请职位")
     public Result create(@RequestBody StudentJobApplication application) {
         try {
             User user = getCurrentUser();
@@ -88,6 +90,7 @@ public class StudentJobApplicationController {
     }
 
     @DeleteMapping("/{id}")
+    @Log(operationType = "DELETE", module = "APPLICATION_MANAGEMENT", description = "删除职位申请")
     public Result delete(@PathVariable Long id) {
         try {
             User user = getCurrentUser();

@@ -226,7 +226,7 @@
                       查看详情
                     </el-button>
                     <!-- 学生已确认实习岗位后，不显示任何申请按钮 -->
-                    <template v-if="statusLoaded && studentStatus !== 2">
+                    <template v-if="statusLoaded && studentStatus < 2">
                       <el-button
                         v-if="!job.isApplied && job.remainingQuota > 0"
                         type="primary"
@@ -268,8 +268,8 @@
                         已撤回
                       </el-tag>
                     </template>
-                    <!-- 已确认实习岗位后显示此标签 -->
-                    <el-tag v-else type="success">
+                    <!-- 仅对学生已确认的职位显示此标签 -->
+                    <el-tag v-else-if="job.id === confirmedPositionId" type="success">
                       已确认实习
                     </el-tag>
                   </div>
@@ -401,7 +401,7 @@
 
           <div class="detail-footer">
             <!-- 学生已确认实习岗位后，不显示任何申请按钮 -->
-            <template v-if="statusLoaded && studentStatus !== 2">
+            <template v-if="statusLoaded && studentStatus < 2">
               <el-button
                 v-if="!selectedJob.isApplied && selectedJob.remainingQuota > 0"
                 type="primary"
@@ -445,8 +445,8 @@
                 已撤回
               </el-tag>
             </template>
-            <!-- 已确认实习岗位后显示此标签 -->
-            <el-tag v-else type="success">
+            <!-- 仅对学生已确认的职位显示此标签 -->
+            <el-tag v-else-if="selectedJob.id === confirmedPositionId" type="success">
               已确认实习
             </el-tag>
           </div>
@@ -741,6 +741,7 @@ const jobs = ref([])
 const originalJobs = ref([])
 const studentStatus = ref(0) // 学生实习状态：0=无offer, 1=待确认, 2=已确定, 3=实习中, 4=已结束
 const statusLoaded = ref(false) // 状态是否已加载，默认false防止初始状态显示申请按钮
+const confirmedPositionId = ref(null) // 学生已确认的职位ID
 
 const filteredJobs = computed(() => {
   let result = [...jobs.value]
@@ -911,7 +912,7 @@ const handleQuickFilter = async (value) => {
   console.log('当前activeQuickFilter:', activeQuickFilter.value)
   activeQuickFilter.value = value
   currentPage.value = 1
-  
+
   try {
     let response
     if (value === 'all') {
@@ -921,10 +922,12 @@ const handleQuickFilter = async (value) => {
     } else if (value === 'hot') {
       response = await request.get(`/positions/hot`)
     }
-    
+
     if (response.code === 200) {
-      jobs.value = response.data
-      originalJobs.value = [...response.data]
+      jobs.value = response.data || []
+      originalJobs.value = [...jobs.value]
+      // 重新标记已申请的职位
+      await markAppliedJobs()
       ElMessage.success('筛选成功')
     } else {
       ElMessage.error(response.data.msg || '筛选失败')
@@ -1034,7 +1037,9 @@ const fetchStudentStatus = async () => {
     console.log('【DEBUG】学生实习状态响应:', response)
     if (response.code === 200 && response.data) {
       studentStatus.value = response.data.status || 0
+      confirmedPositionId.value = response.data.positionId || null
       console.log('【DEBUG】studentStatus 已设置为:', studentStatus.value)
+      console.log('【DEBUG】confirmedPositionId 已设置为:', confirmedPositionId.value)
     }
     statusLoaded.value = true // 状态加载完成
   } catch (error) {
@@ -1164,8 +1169,6 @@ const loadPositions = async () => {
     if (response.code === 200) {
       jobs.value = response.data || []
       originalJobs.value = [...jobs.value]
-      // 标记已申请的职位
-      await markAppliedJobs()
     }
   } catch (error) {
     console.error('获取职位列表失败:', error)
@@ -1174,17 +1177,17 @@ const loadPositions = async () => {
 
 onMounted(async () => {
   console.log('Jobs component mounted')
-  // 先获取学生状态，确保后续逻辑能拿到正确的 studentStatus
-  await fetchStudentStatus()
-  console.log('【DEBUG】studentStatus after fetch:', studentStatus.value)
 
-  // 并行加载其他初始化数据
-  Promise.all([
+  // 并行加载所有初始化数据（职位列表、申请状态、筛选选项、学生状态）
+  await Promise.all([
+    loadPositions(),
+    markAppliedJobs(),
     loadIndustryOptions(),
     loadCompanyOptions(),
     loadRegionOptions(),
-    loadPositions()
+    fetchStudentStatus()
   ])
+  console.log('【DEBUG】studentStatus after fetch:', studentStatus.value)
 
   // 连接WebSocket并监听岗位更新
   const token = localStorage.getItem('token')

@@ -1,0 +1,7 @@
+[   29796ms] [LOG] [Login] 登录成功，检查localStorage内容: @ http://localhost:5173/src/views/Login.vue:81
+[   29796ms] [LOG] [Login]   current_role: 存在 @ http://localhost:5173/src/views/Login.vue:85
+[   29796ms] [LOG] [Login]   admin_token_ROLE_ADMIN: 存在 @ http://localhost:5173/src/views/Login.vue:85
+[   29796ms] [LOG] [Login]   admin_accessToken_ROLE_ADMIN: 存在 @ http://localhost:5173/src/views/Login.vue:85
+[   29796ms] [LOG] [Login]   admin_role_ROLE_ADMIN: 存在 @ http://localhost:5173/src/views/Login.vue:85
+[   29796ms] [LOG] [Login] authStore.role: ROLE_ADMIN @ http://localhost:5173/src/views/Login.vue:88
+[   29796ms] [LOG] [Login] authStore.token: 存在 @ http://localhost:5173/src/views/Login.vue:89

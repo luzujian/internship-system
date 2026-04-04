@@ -114,6 +114,7 @@ public class ProblemFeedbackController {
 
     @PostMapping
     @PreAuthorize("hasAnyRole('ROLE_STUDENT', 'ROLE_TEACHER', 'ROLE_COMPANY')")
+    @Log(operationType = "ADD", module = "PROBLEM_FEEDBACK", description = "提交问题反馈")
     public Result addFeedback(@RequestBody ProblemFeedback feedback) {
         log.info("新增问题反馈: {}", feedback.getTitle());
         try {
@@ -166,6 +167,7 @@ public class ProblemFeedbackController {
 
     @PutMapping("/{id}")
     @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_STUDENT', 'ROLE_TEACHER', 'ROLE_COMPANY')")
+    @Log(operationType = "UPDATE", module = "PROBLEM_FEEDBACK", description = "更新问题反馈")
     public Result updateFeedback(@PathVariable Long id, @RequestBody ProblemFeedback feedback) {
         log.info("更新问题反馈: ID={}", id);
         try {
@@ -180,6 +182,7 @@ public class ProblemFeedbackController {
 
     @DeleteMapping("/{id}")
     @PreAuthorize("hasRole('ROLE_ADMIN')")
+    @Log(operationType = "DELETE", module = "PROBLEM_FEEDBACK", description = "删除问题反馈")
     public Result deleteFeedback(@PathVariable Long id) {
         log.info("删除问题反馈: ID={}", id);
         try {
@@ -193,6 +196,7 @@ public class ProblemFeedbackController {
 
     @DeleteMapping("/batch")
     @PreAuthorize("hasRole('ROLE_ADMIN')")
+    @Log(operationType = "DELETE", module = "PROBLEM_FEEDBACK", description = "批量删除问题反馈")
     public Result batchDeleteFeedback(@RequestBody Map<String, List<Long>> request) {
         List<Long> ids = request.get("ids");
         log.info("批量删除问题反馈，IDs: {}", ids);

@@ -1,5 +1,6 @@
 package com.gdmu.controller;
 
+import com.gdmu.anno.Log;
 import com.gdmu.entity.CompanyUser;
 import com.gdmu.entity.Position;
 import com.gdmu.entity.PositionCategory;
@@ -321,6 +322,7 @@ public class StudentPositionController {
      * 收藏/取消收藏职位
      */
     @PostMapping("/favorite/{positionId}")
+    @Log(operationType = "UPDATE", module = "POSITION_MANAGEMENT", description = "收藏/取消收藏职位")
     public Result toggleFavorite(@PathVariable Long positionId) {
         try {
             Long studentId = getCurrentStudentId();

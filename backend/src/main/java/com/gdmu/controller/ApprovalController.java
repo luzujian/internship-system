@@ -1,5 +1,6 @@
 package com.gdmu.controller;
 
+import com.gdmu.anno.Log;
 import com.gdmu.entity.CompanyQualification;
 import com.gdmu.entity.PageResult;
 import com.gdmu.entity.Result;
@@ -102,6 +103,7 @@ public class ApprovalController {
      * 批准学生申请
      */
     @PostMapping("/student-applications/{id}/approve")
+    @Log(operationType = "AUDIT", module = "INTERNSHIP_MANAGEMENT", description = "批准学生实习申请")
     public Result approveStudentApplication(@PathVariable Long id, @RequestParam @NotNull Long reviewerId) {
         log.info("批准学生申请: id={}, reviewerId={}", id, reviewerId);
         try {
@@ -120,6 +122,7 @@ public class ApprovalController {
      * 驳回学生申请
      */
     @PostMapping("/student-applications/{id}/reject")
+    @Log(operationType = "AUDIT", module = "INTERNSHIP_MANAGEMENT", description = "驳回学生实习申请")
     public Result rejectStudentApplication(
             @PathVariable Long id,
             @RequestParam @NotNull Long reviewerId,
@@ -180,6 +183,7 @@ public class ApprovalController {
      * 批准企业资质审核
      */
     @PostMapping("/company-qualifications/{id}/approve")
+    @Log(operationType = "AUDIT", module = "COMPANY_MANAGEMENT", description = "批准企业资质审核")
     public Result approveCompanyQualification(@PathVariable Long id, @RequestParam @NotNull Long reviewerId) {
         log.info("批准企业资质审核: id={}, reviewerId={}", id, reviewerId);
         try {
@@ -198,6 +202,7 @@ public class ApprovalController {
      * 驳回企业资质审核
      */
     @PostMapping("/company-qualifications/{id}/reject")
+    @Log(operationType = "AUDIT", module = "COMPANY_MANAGEMENT", description = "驳回企业资质审核")
     public Result rejectCompanyQualification(
             @PathVariable Long id,
             @RequestParam @NotNull Long reviewerId,

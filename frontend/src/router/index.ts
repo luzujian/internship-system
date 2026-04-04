@@ -120,25 +120,23 @@ initRoutePreload()
 
 // 路由后置守卫（用于页面标题）
 router.afterEach((to) => {
-  let pageTitle = 'deepintern'
-
   if (to.path === '/login') {
-    pageTitle = '账号登录'
+    document.title = '账号登录 - DeepIntern'
   } else if (to.path.startsWith('/admin')) {
-    pageTitle = to.meta.title ? `${to.meta.title} - 实习-管理员` : '实习-管理员'
+    document.title = to.meta.title ? `${to.meta.title} - 管理端 - DeepIntern` : '管理端 - DeepIntern'
   } else if (to.path.startsWith('/student')) {
-    pageTitle = to.meta.title ? `${to.meta.title} - 实习-学生` : '实习-学生'
+    document.title = to.meta.title ? `${to.meta.title} - 学生端 - DeepIntern` : '学生端 - DeepIntern'
   } else if (to.path.startsWith('/company')) {
-    pageTitle = to.meta.title ? `${to.meta.title} - 实习-企业` : '实习-企业'
+    document.title = to.meta.title ? `${to.meta.title} - 企业端 - DeepIntern` : '企业端 - DeepIntern'
   } else if (to.path.startsWith('/teacher')) {
-    pageTitle = to.meta.title ? `${to.meta.title} - 实习-教师` : '实习-教师'
+    document.title = to.meta.title ? `${to.meta.title} - 教师端 - DeepIntern` : '教师端 - DeepIntern'
   } else if (to.path === '/company-register') {
-    pageTitle = '企业注册'
+    document.title = '企业注册 - DeepIntern'
   } else if (to.path === '/company-check') {
-    pageTitle = '企业审核'
+    document.title = '企业审核 - DeepIntern'
+  } else {
+    document.title = 'DeepIntern'
   }
-
-  document.title = pageTitle
 })
 
 export default router

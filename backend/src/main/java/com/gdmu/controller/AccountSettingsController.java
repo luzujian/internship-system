@@ -3,6 +3,7 @@ package com.gdmu.controller;
 import com.gdmu.entity.Result;
 import com.gdmu.entity.TeacherUser;
 import com.gdmu.service.TeacherUserService;
+import com.gdmu.utils.PasswordValidator;
 import com.gdmu.service.SmsService;
 import com.gdmu.utils.CurrentHolder;
 import jakarta.servlet.http.HttpServletRequest;
@@ -112,16 +113,16 @@ public class AccountSettingsController {
                 return Result.error("新密码不能为空");
             }
 
-            if (newPassword.length() < 6 || newPassword.length() > 20) {
-                return Result.error("新密码长度必须在6-20位之间");
-            }
-
             if (!newPassword.equals(confirmPassword)) {
                 return Result.error("两次输入的密码不一致");
             }
 
-            // 使用 PasswordEncoder 加密新密码
-            teacherUser.setPassword(passwordEncoder.encode(newPassword));
+            PasswordValidator.ValidationResult validationResult = PasswordValidator.validatePassword(newPassword);
+            if (!validationResult.isValid()) {
+                return Result.error(validationResult.getMessage());
+            }
+
+            teacherUser.setPassword(newPassword);
             teacherUserService.update(teacherUser);
 
             log.info("用户 {} 修改密码成功", teacherUser.getUsername());

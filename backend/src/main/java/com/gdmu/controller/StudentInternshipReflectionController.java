@@ -395,13 +395,19 @@ public class StudentInternshipReflectionController {
                 log.warn("批量获取评价失败: {}", e.getMessage());
             }
 
-            // 2. 批量获取实习总评（按studentId去重，每个学生只查一次）
+            // 2. 批量获取实习总评（先收集学生ID列表，再按studentId去重）
+            List<Long> studentIds = reflections.stream()
+                    .map(InternshipReflection::getStudentId)
+                    .distinct()
+                    .collect(java.util.stream.Collectors.toList());
             Map<Long, InternshipEvaluation> studentEvaluationMap = new HashMap<>();
             try {
-                List<InternshipEvaluation> allEvaluations = internshipEvaluationService.findByStudentIds(reflectionIds);
-                for (InternshipEvaluation eval : allEvaluations) {
-                    if (eval.getStudentId() != null) {
-                        studentEvaluationMap.put(eval.getStudentId(), eval);
+                if (!studentIds.isEmpty()) {
+                    List<InternshipEvaluation> allEvaluations = internshipEvaluationService.findByStudentIds(studentIds);
+                    for (InternshipEvaluation eval : allEvaluations) {
+                        if (eval.getStudentId() != null) {
+                            studentEvaluationMap.put(eval.getStudentId(), eval);
+                        }
                     }
                 }
             } catch (Exception e) {

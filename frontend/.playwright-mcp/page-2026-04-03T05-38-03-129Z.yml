@@ -1,0 +1,10 @@
+- generic [ref=e4]:
+  - generic [ref=e10]:
+    - generic [ref=e13]: AI医学院
+    - generic [ref=e15]:
+      - textbox "请输入账号" [ref=e20]
+      - textbox "请输入密码" [ref=e25]
+    - button "登录" [ref=e28] [cursor=pointer]:
+      - generic [ref=e29]: 登录
+    - generic [ref=e30]: v1.0
+  - generic [ref=e31]: 广东医科大学

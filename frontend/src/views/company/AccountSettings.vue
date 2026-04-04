@@ -1,9 +1,10 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useAuthStore } from '@/store/auth'
 import CompanyService from '@/api/CompanyService'
+import request from '@/utils/request'
 
 const router = useRouter()
 const route = useRoute()
@@ -82,6 +83,19 @@ onMounted(async () => {
   if (route.query.tab) {
     activeTab.value = route.query.tab
   }
+  passwordForm.value = {
+    oldPassword: '',
+    newPassword: '',
+    confirmPassword: ''
+  }
+  fetchPasswordRules()
+  if (activeTab.value === 'password') {
+    passwordTabKey.value++
+    await nextTick()
+    if (passwordFormRef.value) {
+      passwordFormRef.value.clearValidate()
+    }
+  }
   await loadProfile()
 })
 
@@ -122,15 +136,62 @@ const passwordForm = ref({
   confirmPassword: ''
 })
 
-const passwordRules = {
+const passwordFormRef = ref(null)
+
+// 密码规则
+const passwordRulesData = ref({
+  minLength: 6,
+  complexity: 'lowercase,number'
+})
+
+// 获取密码规则
+const fetchPasswordRules = async () => {
+  try {
+    const response = await request.get('/auth/password-rules')
+    if (response.code === 200) {
+      passwordRulesData.value = response.data
+      // 更新验证规则
+      updatePasswordRules()
+    }
+  } catch (error) {
+    console.error('获取密码规则失败:', error)
+  }
+}
+
+// 密码规则描述
+const passwordRulesText = computed(() => {
+  const rules = []
+  rules.push(`最少 ${passwordRulesData.value.minLength} 位`)
+  if (passwordRulesData.value.complexity) {
+    const complexity = passwordRulesData.value.complexity
+    if (complexity.includes('uppercase')) rules.push('大写字母')
+    if (complexity.includes('lowercase')) rules.push('小写字母')
+    if (complexity.includes('number')) rules.push('数字')
+    if (complexity.includes('special')) rules.push('特殊字符')
+  }
+  return rules.join('、')
+})
+
+// 动态密码验证规则
+const passwordRules = ref({
   oldPassword: [
     { required: true, message: '请输入原密码', trigger: 'blur' }
   ],
   newPassword: [
-    { required: true, message: '请输入新密码', trigger: 'blur' },
-    { min: 6, max: 20, message: '密码长度应为6-20位', trigger: 'blur' }
+    { required: true, message: '请输入新密码', trigger: 'blur' }
   ],
   confirmPassword: [
+    { required: true, message: '请确认新密码', trigger: 'blur' }
+  ]
+})
+
+// 更新密码验证规则
+const updatePasswordRules = () => {
+  passwordRules.value.newPassword = [
+    { required: true, message: '请输入新密码', trigger: 'blur' },
+    { min: passwordRulesData.value.minLength, message: `密码长度不能少于${passwordRulesData.value.minLength}位`, trigger: 'blur' }
+  ]
+  passwordRules.value.confirmPassword = [
     { required: true, message: '请确认新密码', trigger: 'blur' },
     {
       validator: (rule, value, callback) => {
@@ -145,7 +206,22 @@ const passwordRules = {
   ]
 }
 
-const passwordFormRef = ref(null)
+// 监听标签页变化，加载密码规则
+watch(activeTab, async (newVal) => {
+  if (newVal === 'password') {
+    passwordTabKey.value++
+    passwordForm.value = {
+      oldPassword: '',
+      newPassword: '',
+      confirmPassword: ''
+    }
+    fetchPasswordRules()
+    await nextTick()
+    if (passwordFormRef.value) {
+      passwordFormRef.value.clearValidate()
+    }
+  }
+})
 
 const handleSaveProfile = async () => {
   loading.value = true
@@ -174,7 +250,10 @@ const handleSaveProfile = async () => {
 
 const handleChangePassword = async () => {
   if (!passwordFormRef.value) return
-  
+
+  // 清空之前的验证错误
+  passwordFormRef.value.clearValidate()
+
   await passwordFormRef.value.validate(async (valid) => {
     if (valid) {
       loading.value = true
@@ -191,10 +270,12 @@ const handleChangePassword = async () => {
             confirmPassword: ''
           }
           passwordFormRef.value.resetFields()
-          setTimeout(async () => {
-            await authStore.logout()
-            router.push('/login')
-          }, 1500)
+          await authStore.logout(true)
+          localStorage.removeItem('token')
+          localStorage.removeItem('role')
+          localStorage.removeItem('userId')
+          localStorage.removeItem('current_role')
+          router.push('/login')
         } else {
           ElMessage.error(response.message || '密码修改失败')
         }
@@ -310,11 +391,12 @@ const handleLogout = async () => {
 
       <el-tab-pane label="修改密码" name="password">
         <div class="form-card">
-          <el-form 
+          <el-form
+            v-if="activeTab === 'password'"
             ref="passwordFormRef"
-            :model="passwordForm" 
+            :model="passwordForm"
             :rules="passwordRules"
-            label-width="120px" 
+            label-width="120px"
             label-position="left"
           >
             <el-form-item label="原密码" prop="oldPassword">
@@ -327,12 +409,13 @@ const handleLogout = async () => {
             </el-form-item>
 
             <el-form-item label="新密码" prop="newPassword">
-              <el-input 
-                v-model="passwordForm.newPassword" 
-                type="password" 
-                placeholder="请输入新密码（6-20位）" 
-                show-password 
+              <el-input
+                v-model="passwordForm.newPassword"
+                type="password"
+                placeholder="请输入新密码"
+                show-password
               />
+              <div class="password-rules-hint">密码规则：{{ passwordRulesText }}</div>
             </el-form-item>
 
             <el-form-item label="确认新密码" prop="confirmPassword">
@@ -534,5 +617,12 @@ const handleLogout = async () => {
 
 :deep(.el-button--danger:hover) {
   background: #f78989;
+}
+
+.password-rules-hint {
+  font-size: 12px;
+  color: #909399;
+  margin-top: 4px;
+  line-height: 1.4;
 }
 </style>

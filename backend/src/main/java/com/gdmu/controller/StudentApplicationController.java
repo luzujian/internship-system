@@ -1,5 +1,6 @@
 package com.gdmu.controller;
 
+import com.gdmu.anno.Log;
 import com.gdmu.entity.InternshipProgressRecord;
 import com.gdmu.entity.Result;
 import com.gdmu.entity.StudentApplication;
@@ -58,6 +59,7 @@ public class StudentApplicationController {
      * 创建学生申请（自主实习/单位变更/考研延迟）
      */
     @PostMapping
+    @Log(operationType = "ADD", module = "INTERNSHIP_MANAGEMENT", description = "提交自主实习/单位变更/考研延迟申请")
     public Result createApplication(@RequestBody StudentApplication application) {
         try {
             User user = getCurrentUser();

@@ -65,7 +65,7 @@ public class OperationLogAspect {
 
         if (userId != null && originalAdminUsername != null) {
             username = originalAdminUsername + " (切换角色)";
-            userRole = "ADMIN_SWITCHED";
+            userRole = "ADMIN";
         } else if (userId != null) {
             try {
                 if (userRole != null) {

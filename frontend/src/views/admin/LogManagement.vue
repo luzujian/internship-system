@@ -59,7 +59,9 @@ const operationTypes = ref<SelectOption[]>([
   { value: 'UPLOAD', label: '上传' },
   { value: 'AUDIT', label: '审核' },
   { value: 'CLEAN', label: '清理' },
-  { value: 'SWITCH_ROLE', label: '切换角色' }
+  { value: 'SWITCH_ROLE', label: '切换角色' },
+  { value: 'SELECT', label: '查询' },
+  { value: 'VIEW', label: '查看' }
 ])
 
 const modules = ref<SelectOption[]>([
@@ -93,7 +95,14 @@ const modules = ref<SelectOption[]>([
   { value: 'PERMISSION_MANAGEMENT', label: '权限管理' },
   { value: 'AI_MODEL', label: 'AI模型管理' },
   { value: 'WITHDRAWAL_RECORD_MANAGEMENT', label: '撤回申请记录管理' },
-  { value: 'CHAT_MANAGEMENT', label: '聊天管理' }
+  { value: 'CHAT_MANAGEMENT', label: '聊天管理' },
+  { value: 'STUDENT_REFLECTION_AI_ANALYSIS', label: '学生心得AI分析' },
+  { value: 'STUDENT_REFLECTION_EVALUATION', label: '学生心得评分' },
+  { value: 'FILE_ACCESS', label: '文件访问' },
+  { value: 'APPLICATION_MANAGEMENT', label: '申请管理' },
+  { value: 'COUNSELOR_EVALUATION', label: '辅导员评分' },
+  { value: 'COUNSELOR_AI_ANALYSIS', label: '辅导员AI分析' },
+  { value: 'SYSTEM_CONFIG', label: '系统配置' }
 ])
 
 const roles = ref<SelectOption[]>([
@@ -193,7 +202,8 @@ const getOperationTypeName = (operationType: string): string => {
     'BACKUP': '备份',
     'RESTORE': '恢复',
     'DOWNLOAD': '下载',
-    'VERIFY': '验证'
+    'VERIFY': '验证',
+    'VIEW': '查看'
   }
   return nameMap[operationType] || operationType
 }
@@ -233,7 +243,13 @@ const getModuleName = (module: string): string => {
     'WITHDRAWAL_RECORD_MANAGEMENT': '撤回申请记录管理',
     'CHAT_MANAGEMENT': '聊天管理',
     'INTERNSHIP_REFLECTION': '实习心得管理',
-    'SYSTEM_CONFIG': '系统配置'
+    'SYSTEM_CONFIG': '系统配置',
+    'STUDENT_REFLECTION_AI_ANALYSIS': '学生心得AI分析',
+    'STUDENT_REFLECTION_EVALUATION': '学生心得评分',
+    'FILE_ACCESS': '文件访问',
+    'APPLICATION_MANAGEMENT': '申请管理',
+    'COUNSELOR_EVALUATION': '辅导员评分',
+    'COUNSELOR_AI_ANALYSIS': '辅导员AI分析'
   }
 
   if (nameMap[module]) {
@@ -313,7 +329,8 @@ const getRoleName = (role: string): string => {
     'STUDENT': '学生',
     'TEACHER': '教师',
     'ADMIN': '管理员',
-    'COMPANY': '企业'
+    'COMPANY': '企业',
+    '管理员切换': '管理员切换'
   }
   return nameMap[role] || role || '未知'
 }
@@ -323,7 +340,8 @@ const getRoleTagType = (role: string): string => {
     'STUDENT': 'primary',
     'TEACHER': 'success',
     'ADMIN': 'danger',
-    'COMPANY': 'warning'
+    'COMPANY': 'warning',
+    '管理员切换': 'danger'
   }
   return typeMap[role] || 'info'
 }

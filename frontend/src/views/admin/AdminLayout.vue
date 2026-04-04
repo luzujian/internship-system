@@ -33,6 +33,7 @@ import {
   Tools
 } from '@element-plus/icons-vue'
 import AdminUserService from '../../api/AdminUserService'
+import { handleLogout } from '../../utils/request'
 import StudentUserService from '../../api/StudentUserService'
 import TeacherUserService from '../../api/TeacherUserService'
 import UserService from '../../api/user'
@@ -530,28 +531,42 @@ const changePassword = async () => {
     const response = await AdminUserService.changeAdminPassword(passwordData)
 
     // 根据后端Result对象格式检查响应状态
-    const result = response.data || response;
+    // 注意：request拦截器在成功时返回response.data，所以response已经是数据对象
+    const result = response;
     if (result && result.code === 200) {
-          ElMessage.success('密码修改成功，请重新登录')
-          passwordDialogVisible.value = false
-          
-          // 先立即清除本地存储的令牌，避免后续请求使用已失效的令牌
-          authStore.logout(true);
-          // 清除所有可能的登录状态
-          localStorage.removeItem('isLoggedIn');
-          localStorage.removeItem('token');
-          localStorage.removeItem('role');
-          localStorage.removeItem('userId');
-          localStorage.removeItem('current_role');
-          
-          // 然后跳转到登录页面
-          router.push('/login');
+      ElMessage.success('密码修改成功，请重新登录')
+      passwordDialogVisible.value = false
+
+      // 使用 authStore.logout(true) 强制退出并清理所有状态
+      authStore.logout(true)
+      localStorage.removeItem('isLoggedIn')
+      localStorage.removeItem('token')
+      localStorage.removeItem('role')
+      localStorage.removeItem('userId')
+      localStorage.removeItem('current_role')
+      router.push('/login')
     } else {
       ElMessage.error(result ? (result.message || '密码修改失败') : '密码修改失败')
     }
-  } catch (error) {
+  } catch (error: any) {
     logger.error('修改密码失败:', error)
-    ElMessage.error('密码修改失败')
+    // 检查是否是 401 错误（令牌版本不匹配等）
+    if (error?.response?.status === 401) {
+      ElMessage.warning('认证已过期，请重新登录')
+      passwordDialogVisible.value = false
+      // 使用 authStore.logout(true) 强制退出并清理所有状态
+      authStore.logout(true)
+      localStorage.removeItem('isLoggedIn')
+      localStorage.removeItem('token')
+      localStorage.removeItem('role')
+      localStorage.removeItem('userId')
+      localStorage.removeItem('current_role')
+      router.push('/login')
+    } else {
+      // 从 error.response.data 中提取后端返回的错误消息
+      const errorMsg = error?.response?.data?.message || error?.response?.data?.msg || '密码修改失败'
+      ElMessage.error(errorMsg)
+    }
   }
 }
 

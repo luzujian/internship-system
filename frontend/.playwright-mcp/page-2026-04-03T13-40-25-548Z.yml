@@ -1,0 +1,149 @@
+- generic [ref=e4]:
+  - generic [ref=e7] [cursor=pointer]: AI
+  - banner [ref=e8]:
+    - generic [ref=e9]:
+      - button [ref=e10] [cursor=pointer]:
+        - img [ref=e13]
+      - generic [ref=e16]: DeepIntern
+    - button "欢迎您，admin" [ref=e19] [cursor=pointer]:
+      - generic [ref=e21]:
+        - img [ref=e23]
+        - generic [ref=e25]: 欢迎您，admin
+        - img [ref=e27]
+  - generic [ref=e29]:
+    - complementary [ref=e30]:
+      - menubar [ref=e34]:
+        - menuitem "首页" [ref=e35] [cursor=pointer]:
+          - img [ref=e37]
+          - generic [ref=e39]: 首页
+        - menuitem "个人中心" [ref=e40] [cursor=pointer]:
+          - img [ref=e42]
+          - generic [ref=e44]: 个人中心
+    - main [ref=e48]:
+      - generic [ref=e49]:
+        - generic [ref=e51]:
+          - heading "系统管理数据看板" [level=1] [ref=e52]
+          - paragraph [ref=e53]: 全面掌握系统数据，高效管理各项业务
+        - generic [ref=e59]:
+          - generic [ref=e60]:
+            - img [ref=e62]
+            - generic [ref=e64]: 欢迎回来，admin
+            - generic [ref=e65]: 2026年04月03日 星期五
+          - generic [ref=e66]:
+            - button "上传资源" [ref=e67] [cursor=pointer]:
+              - generic [ref=e68]:
+                - img [ref=e70]
+                - text: 上传资源
+            - button "发布公告" [ref=e72] [cursor=pointer]:
+              - generic [ref=e73]:
+                - img [ref=e75]
+                - text: 发布公告
+            - button "刷新数据" [ref=e77] [cursor=pointer]:
+              - generic [ref=e78]:
+                - img [ref=e80]
+                - text: 刷新数据
+        - generic [ref=e82]:
+          - generic [ref=e84]:
+            - generic [ref=e87] [cursor=pointer]:
+              - img [ref=e90]
+              - generic [ref=e92]:
+                - generic [ref=e93]: "0"
+                - generic [ref=e94]: 学生总人数
+              - generic [ref=e95]:
+                - generic [ref=e96]: 点击查看详情
+                - img [ref=e98]
+            - generic [ref=e102] [cursor=pointer]:
+              - img [ref=e105]
+              - generic [ref=e107]:
+                - generic [ref=e108]: "0"
+                - generic [ref=e109]: 教师总人数
+              - generic [ref=e110]:
+                - generic [ref=e111]: 点击查看详情
+                - img [ref=e113]
+            - generic [ref=e117] [cursor=pointer]:
+              - img [ref=e120]
+              - generic [ref=e124]:
+                - generic [ref=e125]: "0"
+                - generic [ref=e126]: 企业用户总数
+              - generic [ref=e127]:
+                - generic [ref=e128]: 点击查看详情
+                - img [ref=e130]
+            - generic [ref=e134] [cursor=pointer]:
+              - img [ref=e137]
+              - generic [ref=e141]:
+                - generic [ref=e142]:
+                  - generic [ref=e143]: "0"
+                  - generic [ref=e144]: 学院总数
+                - generic [ref=e146]:
+                  - generic [ref=e147]: "0"
+                  - generic [ref=e148]: 专业总数
+              - generic [ref=e149]:
+                - generic [ref=e150]: 点击查看详情
+                - img [ref=e152]
+            - generic [ref=e156] [cursor=pointer]:
+              - img [ref=e159]
+              - generic [ref=e161]:
+                - generic [ref=e162]:
+                  - generic [ref=e163]: "0"
+                  - generic [ref=e164]: 岗位类别总数
+                - generic [ref=e166]:
+                  - generic [ref=e167]: "0"
+                  - generic [ref=e168]: 岗位总数
+              - generic [ref=e169]:
+                - generic [ref=e170]: 点击查看详情
+                - img [ref=e172]
+            - generic [ref=e176] [cursor=pointer]:
+              - generic [ref=e178]: AI
+              - generic [ref=e179]:
+                - generic [ref=e180]:
+                  - generic [ref=e181]: "0"
+                  - generic [ref=e182]: AI模型总数
+                - generic [ref=e185]: 当前模型
+              - generic [ref=e186]:
+                - generic [ref=e187]: 点击查看详情
+                - img [ref=e189]
+          - generic [ref=e192]:
+            - generic [ref=e194]:
+              - generic [ref=e195]:
+                - img [ref=e197]
+                - generic [ref=e200]: 未处理问题反馈
+              - generic [ref=e201] [cursor=pointer]:
+                - text: 查看全部
+                - img [ref=e203]
+            - generic [ref=e209]:
+              - generic [ref=e211]:
+                - img [ref=e213]
+                - paragraph [ref=e230]: 暂无问题反馈
+              - img [ref=e233]
+        - generic [ref=e235]:
+          - generic [ref=e236]:
+            - generic [ref=e238]:
+              - generic [ref=e239]:
+                - img [ref=e241]
+                - generic [ref=e243]: 最近操作日志
+                - generic [ref=e245] [cursor=pointer]:
+                  - generic:
+                    - combobox [ref=e247]
+                    - generic [ref=e248]: 选择角色
+                  - img [ref=e251]
+              - generic [ref=e254] [cursor=pointer]:
+                - text: 查看全部
+                - img [ref=e256]
+            - generic [ref=e262]:
+              - generic [ref=e264]:
+                - img [ref=e266]
+                - paragraph [ref=e283]: 暂无操作日志
+              - img [ref=e286]
+          - generic [ref=e289]:
+            - generic [ref=e291]:
+              - generic [ref=e292]:
+                - img [ref=e294]
+                - generic [ref=e296]: 最近公告
+              - generic [ref=e297] [cursor=pointer]:
+                - text: 查看全部
+                - img [ref=e299]
+            - generic [ref=e305]:
+              - generic [ref=e307]:
+                - img [ref=e309]
+                - paragraph [ref=e326]: 暂无公告
+              - img [ref=e329]

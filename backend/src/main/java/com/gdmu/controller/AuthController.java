@@ -120,6 +120,18 @@ public class AuthController {
         }
     }
 
+    /**
+     * 获取密码修改规则（公开接口）
+     */
+    @GetMapping("/password-rules")
+    public Result getPasswordRules() {
+        Map<String, Object> rules = new HashMap<>();
+        rules.put("minLength", SystemSettingsConfig.getMinPasswordLength());
+        rules.put("complexity", SystemSettingsConfig.getPasswordComplexity());
+        rules.put("expireDays", SystemSettingsConfig.getPasswordExpireDays());
+        return Result.success(rules);
+    }
+
     @PostMapping("/login")
     public Result login(@RequestBody Map<String, Object> loginRequest, HttpServletRequest request) {
         String username = (String) loginRequest.get("username");

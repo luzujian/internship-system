@@ -43,7 +43,6 @@
             </div>
             <template #dropdown>
               <el-dropdown-menu>
-                <el-dropdown-item command="edit">编辑资料</el-dropdown-item>
                 <el-dropdown-item command="password">修改密码</el-dropdown-item>
                 <el-dropdown-item command="logout" divided>退出登录</el-dropdown-item>
               </el-dropdown-menu>
@@ -381,11 +380,8 @@ const toggleSidebar = () => {
 
 const handleCommand = async (command) => {
   switch (command) {
-    case 'edit':
-      router.push('/teacher/profile')
-      break
     case 'password':
-      router.push('/teacher/profile')
+      router.push('/teacher/account-settings')
       break
     case 'logout':
       await logout()

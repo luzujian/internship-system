@@ -13,10 +13,12 @@ import com.gdmu.service.AnnouncementService;
 import com.gdmu.service.CompanyUserService;
 import com.gdmu.service.InternshipApplicationService;
 import com.gdmu.service.InternshipProgressRecordService;
+import com.gdmu.service.PositionCacheService;
 import com.gdmu.service.PositionService;
 import com.gdmu.service.StudentInternshipStatusService;
 import com.gdmu.service.StudentJobApplicationService;
 import com.gdmu.utils.CurrentHolder;
+import com.gdmu.utils.PasswordValidator;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -39,6 +41,9 @@ public class CompanyController {
 
     @Autowired
     private PositionService positionService;
+
+    @Autowired
+    private PositionCacheService positionCacheService;
 
     @Autowired
     private StudentInternshipStatusService studentInternshipStatusService;
@@ -374,6 +379,9 @@ public class CompanyController {
             position.setCompanyId(companyId);
             int result = positionService.insert(position);
             if (result > 0) {
+                // 清除职位列表缓存，确保学生端立即看到新职位
+                positionCacheService.clearPositionsCache();
+                log.info("岗位创建成功，已清除职位缓存");
                 return Result.success("岗位创建成功");
             }
             return Result.error("岗位创建失败");
@@ -391,6 +399,9 @@ public class CompanyController {
             position.setId(id);
             int result = positionService.update(position);
             if (result > 0) {
+                // 清除职位列表缓存
+                positionCacheService.clearPositionsCache();
+                log.info("岗位更新成功，已清除职位缓存");
                 return Result.success("岗位更新成功");
             }
             return Result.error("岗位更新失败");
@@ -407,6 +418,9 @@ public class CompanyController {
         try {
             int result = positionService.delete(id);
             if (result > 0) {
+                // 清除职位列表缓存
+                positionCacheService.clearPositionsCache();
+                log.info("岗位删除成功，已清除职位缓存");
                 return Result.success("岗位删除成功");
             }
             return Result.error("岗位删除失败");
@@ -449,12 +463,14 @@ public class CompanyController {
             if (newPassword == null || newPassword.isEmpty()) {
                 return Result.error("请输入新密码");
             }
-            if (newPassword.length() < 6 || newPassword.length() > 20) {
-                return Result.error("密码长度应为 6-20 位");
-            }
 
             if (!passwordEncoder.matches(oldPassword, company.getPassword())) {
                 return Result.error("原密码错误");
+            }
+
+            PasswordValidator.ValidationResult validationResult = PasswordValidator.validatePassword(newPassword);
+            if (!validationResult.isValid()) {
+                return Result.error(validationResult.getMessage());
             }
 
             company.setPassword(newPassword);

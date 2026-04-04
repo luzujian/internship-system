@@ -23,10 +23,6 @@
             <label>手机号：</label>
             <input type="tel" v-model="userInfo.phone" readonly class="readonly-input">
           </div>
-          <div class="form-item">
-            <label>邮箱：</label>
-            <input type="email" v-model="userInfo.email" readonly class="readonly-input">
-          </div>
         </div>
       </div>
 
@@ -48,14 +44,6 @@
               <p>已绑定: {{ userInfo.phone || '未绑定' }}</p>
             </div>
             <button class="btn-default" @click="changePhone">更换手机</button>
-          </div>
-
-          <div class="security-item">
-            <div class="security-info">
-              <h4>绑定邮箱</h4>
-              <p>已绑定: {{ userInfo.email || '未绑定' }}</p>
-            </div>
-            <button class="btn-default" @click="changeEmail">更换邮箱</button>
           </div>
 
           <div class="security-item logout-item">
@@ -83,7 +71,8 @@
           </div>
           <div class="form-item full-width">
             <label>新密码：</label>
-            <input type="password" v-model="passwordForm.newPassword" placeholder="请输入新密码 (6-20位)">
+            <input type="password" v-model="passwordForm.newPassword" :placeholder="`请输入新密码`">
+            <div class="password-rules-hint">密码规则：{{ passwordRulesText }}</div>
           </div>
           <div class="form-item full-width">
             <label>确认新密码：</label>
@@ -124,39 +113,20 @@
       </div>
     </div>
 
-    <!-- 更换邮箱弹窗 -->
-    <div v-if="showEmailDialog" class="dialog-overlay" @click="showEmailDialog = false">
-      <div class="dialog-content" @click.stop>
-        <div class="dialog-header">
-          <h3>更换邮箱</h3>
-          <button class="dialog-close" @click="showEmailDialog = false">×</button>
-        </div>
-        <div class="dialog-body">
-          <div class="form-item full-width">
-            <label>新邮箱：</label>
-            <input type="email" v-model="emailForm.newEmail" placeholder="请输入新邮箱">
-          </div>
-        </div>
-        <div class="dialog-footer">
-          <button class="btn-default" @click="showEmailDialog = false">取消</button>
-          <button class="btn-primary" @click="updateEmail" :disabled="!isEmailFormValid">确认更换</button>
-        </div>
-      </div>
-    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { accountSettingsApi, type UserInfo } from '../../api/teacherAccountSettings'
 import { useAuthStore } from '../../store/auth'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import request from '../../utils/request'
 
 const authStore = useAuthStore()
 
 const showPasswordDialog = ref(false)
 const showPhoneDialog = ref(false)
-const showEmailDialog = ref(false)
 
 const userInfo = ref<UserInfo>({
   id: 0,
@@ -176,14 +146,49 @@ const passwordForm = ref({
   confirmPassword: ''
 })
 
+// 密码规则
+const passwordRules = ref({
+  minLength: 6,
+  complexity: 'lowercase,number'
+})
+
+// 获取密码规则
+const fetchPasswordRules = async () => {
+  try {
+    const response = await request.get('/auth/password-rules')
+    if (response.code === 200) {
+      passwordRules.value = response.data
+    }
+  } catch (error) {
+    console.error('获取密码规则失败:', error)
+  }
+}
+
+// 密码规则描述
+const passwordRulesText = computed(() => {
+  const rules = []
+  rules.push(`最少 ${passwordRules.value.minLength} 位`)
+  if (passwordRules.value.complexity) {
+    const complexity = passwordRules.value.complexity
+    if (complexity.includes('uppercase')) rules.push('大写字母')
+    if (complexity.includes('lowercase')) rules.push('小写字母')
+    if (complexity.includes('number')) rules.push('数字')
+    if (complexity.includes('special')) rules.push('特殊字符')
+  }
+  return rules.join('、')
+})
+
+// 监听密码对话框打开
+watch(showPasswordDialog, (newVal) => {
+  if (newVal) {
+    fetchPasswordRules()
+  }
+})
+
 const phoneForm = ref({
   newPhone: '',
   verifyCode: '',
   requestId: ''
-})
-
-const emailForm = ref({
-  newEmail: ''
 })
 
 const isPasswordFormValid = computed(() => {
@@ -201,13 +206,6 @@ const isPhoneFormValid = computed(() => {
     phoneForm.value.newPhone.trim() !== '' &&
     phoneForm.value.verifyCode.trim() !== '' &&
     /^1[3-9]\d{9}$/.test(phoneForm.value.newPhone)
-  )
-})
-
-const isEmailFormValid = computed(() => {
-  return (
-    emailForm.value.newEmail.trim() !== '' &&
-    /^[A-Za-z0-9+_.-]+@[A-Za-z0-9.-]+$/.test(emailForm.value.newEmail)
   )
 })
 
@@ -234,29 +232,19 @@ const changePassword = async () => {
     try {
       await accountSettingsApi.changePassword(passwordForm.value)
 
-      // 密码修改成功，提示用户需要重新登录
-      ElMessageBox.confirm('密码修改成功，为了您的账号安全，请重新登录', '修改成功', {
-        confirmButtonText: '重新登录',
-        cancelButtonText: '稍后再说',
-        type: 'success',
-        closeOnClickModal: false,
-        allowOutsideClick: false
-      }).then(async () => {
-        // 用户选择重新登录，调用登出
-        await authStore.logout()
-        localStorage.removeItem('token')
-        window.location.href = '/login'
-      }).catch(() => {
-        // 用户选择稍后再说，关闭弹窗并清空表单
-        passwordForm.value = {
-          oldPassword: '',
-          newPassword: '',
-          confirmPassword: ''
-        }
-        showPasswordDialog.value = false
-      })
-
-      // 不立即关闭弹窗，等待用户选择
+      ElMessage.success('密码修改成功，请重新登录')
+      showPasswordDialog.value = false
+      passwordForm.value = {
+        oldPassword: '',
+        newPassword: '',
+        confirmPassword: ''
+      }
+      await authStore.logout(true)
+      localStorage.removeItem('token')
+      localStorage.removeItem('role')
+      localStorage.removeItem('userId')
+      localStorage.removeItem('current_role')
+      window.location.href = '/login'
     } catch (error: any) {
       ElMessage.error(error.message || '修改密码失败')
     }
@@ -309,30 +297,6 @@ const updatePhone = async () => {
       await loadUserInfo()
     } catch (error: any) {
       showOperationFeedback(error.message || '更换手机号失败', 'error')
-    }
-  } else {
-    showOperationFeedback('请检查表单信息是否正确', 'error')
-  }
-}
-
-const changeEmail = () => {
-  showEmailDialog.value = true
-}
-
-const updateEmail = async () => {
-  if (isEmailFormValid.value) {
-    try {
-      await accountSettingsApi.updateContact({
-        email: emailForm.value.newEmail
-      })
-      showOperationFeedback('邮箱已成功更换', 'success')
-      emailForm.value = {
-        newEmail: ''
-      }
-      showEmailDialog.value = false
-      await loadUserInfo()
-    } catch (error: any) {
-      showOperationFeedback(error.message || '更换邮箱失败', 'error')
     }
   } else {
     showOperationFeedback('请检查表单信息是否正确', 'error')
@@ -648,5 +612,12 @@ const logout = async () => {
   .dialog-content {
     width: 95%;
   }
+}
+
+.password-rules-hint {
+  font-size: 12px;
+  color: #909399;
+  margin-top: 4px;
+  line-height: 1.4;
 }
 </style>

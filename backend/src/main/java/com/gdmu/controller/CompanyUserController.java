@@ -784,6 +784,7 @@ public class CompanyUserController {
      */
     @PutMapping("/{id}/status")
     @PreAuthorize("hasRole('ADMIN')")
+    @Log(operationType = "UPDATE", module = "COMPANY_MANAGEMENT", description = "更新企业用户状态")
     public Result updateCompanyUserStatus(@PathVariable Long id, @RequestBody Map<String, String> statusDTO) {
         log.info("更新企业用户 ID: {} 的状态", id);
         try {

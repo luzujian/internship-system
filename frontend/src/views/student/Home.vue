@@ -1005,19 +1005,35 @@ const initInternshipStatusForm = () => {
 }
 
 // 打开实习状态对话框
-const openStatusDialog = () => {
-  // 不重置状态数据，只更新基本信息（如果需要从用户信息同步）
-  // status 应该由 API 数据决定，不应被覆盖
-  const user = authStore.user
-  if (user) {
-    internshipStatus.value.studentId = user?.studentId || ''
-    internshipStatus.value.studentName = user?.name || ''
-    internshipStatus.value.gender = user?.gender || 1
-    internshipStatus.value.grade = user?.grade || ''
-    internshipStatus.value.department = user?.department || ''
-    internshipStatus.value.major = user?.major || ''
-    internshipStatus.value.className = user?.class || ''
-    internshipStatus.value.phone = user?.phone || ''
+const openStatusDialog = async () => {
+  // 从profile接口获取最新的学生信息（包含学院、专业等文字名称）
+  try {
+    const response = await request.get('/student/profile')
+    if (response && response.code === 200 && response.data) {
+      const profile = response.data
+      internshipStatus.value.studentId = profile.studentId || ''
+      internshipStatus.value.studentName = profile.name || ''
+      internshipStatus.value.gender = profile.gender || 1
+      internshipStatus.value.grade = profile.grade || ''
+      internshipStatus.value.department = profile.department || ''
+      internshipStatus.value.major = profile.major || ''
+      internshipStatus.value.className = profile.className || profile.class || ''
+      internshipStatus.value.phone = profile.phone || ''
+    }
+  } catch (error) {
+    console.error('获取个人信息失败:', error)
+    // 降级：从authStore获取
+    const user = authStore.user
+    if (user) {
+      internshipStatus.value.studentId = user?.studentId || ''
+      internshipStatus.value.studentName = user?.name || ''
+      internshipStatus.value.gender = user?.gender || 1
+      internshipStatus.value.grade = user?.grade || ''
+      internshipStatus.value.department = user?.department || ''
+      internshipStatus.value.major = user?.major || ''
+      internshipStatus.value.className = user?.class || ''
+      internshipStatus.value.phone = user?.phone || ''
+    }
   }
   showStatusDialog.value = true
 }
