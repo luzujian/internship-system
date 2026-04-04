@@ -167,65 +167,67 @@ const goToCompanyRegister = () => {
 </script>
 
 <style scoped>
+/* 基于 1920x1080 设计尺寸的 vw/vh 换算：1vw=19.2px, 1vh=10.8px */
+
 .container {
   display: flex;
   justify-content: center;
   align-items: flex-start;
+  width: 100vw;
   height: 100vh;
   background-image: url('../assets/2.png');
   background-repeat: no-repeat;
   background-size: 100% 100%;
   background-position: center;
-  padding-top: 15vh;
+  padding-top: 14vh;
   position: relative;
 }
 
 .logo-container {
   position: absolute;
-  top: 20px;
-  left: 60px;
+  top: 1.85vh;
+  left: 3.125vw;
   display: flex;
   align-items: center;
 }
 
 .logo {
-  width: 170px;
-  height: 170px;
+  width: 8.85vw;
+  height: 15.74vh;
   background-image: url('../assets/newlogo.png');
   background-size: contain;
   background-position: center;
   background-repeat: no-repeat;
-  /* 优化：硬件加速 */
   will-change: transform;
   transform: translateZ(0);
   backface-visibility: hidden;
 }
 
 .login-form {
-  width: 510px;
-  height: 550px;
-  border: 1px solid #e0e0e0;
-  border-radius: 10px;
+  width: 26.56vw;
+  height: 50.93vh;
+  border: 0.052vw solid #e0e0e0;
+  border-radius: 0.52vw;
   background-color: white;
   position: relative;
   display: flex;
   flex-direction: column;
   justify-content: center;
-  padding: 0 40px;
+  padding: 0 2.08vw;
 }
 
 .title {
-  font-size: 50px;
+  font-size: 2.6vw;
   text-align: center;
-  margin-bottom: 50px;
-  margin-top: 20px;
+  margin-bottom: 4.63vh;
+  margin-top: 1.85vh;
   font-weight: bold;
 }
 
 .button-container {
   display: flex;
   justify-content: center;
-  margin-top: 40px;
+  margin-top: 3.7vh;
 }
 
 .button-container :deep(.el-form-item__content) {
@@ -235,42 +237,36 @@ const goToCompanyRegister = () => {
 
 .button-wrapper {
   position: relative;
-  margin-top: 40px;
-}
-
-.button-container {
-  display: flex;
-  justify-content: center;
-}
-
-.button-container :deep(.el-form-item__content) {
-  display: flex;
-  justify-content: center;
-}
-
-.register-link {
-  position: absolute;
-  right: 40px;
-  bottom: -40px;
+  margin-top: 3.7vh;
 }
 
 /* 按钮样式 */
 .button {
-  width: 350px;
-  height: 50px;
-  font-size: 18px;
-  border-radius: 8px;
+  width: 18.23vw;
+  height: 4.63vh;
+  font-size: 0.94vw;
+  border-radius: 0.42vw;
   font-weight: 500;
+}
+
+/* 覆盖 Element Plus 按钮内部字体 */
+.button :deep(span) {
+  font-size: 0.94vw;
+}
+
+/* 按钮内图标样式 */
+.button :deep(.el-icon) {
+  font-size: 0.94vw;
 }
 
 /* 企业注册链接样式 */
 .register-link {
   text-align: center;
-  margin-top: 30px;
+  margin-top: 2.78vh;
 }
 
 .register-link-text {
-  font-size: 16px;
+  font-size: 0.83vw;
   font-weight: 500;
   color: #67C23A;
   cursor: pointer;
@@ -283,85 +279,81 @@ const goToCompanyRegister = () => {
   text-decoration: none;
 }
 
-/* 系统标题容器 - 用于定位副标题 */
+/* 系统标题容器 */
 .system-title-wrapper {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   position: relative;
-  margin-left: 20px;
+  margin-left: 1.04vw;
 }
 
-/* 系统标题样式 - DeepSeek 风格 */
+/* 系统标题样式 */
 .system-title {
-  font-size: 84px;
+  font-size: 4.375vw;
   font-weight: 900;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   background: linear-gradient(135deg, #409EFF 0%, #52c41a 100%);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
-  letter-spacing: -1px;
+  letter-spacing: -0.052vw;
   line-height: 1.1;
 }
 
 /* 系统副标题样式 */
 .system-subtitle {
-  font-size: 24px;
+  font-size: 2.22vh;
   font-weight: 600;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', sans-serif;
   color: #333;
-  margin-top: 12px;
-  margin-left: 8px;
-  letter-spacing: 4px;
+  margin-top: 1.11vh;
+  margin-left: 0.42vw;
+  letter-spacing: 0.21vw;
 }
 
 /* 大学标题容器 */
 .university-title-container {
   position: absolute;
-  bottom: 10px;
-  right: 10px;
+  bottom: 0.93vh;
+  right: 0.52vw;
   text-align: center;
   transform: perspective(500px) rotateY(0deg);
   transition: transform 0.3s ease;
 }
 
-/* 大学标题样式 - 右上角立体效果 */
+/* 大学标题样式 */
 .university-title {
-  font-size: 30px;
+  font-size: 2.78vh;
   font-weight: bold;
   font-family: 'Microsoft YaHei', sans-serif;
   background: linear-gradient(135deg, #ff6b6b 0%, #feca57 100%);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
-  /* 立体效果 */
   text-shadow:
     2px 2px 4px rgba(0, 0, 0, 0.3),
     -1px -1px 0 rgba(255, 255, 255, 0.8),
     1px 1px 0 rgba(0, 0, 0, 0.5);
-  /* 透明效果 */
-    opacity: 0.2;
+  opacity: 0.2;
 }
 
 /* 大学英文标题样式 */
 .university-title-english {
-  font-size: 16px;
+  font-size: 1.48vh;
   font-weight: bold;
   font-family: 'Microsoft YaHei', sans-serif;
   background: linear-gradient(135deg, #ff6b6b 0%, #feca57 100%);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
-  /* 立体效果 */
-  text-shadow: 
+  text-shadow:
     1px 1px 2px rgba(0, 0, 0, 0.3),
     -1px -1px 0 rgba(255, 255, 255, 0.8),
     1px 1px 0 rgba(0, 0, 0, 0.5);
-  /* 透明效果 */
-   opacity: 0.2;
-  margin-top: 5px;
-  letter-spacing: 1px;
+  opacity: 0.2;
+  margin-top: 0.46vh;
+  letter-spacing: 0.052vw;
 }
 
 /* 容器悬停效果 */
@@ -369,21 +361,42 @@ const goToCompanyRegister = () => {
   transform: perspective(500px) rotateY(0deg) scale(1.1);
 }
 
-/* 注册链接样式 */
-
-/* 父容器：el-form-item（给输入框做定位参考） */
-/* 输入框容器，实现水平居中 */
-
 /* 输入框样式 */
 .custom-input {
-  width: 350px;  /* 输入框宽度 */
-  height: 48px;  /* 输入框高度 */
-  font-size: 16px;
+  width: 18.23vw;
+  height: 4.44vh;
+  font-size: 0.83vw;
+}
+
+/* 覆盖 Element Plus 输入框内部字体 */
+.custom-input :deep(.el-input__wrapper) {
+  font-size: 0.83vw;
+}
+
+.custom-input :deep(.el-input__inner) {
+  font-size: 0.83vw;
+}
+
+/* 输入框图标样式 */
+.custom-input :deep(.el-input__prefix) {
+  font-size: 0.83vw;
+}
+
+.custom-input :deep(.el-input__prefix .el-icon) {
+  font-size: 0.83vw;
+}
+
+.custom-input :deep(.el-input__suffix) {
+  font-size: 0.83vw;
+}
+
+.custom-input :deep(.el-input__suffix .el-icon) {
+  font-size: 0.83vw;
 }
 
 /* 表单项目间距 */
 .form-item {
-  margin-top: 25px;
+  margin-top: 2.31vh;
 }
 
 .form-item :deep(.el-form-item__content) {
@@ -393,234 +406,43 @@ const goToCompanyRegister = () => {
 
 /* 确保Element Plus的输入框包装器也居中 */
 .el-form-item :deep(.el-input) {
-  width: 350px;
+  width: 18.23vw;
 }
 
 /* 版本号文本样式 */
 .version-text {
   position: absolute;
-  bottom: 13px;
-  right: 13px;
-  font-size: 17px;
+  bottom: 1.2vh;
+  right: 1.2vw;
+  font-size: 1.57vh;
   color: #909399;
   opacity: 0.8;
 }
+
 /* 表单包装器 */
 .form-wrapper {
   display: flex;
   flex-direction: row;
   align-items: flex-start;
-  transform: translateX(0) translateY(80px);
+  transform: translateY(10vh);
 }
 
-/* 左侧图片区域 - 使用 CSS 背景图实现同步渲染 */
+/* 左侧图片区域 */
 .additional-image-container {
-  width: 650px;
-  height: 550px;
-  margin-right: -7px;
+  width: 33.85vw;
+  height: 50.93vh;
+  margin-right: -0.365vw;
   z-index: 1;
   background-image: url('../assets/3.webp');
   background-size: 100% 100%;
   background-position: center;
   background-repeat: no-repeat;
-  border-radius: 10px 0 0 10px;
-  border: 1px solid #e0e0e0;
+  border-radius: 0.52vw 0 0 0.52vw;
+  border: 0.052vw solid #e0e0e0;
   border-right: none;
   background-color: #f5f7fa;
-  /* 优化：使用 will-change 提示浏览器提前准备 */
   will-change: transform;
-  /* 优化：硬件加速 */
   transform: translateZ(0);
   backface-visibility: hidden;
-}
-
-/* 响应式设计 - 大屏幕保持原有样式 */
-
-/* 中等屏幕响应式调整（1024px - 1400px） */
-@media (max-width: 1400px) {
-  .logo {
-    width: 150px;
-    height: 150px;
-  }
-  
-  .system-title {
-    font-size: 50px;
-  }
-  
-  .form-wrapper {
-    transform: translateX(calc(0px - (1400px - 100vw) * 0.2)) translateY(70px);
-  }
-  
-  .additional-image-container {
-    width: calc(600px - (1400px - 100vw) * 0.15);
-  }
-  
-  .login-form {
-    width: calc(510px - (1400px - 100vw) * 0.1);
-  }
-}
-
-/* 小屏幕响应式调整（768px - 1024px） */
-@media (max-width: 1024px) {
-  .container {
-    padding-top: 10vh;
-  }
-  
-  .logo-container {
-    left: 40px;
-    top: 15px;
-  }
-  
-  .logo {
-    width: 120px;
-    height: 120px;
-  }
-  
-  .system-title {
-    font-size: 40px;
-    margin-left: 15px;
-  }
-  
-  .form-wrapper {
-    flex-direction: column;
-    align-items: center;
-    transform: translateX(0) translateY(40px);
-  }
-  
-  .additional-image-container {
-    width: 450px;
-    height: 280px;
-    margin-right: 0;
-    margin-bottom: -7px;
-    border-radius: 10px 10px 0 0;
-    border-right: 1px solid #e0e0e0;
-    border-bottom: none;
-  }
-  
-  .login-form {
-    width: 450px;
-    height: auto;
-    min-height: 480px;
-    padding: 0 30px;
-  }
-  
-  .title {
-    font-size: 40px;
-    margin-bottom: 35px;
-    margin-top: 25px;
-  }
-  
-  .form-item {
-    margin-top: 20px;
-  }
-
-  .form-item :deep(.el-form-item__content) {
-    display: flex;
-    justify-content: center;
-  }
-  
-  .button {
-    width: 300px;
-    height: 48px;
-    font-size: 17px;
-  }
-  
-  .custom-input {
-    width: 300px;
-  }
-  
-  .el-form-item :deep(.el-input) {
-    width: 300px;
-  }
-  
-  .university-title-container {
-    right: 10px;
-    bottom: 10px;
-  }
-  
-  .university-title {
-    font-size: 24px;
-  }
-  
-  .university-title-english {
-    font-size: 13px;
-  }
-}
-
-/* 平板/移动设备响应式调整（<768px） */
-@media (max-width: 768px) {
-  .container {
-    padding-top: 5vh;
-  }
-  
-  .logo-container {
-    left: 20px;
-    top: 10px;
-  }
-  
-  .logo {
-    width: 100px;
-    height: 100px;
-  }
-  
-  .system-title {
-    font-size: 30px;
-    margin-left: 10px;
-  }
-  
-  .form-wrapper {
-    transform: translateX(0) translateY(20px);
-  }
-  
-  .additional-image-container {
-    width: 90vw;
-    max-width: 400px;
-    height: 250px;
-  }
-  
-  .login-form {
-    width: 90vw;
-    max-width: 400px;
-    height: auto;
-    min-height: 450px;
-    padding: 0 20px;
-  }
-  
-  .title {
-    font-size: 35px;
-    margin-bottom: 30px;
-    margin-top: 20px;
-  }
-  
-  .form-item {
-    margin-top: 18px;
-  }
-
-  .form-item :deep(.el-form-item__content) {
-    display: flex;
-    justify-content: center;
-  }
-  
-  .button {
-    width: 80%;
-    height: 46px;
-    font-size: 16px;
-  }
-  
-  .custom-input {
-    width: 80%;
-  }
-  
-  .el-form-item :deep(.el-input) {
-    width: 80%;
-  }
-  
-  .university-title {
-    font-size: 18px;
-  }
-  
-  .university-title-english {
-    font-size: 10px;
-  }
 }
 </style>
