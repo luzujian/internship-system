@@ -478,13 +478,14 @@ onUnmounted(() => {
   border-color: #409EFF;
 }
 
-/* 面试列表卡片：小卡片网格布局 - 美化版 */
+/* 面试列表卡片：小卡片网格布局 */
 .interviews-list {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
   gap: 20px;
-  max-height: calc(100vh - 560px);
-  overflow-y: auto;
+  /* 移除高度限制，全屏显示内容 */
+  max-height: none;
+  overflow-y: visible;
   padding-right: 4px;
 }
 

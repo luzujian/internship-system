@@ -376,6 +376,38 @@ public class StudentInternshipReflectionController {
 
             List<InternshipReflection> reflections = internshipReflectionService.list(user.getId(), null, null, null);
 
+            if (reflections.isEmpty()) {
+                return Result.success(java.util.Collections.emptyList());
+            }
+
+            // 优化：批量获取评价数据，避免N+1查询
+            // 1. 批量获取所有心得的教师评价
+            List<Long> reflectionIds = reflections.stream()
+                    .map(InternshipReflection::getId)
+                    .collect(java.util.stream.Collectors.toList());
+            Map<Long, StudentReflectionEvaluation> evaluationMap = new HashMap<>();
+            try {
+                List<StudentReflectionEvaluation> evaluations = studentReflectionEvaluationService.findByReflectionIds(reflectionIds);
+                for (StudentReflectionEvaluation eval : evaluations) {
+                    evaluationMap.put(eval.getReflectionId(), eval);
+                }
+            } catch (Exception e) {
+                log.warn("批量获取评价失败: {}", e.getMessage());
+            }
+
+            // 2. 批量获取实习总评（按studentId去重，每个学生只查一次）
+            Map<Long, InternshipEvaluation> studentEvaluationMap = new HashMap<>();
+            try {
+                List<InternshipEvaluation> allEvaluations = internshipEvaluationService.findByStudentIds(reflectionIds);
+                for (InternshipEvaluation eval : allEvaluations) {
+                    if (eval.getStudentId() != null) {
+                        studentEvaluationMap.put(eval.getStudentId(), eval);
+                    }
+                }
+            } catch (Exception e) {
+                log.warn("批量获取实习总评失败: {}", e.getMessage());
+            }
+
             // 转换为前端期望的格式
             List<Map<String, Object>> resultList = new java.util.ArrayList<>();
             for (InternshipReflection reflection : reflections) {
@@ -386,7 +418,6 @@ public class StudentInternshipReflectionController {
                 item.put("type", "text"); // 默认文本类型
 
                 // 将数字status转换为前端期望的字符串格式
-                // 0 = submitted, 1 = reviewing, 2 = approved, 3 = rejected
                 String statusStr = "submitted";
                 if (reflection.getStatus() != null) {
                     if ("1".equals(reflection.getRemark())) {
@@ -414,33 +445,29 @@ public class StudentInternshipReflectionController {
                     item.put("aiAnalysis", reflection.getAiAnalysis());
                 }
 
-                // 从StudentReflectionEvaluation表获取教师评语
-                try {
-                    StudentReflectionEvaluation reflectionEval = studentReflectionEvaluationService.findByReflectionId(reflection.getId());
-                    if (reflectionEval != null) {
-                        if (reflectionEval.getTeacherComment() != null) {
-                            item.put("teacherComment", reflectionEval.getTeacherComment());
-                        }
-                        // 如果AI分数为空，用教师评分
-                        if (reflection.getAiScore() == null && reflectionEval.getTotalScore() != null) {
-                            item.put("totalScore", reflectionEval.getTotalScore());
-                        }
+                // 从缓存的Map中获取教师评语（替代循环内单独查询）
+                StudentReflectionEvaluation reflectionEval = evaluationMap.get(reflection.getId());
+                if (reflectionEval != null) {
+                    if (reflectionEval.getTeacherComment() != null) {
+                        item.put("teacherComment", reflectionEval.getTeacherComment());
                     }
-                } catch (Exception e) {
-                    log.warn("获取实习心得评价失败: {}", e.getMessage());
+                    // 如果AI分数为空，用教师评分
+                    if (reflection.getAiScore() == null && reflectionEval.getTotalScore() != null) {
+                        item.put("totalScore", reflectionEval.getTotalScore());
+                    }
                 }
 
-                // 如果AI分析和教师评语都没有，尝试从InternshipEvaluation获取评语
+                // 如果AI分析和教师评语都没有，从缓存的实习总评获取评语
                 if (item.get("aiAnalysis") == null && item.get("teacherComment") == null) {
-                    InternshipEvaluation evaluation = internshipEvaluationService.findByStudentId(reflection.getStudentId());
+                    InternshipEvaluation evaluation = studentEvaluationMap.get(reflection.getStudentId());
                     if (evaluation != null && evaluation.getComment() != null) {
                         item.put("aiAnalysis", evaluation.getComment());
                     }
                 }
 
-                // 如果AI分数和教师评分都没有，尝试获取总评成绩作为备用
+                // 如果AI分数和教师评分都没有，从缓存的实习总评获取总评成绩
                 if (item.get("totalScore") == null) {
-                    InternshipEvaluation evaluation = internshipEvaluationService.findByStudentId(reflection.getStudentId());
+                    InternshipEvaluation evaluation = studentEvaluationMap.get(reflection.getStudentId());
                     if (evaluation != null && evaluation.getTotalScore() != null) {
                         item.put("totalScore", evaluation.getTotalScore());
                     }

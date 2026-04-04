@@ -165,10 +165,10 @@ function handleRoleConsistency(pathRole: string | null, currentRole: string | nu
 function getRedirectPathForRole(role: string): string {
   const roleDashboards: Record<string, string> = {
     'ROLE_ADMIN': '/admin/dashboard',
-    'ROLE_TEACHER': '/teacher/dashboard',
-    'ROLE_TEACHER_COLLEGE': '/teacher/dashboard',
-    'ROLE_TEACHER_DEPARTMENT': '/teacher/dashboard',
-    'ROLE_TEACHER_COUNSELOR': '/teacher/dashboard',
+    'ROLE_TEACHER': '/teacher/home',
+    'ROLE_TEACHER_COLLEGE': '/teacher/home',
+    'ROLE_TEACHER_DEPARTMENT': '/teacher/home',
+    'ROLE_TEACHER_COUNSELOR': '/teacher/home',
     'ROLE_STUDENT': '/student/home',
     'ROLE_COMPANY': '/company/dashboard'
   }

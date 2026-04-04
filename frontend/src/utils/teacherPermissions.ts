@@ -175,11 +175,25 @@ export function hasRoutePermission(teacherType: TeacherType, routeName: string):
  * @returns 教师类型
  */
 export function getCurrentTeacherType(): TeacherType {
+  // 优先从 localStorage.getItem('teacherType') 获取（角色切换时会正确设置）
+  const teacherTypeFromStorage = localStorage.getItem('teacherType')
+  if (teacherTypeFromStorage) {
+    // 将 'COLLEGE'/'DEPARTMENT'/'COUNSELOR' 转换为 TeacherType 枚举
+    if (teacherTypeFromStorage === 'COLLEGE') return TeacherType.COLLEGE
+    if (teacherTypeFromStorage === 'DEPARTMENT') return TeacherType.DEPARTMENT
+    if (teacherTypeFromStorage === 'COUNSELOR') return TeacherType.COUNSELOR
+  }
+
+  // 回退到从 userInfo 获取
   const userInfoStr = localStorage.getItem('userInfo')
   if (userInfoStr) {
     try {
       const userInfo = JSON.parse(userInfoStr)
-      return userInfo.teacherType || TeacherType.COLLEGE
+      if (userInfo.teacherType) {
+        if (userInfo.teacherType === 'COLLEGE') return TeacherType.COLLEGE
+        if (userInfo.teacherType === 'DEPARTMENT') return TeacherType.DEPARTMENT
+        if (userInfo.teacherType === 'COUNSELOR') return TeacherType.COUNSELOR
+      }
     } catch (e) {
       console.error('解析用户信息失败:', e)
     }

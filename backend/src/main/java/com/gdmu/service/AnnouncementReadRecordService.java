@@ -58,4 +58,12 @@ public interface AnnouncementReadRecordService {
      * @return 阅读记录列表
      */
     List<AnnouncementReadRecord> findByAnnouncementId(Long announcementId);
+
+    /**
+     * 根据用户ID查询阅读记录列表
+     * @param userId 用户ID
+     * @param userType 用户类型
+     * @return 阅读记录列表
+     */
+    List<AnnouncementReadRecord> findByUserId(String userId, String userType);
 }

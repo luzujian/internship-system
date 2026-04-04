@@ -63,7 +63,12 @@ public class StudentReflectionEvaluationServiceImpl implements StudentReflection
     public List<StudentReflectionEvaluation> findByCounselorId(Long counselorId) {
         return evaluationMapper.findByCounselorId(counselorId);
     }
-    
+
+    @Override
+    public List<StudentReflectionEvaluation> findByReflectionIds(List<Long> reflectionIds) {
+        return evaluationMapper.findByReflectionIds(reflectionIds);
+    }
+
     @Override
     @Transactional(rollbackFor = Exception.class)
     public int update(StudentReflectionEvaluation evaluation) {

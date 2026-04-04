@@ -742,12 +742,14 @@ const selectedFilter = ref("all");
 const selectedType = ref("all");
 const currentApplication = ref(null);
 
-// 申请详情中的简历和证书数据
+// 申请详情中的简历和证书数据（带缓存）
 const applicationMaterials = ref({
   resumes: [],
   certificates: []
 });
 const materialsLoading = ref(false);
+// 材料数据缓存标记，避免重复加载
+const materialsCacheLoaded = ref(false);
 
 // 系统默认实习时间设置
 const systemInternshipTime = ref({
@@ -1145,8 +1147,13 @@ const viewApplicationDetail = async (application) => {
   await loadApplicationMaterials();
 };
 
-// 加载申请人的简历和证书材料
+// 加载申请人的简历和证书材料（带缓存优化）
 const loadApplicationMaterials = async () => {
+  // 如果已经加载过材料数据，直接使用缓存
+  if (materialsCacheLoaded.value) {
+    return;
+  }
+
   materialsLoading.value = true;
   try {
     // 并行加载简历、证书和系统实习时间设置
@@ -1171,6 +1178,9 @@ const loadApplicationMaterials = async () => {
         endDate: timeRes.data?.endDate || ''
       };
     }
+
+    // 标记缓存已加载，后续不再重复请求
+    materialsCacheLoaded.value = true;
   } catch (error) {
     console.error('加载申请材料失败:', error);
     applicationMaterials.value = { resumes: [], certificates: [] };

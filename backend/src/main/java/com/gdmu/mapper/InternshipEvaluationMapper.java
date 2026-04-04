@@ -29,4 +29,6 @@ public interface InternshipEvaluationMapper {
     List<InternshipEvaluation> findByGrade(String grade);
 
     int publishGrades(@Param("studentIds") List<Long> studentIds);
+
+    List<InternshipEvaluation> findByStudentIds(@Param("studentIds") List<Long> studentIds);
 }

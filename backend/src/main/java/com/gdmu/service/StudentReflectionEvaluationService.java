@@ -22,7 +22,9 @@ public interface StudentReflectionEvaluationService {
     int deleteById(Long id);
     
     int deleteByReflectionId(Long reflectionId);
-    
+
+    List<StudentReflectionEvaluation> findByReflectionIds(List<Long> reflectionIds);
+
     int saveEvaluation(StudentReflectionEvaluation evaluation);
     
     Map<String, Object> calculateTotalScoreAndGrade(Map<String, Object> scoreDetails, Long counselorId);

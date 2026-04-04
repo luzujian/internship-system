@@ -70,4 +70,12 @@
     <update id="updateCategoryPositionCount">
         update position_category set position_count = #{positionCount} where id = #{id}
     </update>
+
+    <select id="findByIds" resultMap="PositionCategoryResultMap">
+        select * from position_category
+        where id in
+        <foreach collection="list" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </select>
 </mapper>

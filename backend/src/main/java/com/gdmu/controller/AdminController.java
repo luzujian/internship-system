@@ -66,7 +66,19 @@ public class AdminController {
 
     @Autowired
     private com.gdmu.service.ClassService classService;
-    
+
+    @Autowired
+    private com.gdmu.service.StudentUserService studentUserService;
+
+    @Autowired
+    private com.gdmu.service.TeacherUserService teacherUserService;
+
+    @Autowired
+    private com.gdmu.service.CompanyUserService companyUserService;
+
+    @Autowired
+    private com.gdmu.service.AdminUserService adminUserService;
+
     // 处理admin根路径请求
     @GetMapping
     @PreAuthorize("hasRole('ADMIN')")
@@ -306,11 +318,11 @@ public class AdminController {
     public Result getUserStats() {
         log.info("获取用户统计信息");
         try {
-            // 获取各类用户数量（使用ROLE_前缀，因为findByRole方法需要完整角色名）
-            int studentCount = userService.findByRole("ROLE_STUDENT").size();
-            int teacherCount = userService.findByRole("ROLE_TEACHER").size();
-            int adminCount = userService.findByRole("ROLE_ADMIN").size();
-            int companyCount = userService.findByRole("ROLE_COMPANY").size();
+            // 优化：直接调用各用户表的count方法，避免N+1查询问题
+            int studentCount = studentUserService.count().intValue();
+            int teacherCount = teacherUserService.count().intValue();
+            int adminCount = adminUserService.count().intValue();
+            int companyCount = companyUserService.count().intValue();
             int totalCount = studentCount + teacherCount + adminCount + companyCount;
 
             Map<String, Integer> stats = new HashMap<>();

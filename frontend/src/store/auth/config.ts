@@ -105,10 +105,10 @@ export const ERROR_MESSAGES: ErrorMessages = {
 // 角色到首页的映射
 export const ROLE_TO_DASHBOARD_MAP: RoleToDashboardMap = {
   'ROLE_ADMIN': '/admin/dashboard',
-  'ROLE_TEACHER': '/teacher/dashboard',
-  'ROLE_TEACHER_COLLEGE': '/teacher/dashboard',
-  'ROLE_TEACHER_DEPARTMENT': '/teacher/dashboard',
-  'ROLE_TEACHER_COUNSELOR': '/teacher/dashboard',
+  'ROLE_TEACHER': '/teacher/home',
+  'ROLE_TEACHER_COLLEGE': '/teacher/home',
+  'ROLE_TEACHER_DEPARTMENT': '/teacher/home',
+  'ROLE_TEACHER_COUNSELOR': '/teacher/home',
   'ROLE_STUDENT': '/student/home',
   'ROLE_COMPANY': '/company/dashboard'
 }

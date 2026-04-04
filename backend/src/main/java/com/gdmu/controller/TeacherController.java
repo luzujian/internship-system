@@ -147,9 +147,23 @@ public class TeacherController {
             List<Announcement> unreadAnnouncements = new java.util.ArrayList<>();
             List<Announcement> readAnnouncements = new java.util.ArrayList<>();
 
+            // 优化：批量查询该教师的所有已读记录，避免N+1问题
+            java.util.Map<Long, Boolean> readStatusMap = new java.util.HashMap<>();
+            try {
+                java.util.List<com.gdmu.entity.AnnouncementReadRecord> readRecords =
+                    announcementReadRecordService.findByUserId(String.valueOf(teacherId), "TEACHER");
+                for (com.gdmu.entity.AnnouncementReadRecord record : readRecords) {
+                    if (record.getAnnouncementId() != null) {
+                        readStatusMap.put(record.getAnnouncementId(), true);
+                    }
+                }
+            } catch (Exception e) {
+                log.warn("批量查询已读记录失败: {}", e.getMessage());
+            }
+
             for (Announcement announcement : filteredAnnouncements) {
-                boolean isRead = announcementReadRecordService.findByAnnouncementAndUser(
-                        announcement.getId(), String.valueOf(teacherId), "TEACHER") != null;
+                // 从预查询的Map中获取已读状态
+                boolean isRead = readStatusMap.getOrDefault(announcement.getId(), false);
                 if (isRead) {
                     readAnnouncements.add(announcement);
                 } else {

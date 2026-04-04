@@ -137,8 +137,8 @@
           </div>
           <el-tree
             ref="permissionTreeRef"
-            :data="filteredPermissionTree"
-            :props="{ children: 'children', label: 'module' }"
+            :data="dialogPermissionTree"
+            :props="{ children: 'children', label: 'module', disabled: 'disabled' }"
             node-key="id"
             show-checkbox
             default-expand-all
@@ -248,6 +248,14 @@ const teacherPermissionCounts = ref<Record<number, number>>({})
 
 const draggedIndex = ref<number | null>(null)
 const menuSortOrder = ref<number[]>([])
+
+// 权限管理模块的权限ID和模块节点ID（系统管理-权限管理），admin角色不可取消这些权限
+const PERMISSION_MANAGE_LOCKED_IDS = [114, 115, 116, 117, 'sub_系统管理_权限管理']
+
+// 判断当前角色是否为admin
+const isAdminRole = computed(() => {
+  return currentRole.value?.id === 1 || currentRole.value?.roleCode === 'ROLE_ADMIN'
+})
 
 const sortedMenuList = computed(() => {
   const allMenus = [...teacherPermissionList.value]
@@ -393,6 +401,33 @@ const filteredPermissionTree = computed(() => {
   return normalizeTree(permissionTree.value)
 })
 
+// 弹窗中使用的权限树，根据角色是否为admin动态设置disabled属性
+const dialogPermissionTree = computed(() => {
+  const normalizeTree = (nodes) => {
+    if (!nodes) return []
+    return nodes.map(node => {
+      const newNode: any = {
+        id: node.id,
+        module: node.module,
+        permissionCode: node.permissionCode,
+        permissionName: node.permissionName,
+        disabled: false
+      }
+      // 如果是admin角色，权限管理权限需要禁用
+      if (isAdminRole.value && PERMISSION_MANAGE_LOCKED_IDS.includes(node.id)) {
+        newNode.disabled = true
+      }
+      if (node.subModules && node.subModules.length > 0) {
+        newNode.children = normalizeTree(node.subModules)
+      } else if (node.children && node.children.length > 0) {
+        newNode.children = normalizeTree(node.children)
+      }
+      return newNode
+    })
+  }
+  return normalizeTree(permissionTree.value)
+})
+
 const fetchRoles = async () => {
   loading.value = true
   try {
@@ -472,16 +507,22 @@ const fetchTeacherPermissionList = async () => {
 const handleAssignPermissions = async (row) => {
   currentRole.value = row
   permissionDialogVisible.value = true
-  
+
   await nextTick()
-  
+
   try {
     const response = await request.get(`/admin/permissions/roles/${row.id}/permissions`)
     if (response.code === 200) {
       let checkedKeys = response.data.map(p => p.id)
-      
+
+      // 如果是admin角色，确保权限管理权限始终被选中
+      if (row.id === 1 || row.roleCode === 'ROLE_ADMIN') {
+        checkedKeys = [...new Set([...checkedKeys, ...PERMISSION_MANAGE_LOCKED_IDS])]
+        logger.log('[PermissionManagement] admin角色已预设权限管理权限:', PERMISSION_MANAGE_LOCKED_IDS)
+      }
+
       await nextTick()
-      
+
       if (permissionTreeRef.value) {
         permissionTreeRef.value.setCheckedKeys(checkedKeys)
       }
@@ -517,37 +558,43 @@ const handleTeacherPermissionConfig = async (row) => {
 
 const savePermissions = async () => {
   if (!permissionTreeRef.value || !currentRole.value) return
-  
+
   saving.value = true
   try {
     const checkedKeys = permissionTreeRef.value.getCheckedKeys()
     const halfCheckedKeys = permissionTreeRef.value.getHalfCheckedKeys()
-    
+
     logger.log('[PermissionManagement] 选中的所有节点ID:', checkedKeys)
     logger.log('[PermissionManagement] 半选中的节点ID:', halfCheckedKeys)
-    
-    const allKeys = [...checkedKeys, ...halfCheckedKeys]
-    
+
+    let allKeys = [...checkedKeys, ...halfCheckedKeys]
+
+    // 如果是admin角色，确保权限管理权限始终被包含
+    if (currentRole.value.id === 1 || currentRole.value.roleCode === 'ROLE_ADMIN') {
+      allKeys = [...new Set([...allKeys, ...PERMISSION_MANAGE_LOCKED_IDS])]
+      logger.log('[PermissionManagement] admin角色已强制包含权限管理权限:', PERMISSION_MANAGE_LOCKED_IDS)
+    }
+
     const filteredKeys = allKeys
       .filter(key => {
         const keyStr = key.toString()
         return !keyStr.startsWith('main_') && !keyStr.startsWith('sub_')
       })
       .map(key => Number(key))
-    
+
     logger.log('[PermissionManagement] 过滤后的权限ID:', filteredKeys)
-    
+
     if (filteredKeys.length === 0) {
       ElMessage.warning('请至少选择一个权限')
       saving.value = false
       return
     }
-    
+
     const requestData = {
       permissionIds: filteredKeys
     }
     logger.log('[PermissionManagement] 发送到后端的数据:', requestData)
-    
+
     const response = await request.post(`/admin/permissions/roles/${currentRole.value.id}/permissions`, requestData)
     
     logger.log('[PermissionManagement] 后端响应:', response)
@@ -876,6 +923,15 @@ onMounted(() => {
 
 .assignment-tree {
   padding: 10px 0;
+}
+
+/* 禁用节点的样式 */
+:deep(.el-tree-node.is-disabled > .el-tree-node__content) {
+  opacity: 0.7;
+}
+
+:deep(.el-tree-node.is-disabled > .el-tree-node__content .el-checkbox__input.is-disabled) {
+  opacity: 0.5;
 }
 
 .dialog-footer {

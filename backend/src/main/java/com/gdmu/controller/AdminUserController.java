@@ -251,14 +251,30 @@ public class AdminUserController {
     public Result batchUpdateAdminUserStatus(@RequestBody List<Map<String, Object>> statusDTOList) {
         log.info("批量更新管理员用户状态，数量: {}", statusDTOList.size());
         try {
-            int successCount = 0;
+            // 优化：先提取所有ID，批量查询一次，避免N+1问题
+            java.util.List<Long> ids = new java.util.ArrayList<>();
+            java.util.Map<Long, String> statusMap = new java.util.HashMap<>();
             for (Map<String, Object> statusDTO : statusDTOList) {
-                try {
-                    Long id = Long.valueOf(statusDTO.get("id").toString());
-                    String status = statusDTO.get("status").toString();
+                Long id = Long.valueOf(statusDTO.get("id").toString());
+                String status = statusDTO.get("status").toString();
+                ids.add(id);
+                statusMap.put(id, status);
+            }
 
-                    AdminUser adminUser = adminUserService.findById(id);
+            // 批量查询所有用户
+            java.util.List<AdminUser> adminUsers = adminUserService.findByIds(ids);
+            java.util.Map<Long, AdminUser> userMap = new java.util.HashMap<>();
+            for (AdminUser user : adminUsers) {
+                userMap.put(user.getId(), user);
+            }
+
+            // 批量更新
+            int successCount = 0;
+            for (Long id : ids) {
+                try {
+                    AdminUser adminUser = userMap.get(id);
                     if (adminUser != null) {
+                        adminUser.setStatus(Integer.valueOf(statusMap.get(id)));
                         adminUser.setUpdateTime(new Date());
                         adminUserService.update(adminUser);
                         successCount++;

@@ -262,4 +262,12 @@ public class InternshipEvaluationServiceImpl implements InternshipEvaluationServ
         }
         return internshipEvaluationMapper.publishGrades(studentIds);
     }
+
+    @Override
+    public List<InternshipEvaluation> findByStudentIds(List<Long> studentIds) {
+        if (studentIds == null || studentIds.isEmpty()) {
+            return java.util.Collections.emptyList();
+        }
+        return internshipEvaluationMapper.findByStudentIds(studentIds);
+    }
 }

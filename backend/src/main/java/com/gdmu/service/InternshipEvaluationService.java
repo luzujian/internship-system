@@ -29,4 +29,6 @@ public interface InternshipEvaluationService {
     PageResult<InternshipEvaluation> findPage(Integer page, Integer pageSize, Long evaluatorId);
 
     int publishGrades(List<Long> studentIds);
+
+    List<InternshipEvaluation> findByStudentIds(List<Long> studentIds);
 }

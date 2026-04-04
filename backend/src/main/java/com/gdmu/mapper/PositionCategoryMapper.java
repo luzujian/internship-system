@@ -27,4 +27,6 @@ public interface PositionCategoryMapper {
     Integer getPositionCountByCategoryId(Long categoryId);
 
     int updateCategoryPositionCount(@Param("id") Long id, @Param("positionCount") Integer positionCount);
+
+    List<PositionCategory> findByIds(List<Long> ids);
 }

@@ -23,6 +23,8 @@ public interface StudentReflectionEvaluationMapper {
     int deleteById(@Param("id") Long id);
     
     int deleteByReflectionId(@Param("reflectionId") Long reflectionId);
-    
+
+    List<StudentReflectionEvaluation> findByReflectionIds(@Param("reflectionIds") List<Long> reflectionIds);
+
     int countByCounselorId(@Param("counselorId") Long counselorId);
 }

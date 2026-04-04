@@ -569,13 +569,26 @@ public class CompanyController {
 
             log.info("查询到的通知数量：{}", announcements.size());
 
+            // 优化：批量查询该企业的所有已读记录，避免N+1问题
+            java.util.Map<Long, Boolean> readStatusMap = new java.util.HashMap<>();
+            try {
+                java.util.List<com.gdmu.entity.AnnouncementReadRecord> readRecords =
+                    announcementReadRecordService.findByUserId(String.valueOf(companyId), "ENTERPRISE");
+                for (com.gdmu.entity.AnnouncementReadRecord record : readRecords) {
+                    if (record.getAnnouncementId() != null) {
+                        readStatusMap.put(record.getAnnouncementId(), true);
+                    }
+                }
+            } catch (Exception e) {
+                log.warn("批量查询已读记录失败: {}", e.getMessage());
+            }
+
             List<java.util.Map<String, Object>> result = announcements.stream()
                     .map(announcement -> {
-                        // 检查是否已读
-                        boolean isRead = announcementReadRecordService.findByAnnouncementAndUser(
-                                announcement.getId(), String.valueOf(companyId), "ENTERPRISE") != null;
-                        log.info("公告ID: {}, 企业ID: {}, 是否已读: {}", announcement.getId(), companyId, isRead);
-                        
+                        // 从预查询的Map中获取已读状态
+                        boolean isRead = readStatusMap.getOrDefault(announcement.getId(), false);
+                        log.debug("公告ID: {}, 企业ID: {}, 是否已读: {}", announcement.getId(), companyId, isRead);
+
                         java.util.Map<String, Object> item = new java.util.HashMap<>();
                         item.put("id", announcement.getId());
                         item.put("type", "system"); // 公告类型统一为 system
