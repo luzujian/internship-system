@@ -61,6 +61,9 @@ public class EvaluationManagementController {
     private StudentReflectionAIAnalysisService studentReflectionAIAnalysisService;
 
     @Autowired
+    private StudentReflectionEvaluationService studentReflectionEvaluationService;
+
+    @Autowired
     private InternshipReflectionService internshipReflectionService;
 
     @Autowired
@@ -365,17 +368,16 @@ public class EvaluationManagementController {
             boolean evaluated = false;
             boolean gradePublished = false;
             if (currentPeriodReflectionId != null) {
-                // 按学生检查 - 查找该学生的评价记录（评价保存在InternshipEvaluation表）
-                InternshipEvaluation periodEvaluation = internshipEvaluationService.findByStudentId(student.getId());
+                // 按当前阶段检查 - 使用StudentReflectionEvaluation（每阶段评价）
+                StudentReflectionEvaluation periodEvaluation = studentReflectionEvaluationService.findByReflectionId(currentPeriodReflectionId);
                 // 只有评分了（totalScore不为空且大于0）才算已评分，评语不是必填项
-                evaluated = periodEvaluation != null && periodEvaluation.getTotalScore() != null && periodEvaluation.getTotalScore() > 0;
-                gradePublished = periodEvaluation != null && periodEvaluation.getGradePublished() != null && periodEvaluation.getGradePublished() == 1;
+                evaluated = periodEvaluation != null && periodEvaluation.getTotalScore() != null && periodEvaluation.getTotalScore().doubleValue() > 0;
             } else {
                 // 当前阶段没有非草稿心得时，设为未评分
                 evaluated = false;
             }
             info.setIsEvaluated(evaluated);
-            info.setGradePublished(gradePublished);
+            info.setGradePublished(false);  // StudentReflectionEvaluation不涉及成绩发布
             
             if (isEvaluated != null && !isEvaluated.isEmpty()) {
                 boolean filterIsEvaluated = Boolean.parseBoolean(isEvaluated);
@@ -561,47 +563,37 @@ public class EvaluationManagementController {
             info.setAiAnalysisData(aiInfo);
         }
 
-        // 获取学生综合评价（用于显示评价详情）
-        InternshipEvaluation evaluation = internshipEvaluationService.findByStudentId(studentId);
+        // 获取当前阶段心得的评价（使用StudentReflectionEvaluation）
+        StudentReflectionEvaluation periodEval = null;
+        if (currentPeriodReflectionId != null) {
+            periodEval = studentReflectionEvaluationService.findByReflectionId(currentPeriodReflectionId);
+        }
         // 根据周期参数判断评价状态 - 只有评分了（totalScore不为空且大于0）才算已评分，评语不是必填项
-        boolean evaluated = evaluation != null && evaluation.getTotalScore() != null && evaluation.getTotalScore() > 0;
-        boolean gradePublished = evaluation != null && evaluation.getGradePublished() != null && evaluation.getGradePublished() == 1;
+        boolean evaluated = periodEval != null && periodEval.getTotalScore() != null && periodEval.getTotalScore().doubleValue() > 0;
         info.setIsEvaluated(evaluated);
-        info.setGradePublished(gradePublished);
+        info.setGradePublished(false);  // StudentReflectionEvaluation不涉及成绩发布
 
-        if (evaluation != null) {
+        if (periodEval != null) {
             EvaluationInfo evalInfo = new EvaluationInfo();
-            
-            // 获取类别评分详情
-            List<InternshipEvaluationDetail> evaluationDetails = internshipEvaluationDetailService.findByEvaluationId(evaluation.getId());
-            Map<String, Integer> scores = new HashMap<>();
-            
-            if (evaluationDetails != null && !evaluationDetails.isEmpty()) {
-                // 优先使用类别评分详情
-                for (InternshipEvaluationDetail detail : evaluationDetails) {
-                    scores.put(detail.getCategoryCode(), detail.getScore());
+
+            // 使用StudentReflectionEvaluation的评分详情
+            if (periodEval.getScoreDetails() != null) {
+                Map<String, Integer> scoresInt = new HashMap<>();
+                for (Map.Entry<String, Object> entry : periodEval.getScoreDetails().entrySet()) {
+                    if (entry.getValue() instanceof Number) {
+                        scoresInt.put(entry.getKey(), ((Number) entry.getValue()).intValue());
+                    }
                 }
-            } else {
-                // 如果没有类别评分详情，使用传统的评分字段
-                scores.put("attitude", evaluation.getAttitudeScore());
-                scores.put("performance", evaluation.getPerformanceScore());
-                scores.put("report", evaluation.getReportScore());
-                scores.put("companyEvaluation", evaluation.getCompanyEvaluationScore());
+                evalInfo.setScores(scoresInt);
             }
-            
-            evalInfo.setScores(scores);
-            
+
             // 保持向后兼容
-            evalInfo.setAttitude(evaluation.getAttitudeScore());
-            evalInfo.setPerformance(evaluation.getPerformanceScore());
-            evalInfo.setReport(evaluation.getReportScore());
-            evalInfo.setCompanyEvaluation(evaluation.getCompanyEvaluationScore());
-            evalInfo.setComment(evaluation.getComment());
-            evalInfo.setTotalScore(evaluation.getTotalScore());
-            evalInfo.setGrade(evaluation.getGrade());
+            evalInfo.setComment(periodEval.getTeacherComment());
+            evalInfo.setTotalScore(periodEval.getTotalScore() != null ? periodEval.getTotalScore().intValue() : null);
+            evalInfo.setGrade(periodEval.getGrade());
             info.setEvaluation(evalInfo);
         }
-        
+
         return Result.success(info);
     }
     

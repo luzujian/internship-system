@@ -127,9 +127,9 @@
     <!-- 左下角调整大小手柄 -->
     <div
       class="resize-handle resize-handle-left"
-      @mousedown="startResize"
       @click.stop
     >
+      <div class="resize-hitarea" @mousedown="startResize"></div>
       <svg class="resize-svg" viewBox="0 0 50 35">
         <!-- 左下角调整大小手柄的弧线，与 24px 圆角匹配，和右下角关于中线对称 -->
         <path d="M 7 19 A 15 15 0 0 0 18 29" stroke="#606060" stroke-width="3.5" fill="none" stroke-linecap="round" opacity="0.8"/>
@@ -139,9 +139,9 @@
     <!-- 右下角调整大小手柄 -->
     <div
       class="resize-handle"
-      @mousedown="startResize"
       @click.stop
     >
+      <div class="resize-hitarea" @mousedown="startResize"></div>
       <svg class="resize-svg" viewBox="0 0 50 35">
         <!-- 调整大小手柄的弧线，与 24px 圆角匹配 -->
         <path d="M 43 19 A 15 15 0 0 1 32 29" stroke="#606060" stroke-width="3.5" fill="none" stroke-linecap="round" opacity="0.8"/>
@@ -290,16 +290,10 @@ const startBallDrag = (e) => {
 
   document.body.classList.add('ball-dragging')
 
-  let rafId = null
-
   onBallDrag = (e) => {
     if (!ballState.isDragging) return
 
-    if (rafId) return
-
-    rafId = requestAnimationFrame(() => {
-      rafId = null
-
+    requestAnimationFrame(() => {
       ballState.hasDragged = true
 
       const newX = e.clientX - ballState.dragOffset.x
@@ -313,11 +307,6 @@ const startBallDrag = (e) => {
 
   stopBallDrag = () => {
     ballState.isDragging = false
-
-    if (rafId) {
-      cancelAnimationFrame(rafId)
-      rafId = null
-    }
 
     if (onBallDrag) {
       document.removeEventListener('mousemove', onBallDrag)
@@ -364,16 +353,10 @@ const startPanelDrag = (e) => {
 
   e.target.style.cursor = 'grabbing'
 
-  let rafId = null
-
   onPanelDrag = (e) => {
     if (!panelState.isDragging) return
 
-    if (rafId) return
-
-    rafId = requestAnimationFrame(() => {
-      rafId = null
-
+    requestAnimationFrame(() => {
       // 直接计算新位置
       let newX = e.clientX - panelState.dragOffset.x
       let newY = e.clientY - panelState.dragOffset.y
@@ -389,11 +372,6 @@ const startPanelDrag = (e) => {
 
   stopPanelDrag = () => {
     panelState.isDragging = false
-
-    if (rafId) {
-      cancelAnimationFrame(rafId)
-      rafId = null
-    }
 
     if (onPanelDrag) {
       document.removeEventListener('mousemove', onPanelDrag)
@@ -429,17 +407,10 @@ const startResize = (e) => {
   const startHeight = panelState.height
   const startXPosition = panelState.x
 
-  let rafId = null
-
   handleResizeMove = (e) => {
     if (!panelState.isResizing) return
 
-    // 使用 requestAnimationFrame 节流，避免频繁更新
-    if (rafId) return
-
-    rafId = requestAnimationFrame(() => {
-      rafId = null
-
+    requestAnimationFrame(() => {
       let newWidth, newHeight
 
       if (isLeftResize) {
@@ -449,17 +420,17 @@ const startResize = (e) => {
         const deltaX = startX - e.clientX
         newWidth = startWidth + deltaX
         newHeight = startHeight + (e.clientY - startY)
-        
+
         // 限制最小宽度
         newWidth = Math.max(newWidth, panelState.minWidth)
         newHeight = Math.max(newHeight, panelState.minHeight)
-        
+
         // 限制最大宽度，不能超出屏幕右边界
         newWidth = Math.min(newWidth, window.innerWidth - startXPosition)
-        
+
         // 限制高度
         newHeight = Math.min(newHeight, window.innerHeight - panelState.y)
-        
+
         // 计算新的 x 位置，确保右侧边缘固定
         panelState.x = startXPosition + startWidth - newWidth
         panelState.width = newWidth
@@ -485,12 +456,6 @@ const startResize = (e) => {
 
   handleResizeUp = () => {
     panelState.isResizing = false
-
-    // 取消未完成的动画帧
-    if (rafId) {
-      cancelAnimationFrame(rafId)
-      rafId = null
-    }
 
     // 移除拖拽类，恢复 CSS transition
     document.body.classList.remove('panel-resizing')
@@ -996,10 +961,12 @@ body.panel-resizing .chat-panel {
   display: flex;
   flex-direction: column;
   overflow: visible;
-  transition: transform 0.1s ease-out, width 0.1s ease, height 0.1s ease;
-  will-change: transform, width, height;
   transform-origin: center center;
   resize: both;
+  /* 改用 transform 替代 width/height 变化以获得更好的性能 */
+  will-change: transform;
+  /* 禁用所有过渡以确保拖拽/调整大小时的即时响应 */
+  transition: none;
 }
 
 .chat-header {
@@ -1405,19 +1372,46 @@ body.panel-resizing .chat-panel {
   cursor: not-allowed;
 }
 
-/* 调整大小手柄 - 胶囊形状贴合右下角 */
+/* 调整大小手柄 - 保持视觉大小，但禁用自身事件 */
 .resize-handle {
   position: absolute;
   right: 2px;
   bottom: 2px;
   width: 50px;
   height: 35px;
-  cursor: nwse-resize;
+  cursor: default;
   opacity: 0.5;
   transition: opacity 0.2s;
   z-index: 20;
   background: none;
   padding: 0;
+  pointer-events: none;
+}
+
+/* 左下角调整大小手柄 */
+.resize-handle-left {
+  left: 2px;
+  right: auto;
+  cursor: default;
+}
+
+/* 小触发区域 - 只有这一小块响应拖拽 */
+.resize-hitarea {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  width: 12px;
+  height: 10px;
+  z-index: 21;
+  cursor: nwse-resize;
+  pointer-events: auto;
+}
+
+/* 左下角触发区域 */
+.resize-handle-left .resize-hitarea {
+  left: 6px;
+  right: auto;
+  cursor: nesw-resize;
 }
 
 /* 左下角调整大小手柄 */
@@ -1432,9 +1426,14 @@ body.panel-resizing .chat-panel {
 }
 
 .resize-svg {
+  position: absolute;
+  top: 0;
+  left: 0;
   width: 100%;
   height: 100%;
   display: block;
+  pointer-events: none;
+  opacity: 0.5;
 }
 
 /* 文本选择样式 */
