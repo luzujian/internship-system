@@ -78,6 +78,11 @@ const modules = ref<SelectOption[]>([
   { value: 'ANNOUNCEMENT_MANAGEMENT', label: '公告管理' },
   { value: 'INTERNSHIP_MANAGEMENT', label: '实习管理' },
   { value: 'STUDENT_INTERNSHIP', label: '学生实习' },
+  { value: 'TEACHER_CLASS', label: '教师班级' },
+  { value: 'INTERNSHIP_REFLECTION', label: '实习心得' },
+  { value: 'INTERNSHIP_PLAN', label: '实习计划' },
+  { value: 'INTERNSHIP_VISIT', label: '实习走访' },
+  { value: 'INTERNSHIP_REPORT', label: '实习报告' },
   { value: 'SCORING_RULE_MANAGEMENT', label: '评分规则管理' },
   { value: 'KEYWORD_LIBRARY', label: '关键词库' },
   { value: 'KEYWORD_LIBRARY_MANAGEMENT', label: '关键词库管理' },
@@ -223,6 +228,11 @@ const getModuleName = (module: string): string => {
     'ANNOUNCEMENT_MANAGEMENT': '公告管理',
     'INTERNSHIP_MANAGEMENT': '实习管理',
     'STUDENT_INTERNSHIP': '学生实习',
+    'TEACHER_CLASS': '教师班级',
+    'INTERNSHIP_REFLECTION': '实习心得',
+    'INTERNSHIP_PLAN': '实习计划',
+    'INTERNSHIP_VISIT': '实习走访',
+    'INTERNSHIP_REPORT': '实习报告',
     'SCORING_RULE_MANAGEMENT': '评分规则管理',
     'SCORING_RULE': '评分规则',
     'KEYWORD_LIBRARY_MANAGEMENT': '关键词库管理',
@@ -278,7 +288,8 @@ const getModuleName = (module: string): string => {
         'course': '课程',
         'major': '专业',
         'system': '系统',
-        'className': '班级',
+        'class': '班级',
+        'classname': '班级',
         'department': '院系',
         'group': '小组',
         'assignment': '作业',
@@ -313,7 +324,20 @@ const getModuleName = (module: string): string => {
         'problem': '问题',
         'archive': '档案',
         'template': '模板',
-        'auth': '认证'
+        'auth': '认证',
+        'visit': '走访',
+        'plan': '计划',
+        'reflection': '心得',
+        'ai': 'AI',
+        'model': '模型',
+        'counselor': '辅导员',
+        'withdrawal': '撤回',
+        'record': '记录',
+        'chat': '聊天',
+        'resource': '资源',
+        'document': '文档',
+        'switch': '切换',
+        'config': '配置'
       }
       const translatedWords = words.map(word => wordMap[word] || word)
       return translatedWords.join('')
@@ -692,7 +716,7 @@ const queryPage = async (): Promise<void> => {
       </el-tabs>
 
       <el-table :data="tableData" border style="width: 100%" fit v-loading="loading" class="data-table">        
-        <el-table-column prop="id" label="ID" align="center" width="60" />
+        <el-table-column prop="id" label="编号" align="center" width="60" />
         <el-table-column prop="operatorName" label="操作人姓名" align="center" width="120" />
         <el-table-column prop="operatorRole" label="身份" align="center" width="100">
           <template #default="scope">
