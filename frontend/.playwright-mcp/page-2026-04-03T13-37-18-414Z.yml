@@ -1,0 +1,20 @@
+- generic [ref=e4]:
+  - generic [ref=e7]:
+    - generic [ref=e8]: DeepIntern
+    - generic [ref=e9]: 深耕实习，探索未来
+  - generic [ref=e10]:
+    - generic [ref=e11]: 智慧实习平台
+    - generic [ref=e12]: DeepIntern
+  - generic [ref=e16]:
+    - paragraph [ref=e17]: 欢迎登录
+    - generic [ref=e21]:
+      - img [ref=e24]
+      - textbox "请输入账号" [ref=e26]
+    - generic [ref=e30]:
+      - img [ref=e33]
+      - textbox "请输入密码" [ref=e36]
+    - generic [ref=e37]:
+      - button "登 录" [ref=e40] [cursor=pointer]:
+        - generic [ref=e41]: 登 录
+      - generic [ref=e42]: 企业账号申请 >
+    - generic [ref=e43]: v1.0
