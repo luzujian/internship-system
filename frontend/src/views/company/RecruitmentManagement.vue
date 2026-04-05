@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { VideoPause, Message } from '@element-plus/icons-vue'
@@ -6,7 +6,10 @@ import { usePositionStore } from '../../store/position'
 import { useAuthStore } from '../../store/auth'
 import positionApi from '../../api/PositionService'
 import studentApi from '../../api/StudentUserService'
+import PositionCategoryService from '../../api/positionCategory'
 import { EluiChinaAreaDht } from 'elui-china-area-dht'
+
+console.log('[RecruitmentManagement] 组件模块加载')
 
 const chinaData = new EluiChinaAreaDht.ChinaArea().chinaAreaflat
 
@@ -77,18 +80,6 @@ const positionForm = ref({
   interviewRemark: ''
 })
 
-const positionNameOptions = computed(() => {
-  const uniquePositions = new Set()
-  if (positionStore.positions && Array.isArray(positionStore.positions)) {
-    positionStore.positions.forEach(pos => {
-      if (pos.positionName) {
-        uniquePositions.add(pos.positionName)
-      }
-    })
-  }
-  return Array.from(uniquePositions).map(name => ({ label: name, value: name }))
-})
-
 const addressNameToCode = computed(() => {
   const map = {}
   Object.entries(chinaData).forEach(([code, item]) => {
@@ -141,14 +132,131 @@ const searchForm = ref({
   department: ''
 })
 
-const departmentOptions = [
-  { label: '技术部', value: '技术部' },
-  { label: '产品部', value: '产品部' },
-  { label: '设计部', value: '设计部' },
-  { label: '测试部', value: '测试部' },
-  { label: '运营部', value: '运营部' },
-  { label: '市场部', value: '市场部' }
-]
+// 岗位类别选项（从管理员端岗位管理获取）
+const categoryOptions = ref<{ label: string; value: string }[]>([])
+const categoryList = ref<{ id: number; name: string }[]>([]) // 存储完整类别信息（含ID）
+const loadingCategories = ref(false)
+
+// 按类别 ID 存储岗位名称列表（用于发布岗位弹窗的岗位名称下拉）
+const categoryPositionsMap = ref(new Map<number, { label: string; value: string }[]>())
+const loadingCategoryPositions = ref(false)
+
+// 获取岗位类别列表（用于所属部门下拉框）
+const fetchCategories = async () => {
+  loadingCategories.value = true
+  try {
+    const result = await PositionCategoryService.getAllCategoriesPublic()
+    console.log('[fetchCategories] 获取岗位类别返回:', result)
+    // 公开接口直接返回 Result.success(categories)，结构是 { code: 200, data: [...] }
+    if (result && result.code === 200) {
+      const categories = Array.isArray(result.data) ? result.data : []
+      console.log('[fetchCategories] 岗位类别数据:', categories)
+      categoryList.value = categories
+      categoryOptions.value = categories.map(cat => ({
+        label: cat.name,
+        value: cat.name  // 使用 name 作为 value，因为岗位的 department 字段存储的也是类别名称
+      }))
+      console.log('[fetchCategories] categoryOptions:', categoryOptions.value)
+      console.log('[fetchCategories] categoryList:', categoryList.value)
+    }
+  } catch (error) {
+    console.error('获取岗位类别失败:', error)
+  } finally {
+    loadingCategories.value = false
+  }
+}
+
+// 根据选中的部门筛选岗位名称选项
+const positionNameOptions = computed(() => {
+  const selectedDepartment = positionForm.value.department
+  console.log('[positionNameOptions] 计算属性被调用!')
+  console.log('[positionNameOptions] selectedDepartment:', selectedDepartment)
+
+  // 如果没有选择部门，返回空
+  if (!selectedDepartment) {
+    console.log('[positionNameOptions] 未选择部门，返回空数组')
+    return []
+  }
+
+  // 根据选中的部门名称找到对应的 categoryId
+  const selectedCategory = categoryList.value.find(cat => cat.name === selectedDepartment)
+  const selectedCategoryId = selectedCategory ? selectedCategory.id : null
+  console.log('[positionNameOptions] selectedCategory:', JSON.stringify(selectedCategory))
+
+  // 优先从按类别缓存的岗位列表中获取（通过 API 获取的该类别下的岗位）
+  if (selectedCategoryId && categoryPositionsMap.value.has(selectedCategoryId)) {
+    const positions = categoryPositionsMap.value.get(selectedCategoryId) || []
+    console.log('[positionNameOptions] 从类别缓存获取岗位:', positions)
+    return positions
+  }
+
+  // 降级方案：从当前企业已有的岗位中过滤
+  const uniquePositions = new Map()
+
+  if (positionStore.positions && Array.isArray(positionStore.positions)) {
+    positionStore.positions.forEach(pos => {
+      if (pos.positionName) {
+        // 通过 categoryId 匹配
+        const categoryIdMatch = selectedCategoryId !== null && pos.categoryId === selectedCategoryId
+        console.log('[positionNameOptions] 检查岗位:', pos.positionName, 'categoryId:', pos.categoryId, 'categoryIdMatch:', categoryIdMatch)
+
+        if (categoryIdMatch) {
+          uniquePositions.set(pos.positionName, { label: pos.positionName, value: pos.positionName })
+        }
+      }
+    })
+  }
+  const result = Array.from(uniquePositions.values())
+  console.log('[positionNameOptions] 结果:', result)
+  return result
+})
+
+// 当部门（类别）变化时，获取该类别下的岗位列表
+const handleDepartmentChange = async (selectedDepartment) => {
+  console.log('[handleDepartmentChange] 部门变化:', selectedDepartment)
+  if (!selectedDepartment) {
+    return
+  }
+
+  // 找到选中部门对应的类别 ID
+  const selectedCategory = categoryList.value.find(cat => cat.name === selectedDepartment)
+  if (!selectedCategory) {
+    console.log('[handleDepartmentChange] 未找到对应类别')
+    return
+  }
+
+  const categoryId = selectedCategory.id
+  console.log('[handleDepartmentChange] 类别ID:', categoryId)
+
+  // 如果已经缓存过该类别的岗位，不再重复获取
+  if (categoryPositionsMap.value.has(categoryId)) {
+    console.log('[handleDepartmentChange] 类别岗位已缓存')
+    return
+  }
+
+  loadingCategoryPositions.value = true
+  try {
+    const result = await PositionCategoryService.getPositionsByCategoryIdPublic(categoryId)
+    console.log('[handleDepartmentChange] 获取类别岗位返回:', result)
+
+    if (result && result.code === 200) {
+      const positions = Array.isArray(result.data) ? result.data : []
+      // 提取岗位名称并去重
+      const uniquePositionNames = [...new Set(positions.map(p => p.positionName).filter(Boolean))]
+      const positionOptions = uniquePositionNames.map(name => ({ label: name, value: name }))
+
+      categoryPositionsMap.value.set(categoryId, positionOptions)
+      console.log('[handleDepartmentChange] 类别岗位缓存:', positionOptions)
+    }
+  } catch (error) {
+    console.error('获取类别岗位列表失败:', error)
+  } finally {
+    loadingCategoryPositions.value = false
+  }
+}
+
+// 部门选项（兼容原有逻辑，支持输入过滤）
+const departmentOptions = computed(() => categoryOptions.value)
 
 const positionTypeOptions = [
   { label: '全职', value: '全职' },
@@ -184,12 +292,19 @@ const getRowStyle = ({ row }) => {
 }
 
 onMounted(() => {
+  console.log('页面加载 - companyId:', companyId.value)
   if (!companyId.value) {
     ElMessage.error('未获取到企业 ID，无法加载数据')
     return
   }
-  positionStore.fetchPositions(companyId.value)
+  console.log('开始获取岗位数据和类别')
+  positionStore.fetchPositions(companyId.value).then(() => {
+    console.log('岗位数据获取完成:', positionStore.positions)
+  })
   positionStore.fetchInternshipStatuses(companyId.value)
+  fetchCategories().then(() => {
+    console.log('类别数据获取完成:', categoryOptions.value)
+  })
 })
 
 const handleSearch = async () => {
@@ -262,6 +377,9 @@ const handlePageChange = (page) => {
 const handlePublish = () => {
   dialogTitle.value = '发布岗位'
   dialogType.value = 'create'
+
+  // 清除类别岗位缓存，确保每次打开发布弹窗时获取最新数据
+  categoryPositionsMap.value.clear()
 
   // 从 localStorage 读取面试信息模板
   let interviewTime = ''
@@ -356,7 +474,7 @@ const handleAddressChange = (e) => {
     const provinceCode = e[0]
     const cityCode = e[1]
     const districtCode = e[2]
-    
+
     positionForm.value.province = chinaData[provinceCode]?.label || ''
     positionForm.value.city = chinaData[cityCode]?.label || ''
     positionForm.value.district = chinaData[districtCode]?.label || ''
@@ -365,6 +483,12 @@ const handleAddressChange = (e) => {
     positionForm.value.city = ''
     positionForm.value.district = ''
   }
+}
+
+// 部门下拉框过滤方法（支持输入匹配）
+const handleDepartmentFilter = (query) => {
+  // el-select 的 filterable 会自动处理过滤，这里可以做一些额外逻辑
+  // 如果需要自定义过滤逻辑，可以在这里处理
 }
 
 const handleEdit = (row) => {
@@ -737,14 +861,38 @@ const handleCancel = () => {
       :close-on-click-modal="false"
     >
       <el-form :model="positionForm" label-width="120px" label-position="left">
-        <el-form-item label="岗位名称" required>
-          <el-input v-model="positionForm.positionName" placeholder="请输入岗位名称" style="width: 100%" />
+        <el-form-item label="所属部门" required>
+          <el-select
+            v-model="positionForm.department"
+            placeholder="请选择所属部门"
+            filterable
+            allow-create
+            default-first-option
+            :filter-method="handleDepartmentFilter"
+            style="width: 100%"
+            @change="handleDepartmentChange"
+          >
+            <el-option
+              v-for="item in categoryOptions"
+              :key="item.value"
+              :label="item.label"
+              :value="item.value"
+            />
+          </el-select>
         </el-form-item>
 
-        <el-form-item label="所属部门">
-          <el-select v-model="positionForm.department" placeholder="请选择所属部门" style="width: 100%">
+        <el-form-item label="岗位名称" required>
+          <el-select
+            v-model="positionForm.positionName"
+            placeholder="请选择岗位名称"
+            filterable
+            allow-create
+            default-first-option
+            style="width: 100%"
+            :loading="loadingCategoryPositions"
+          >
             <el-option
-              v-for="item in departmentOptions"
+              v-for="item in positionNameOptions"
               :key="item.value"
               :label="item.label"
               :value="item.value"

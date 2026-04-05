@@ -99,6 +99,8 @@ const TEACHER_PERMISSIONS: Record<TeacherType, Permission[]> = {
 }
 
 // 路由与权限映射
+// 注意：路由没有在 ROUTE_PERMISSIONS 中定义时，默认允许所有教师访问
+// 权限由管理员端的权限分配进行管控
 export const ROUTE_PERMISSIONS: Record<string, Permission[]> = {
   'teacherHome': [Permission.VIEW_HOME],
   'teacherDashboard': [Permission.VIEW_DASHBOARD],
@@ -110,7 +112,7 @@ export const ROUTE_PERMISSIONS: Record<string, Permission[]> = {
   'teacherCompanyList': [Permission.VIEW_DASHBOARD],
   'teacherStudents': [Permission.VIEW_ALL_STUDENTS, Permission.VIEW_DEPARTMENT_STUDENTS, Permission.VIEW_COUNSELOR_STUDENTS],
   'teacherResources': [Permission.VIEW_RESOURCES],
-  'teacherReports': [Permission.VIEW_REPORTS],
+  // 'teacherReports': [Permission.VIEW_REPORTS],  // 已移除，统计报表默认允许所有教师访问
   'teacherSettings': [Permission.MANAGE_SETTINGS],
   'teacherAccountSettings': [Permission.VIEW_ACCOUNT_SETTINGS],
   'teacherClasses': [Permission.VIEW_ALL_CLASSES, Permission.VIEW_DEPARTMENT_CLASSES, Permission.VIEW_COUNSELOR_CLASSES],
@@ -164,8 +166,10 @@ export function hasAllPermissions(teacherType: TeacherType, permissions: Permiss
  */
 export function hasRoutePermission(teacherType: TeacherType, routeName: string): boolean {
   const requiredPermissions = ROUTE_PERMISSIONS[routeName]
+  // 路由没有在 ROUTE_PERMISSIONS 中定义时，默认允许所有教师访问
+  // 权限由管理员端的权限分配进行管控
   if (!requiredPermissions || requiredPermissions.length === 0) {
-    return true // 没有权限要求的路由默认允许访问
+    return true
   }
   return hasAnyPermission(teacherType, requiredPermissions)
 }

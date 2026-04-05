@@ -28,6 +28,38 @@ public class PositionCategoryController {
     @Autowired
     private PositionCategoryService positionCategoryService;
 
+    /**
+     * 公开接口：获取所有岗位类别（企业端发布岗位时使用）
+     * 不需要权限，任何登录用户都可以访问
+     */
+    @GetMapping("/public")
+    public Result getAllCategoriesPublic() {
+        log.info("公开获取所有岗位类别");
+        try {
+            List<PositionCategory> categories = positionCategoryService.findAll();
+            return Result.success(categories);
+        } catch (Exception e) {
+            log.error("获取岗位类别列表失败：{}", e.getMessage(), e);
+            return Result.error("获取岗位类别列表失败：" + e.getMessage());
+        }
+    }
+
+    /**
+     * 公开接口：根据类别ID获取岗位列表（企业端发布岗位时使用）
+     * 不需要权限，任何登录用户都可以访问
+     */
+    @GetMapping("/public/{id}/positions")
+    public Result getPositionsByCategoryIdPublic(@PathVariable Long id) {
+        log.info("公开获取类别 ID {} 下的岗位列表", id);
+        try {
+            List<Position> positions = positionCategoryService.getPositionsByCategoryId(id);
+            return Result.success(positions);
+        } catch (Exception e) {
+            log.error("获取岗位列表失败：{}", e.getMessage(), e);
+            return Result.error("获取岗位列表失败：" + e.getMessage());
+        }
+    }
+
     @GetMapping
     @PreAuthorize("hasAuthority('position-category:view')")
     public Result getAllCategories(@RequestParam(required = false) String name) {

@@ -9,6 +9,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.Arrays;
@@ -376,8 +377,13 @@ public class EvaluationManagementController {
                 // 当前阶段没有非草稿心得时，设为未评分
                 evaluated = false;
             }
+            // gradePublished从InternshipEvaluation获取（因为一键上传操作的是这个表的gradePublished字段）
+            InternshipEvaluation existingEvaluation = internshipEvaluationService.findByStudentId(student.getId());
+            if (existingEvaluation != null) {
+                gradePublished = existingEvaluation.getGradePublished() != null && existingEvaluation.getGradePublished() == 1;
+            }
             info.setIsEvaluated(evaluated);
-            info.setGradePublished(false);  // StudentReflectionEvaluation不涉及成绩发布
+            info.setGradePublished(gradePublished);
             
             if (isEvaluated != null && !isEvaluated.isEmpty()) {
                 boolean filterIsEvaluated = Boolean.parseBoolean(isEvaluated);
@@ -570,8 +576,14 @@ public class EvaluationManagementController {
         }
         // 根据周期参数判断评价状态 - 只有评分了（totalScore不为空且大于0）才算已评分，评语不是必填项
         boolean evaluated = periodEval != null && periodEval.getTotalScore() != null && periodEval.getTotalScore().doubleValue() > 0;
+        // gradePublished从InternshipEvaluation获取（因为一键上传操作的是这个表的gradePublished字段）
+        boolean gradePublished = false;
+        InternshipEvaluation existingEvaluation = internshipEvaluationService.findByStudentId(studentId);
+        if (existingEvaluation != null) {
+            gradePublished = existingEvaluation.getGradePublished() != null && existingEvaluation.getGradePublished() == 1;
+        }
         info.setIsEvaluated(evaluated);
-        info.setGradePublished(false);  // StudentReflectionEvaluation不涉及成绩发布
+        info.setGradePublished(gradePublished);
 
         if (periodEval != null) {
             EvaluationInfo evalInfo = new EvaluationInfo();
@@ -787,6 +799,53 @@ public class EvaluationManagementController {
                 }
             } catch (Exception e) {
                 log.error("更新实习心得remark失败: {}", e.getMessage(), e);
+            }
+
+            // 同时保存到StudentReflectionEvaluation（按阶段评价）
+            try {
+                Integer currentPeriod = internshipReflectionService.calculatePeriodNumber(new Date());
+                List<InternshipReflection> reflections = internshipReflectionService.list(studentId, null, null, null);
+                Long currentReflectionId = null;
+                if (reflections != null && currentPeriod != null) {
+                    for (InternshipReflection r : reflections) {
+                        if (currentPeriod.equals(r.getPeriodNumber())) {
+                            currentReflectionId = r.getId();
+                            break;
+                        }
+                    }
+                }
+
+                if (currentReflectionId != null) {
+                    // 转换scoreDetails为适合StudentReflectionEvaluation的格式
+                    Map<String, Object> reflectionScoreDetails = new HashMap<>();
+                    for (Map.Entry<String, Object> entry : scoreDetails.entrySet()) {
+                        if (entry.getValue() instanceof Integer) {
+                            reflectionScoreDetails.put(entry.getKey(), entry.getValue());
+                        }
+                    }
+
+                    // 创建或更新StudentReflectionEvaluation
+                    StudentReflectionEvaluation reflectionEval = studentReflectionEvaluationService.findByReflectionId(currentReflectionId);
+                    if (reflectionEval == null) {
+                        reflectionEval = new StudentReflectionEvaluation();
+                        reflectionEval.setReflectionId(currentReflectionId);
+                        reflectionEval.setStudentId(studentId);
+                        reflectionEval.setCounselorId(teacherId);
+                    }
+                    reflectionEval.setScoreDetails(reflectionScoreDetails);
+                    reflectionEval.setTotalScore(BigDecimal.valueOf(totalScore));
+                    reflectionEval.setGrade(grade);
+                    reflectionEval.setTeacherComment(comment);
+                    reflectionEval.setEvaluateTime(new Date());
+                    reflectionEval.setUpdateTime(new Date());
+
+                    studentReflectionEvaluationService.saveEvaluation(reflectionEval);
+                    log.info("保存学生阶段评价到StudentReflectionEvaluation，reflectionId: {}, 总分: {}", currentReflectionId, totalScore);
+                } else {
+                    log.warn("未找到学生ID: {} 当前阶段: {} 的实习心得，跳过保存StudentReflectionEvaluation", studentId, currentPeriod);
+                }
+            } catch (Exception e) {
+                log.error("保存StudentReflectionEvaluation失败: {}", e.getMessage(), e);
             }
 
             return Result.success("评价提交成功");

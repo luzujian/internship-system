@@ -8,6 +8,7 @@ import majorApi from '@/api/MajorService'
 export interface Position {
   id: number
   positionName: string
+  categoryId: number
   department: string
   workLocation: string
   salaryMin: number | null
@@ -115,6 +116,7 @@ export const usePositionStore = defineStore('position', () => {
         positions.value = response.data.map((item: any) => ({
           id: item.id,
           positionName: item.positionName,
+          categoryId: item.categoryId || 0,
           department: item.department || '',
           workLocation: formatWorkLocation(item),
           salaryMin: item.salaryMin || null,

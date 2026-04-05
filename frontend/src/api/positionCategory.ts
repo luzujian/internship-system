@@ -30,6 +30,17 @@ const PositionCategoryService = {
     }
   },
 
+  // 公开接口：获取所有岗位类别（不需要权限）
+  getAllCategoriesPublic: async () => {
+    try {
+      const response = await request.get<PositionCategory[]>('/admin/position-categories/public')
+      return response
+    } catch (error) {
+      console.error('获取岗位类别列表失败:', error)
+      throw error
+    }
+  },
+
   getCategoryById: async (id: number) => {
     const cacheKey = `position_category_${id}`
     const cachedData = cacheService.get<PositionCategory>(cacheKey)
@@ -51,6 +62,17 @@ const PositionCategoryService = {
       return response
     } catch (error) {
       console.error('获取岗位列表失败:', error)
+      throw error
+    }
+  },
+
+  // 公开接口：获取某类别下的岗位列表（企业端发布岗位时使用，不需要权限）
+  getPositionsByCategoryIdPublic: async (categoryId: number) => {
+    try {
+      const response = await request.get(`/admin/position-categories/public/${categoryId}/positions`)
+      return response
+    } catch (error) {
+      console.error('获取类别岗位列表失败:', error)
       throw error
     }
   },
