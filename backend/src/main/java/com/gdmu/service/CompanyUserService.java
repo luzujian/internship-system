@@ -38,7 +38,7 @@ public interface CompanyUserService {
     
     PageResult<CompanyUser> findPendingAuditPage(Integer page, Integer pageSize);
     
-    PageResult<CompanyUser> findPendingAuditPage(Integer page, Integer pageSize, String companyName, String contactPerson, String contactPhone);
+    PageResult<CompanyUser> findPendingAuditPage(Integer page, Integer pageSize, String companyName, String contactPerson, String contactPhone, Integer status);
     
     Long countByAuditStatus(Integer auditStatus);
     

@@ -381,6 +381,24 @@
         </if>
         ORDER BY apply_time DESC
     </select>
+
+    <select id="findPendingAuditWithStatus" resultMap="CompanyUserResultMap">
+        SELECT * FROM company_users
+        WHERE recall_status = 0
+        <if test="status != null">
+            AND audit_status = #{status}
+        </if>
+        <if test="companyName != null and companyName != ''">
+            AND company_name LIKE CONCAT('%', #{companyName}, '%')
+        </if>
+        <if test="contactPerson != null and contactPerson != ''">
+            AND contact_person LIKE CONCAT('%', #{contactPerson}, '%')
+        </if>
+        <if test="contactPhone != null and contactPhone != ''">
+            AND contact_phone LIKE CONCAT('%', #{contactPhone}, '%')
+        </if>
+        ORDER BY apply_time DESC
+    </select>
     
     <select id="countByAuditStatus" resultType="java.lang.Long">
         SELECT COUNT(*) FROM company_users WHERE audit_status = #{auditStatus}

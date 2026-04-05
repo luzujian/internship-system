@@ -480,12 +480,22 @@ const checkCompanyStatus = async () => {
       console.log('查询失败，响应数据:', response)
     ElMessage.error(response.message || '查询失败')
     }
-  } catch (error) {
+  } catch (error: any) {
     console.error('查询企业注册状态失败:', error)
     console.error('错误详情:', error.response)
     console.error('错误状态码:', error.response?.status)
     console.error('错误数据:', error.response?.data)
-    ElMessage.error('查询企业注册状态失败')
+
+    // 检查是否是"企业未注册"的情况，如果是则跳转到注册页面
+    const errorMessage = error.response?.data?.message || error.message || ''
+    if (errorMessage.includes('未注册')) {
+      router.push({
+        path: '/company-register',
+        query: { companyName: checkForm.companyName }
+      })
+    } else {
+      ElMessage.error(errorMessage || '查询企业注册状态失败')
+    }
   } finally {
     loading.value = false
   }

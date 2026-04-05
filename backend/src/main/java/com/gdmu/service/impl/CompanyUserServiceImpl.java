@@ -301,26 +301,26 @@ public class CompanyUserServiceImpl implements CompanyUserService {
     @Override
     public PageResult<CompanyUser> findPendingAuditPage(Integer page, Integer pageSize) {
         log.debug("分页查询待审核企业信息，页码: {}, 每页大小: {}", page, pageSize);
-        return findPendingAuditPage(page, pageSize, null, null, null);
+        return findPendingAuditPage(page, pageSize, null, null, null, null);
     }
-    
+
     @Override
-    public PageResult<CompanyUser> findPendingAuditPage(Integer page, Integer pageSize, String companyName, String contactPerson, String contactPhone) {
-        log.info("分页查询待审核企业信息，页码: {}, 每页大小: {}, 企业名称: {}, 联系人: {}, 联系电话: {}", 
-                page, pageSize, companyName, contactPerson, contactPhone);
-        
+    public PageResult<CompanyUser> findPendingAuditPage(Integer page, Integer pageSize, String companyName, String contactPerson, String contactPhone, Integer status) {
+        log.info("分页查询企业注册申请，页码: {}, 每页大小: {}, 企业名称: {}, 联系人: {}, 联系电话: {}, 状态: {}",
+                page, pageSize, companyName, contactPerson, contactPhone, status);
+
         PageHelper.startPage(page, pageSize);
-        List<CompanyUser> companies = companyUserMapper.findPendingAudit(companyName, contactPerson, contactPhone);
-        
-        log.info("查询到 {} 条待审核企业记录", companies != null ? companies.size() : 0);
-        
+        List<CompanyUser> companies = companyUserMapper.findPendingAuditWithStatus(companyName, contactPerson, contactPhone, status);
+
+        log.info("查询到 {} 条企业记录", companies != null ? companies.size() : 0);
+
         PageInfo<CompanyUser> pageInfo = new PageInfo<>(companies);
         PageResult<CompanyUser> result = PageResult.build(pageInfo.getTotal(), pageInfo.getList(),
                 pageInfo.getPages(), pageInfo.getPageNum(), pageInfo.getPageSize());
-        
-        log.info("分页结果 - 总数: {}, 列表大小: {}, 总页数: {}, 当前页: {}, 每页大小: {}", 
+
+        log.info("分页结果 - 总数: {}, 列表大小: {}, 总页数: {}, 当前页: {}, 每页大小: {}",
                 pageInfo.getTotal(), pageInfo.getList().size(), pageInfo.getPages(), pageInfo.getPageNum(), pageInfo.getPageSize());
-        
+
         return result;
     }
     

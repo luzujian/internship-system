@@ -150,7 +150,7 @@ const companyService = {
   },
 
   /**
-   * 获取待审核企业列表（分页）- 教师端
+   * 获取企业注册申请列表（分页）- 教师端
    */
   getPendingAuditCompanies: (params?: {
     page?: number
@@ -158,6 +158,7 @@ const companyService = {
     companyName?: string
     contactPerson?: string
     contactPhone?: string
+    status?: number
   }) => {
     return request.get<{ code: number; message: string; data: { total: number; rows: Company[] } }>('/teacher/companies/audit/pending', { params })
   },

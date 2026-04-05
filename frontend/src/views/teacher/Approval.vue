@@ -65,7 +65,7 @@
             {{ getApplicationTypeText(scope.row.type) }}
           </template>
         </el-table-column>
-        <el-table-column v-if="activeTab === 'companyQualification'" label="企业信息" width="200">
+        <el-table-column v-if="activeTab === 'companyQualification'" label="企业名称" width="200">
           <template #default="scope">
             <div class="company-info-detail compact">
               <div class="company-name">{{ scope.row.companyName }}</div>
@@ -101,7 +101,7 @@
           </template>
         </el-table-column>
         <el-table-column prop="applyTime" label="申请时间" width="200" align="center"></el-table-column>
-        <el-table-column label="状态" :width="activeTab === 'companyQualification' ? 280 : 150" align="center">
+        <el-table-column label="状态" align="center">
           <template #default="scope">
             <div class="status-wrapper">
               <el-tag :type="getStatusTagType(activeTab === 'companyQualification' ? scope.row.auditStatus : scope.row.status)" size="small" class="status-tag">
@@ -416,7 +416,7 @@ const approvalTabs = ref([
   { key: 'selfPractice', name: '自主实习申请', count: 0 },
   { key: 'unitChange', name: '单位变更申请', count: 0 },
   { key: 'delay', name: '考研延迟申请', count: 0 },
-  { key: 'companyQualification', name: '企业资质审核', count: 0 }
+  { key: 'companyQualification', name: '企业注册申请审核', count: 0 }
 ])
 
 const documentTypes = ref([
@@ -508,10 +508,17 @@ const fetchApplications = async () => {
   try {
     let response
     if (activeTab.value === 'companyQualification') {
+      // 将前端状态字符串转换为后端整数值
+      let auditStatus
+      if (searchForm.status === 'pending') auditStatus = 0
+      else if (searchForm.status === 'approved') auditStatus = 1
+      else if (searchForm.status === 'rejected') auditStatus = 2
+      // 不传status表示查询所有状态
       response = await companyService.getPendingAuditCompanies({
         page: currentPage.value,
         pageSize: pageSize.value,
-        companyName: searchForm.keyword || undefined
+        companyName: searchForm.keyword || undefined,
+        status: auditStatus
       })
       applications.value = response.data?.rows || []
       total.value = response.data?.total || 0

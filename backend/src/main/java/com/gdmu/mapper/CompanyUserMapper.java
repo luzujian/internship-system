@@ -54,6 +54,11 @@ public interface CompanyUserMapper {
     List<CompanyUser> findPendingAudit(@Param("companyName") String companyName,
                                         @Param("contactPerson") String contactPerson,
                                         @Param("contactPhone") String contactPhone);
+
+    List<CompanyUser> findPendingAuditWithStatus(@Param("companyName") String companyName,
+                                                 @Param("contactPerson") String contactPerson,
+                                                 @Param("contactPhone") String contactPhone,
+                                                 @Param("status") Integer status);
     
     Long countByAuditStatus(@Param("auditStatus") Integer auditStatus);
 

@@ -322,19 +322,20 @@ public class TeacherController {
                                            @RequestParam(defaultValue = "10") Integer pageSize,
                                            @RequestParam(required = false) String companyName,
                                            @RequestParam(required = false) String contactPerson,
-                                           @RequestParam(required = false) String contactPhone) {
-        
+                                           @RequestParam(required = false) String contactPhone,
+                                           @RequestParam(required = false) Integer status) {
+
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         log.info("当前用户: {}, 权限列表: {}", authentication.getName(), authentication.getAuthorities());
-        
-        log.info("获取待审核企业列表，页码: {}, 每页条数: {}, 企业名称: {}, 联系人: {}, 联系电话: {}", 
-                page, pageSize, companyName, contactPerson, contactPhone);
+
+        log.info("获取企业注册申请列表，页码: {}, 每页条数: {}, 企业名称: {}, 联系人: {}, 联系电话: {}, 状态: {}",
+                page, pageSize, companyName, contactPerson, contactPhone, status);
         try {
-            PageResult<CompanyUser> pageResult = companyUserService.findPendingAuditPage(page, pageSize, companyName, contactPerson, contactPhone);
+            PageResult<CompanyUser> pageResult = companyUserService.findPendingAuditPage(page, pageSize, companyName, contactPerson, contactPhone, status);
             return Result.success(pageResult);
         } catch (Exception e) {
-            log.error("获取待审核企业列表失败: {}", e.getMessage(), e);
-            return Result.error("获取待审核企业列表失败");
+            log.error("获取企业注册申请列表失败: {}", e.getMessage(), e);
+            return Result.error("获取企业注册申请列表失败");
         }
     }
 

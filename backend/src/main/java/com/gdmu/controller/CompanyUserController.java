@@ -303,7 +303,7 @@ public class CompanyUserController {
         log.info("获取待审核企业列表，页码：{}, 每页条数：{}, 企业名称：{}, 联系人：{}, 联系电话：{}",
                 page, pageSize, companyName, contactPerson, contactPhone);
         try {
-            PageResult<CompanyUser> pageResult = companyUserService.findPendingAuditPage(page, pageSize, companyName, contactPerson, contactPhone);
+            PageResult<CompanyUser> pageResult = companyUserService.findPendingAuditPage(page, pageSize, companyName, contactPerson, contactPhone, null);
             return Result.success(pageResult);
         } catch (Exception e) {
             log.error("获取待审核企业列表失败：{}", e.getMessage(), e);
