@@ -118,12 +118,15 @@ backup:
       enabled: true
 
 sms:
-  enabled: false
+  enabled: true
   debug: false
   access-key-id: ${SMS_ACCESS_KEY_ID:}
   access-key-secret: ${SMS_ACCESS_KEY_SECRET:}
-  sign-name: 实习管理系统
-  template-code: SMS_123456789
+  sign-name: ${SMS_SIGN_NAME:速通互联验证码}
+  template-code: ${SMS_TEMPLATE_CODE:100001}
+  scheme-name: ${SMS_SCHEME_NAME:默认方案}
+  code-length: 6
+  valid-time: 300
 
 mybatis:
   configuration:
