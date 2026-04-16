@@ -48,12 +48,19 @@ interface AIAnalysisResultData {
   message: string
 }
 
+// 企业待办更新消息类型
+interface CompanyTodoUpdateData {
+  pendingApplications: number
+  pendingConfirmations: number
+}
+
 // 岗位更新监听器列表
 const positionUpdateListeners: Array<(data: PositionUpdateData) => void> = []
 const positionDeleteListeners: Array<(data: PositionDeleteData) => void> = []
 const interviewCreateListeners: Array<(data: InterviewCreateData) => void> = []
 const interviewStatusUpdateListeners: Array<(data: InterviewStatusUpdateData) => void> = []
 const aiAnalysisResultListeners: Array<(data: AIAnalysisResultData) => void> = []
+const companyTodoUpdateListeners: Array<(data: CompanyTodoUpdateData) => void> = []
 type ErrorHandler = (error: Event) => void
 
 interface WebSocketOptions {
@@ -321,6 +328,17 @@ export function initAnnouncementWebSocket(
           }
         })
         onMessage(data)
+      } else if (data.type === 'company_todo_update' && data.data) {
+        console.log('[WebSocket] 收到消息类型:', data.type, '数据:', data.data)
+        logger.log('[WebSocket] 收到企业待办数据更新:', data.data)
+        companyTodoUpdateListeners.forEach(callback => {
+          try {
+            callback(data.data as CompanyTodoUpdateData)
+          } catch (e) {
+            logger.error('[WebSocket] 企业待办更新监听器执行失败:', e)
+          }
+        })
+        onMessage(data)
       } else {
         onMessage(data)
       }
@@ -423,6 +441,21 @@ export function offAIAnalysisResult(callback: (data: AIAnalysisResultData) => vo
   const index = aiAnalysisResultListeners.indexOf(callback)
   if (index > -1) {
     aiAnalysisResultListeners.splice(index, 1)
+  }
+}
+
+// 注册企业待办更新监听器
+export function onCompanyTodoUpdate(callback: (data: CompanyTodoUpdateData) => void): void {
+  if (!companyTodoUpdateListeners.includes(callback)) {
+    companyTodoUpdateListeners.push(callback)
+  }
+}
+
+// 移除企业待办更新监听器
+export function offCompanyTodoUpdate(callback: (data: CompanyTodoUpdateData) => void): void {
+  const index = companyTodoUpdateListeners.indexOf(callback)
+  if (index > -1) {
+    companyTodoUpdateListeners.splice(index, 1)
   }
 }
 

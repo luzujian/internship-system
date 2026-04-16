@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { VideoPause, Message } from '@element-plus/icons-vue'
+import { VideoPause, Message, MagicStick } from '@element-plus/icons-vue'
 import { usePositionStore } from '../../store/position'
 import { useAuthStore } from '../../store/auth'
 import positionApi from '../../api/PositionService'
@@ -36,6 +36,8 @@ const dialogTitle = ref('发布岗位')
 const dialogType = ref('create')
 // 对话框操作加载状态
 const loading = ref(false)
+// AI生成岗位描述加载状态
+const generatingDescription = ref(false)
 
 // 面试信息对话框
 const interviewDialogVisible = ref(false)
@@ -669,6 +671,45 @@ const handleCancel = () => {
   dialogVisible.value = false
 }
 
+// AI生成岗位描述
+const handleGenerateDescription = async () => {
+  if (!positionForm.value.positionName) {
+    ElMessage.warning('请先输入岗位名称')
+    return
+  }
+
+  generatingDescription.value = true
+  try {
+    const response = await fetch('/api/ai/generate-job-description', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + (authStore.token || '')
+      },
+      body: JSON.stringify({
+        positionName: positionForm.value.positionName,
+        department: positionForm.value.department,
+        positionType: positionForm.value.positionType
+      })
+    })
+
+    const res = await response.json()
+    if (res.success && res.data) {
+      if (res.data.description) {
+        positionForm.value.description = res.data.description
+      }
+      ElMessage.success('AI已生成岗位描述')
+    } else {
+      ElMessage.error(res.message || '生成失败')
+    }
+  } catch (error) {
+    console.error('生成岗位描述失败:', error)
+    ElMessage.error('生成失败，请稍后重试')
+  } finally {
+    generatingDescription.value = false
+  }
+}
+
 </script>
 
 <template>
@@ -940,7 +981,21 @@ const handleCancel = () => {
             type="textarea"
             :rows="4"
             placeholder="请输入岗位描述"
+            :disabled="generatingDescription"
           />
+          <div class="ai-generate-tip">
+            <el-button
+              type="primary"
+              size="small"
+              :loading="generatingDescription"
+              @click="handleGenerateDescription"
+              :disabled="!positionForm.positionName"
+            >
+              <el-icon v-if="!generatingDescription"><MagicStick /></el-icon>
+              {{ generatingDescription ? '生成中...' : 'AI智能生成' }}
+            </el-button>
+            <span class="tip-text">填写岗位名称后点击生成</span>
+          </div>
         </el-form-item>
 
         <el-form-item label="任职要求">
@@ -1210,5 +1265,17 @@ const handleCancel = () => {
   display: flex;
   gap: 4px;
   justify-content: center;
+}
+
+.ai-generate-tip {
+  display: flex;
+  align-items: center;
+  margin-top: 8px;
+  gap: 10px;
+}
+
+.ai-generate-tip .tip-text {
+  font-size: 12px;
+  color: #909399;
 }
 </style>

@@ -139,7 +139,15 @@ const handleLogin = async () => {
       console.log('[Login] authStore.token:', authStore.token ? '存在' : '不存在')
       
       ElMessage.success('登录成功');
-      
+
+      // 清除鼓励气泡的"不再提醒"状态，让重新登录后气泡可以再次显示
+      const currentRole = authStore.role || 'ROLE_ADMIN'
+      localStorage.removeItem(`internshipAIEncouragementDisabled_${currentRole.toLowerCase()}`)
+      // 也清除其他可能存在的角色
+      ;['teacher', 'admin', 'student', 'company'].forEach(role => {
+        localStorage.removeItem(`internshipAIEncouragementDisabled_${role}`)
+      })
+
       preloadHomePage(authStore.role)
       preloadDashboardData(authStore.role)
       

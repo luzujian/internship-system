@@ -9,6 +9,7 @@ import com.gdmu.entity.PageResult;
 import com.gdmu.entity.Position;
 import com.gdmu.entity.Result;
 import com.gdmu.entity.StudentInternshipStatus;
+import com.gdmu.entity.StudentJobApplication;
 import com.gdmu.service.AnnouncementService;
 import com.gdmu.service.CompanyUserService;
 import com.gdmu.service.InternshipApplicationService;
@@ -313,18 +314,32 @@ public class CompanyController {
             Map<String, Object> stats = new HashMap<>();
 
             Long publishedPositions = positionService.countByCompanyId(companyId);
+
+            // 从student_job_application表获取待处理申请数
+            List<StudentJobApplication> applications = studentJobApplicationService.findByCompanyId(companyId);
+            Long pendingApplications = applications.stream()
+                    .filter(a -> "pending".equals(a.getStatus()))
+                    .count();
+
+            // 从student_internship_status表获取待确认实习表数
             List<StudentInternshipStatus> allStatuses = studentInternshipStatusService.list(null, null, null, null, companyId, null, null, null, null, null);
-            Long totalApplications = (long) allStatuses.size();
-            Long pendingApplications = allStatuses.stream().filter(s -> s.getCompanyConfirmStatus() != null && s.getCompanyConfirmStatus() == 0).count();
-            Long confirmedApplications = allStatuses.stream().filter(s -> s.getCompanyConfirmStatus() != null && s.getCompanyConfirmStatus() == 1).count();
+            Long totalConfirmations = (long) allStatuses.size();
+            Long pendingConfirmations = allStatuses.stream()
+                    .filter(s -> s.getCompanyConfirmStatus() != null && s.getCompanyConfirmStatus() == 0)
+                    .count();
+            Long confirmedConfirmations = allStatuses.stream()
+                    .filter(s -> s.getCompanyConfirmStatus() != null && s.getCompanyConfirmStatus() == 1)
+                    .count();
 
             stats.put("publishedPositions", publishedPositions);
-            stats.put("totalApplications", totalApplications);
+            stats.put("totalApplications", (long) applications.size());
             stats.put("pendingApplications", pendingApplications);
-            stats.put("confirmedApplications", confirmedApplications);
+            stats.put("pendingConfirmations", pendingConfirmations);
+            stats.put("totalConfirmations", totalConfirmations);
+            stats.put("confirmedConfirmations", confirmedConfirmations);
 
-            log.info("统计数据：发布职位={}, 总申请={}, 待确认={}, 已确认={}",
-                    publishedPositions, totalApplications, pendingApplications, confirmedApplications);
+            log.info("统计数据：发布职位={}, 待处理申请={}, 待确认实习表={}, 已确认实习表={}",
+                    publishedPositions, pendingApplications, pendingConfirmations, confirmedConfirmations);
 
             return Result.success(stats);
         } catch (Exception e) {
@@ -796,6 +811,8 @@ public class CompanyController {
             }
 
             if (result > 0) {
+                // 推送待办数据更新
+                pushTodoUpdate(companyId);
                 return Result.success("更新成功");
             } else {
                 return Result.error("更新失败");
@@ -902,10 +919,36 @@ public class CompanyController {
                     application.getPositionName(), newStatus, companyName);
             }
 
+            // 推送待办数据更新
+            pushTodoUpdate(companyId);
+
             return Result.success("更新成功");
         } catch (Exception e) {
             log.error("更新申请状态失败：{}", e.getMessage(), e);
             return Result.error("更新申请状态失败：" + e.getMessage());
+        }
+    }
+
+    /**
+     * 推送企业待办数据更新
+     */
+    private void pushTodoUpdate(Long companyId) {
+        try {
+            // 待处理申请数
+            List<com.gdmu.entity.StudentJobApplication> applications = studentJobApplicationService.findByCompanyId(companyId);
+            long pendingApplications = applications.stream()
+                    .filter(a -> "pending".equals(a.getStatus()))
+                    .count();
+
+            // 待确认实习表数 - 从学生实习状态表查询（company_confirm_status=0表示待确认）
+            List<StudentInternshipStatus> allStatuses = studentInternshipStatusService.list(null, null, null, null, companyId, null, null, null, null, null);
+            long pendingConfirmations = allStatuses.stream()
+                    .filter(s -> s.getCompanyConfirmStatus() != null && s.getCompanyConfirmStatus() == 0)
+                    .count();
+
+            webSocketHandler.sendCompanyTodoUpdate(companyId, pendingApplications, pendingConfirmations);
+        } catch (Exception e) {
+            log.error("推送待办数据失败: {}", e.getMessage());
         }
     }
 

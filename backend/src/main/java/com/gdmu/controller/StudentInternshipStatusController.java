@@ -8,6 +8,8 @@ import com.gdmu.service.StudentInternshipStatusService;
 import com.gdmu.service.UserService;
 import com.gdmu.service.InternshipConfirmationRecordService;
 import com.gdmu.service.InternshipProgressRecordService;
+import com.gdmu.service.StudentJobApplicationService;
+import com.gdmu.websocket.AnnouncementWebSocketHandler;
 import com.gdmu.anno.Log;
 import com.gdmu.exception.BusinessException;
 import com.gdmu.utils.CurrentHolder;
@@ -54,6 +56,35 @@ public class StudentInternshipStatusController {
 
     @Autowired
     private InternshipProgressRecordService progressRecordService;
+
+    @Autowired
+    private StudentJobApplicationService studentJobApplicationService;
+
+    @Autowired
+    private AnnouncementWebSocketHandler webSocketHandler;
+
+    /**
+     * 推送企业待办数据更新
+     */
+    private void pushTodoUpdate(Long companyId) {
+        try {
+            // 待处理申请数
+            List<com.gdmu.entity.StudentJobApplication> applications = studentJobApplicationService.findByCompanyId(companyId);
+            long pendingApplications = applications.stream()
+                    .filter(a -> "pending".equals(a.getStatus()))
+                    .count();
+
+            // 待确认实习表数 - 从学生实习状态表查询（company_confirm_status=0表示待确认）
+            List<StudentInternshipStatus> allStatuses = studentInternshipStatusService.list(null, null, null, null, companyId, null, null, null, null, null);
+            long pendingConfirmations = allStatuses.stream()
+                    .filter(s -> s.getCompanyConfirmStatus() != null && s.getCompanyConfirmStatus() == 0)
+                    .count();
+
+            webSocketHandler.sendCompanyTodoUpdate(companyId, pendingApplications, pendingConfirmations);
+        } catch (Exception e) {
+            log.error("推送待办数据失败: {}", e.getMessage());
+        }
+    }
 
     /**
      * 获取实习状态列表（分页）
@@ -792,6 +823,8 @@ public class StudentInternshipStatusController {
             }
 
             if (result > 0) {
+                // 推送待办数据更新
+                pushTodoUpdate(status.getCompanyId());
                 return Result.success("确认成功");
             }
             return Result.error("确认失败");
@@ -850,6 +883,8 @@ public class StudentInternshipStatusController {
             int result = studentInternshipStatusService.update(status);
 
             if (result > 0) {
+                // 推送待办数据更新
+                pushTodoUpdate(status.getCompanyId());
                 return Result.success("拒绝成功");
             }
             return Result.error("拒绝失败");

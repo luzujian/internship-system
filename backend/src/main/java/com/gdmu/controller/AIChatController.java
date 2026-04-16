@@ -2,6 +2,7 @@ package com.gdmu.controller;
 
 
 import com.gdmu.config.DynamicChatClientFactory;
+import com.gdmu.service.JobRecommendationAgentService;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.UserMessage;
@@ -27,14 +28,16 @@ import org.slf4j.LoggerFactory;
 public class AIChatController {
 
     private final DynamicChatClientFactory chatClientFactory;
+    private final JobRecommendationAgentService jobRecommendationAgentService;
 
     private final CopyOnWriteArrayList<SseEmitter> emitters = new CopyOnWriteArrayList<>();
     private static final Logger log = LoggerFactory.getLogger(AIChatController.class);
 
 
     @Autowired
-    public AIChatController(DynamicChatClientFactory chatClientFactory) {
+    public AIChatController(DynamicChatClientFactory chatClientFactory, JobRecommendationAgentService jobRecommendationAgentService) {
         this.chatClientFactory = chatClientFactory;
+        this.jobRecommendationAgentService = jobRecommendationAgentService;
     }
 
     private String getSystemPromptByRole(String role) {
@@ -57,7 +60,17 @@ public class AIChatController {
         return chatClientFactory.createChatClient(modelCode, systemPrompt);
     }
 
-    // 普通聊天接口
+    private boolean isJobRecommendationRequest(String message, String role) {
+        if (!"student".equals(role)) {
+            return false;
+        }
+        if (message == null || message.trim().isEmpty()) {
+            return false;
+        }
+        String lowerMsg = message.toLowerCase();
+        return lowerMsg.contains("推荐") && (lowerMsg.contains("岗位") || lowerMsg.contains("职位") || lowerMsg.contains("实习"));
+    }
+
     @PostMapping("/chat")
     public ResponseEntity<Map<String, Object>> chat(@RequestBody Map<String, Object> request) {
         try {
@@ -66,10 +79,18 @@ public class AIChatController {
             String model = (String) request.get("model");
             String role = (String) request.get("role");
 
+            if (isJobRecommendationRequest(userMessage, role)) {
+                Map<String, Object> result = jobRecommendationAgentService.processJobRecommendation(
+                    userMessage,
+                    (String) request.get("username"),
+                    model
+                );
+                return ResponseEntity.ok(result);
+            }
+
             List<Message> messages = buildMessages(userMessage, context);
             ChatClient selectedClient = getChatClientByModel(model, role);
 
-            // Spring AI 1.0.0 调整了响应获取方式
             String aiResponse = selectedClient.prompt()
                     .messages(messages)
                     .call()
@@ -91,7 +112,6 @@ public class AIChatController {
         }
     }
 
-    // 流式聊天接口 (Spring AI 1.0.0 流式API变更)
     @PostMapping(value = "/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter streamChat(@RequestBody Map<String, Object> request) {
         SseEmitter emitter = new SseEmitter(120_000L);
@@ -106,12 +126,54 @@ public class AIChatController {
 
         try {
             String userMessage = (String) request.get("message");
-            List<Map<String, String>> context = (List<Map<String, String>>) request.get("context");
             String role = (String) request.get("role");
+
+            if (isJobRecommendationRequest(userMessage, role)) {
+                new Thread(() -> {
+                    try {
+                        Map<String, Object> result = jobRecommendationAgentService.processJobRecommendation(
+                            userMessage,
+                            (String) request.get("username"),
+                            (String) request.get("model")
+                        );
+
+                        Map<String, Object> data = new HashMap<>();
+                        data.put("type", "job_recommendation");
+                        data.put("content", result.get("message"));
+                        data.put("data", result);
+
+                        emitter.send(SseEmitter.event()
+                                .data(data)
+                                .name("job_recommendation"));
+
+                        Map<String, Object> endData = new HashMap<>();
+                        endData.put("type", "end");
+                        emitter.send(SseEmitter.event()
+                                .data(endData)
+                                .name("end"));
+                    } catch (Exception e) {
+                        log.error("岗位推荐失败", e);
+                        try {
+                            Map<String, Object> errorData = new HashMap<>();
+                            errorData.put("type", "error");
+                            errorData.put("message", "推荐服务暂时不可用");
+                            emitter.send(SseEmitter.event()
+                                    .data(errorData)
+                                    .name("error"));
+                        } catch (IOException ex) {
+                            // ignore
+                        }
+                    } finally {
+                        emitter.complete();
+                    }
+                }).start();
+                return emitter;
+            }
+
+            List<Map<String, String>> context = (List<Map<String, String>>) request.get("context");
             List<Message> messages = buildMessages(userMessage, context);
             ChatClient selectedClient = getChatClientByModel((String) request.get("model"), role);
 
-            // Spring AI 1.0.0 流式处理方式变更
             Flux<String> aiResponseStream = selectedClient.prompt()
                     .messages(messages)
                     .stream()
@@ -139,7 +201,7 @@ public class AIChatController {
                                     .data(errorData)
                                     .name("error"));
                         } catch (IOException ex) {
-                            // 忽略发送错误
+                            // ignore
                         } finally {
                             emitter.complete();
                         }
@@ -153,7 +215,7 @@ public class AIChatController {
                                     .data(endData)
                                     .name("end"));
                         } catch (IOException e) {
-                            // 忽略发送结束信息错误
+                            // ignore
                         } finally {
                             emitter.complete();
                         }
@@ -169,7 +231,7 @@ public class AIChatController {
                         .data(errorData)
                         .name("error"));
             } catch (IOException ex) {
-                // 忽略发送错误
+                // ignore
             } finally {
                 emitter.complete();
             }
@@ -196,6 +258,5 @@ public class AIChatController {
         messages.add(new UserMessage(userMessage));
         return messages;
     }
-    
 
 }

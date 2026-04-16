@@ -364,6 +364,7 @@ public class AuthController {
             var companyUser = companyUserService.findById(loginUser.getId());
             if (companyUser != null) {
                 displayName = companyUser.getCompanyName();
+                claims.put("companyId", companyUser.getId());
             }
         }
         claims.put("name", displayName);

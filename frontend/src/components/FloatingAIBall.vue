@@ -12,6 +12,76 @@
     </div>
   </div>
 
+  <!-- 企业端气泡消息（待处理提醒） -->
+  <Transition name="bubble-pop">
+    <div
+      v-if="showCompanyBubble && companyBubbleVisible && props.role === 'company'"
+      class="company-bubble"
+      :style="companyBubbleStyle"
+    >
+      <div class="company-bubble-header">
+        <div class="company-bubble-header-left">
+          <span class="company-bubble-icon">📋</span>
+          <span class="company-bubble-title">待办提醒</span>
+        </div>
+        <button class="company-bubble-close" @click.stop="closeCompanyBubble">×</button>
+      </div>
+      <div class="company-bubble-divider"></div>
+      <div class="company-bubble-body">
+        <div class="company-bubble-item" v-if="pendingApplications > 0">
+          <span class="company-bubble-badge">
+            <span class="badge-number">{{ pendingApplications }}</span>
+          </span>
+          <span>个岗位申请待处理</span>
+        </div>
+        <div class="company-bubble-item" v-if="pendingConfirmations > 0">
+          <span class="company-bubble-badge">
+            <span class="badge-number">{{ pendingConfirmations }}</span>
+          </span>
+          <span>个实习确认表待确认</span>
+        </div>
+        <div class="company-bubble-empty" v-if="pendingApplications === 0 && pendingConfirmations === 0">
+          <span>暂无待办事项</span>
+        </div>
+      </div>
+    </div>
+  </Transition>
+
+  <!-- 教师端/管理员端鼓励气泡 -->
+  <Transition name="bubble-pop">
+    <div
+      v-if="showEncouragementBubble && encouragementBubbleVisible && (props.role === 'teacher' || props.role === 'admin')"
+      class="encouragement-bubble"
+      :style="encouragementBubbleStyle"
+    >
+      <div class="encouragement-bubble-inner">
+        <div class="encouragement-icon">{{ currentEncouragement.icon }}</div>
+        <div class="encouragement-text">{{ currentEncouragement.text }}</div>
+      </div>
+      <div class="encouragement-bubble-footer">
+        <label class="encouragement-checkbox">
+          <input type="checkbox" v-model="encouragementDisabled" @change="onEncouragementDisabledChange">
+          <span>不再提醒</span>
+        </label>
+      </div>
+    </div>
+  </Transition>
+
+  <!-- 学生端气泡消息 -->
+  <Transition name="bubble-pop">
+    <div
+      v-if="showTipBubble && tipBubbleVisible && props.role === 'student'"
+      class="tip-bubble"
+      :style="tipBubbleStyle"
+    >
+      <div class="tip-bubble-inner">
+        <div class="tip-bubble-icon">{{ currentTip.icon }}</div>
+        <div class="tip-bubble-text">{{ currentTip.text }}</div>
+      </div>
+      <button class="tip-bubble-close" @click.stop="closeTipBubble">×</button>
+    </div>
+  </Transition>
+
   <!-- 聊天面板 - 移出为同级元素，不再嵌套在悬浮球内部 -->
   <div
     v-if="isExpanded"
@@ -70,7 +140,47 @@
       >
         <div class="message-content-container">
           <div class="message-bubble">
-            <div class="message-text" v-html="formatMessage(message.content)"></div>
+            <!-- 岗位推荐卡片 -->
+            <div v-if="message.type === 'job_recommendation' && message.jobData" class="job-recommendation">
+              <div class="job-recommendation-title">
+                <span class="job-icon">💼</span>
+                <span>为您推荐以下岗位</span>
+              </div>
+              <div class="job-cards-grid">
+                <div
+                  v-for="(job, jobIndex) in message.jobData.positions"
+                  :key="job.id"
+                  class="job-card-compact"
+                >
+                  <div class="job-row1">
+                    <span class="job-name-compact">{{ job.positionName }}</span>
+                    <span class="job-salary-compact">{{ job.salary }}</span>
+                  </div>
+                  <div class="job-row2">
+                    <span class="job-company-compact">🏢 {{ job.companyName }}</span>
+                  </div>
+                  <div class="job-row3">
+                    <span class="job-location-compact">📍 {{ job.location }}</span>
+                  </div>
+                  <div class="job-row3">
+                    <span class="job-contact-compact">👤 {{ job.contactPerson }}</span>
+                  </div>
+                  <div class="job-row3">
+                    <span class="job-phone-compact">📞 {{ job.contactPhone }}</span>
+                  </div>
+                  <div class="job-row4">
+                    <button v-if="!job.isFavorited" class="action-btn favorite" @click="toggleFavorite(job, message)">收藏</button>
+                    <button v-else class="action-btn favorited" @click="toggleFavorite(job, message)">已收藏</button>
+                    <button class="action-btn go-apply" @click="goToJobsPage(job)">立即前往申请</button>
+                  </div>
+                </div>
+              </div>
+              <div v-if="!message.jobData.positions || message.jobData.positions.length === 0" class="job-empty">
+                抱歉，暂未找到与您条件匹配的岗位
+              </div>
+            </div>
+            <!-- 普通文本消息 -->
+            <div v-else class="message-text" v-html="formatMessage(message.content)"></div>
             <div class="message-time">
               {{ formatTime(message.timestamp) }}
             </div>
@@ -95,21 +205,10 @@
 
     <div class="chat-input">
       <div class="input-actions">
-        <!-- 模型选择组件 -->
-        <div class="model-selection">
-          <span class="model-label">选择模型：</span>
-          <el-radio-group v-model="selectedModel" size="small" :disabled="isLoading">
-            <el-radio-button label="deepseek-chat">标准对话</el-radio-button>
-            <el-radio-button label="deepseek-reasoner">推理增强</el-radio-button>
-          </el-radio-group>
-        </div>
-      </div>
-      <div class="textarea-with-button">
         <textarea
           v-model="userInput"
           placeholder="请输入您的问题..."
           @keydown.enter.exact.prevent="sendMessage"
-          :disabled="isLoading"
           rows="3"
           class="message-textarea"
         ></textarea>
@@ -152,9 +251,15 @@
 
 <script setup>
 import { ref, reactive, computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElRadioGroup, ElRadioButton, ElScrollbar } from 'element-plus'
 import { Promotion } from '@element-plus/icons-vue'
 import request from '../utils/request'
+import eventBus from '../utils/eventBus'
+import { onCompanyTodoUpdate, offCompanyTodoUpdate } from '../utils/websocket'
+
+const router = useRouter()
+const route = useRoute()
 
 // Props定义 - 根据角色显示不同标题
 const props = defineProps({
@@ -186,8 +291,67 @@ const chatPanel = ref(null)
 const selectedModel = ref('deepseek-chat')
 const streamingMessage = ref('') // 当前流式回复的内容
 
+// 企业端气泡相关状态
+const showCompanyBubble = ref(false)
+const companyBubbleVisible = ref(false)
+const pendingApplications = ref(0) // 待处理申请数
+const pendingConfirmations = ref(0) // 待确认实习表数
+const companyBubblePos = reactive({ left: 0, top: 0 })
+
+// ============ 学生端气泡相关 ============
+const showTipBubble = ref(false)
+const tipBubbleVisible = ref(false)
+const currentTip = ref({ icon: '💡', text: '试试对我说"帮我推荐实习岗位"吧！' })
+const tipBubblePos = reactive({ left: 0, top: 0 })
+const tipTimeoutId = ref(null)
+
+// ============ 教师端/管理员端鼓励气泡相关 ============
+const showEncouragementBubble = ref(false)
+const encouragementBubbleVisible = ref(false)
+const encouragementDisabled = ref(false)
+const currentEncouragement = ref({ icon: '✨', text: '今天辛苦了~' })
+const encouragementBubblePos = reactive({ left: 0, top: 0 })
+const encouragementIntervalId = ref(null)
+const encouragementTimeoutId1 = ref(null)
+const encouragementTimeoutId2 = ref(null)
+
+// 鼓励语列表
+const encouragements = [
+  { icon: '☕', text: '今天辛苦了，喝杯水休息一下吧~' },
+  { icon: '💪', text: '您的工作做得真棒，继续加油！' },
+  { icon: '🌸', text: '微微疲惫是正常的，记得照顾好自己~' },
+  { icon: '✨', text: '每一份付出都会有回报的！' },
+  { icon: '🎉', text: '今天又解决了这么多问题，太厉害了！' },
+  { icon: '🍜', text: '工作再忙，也要记得按时吃饭哦~' },
+  { icon: '⭐', text: '您是这个团队不可或缺的一员！' },
+  { icon: '💤', text: '累了就休息一下，效率会更高的~' },
+  { icon: '🌿', text: '窗外的风景很美，站起来伸个懒腰吧~' },
+  { icon: '👍', text: '您今天又进步了一点，为您点赞！' },
+  { icon: '🌈', text: '保持好心情，事情会越来越顺利的~' },
+  { icon: '😍', text: '您认真工作的样子真好看！' },
+  { icon: '🎁', text: '别忘了给自己一个小奖励哦~' },
+  { icon: '🌞', text: '今天的阳光很温暖，您也是~' },
+  { icon: '🦸', text: '您解决难题的能力超乎想象！' },
+  { icon: '🍵', text: '给自己泡杯热茶，犒劳一下吧~' },
+  { icon: '👀', text: '您的努力每个人都看在眼里呢！' },
+  { icon: '📋', text: '事情一件一件做，您做得很好！' },
+  { icon: '🛤️', text: '休息是为了走更远的路~' },
+  { icon: '🤝', text: '相信您，一定可以做到的！' },
+  { icon: '🏫', text: '您是学生心中最棒的老师！' },
+  { icon: '❤️', text: '每一天都要好好爱自己哦~' },
+  { icon: '👨‍👩‍👧', text: '工作虽忙，也别忘了陪陪家人~' },
+  { icon: '🏆', text: '您的坚持真的非常了不起！' }
+]
+
 // 快捷问题列表（所有角色都显示相同的问题）
 const quickQuestions = computed(() => {
+  if (props.role === 'student') {
+    return [
+      '帮我推荐实习岗位',
+      '学生申请实习完整流程',
+      '学生实习状态指南'
+    ]
+  }
   return [
     '学生申请实习完整流程',
     '学生实习状态指南'
@@ -233,7 +397,251 @@ const studentInternshipFlow = `📝 **学生申请实习完整流程**
     - 如果拒绝，学生修改后再次提交
     - 如果确认，学生正式进入实习阶段`
 
-// 悬浮球状态
+// ============ 企业端气泡消息相关 ============
+
+// 获取企业端统计数据（仅初始化使用）
+const fetchCompanyStats = async () => {
+  try {
+    const response = await request({
+      url: '/company/stats',
+      method: 'get'
+    })
+    if (response.code === 200) {
+      pendingApplications.value = response.data.pendingApplications || 0
+      pendingConfirmations.value = response.data.pendingConfirmations || 0
+    }
+  } catch (error) {
+    console.error('获取企业统计数据失败:', error)
+  }
+}
+
+// 气泡闪烁动画标记
+// WebSocket企业待办更新处理
+const handleCompanyTodoUpdate = (data) => {
+  if (props.role === 'company') {
+    pendingApplications.value = data.pendingApplications
+    pendingConfirmations.value = data.pendingConfirmations
+  }
+}
+
+// 更新企业端气泡位置
+const updateCompanyBubblePos = () => {
+  const bubbleWidth = 240
+  const bubbleHeight = 100
+  const gap = 15
+  const screenHeight = window.innerHeight
+
+  let left = ballState.x - bubbleWidth - gap
+  let top = ballState.y + (60 - bubbleHeight) / 2
+
+  if (top < 10) top = 10
+  if (top + bubbleHeight > screenHeight - 10) top = screenHeight - bubbleHeight - 10
+  if (left < 10) left = ballState.x + 60 + gap
+
+  companyBubblePos.left = left
+  companyBubblePos.top = top
+}
+
+// 企业端气泡样式
+const companyBubbleStyle = computed(() => ({
+  left: `${companyBubblePos.left}px`,
+  top: `${companyBubblePos.top}px`
+}))
+
+// 显示企业端气泡
+const showCompanyReminderBubble = () => {
+  if (props.role !== 'company') return
+  updateCompanyBubblePos()
+  showCompanyBubble.value = true
+  companyBubbleVisible.value = true
+}
+
+// 隐藏企业端气泡
+const hideCompanyBubble = () => {
+  companyBubbleVisible.value = false
+  setTimeout(() => {
+    showCompanyBubble.value = false
+  }, 300)
+}
+
+// 关闭企业端气泡（用户点击关闭）
+const closeCompanyBubble = () => {
+  hideCompanyBubble()
+  // 保存关闭状态
+  localStorage.setItem(`internshipAICompanyBubbleClosed_${props.role}`, 'true')
+}
+
+// 检查企业端气泡是否应该显示
+const shouldShowCompanyBubble = () => {
+  const closedKey = `internshipAICompanyBubbleClosed_${props.role}`
+  return localStorage.getItem(closedKey) !== 'true'
+}
+
+// ============ 学生端气泡相关 ============
+
+// 计算学生端气泡位置 - 与企业端一致
+const updateTipBubblePos = () => {
+  const bubbleWidth = 240
+  const bubbleHeight = 80
+  const gap = 15
+  const screenHeight = window.innerHeight
+
+  let left = ballState.x - bubbleWidth - gap
+  let top = ballState.y + (60 - bubbleHeight) / 2
+
+  if (top < 10) top = 10
+  if (top + bubbleHeight > screenHeight - 10) top = screenHeight - bubbleHeight - 10
+  if (left < 10) left = ballState.x + 60 + gap
+
+  tipBubblePos.left = left
+  tipBubblePos.top = top
+}
+
+// 学生端气泡样式
+const tipBubbleStyle = computed(() => ({
+  left: `${tipBubblePos.left}px`,
+  top: `${tipBubblePos.top}px`
+}))
+
+// 显示学生端气泡
+const showTipBubbleTimer = () => {
+  if (props.role !== 'student') return
+
+  // 检查是否已经关闭过
+  const closedKey = `internshipAItipBubbleClosed_${props.role}`
+  if (localStorage.getItem(closedKey) === 'true') {
+    return
+  }
+
+  updateTipBubblePos()
+  showTipBubble.value = true
+  tipBubbleVisible.value = true
+}
+
+// 关闭学生端气泡
+const closeTipBubble = () => {
+  tipBubbleVisible.value = false
+  setTimeout(() => {
+    showTipBubble.value = false
+  }, 300)
+  // 保存关闭状态
+  const closedKey = `internshipAItipBubbleClosed_${props.role}`
+  localStorage.setItem(closedKey, 'true')
+}
+
+// ============ 教师端/管理员端鼓励气泡相关 ============
+
+// 获取鼓励语（从后端）
+const fetchEncouragement = async () => {
+  if (props.role === 'student' || props.role === 'company') return
+
+  try {
+    const response = await request({
+      url: '/ai/encouragement',
+      method: 'get',
+      params: { role: props.role }
+    })
+    if (response.code === 200 && response.data) {
+      currentEncouragement.value = response.data
+    }
+  } catch (error) {
+    // 使用默认随机
+    currentEncouragement.value = encouragements[Math.floor(Math.random() * encouragements.length)]
+  }
+}
+
+// 更新鼓励气泡位置
+const updateEncouragementBubblePos = () => {
+  const bubbleWidth = 220
+  const bubbleHeight = 80
+  const gap = 15
+  const screenHeight = window.innerHeight
+
+  let left = ballState.x - bubbleWidth - gap
+  let top = ballState.y + (60 - bubbleHeight) / 2
+
+  if (top < 10) top = 10
+  if (top + bubbleHeight > screenHeight - 10) top = screenHeight - bubbleHeight - 10
+  if (left < 10) left = ballState.x + 60 + gap
+
+  encouragementBubblePos.left = left
+  encouragementBubblePos.top = top
+}
+
+// 鼓励气泡样式
+const encouragementBubbleStyle = computed(() => ({
+  left: `${encouragementBubblePos.left}px`,
+  top: `${encouragementBubblePos.top}px`
+}))
+
+// 启动鼓励语定时切换
+const startEncouragementCycle = () => {
+  if (props.role === 'student' || props.role === 'company') return
+
+  // 每次组件挂载时检查是否需要重置禁用状态（用于处理重新登录的情况）
+  const disabledKey = `internshipAIEncouragementDisabled_${props.role}`
+  if (localStorage.getItem(disabledKey) === 'true') {
+    console.log('[FloatingAIBall] 检测到"不再提醒"已勾选，跳过显示')
+    return
+  }
+
+  fetchEncouragement()
+
+  encouragementTimeoutId1.value = setTimeout(() => {
+    updateEncouragementBubblePos()
+    showEncouragementBubble.value = true
+    encouragementBubbleVisible.value = true
+  }, 3000)
+
+  // 每5秒切换一句鼓励语
+  encouragementIntervalId.value = setInterval(() => {
+    const currentIdx = encouragements.findIndex(e =>
+      e.text === currentEncouragement.value.text && e.icon === currentEncouragement.value.icon
+    )
+    const nextIdx = (currentIdx + 1) % encouragements.length
+    currentEncouragement.value = encouragements[nextIdx]
+    showEncouragementBubble.value = false
+    setTimeout(() => {
+      showEncouragementBubble.value = true
+    }, 100)
+  }, 5000)
+
+  // 15秒后自动隐藏
+  encouragementTimeoutId2.value = setTimeout(() => {
+    showEncouragementBubble.value = false
+  }, 15000)
+}
+
+// 停止鼓励语定时器
+const stopEncouragementCycle = () => {
+  if (encouragementIntervalId.value) {
+    clearInterval(encouragementIntervalId.value)
+    encouragementIntervalId.value = null
+  }
+  if (encouragementTimeoutId1.value) {
+    clearTimeout(encouragementTimeoutId1.value)
+    encouragementTimeoutId1.value = null
+  }
+  if (encouragementTimeoutId2.value) {
+    clearTimeout(encouragementTimeoutId2.value)
+    encouragementTimeoutId2.value = null
+  }
+}
+
+// 勾选"不再提醒"变化时处理
+const onEncouragementDisabledChange = () => {
+  const disabledKey = `internshipAIEncouragementDisabled_${props.role}`
+  if (encouragementDisabled.value) {
+    localStorage.setItem(disabledKey, 'true')
+    showEncouragementBubble.value = false
+    stopEncouragementCycle()
+  } else {
+    localStorage.removeItem(disabledKey)
+    startEncouragementCycle()
+  }
+}
+
+// ============ 悬浮球状态 ============
 const ballState = reactive({
   x: window.innerWidth - 100,
   y: window.innerHeight - 150,
@@ -302,6 +710,15 @@ const startBallDrag = (e) => {
       const ballSize = 60
       ballState.x = Math.max(0, Math.min(newX, window.innerWidth - ballSize))
       ballState.y = Math.max(0, Math.min(newY, window.innerHeight - ballSize))
+
+      // 拖拽时更新气泡位置
+      if (props.role === 'company') {
+        updateCompanyBubblePos()
+      } else if (props.role === 'teacher' || props.role === 'admin') {
+        updateEncouragementBubblePos()
+      } else if (props.role === 'student') {
+        updateTipBubblePos()
+      }
     })
   }
 
@@ -337,6 +754,15 @@ const snapBallToEdge = () => {
     ballState.x = 0
   } else if (ballState.x > screenWidth - ballSize - snapThreshold) {
     ballState.x = screenWidth - ballSize
+  }
+
+  // 吸附后更新气泡位置
+  if (props.role === 'company') {
+    updateCompanyBubblePos()
+  } else if (props.role === 'teacher' || props.role === 'admin') {
+    updateEncouragementBubblePos()
+  } else if (props.role === 'student') {
+    updateTipBubblePos()
   }
 }
 
@@ -499,7 +925,7 @@ const closeChat = () => {
 const clearHistory = () => {
   messages.value = []
   streamingMessage.value = ''
-  localStorage.removeItem(`internshipAIChatHistory_${props.role}`)
+  localStorage.removeItem(getStorageKey('internshipAIChatHistory'))
   userInput.value = ''
   ElMessage.success('对话已清空')
 }
@@ -520,11 +946,58 @@ const selectQuickQuestion = (question) => {
   // 其他问题发给AI
   else {
     userInput.value = question
+    sendMessage()
     return
   }
 
   messages.value.push(aiMessage)
+  saveState()
   scrollToBottom()
+}
+
+// 跳转到职位浏览页面
+const goToJobsPage = (job) => {
+  if (!job || !job.id) {
+    ElMessage.error('职位信息不完整，无法跳转')
+    return
+  }
+  eventBus.emit('scrollToJob', { positionId: job.id })
+  router.push({
+    name: 'studentJobs',
+    query: { positionId: job.id }
+  })
+}
+
+// 收藏/取消收藏岗位
+const toggleFavorite = async (job, message) => {
+  if (!job || !job.id) {
+    ElMessage.error('职位信息不完整')
+    return
+  }
+  // 确保 positionId 是数字类型
+  const positionId = Number(job.id)
+  if (isNaN(positionId)) {
+    ElMessage.error('职位ID无效')
+    return
+  }
+  try {
+    if (job.isFavorited) {
+      await request.post(`/positions/favorite/${positionId}`)
+      job.isFavorited = false
+      ElMessage.success('已取消收藏')
+      // 通知收藏状态变化
+      eventBus.emit('favoriteChanged', { positionId, isFavorited: false })
+    } else {
+      const response = await request.post(`/positions/favorite/${positionId}`)
+      job.isFavorited = true
+      ElMessage.success('收藏成功')
+      // 通知收藏状态变化
+      eventBus.emit('favoriteChanged', { positionId, isFavorited: true })
+    }
+  } catch (error) {
+    console.error('收藏操作失败:', error)
+    ElMessage.error('操作失败，请重试')
+  }
 }
 
 // 获取格式化的对话上下文
@@ -551,10 +1024,11 @@ const sendMessage = async () => {
     content: currentInput,
     timestamp: new Date()
   }
+  const userMessageIndex = messages.value.length
   messages.value.push(userMessage)
-
-  streamingMessage.value = ''
-  scrollToBottom()
+  saveState()
+  // 用户发消息时滚动到该消息位置
+  scrollToMessage(userMessageIndex)
 
   try {
     await sendStreamingMessage(currentInput)
@@ -566,10 +1040,11 @@ const sendMessage = async () => {
       timestamp: new Date()
     }
     messages.value.push(errorMessage)
+    saveState()
+    // 错误回复时不自动滚动，让用户自由滚动
     ElMessage.error('请求失败，请检查网络连接或稍后重试')
   } finally {
     isLoading.value = false
-    scrollToBottom()
   }
 }
 
@@ -654,6 +1129,13 @@ const sendStreamingMessage = (message) => {
     // 获取对话上下文
     const context = getFormattedContext()
 
+    // 获取用户名（学生用户名为studentId）
+    // 注意：学生角色的localStorage键使用 ROLE_STUDENT 而非 STUDENT
+    const roleSuffix = props.role === 'student' ? 'ROLE_STUDENT' : props.role.toUpperCase()
+    const usernameKey = props.role === 'student' ? 'studentId' : 'username'
+    const username = localStorage.getItem(`${props.role}_${usernameKey}_${roleSuffix}`) ||
+                     localStorage.getItem(`${props.role}_username_${roleSuffix}`) || ''
+
     fetch('/api/ai/chat/stream', {
       method: 'POST',
       headers: headers,
@@ -661,7 +1143,8 @@ const sendStreamingMessage = (message) => {
         message: message,
         context: context,
         model: selectedModel.value,
-        role: props.role
+        role: props.role,
+        username: username
       }),
       signal: controller.signal
     })
@@ -711,7 +1194,23 @@ const sendStreamingMessage = (message) => {
 
                 if (data.type === 'chunk') {
                   streamingMessage.value += data.content
-                  nextTick(() => scrollToBottom())
+                  // 流式过程中不自动滚动，让用户自由滚动查看
+                } else if (data.type === 'job_recommendation') {
+                  // 岗位推荐类型，直接保存完整数据
+                  const aiMessage = {
+                    role: 'assistant',
+                    content: data.content || '',
+                    type: 'job_recommendation',
+                    jobData: data.data,
+                    timestamp: new Date()
+                  }
+                  messages.value.push(aiMessage)
+                  saveState()
+                  streamingMessage.value = ''
+                  isLoading.value = false
+                  reader.cancel()
+                  resolve()
+                  return
                 } else if (data.type === 'end') {
                   // 流结束时，保存原始内容，渲染时再格式化
                   const aiMessage = {
@@ -720,6 +1219,7 @@ const sendStreamingMessage = (message) => {
                     timestamp: new Date()
                   }
                   messages.value.push(aiMessage)
+                  saveState()
                   streamingMessage.value = ''
                   isLoading.value = false
                   reader.cancel()
@@ -765,14 +1265,30 @@ const scrollToBottom = () => {
   })
 }
 
+// 滚动到指定消息位置
+const scrollToMessage = (index) => {
+  nextTick(() => {
+    if (messagesContainer.value) {
+      const messagesEl = messagesContainer.value.$el || messagesContainer.value
+      const messageItems = messagesEl.querySelectorAll('.message')
+      if (messageItems[index]) {
+        messageItems[index].scrollIntoView({ behavior: 'smooth', block: 'center' })
+      } else {
+        // 如果找不到，滚动到底部
+        messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight
+      }
+    }
+  })
+}
+
 // 保存状态到本地存储
 const saveState = () => {
-  localStorage.setItem(`internshipAIBallPosition_${props.role}`, JSON.stringify({
+  localStorage.setItem(getStorageKey('internshipAIBallPosition'), JSON.stringify({
     x: ballState.x,
     y: ballState.y
   }))
 
-  localStorage.setItem(`internshipAIPanelState_${props.role}`, JSON.stringify({
+  localStorage.setItem(getStorageKey('internshipAIPanelState'), JSON.stringify({
     x: panelState.x,
     y: panelState.y,
     width: panelState.width,
@@ -780,7 +1296,7 @@ const saveState = () => {
   }))
 
   const recentMessages = messages.value.slice(-20)
-  localStorage.setItem(`internshipAIChatHistory_${props.role}`, JSON.stringify(recentMessages))
+  localStorage.setItem(getStorageKey('internshipAIChatHistory'), JSON.stringify(recentMessages))
 }
 
 // 节流保存函数，减少频繁写入
@@ -793,10 +1309,23 @@ const throttledSaveState = () => {
   }, 300)
 }
 
+// 获取用户唯一标识（用于区分不同用户的聊天历史）
+const getUserIdentifier = () => {
+  // 优先使用用户ID，其次使用用户名
+  const userId = localStorage.getItem('userId') || localStorage.getItem('studentId')
+  const username = localStorage.getItem('username')
+  return userId || username || 'anonymous'
+}
+
+// 获取带有用户标识的存储key
+const getStorageKey = (prefix) => {
+  return `${prefix}_${props.role}_${getUserIdentifier()}`
+}
+
 // 组件挂载时加载历史数据
 onMounted(() => {
   try {
-    const savedBallPosition = localStorage.getItem(`internshipAIBallPosition_${props.role}`)
+    const savedBallPosition = localStorage.getItem(getStorageKey('internshipAIBallPosition'))
     if (savedBallPosition) {
       const { x, y } = JSON.parse(savedBallPosition)
       if (typeof x === 'number' && typeof y === 'number' && !isNaN(x) && !isNaN(y)) {
@@ -812,7 +1341,7 @@ onMounted(() => {
     setDefaultBallPosition()
   }
 
-  const savedPanelState = localStorage.getItem(`internshipAIPanelState_${props.role}`)
+  const savedPanelState = localStorage.getItem(getStorageKey('internshipAIPanelState'))
   if (savedPanelState) {
     try {
       const state = JSON.parse(savedPanelState)
@@ -825,13 +1354,59 @@ onMounted(() => {
     }
   }
 
-  const savedMessages = localStorage.getItem(`internshipAIChatHistory_${props.role}`)
+  const savedMessages = localStorage.getItem(getStorageKey('internshipAIChatHistory'))
   if (savedMessages) {
     try {
       messages.value = JSON.parse(savedMessages)
     } catch (e) {
       console.warn('加载聊天历史失败:', e)
     }
+  }
+
+  // 企业端气泡消息初始化
+  if (props.role === 'company') {
+    // 每次组件挂载时检查是否需要重置关闭状态（用于处理重新登录的情况）
+    const closedKey = `internshipAICompanyBubbleClosed_${props.role}`
+    if (localStorage.getItem(closedKey) === 'true') {
+      console.log('[FloatingAIBall] 检测到新会话，清除企业气泡关闭状态')
+      localStorage.removeItem(closedKey)
+    }
+    // 获取统计数据（仅初始化时调用一次）
+    fetchCompanyStats()
+    // 注册WebSocket监听实时更新
+    onCompanyTodoUpdate(handleCompanyTodoUpdate)
+    // 延迟显示气泡，等悬浮球位置稳定后再显示
+    setTimeout(() => {
+      updateCompanyBubblePos()
+      if (shouldShowCompanyBubble()) {
+        showCompanyReminderBubble()
+      }
+    }, 1000)
+  }
+
+  // 学生端气泡初始化
+  if (props.role === 'student') {
+    // 每次组件挂载时检查是否需要重置关闭状态（用于处理重新登录的情况）
+    const closedKey = `internshipAItipBubbleClosed_${props.role}`
+    if (localStorage.getItem(closedKey) === 'true') {
+      console.log('[FloatingAIBall] 检测到新会话，清除学生气泡关闭状态')
+      localStorage.removeItem(closedKey)
+    }
+    setTimeout(() => {
+      showTipBubbleTimer()
+    }, 1000)
+  }
+
+  // 教师端/管理员端鼓励气泡初始化
+  if (props.role === 'teacher' || props.role === 'admin') {
+    // 每次组件挂载时检查是否需要重置禁用状态（用于处理重新登录的情况）
+    const disabledKey = `internshipAIEncouragementDisabled_${props.role}`
+    if (localStorage.getItem(disabledKey) === 'true') {
+      console.log('[FloatingAIBall] 检测到新会话，清除鼓励气泡禁用状态')
+      localStorage.removeItem(disabledKey)
+    }
+    // 启动鼓励语循环
+    startEncouragementCycle()
   }
 
   window.addEventListener('resize', handleWindowResize)
@@ -880,6 +1455,12 @@ onUnmounted(() => {
 
   // 清理窗口resize监听
   window.removeEventListener('resize', handleWindowResize)
+
+  // 取消WebSocket企业待办更新监听
+  offCompanyTodoUpdate(handleCompanyTodoUpdate)
+
+  // 清理鼓励气泡定时器
+  stopEncouragementCycle()
 
   // 清除节流定时器并保存最终状态
   if (saveStateTimer) {
@@ -960,13 +1541,18 @@ body.panel-resizing .chat-panel {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
   display: flex;
   flex-direction: column;
-  overflow: visible;
+  overflow: hidden;
   transform-origin: center center;
   resize: both;
   /* 改用 transform 替代 width/height 变化以获得更好的性能 */
   will-change: transform;
   /* 禁用所有过渡以确保拖拽/调整大小时的即时响应 */
   transition: none;
+}
+
+/* 隐藏浏览器原生的 resize 图标 */
+.chat-panel::-webkit-resizer {
+  display: none;
 }
 
 .chat-header {
@@ -1079,7 +1665,6 @@ body.panel-resizing .chat-panel {
   flex: 1;
   padding: 20px;
   background: #fafbfc;
-  border-radius: 0 0 24px 24px;
 }
 
 .chat-messages :deep(.el-scrollbar__wrap) {
@@ -1203,6 +1788,7 @@ body.panel-resizing .chat-panel {
 .message[data-role="assistant"] .message-content-container {
   display: flex;
   justify-content: flex-start;
+  max-width: 100%;
 }
 
 .message-bubble {
@@ -1302,6 +1888,7 @@ body.panel-resizing .chat-panel {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 12px;
+  gap: 16px;
 }
 
 .model-selection {
@@ -1319,7 +1906,7 @@ body.panel-resizing .chat-panel {
 .textarea-with-button {
   position: relative;
   display: flex;
-  gap: 12px;
+  gap: 16px;
   align-items: flex-end;
 }
 
@@ -1456,5 +2043,390 @@ body.panel-resizing .chat-panel {
 *::selection {
   background: #409EFF;
   color: white;
+}
+
+/* 企业端待办气泡样式 */
+.company-bubble {
+  position: fixed;
+  z-index: 9998;
+  width: 240px;
+  background: linear-gradient(135deg, #FFFDF7 0%, #E8F5E9 100%);
+  border-radius: 16px;
+  box-shadow: 0 4px 20px rgba(46, 125, 50, 0.15);
+  padding: 16px;
+  animation: company-bubble-pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.company-bubble-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.company-bubble-header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.company-bubble-icon {
+  font-size: 20px;
+}
+
+.company-bubble-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #2E7D32;
+}
+
+.company-bubble-divider {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, #c8e6c9, transparent);
+  margin: 10px 0;
+}
+
+.company-bubble-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.company-bubble-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: #606266;
+}
+
+.company-bubble-badge {
+  color: #ff7eb3;
+  font-size: 15px;
+  font-weight: 600;
+  transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+}
+
+.badge-number {
+  display: inline-block;
+  transition: all 0.3s ease;
+}
+
+.badge-flash {
+  animation: badge-pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes badge-pop {
+  0% { transform: scale(1); }
+  40% { transform: scale(1.25); color: #ff6b9d; }
+  70% { transform: scale(0.95); }
+  100% { transform: scale(1); }
+}
+
+.company-bubble-flash {
+  animation: bubble-glow 0.5s ease-out;
+}
+
+@keyframes bubble-glow {
+  0% { box-shadow: 0 4px 20px rgba(46, 125, 50, 0.15); transform: scale(1); }
+  35% { box-shadow: 0 5px 25px rgba(46, 125, 50, 0.25); transform: scale(1.015); }
+  100% { box-shadow: 0 4px 20px rgba(46, 125, 50, 0.15); transform: scale(1); }
+}
+
+.company-bubble-empty {
+  font-size: 13px;
+  color: #909399;
+}
+
+.company-bubble-close {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #f5f7fa;
+  border: none;
+  color: #909399;
+  font-size: 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  line-height: 1;
+  flex-shrink: 0;
+  transition: all 0.2s;
+}
+
+.company-bubble-close:hover {
+  background: #fee;
+  color: #f56c6c;
+}
+
+/* 学生端气泡样式 - 改为和企业端一致 */
+.tip-bubble {
+  position: fixed;
+  z-index: 9998;
+  width: 240px;
+  background: linear-gradient(135deg, #FFFDF7 0%, #E8F5E9 100%);
+  border-radius: 16px;
+  box-shadow: 0 4px 20px rgba(46, 125, 50, 0.15);
+  padding: 16px;
+  animation: company-bubble-pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.tip-bubble-inner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-right: 20px;
+}
+
+.tip-bubble-icon {
+  font-size: 24px;
+  flex-shrink: 0;
+}
+
+.tip-bubble-text {
+  font-size: 14px;
+  color: #2E7D32;
+  line-height: 1.5;
+}
+
+.tip-bubble-close {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.06);
+  border: none;
+  color: #909399;
+  font-size: 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  line-height: 1;
+  transition: all 0.2s;
+}
+
+.tip-bubble-close:hover {
+  background: rgba(245, 108, 108, 0.15);
+  color: #f56c6c;
+}
+
+/* 入场动画 */
+@keyframes company-bubble-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.85) translateX(15px);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1.05) translateX(-2px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateX(0);
+  }
+}
+
+/* 气泡消失动画 */
+.bubble-pop-leave-active {
+  transition: all 0.25s cubic-bezier(0.4, 0, 1, 1);
+}
+
+.bubble-pop-leave-to {
+  opacity: 0;
+  transform: scale(0.85) translateX(10px);
+}
+
+/* 鼓励气泡样式 - 薄荷绿+奶油白配色 */
+.encouragement-bubble {
+  position: fixed;
+  z-index: 9998;
+  width: 220px;
+  background: linear-gradient(135deg, #FFFDF7 0%, #E8F5E9 100%);
+  border-radius: 16px;
+  box-shadow: 0 4px 20px rgba(46, 125, 50, 0.15);
+  padding: 16px;
+  animation: company-bubble-pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.encouragement-bubble-inner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.encouragement-icon {
+  font-size: 28px;
+  flex-shrink: 0;
+}
+
+.encouragement-text {
+  font-size: 14px;
+  color: #2E7D32;
+  line-height: 1.5;
+  flex: 1;
+}
+
+.encouragement-bubble-footer {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.encouragement-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: #999;
+  cursor: pointer;
+}
+
+.encouragement-checkbox input {
+  cursor: pointer;
+}
+
+/* 岗位推荐卡片样式 */
+.job-recommendation {
+  padding: 10px 0;
+}
+
+.job-recommendation-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #eee;
+}
+
+.job-icon {
+  font-size: 18px;
+}
+
+.job-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+
+.job-card-compact {
+  background: #fff;
+  border: 1px solid #e8e8e8;
+  border-radius: 10px;
+  padding: 14px 16px;
+  transition: all 0.2s;
+}
+
+.job-card-compact:hover {
+  border-color: #409EFF;
+  box-shadow: 0 2px 8px rgba(64, 158, 255, 0.12);
+}
+
+.job-row1 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.job-name-compact {
+  font-size: 16px;
+  font-weight: 600;
+  color: #333;
+}
+
+.job-salary-compact {
+  font-size: 13px;
+  color: #22c55e;
+  font-weight: 600;
+}
+
+.job-row2 {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.job-company-compact {
+  font-size: 12px;
+  color: #666;
+}
+
+.job-row3 {
+  display: flex;
+  gap: 12px;
+  font-size: 12px;
+  color: #999;
+  margin-bottom: 8px;
+}
+
+.job-location-compact,
+.job-contact-compact,
+.job-phone-compact {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.job-row4 {
+  display: flex;
+  gap: 6px;
+}
+
+.action-btn {
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 11px;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.action-btn.favorite {
+  background: #fff;
+  border: 1px solid #E6A23C;
+  color: #E6A23C;
+}
+
+.action-btn.favorite:hover {
+  background: #E6A23C;
+  color: #fff;
+}
+
+.action-btn.favorited {
+  background: #E6A23C;
+  border: 1px solid #E6A23C;
+  color: #fff;
+}
+
+.action-btn.go-apply {
+  background: #409EFF;
+  color: #fff;
+  flex: 1;
+}
+
+.action-btn.go-apply:hover {
+  background: #66b1ff;
+}
+
+.job-empty {
+  text-align: center;
+  padding: 20px;
+  color: #999;
+  font-size: 13px;
 }
 </style>

@@ -167,6 +167,7 @@
         <div
           v-for="job in paginatedJobs"
           :key="job.id"
+          :data-job-id="job.id"
           class="job-card"
           @click="viewJobDetail(job)"
         >
@@ -574,7 +575,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import {
   Location,
   Money,
@@ -658,6 +659,7 @@ const getStudentId = () => {
 }
 
 const router = useRouter()
+const route = useRoute()
 
 const searchKeyword = ref('')
 const showFilter = ref(false)
@@ -954,6 +956,18 @@ const viewJobDetail = async (job) => {
   showJobDetailDialog.value = true
 }
 
+// 处理来自AI悬浮球的查看详情请求
+const handleShowJobDetailFromAI = (data) => {
+  console.log('Jobs页面收到showJobDetail事件, data:', data)
+  if (data && data.job) {
+    viewJobDetail(data.job)
+  } else if (data && data.positionId) {
+    console.log('准备打开职位详情, positionId:', data.positionId)
+    // AI悬浮球只传了positionId，需要构建job对象
+    viewJobDetail({ id: data.positionId })
+  }
+}
+
 const applyJob = async (job) => {
   // 初始化表单数据，从用户信息中获取默认值
   currentApplyingJob.value = job
@@ -1189,6 +1203,57 @@ onMounted(async () => {
   ])
   console.log('【DEBUG】studentStatus after fetch:', studentStatus.value)
 
+  // 检查是否有jobId或positionId参数（从AI推荐跳转过来）
+  const targetJobId = route.query.jobId || route.query.positionId
+  if (targetJobId) {
+    const jobId = Number(targetJobId)
+    // 滚动到对应职位卡片
+    const scrollToJobCard = () => {
+      // 先重置筛选条件
+      activeQuickFilter.value = 'all'
+      selectedIndustry.value = []
+      selectedCompany.value = []
+      selectedRegion.value = []
+      selectedSalary.value = ''
+      selectedDuration.value = ''
+      selectedInternshipBase.value = ''
+
+      // 使用搜索功能找到目标职位
+      const targetJob = jobs.value.find(j => j.id === jobId)
+      if (targetJob) {
+        searchKeyword.value = targetJob.title
+        currentPage.value = 1
+
+        // 等待搜索结果渲染后滚动并高亮
+        setTimeout(() => {
+          const cards = document.querySelectorAll('.job-card')
+          for (const card of cards) {
+            const cardJobId = Number(card.getAttribute('data-job-id'))
+            if (cardJobId === jobId) {
+              card.scrollIntoView({ behavior: 'smooth', block: 'center' })
+              card.classList.add('highlight-card')
+              setTimeout(() => {
+                card.classList.remove('highlight-card')
+              }, 5000)
+              break
+            }
+          }
+        }, 100)
+      } else {
+        console.warn('未找到目标职位:', jobId)
+      }
+    }
+    // 如果职位列表已加载则立即查找，否则等待
+    if (jobs.value.length > 0) {
+      scrollToJobCard()
+    } else {
+      // 监听职位列表加载完成
+      watch(jobs, () => {
+        scrollToJobCard()
+      }, { once: true })
+    }
+  }
+
   // 连接WebSocket并监听岗位更新
   const token = localStorage.getItem('token')
   if (token) {
@@ -1200,6 +1265,55 @@ onMounted(async () => {
   // 监听收藏页面或其他页面的申请状态变化
   eventBus.on('applicationSubmitted', handleApplicationSubmitted)
   eventBus.on('applicationCancelled', handleApplicationCancelled)
+  // 监听AI悬浮球的查看详情请求
+  eventBus.on('showJobDetail', handleShowJobDetailFromAI)
+  // 监听AI悬浮球的跳转职位请求
+  eventBus.on('scrollToJob', handleScrollToJob)
+})
+
+// 处理AI悬浮球跳转职位
+const handleScrollToJob = ({ positionId }) => {
+  if (!positionId) return
+  const jobId = Number(positionId)
+
+  // 重置筛选条件
+  activeQuickFilter.value = 'all'
+  selectedIndustry.value = []
+  selectedCompany.value = []
+  selectedRegion.value = []
+  selectedSalary.value = ''
+  selectedDuration.value = ''
+  selectedInternshipBase.value = ''
+
+  // 使用搜索功能找到目标职位
+  const targetJob = jobs.value.find(j => j.id === jobId)
+  if (targetJob) {
+    searchKeyword.value = targetJob.title
+    currentPage.value = 1
+
+    // 等待搜索结果渲染后滚动并高亮
+    setTimeout(() => {
+      const cards = document.querySelectorAll('.job-card')
+      for (const card of cards) {
+        const cardJobId = Number(card.getAttribute('data-job-id'))
+        if (cardJobId === jobId) {
+          card.scrollIntoView({ behavior: 'smooth', block: 'center' })
+          card.classList.add('highlight-card')
+          setTimeout(() => {
+            card.classList.remove('highlight-card')
+          }, 5000)
+          break
+        }
+      }
+    }, 100)
+  }
+}
+
+// 监听路由query变化（处理从悬浮框跳转过来的情况）
+watch(() => route.query.positionId, (newPositionId) => {
+  if (newPositionId) {
+    handleScrollToJob({ positionId: newPositionId })
+  }
 })
 
 onUnmounted(() => {
@@ -1209,6 +1323,10 @@ onUnmounted(() => {
   // 移除申请状态监听
   eventBus.off('applicationSubmitted', handleApplicationSubmitted)
   eventBus.off('applicationCancelled', handleApplicationCancelled)
+  // 移除AI悬浮球的查看详情监听
+  eventBus.off('showJobDetail', handleShowJobDetailFromAI)
+  // 移除AI悬浮球的跳转职位监听
+  eventBus.off('scrollToJob', handleScrollToJob)
 })
 </script>
 
@@ -1630,6 +1748,23 @@ onUnmounted(() => {
   background: linear-gradient(135deg, #ffffff 0%, #f0f9ff 100%);
 }
 
+.job-card.highlight-card {
+  animation: highlightFlash 1s ease-in-out infinite;
+  border-color: #409EFF;
+  box-shadow: 0 0 20px rgba(64, 158, 255, 0.6);
+}
+
+@keyframes highlightFlash {
+  0%, 100% {
+    box-shadow: 0 0 5px rgba(64, 158, 255, 0.4);
+    border-color: #409EFF;
+  }
+  50% {
+    box-shadow: 0 0 25px rgba(64, 158, 255, 0.8);
+    border-color: #67C23A;
+  }
+}
+
 .job-card:hover .job-title {
   color: #409EFF;
 }
@@ -1947,23 +2082,23 @@ onUnmounted(() => {
 }
 
 /* 职位详情弹窗 */
-.job-detail-dialog :deep(.el-dialog) {
+.edit-profile-dialog :deep(.el-dialog) {
   border-radius: 8px;
   overflow: hidden;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
 }
 
-.job-detail-dialog :deep(.el-dialog__header) {
+.edit-profile-dialog :deep(.el-dialog__header) {
   padding: 0;
   border-bottom: none;
   background: transparent;
 }
 
-.job-detail-dialog :deep(.el-dialog__title) {
+.edit-profile-dialog :deep(.el-dialog__title) {
   display: none;
 }
 
-.job-detail-dialog :deep(.el-dialog__headerbtn .el-dialog__close) {
+.edit-profile-dialog :deep(.el-dialog__headerbtn .el-dialog__close) {
   color: white;
   font-size: 20px;
   top: 15px;
@@ -1975,16 +2110,16 @@ onUnmounted(() => {
   transition: all 0.3s ease;
 }
 
-.job-detail-dialog :deep(.el-dialog__headerbtn .el-dialog__close:hover) {
+.edit-profile-dialog :deep(.el-dialog__headerbtn .el-dialog__close:hover) {
   background: rgba(255, 255, 255, 0.3);
 }
 
-.job-detail-dialog :deep(.el-dialog__body) {
+.edit-profile-dialog :deep(.el-dialog__body) {
   padding: 0;
   background-color: #ffffff;
 }
 
-.job-detail-dialog :deep(.el-dialog__footer) {
+.edit-profile-dialog :deep(.el-dialog__footer) {
   padding: 0;
   border-top: none;
   background: transparent;

@@ -1,10 +1,14 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ElScrollbar } from 'element-plus'
 import { useAuthStore } from '@/store/auth'
 import FloatingAIBall from '@/components/FloatingAIBall.vue'
+import {
+  initAnnouncementWebSocket,
+  disconnectAnnouncementWebSocket
+} from '@/utils/websocket'
 import {
   Avatar,
   CaretBottom,
@@ -162,7 +166,32 @@ const handleCommand = async (command) => {
 
 onMounted(() => {
   console.log('CompanyLayout 挂载，当前用户:', currentUser.value)
+  initWebSocket()
 })
+
+onUnmounted(() => {
+  disconnectAnnouncementWebSocket()
+})
+
+// 初始化WebSocket连接
+const initWebSocket = () => {
+  let token = authStore.token
+
+  if (!token) {
+    const rolePrefix = 'company_'
+    const role = 'ROLE_COMPANY'
+    token = localStorage.getItem(`${rolePrefix}accessToken_${role}`) ||
+            localStorage.getItem(`${rolePrefix}token_${role}`) ||
+            localStorage.getItem('accessToken')
+  }
+
+  if (token) {
+    console.log('初始化 WebSocket 连接，token 存在')
+    initAnnouncementWebSocket(token, () => {})
+  } else {
+    console.warn('未找到 token，无法初始化 WebSocket')
+  }
+}
 </script>
 
 <template>

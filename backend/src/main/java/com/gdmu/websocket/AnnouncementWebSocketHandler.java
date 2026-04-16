@@ -381,4 +381,39 @@ public class AnnouncementWebSocketHandler extends TextWebSocketHandler {
 
         sendToUser(userId, wsMessage);
     }
+
+    /**
+     * 向指定企业用户推送待办数据更新
+     * @param companyId 企业ID
+     * @param pendingApplications 待处理申请数
+     * @param pendingConfirmations 待确认实习表数
+     */
+    public void sendCompanyTodoUpdate(Long companyId, Long pendingApplications, Long pendingConfirmations) {
+        log.info("向企业 {} 推送待办数据更新：待处理申请={}, 待确认实习表={}",
+                 companyId, pendingApplications, pendingConfirmations);
+
+        Map<String, Object> data = new HashMap<>();
+        data.put("pendingApplications", pendingApplications);
+        data.put("pendingConfirmations", pendingConfirmations);
+
+        Map<String, Object> wsMessage = new HashMap<>();
+        wsMessage.put("type", "company_todo_update");
+        wsMessage.put("data", data);
+        wsMessage.put("timestamp", System.currentTimeMillis());
+
+        // 推送给对应的企业用户
+        log.info("当前在线session数量: {}, 查找companyId={}", sessions.size(), companyId);
+        for (WebSocketSession session : sessions.values()) {
+            Long sessionCompanyId = (Long) session.getAttributes().get("companyId");
+            log.info("检查session: sessionId={}, companyId={}, role={}", session.getId(), sessionCompanyId, session.getAttributes().get("role"));
+            if (sessionCompanyId != null && sessionCompanyId.equals(companyId)) {
+                try {
+                    sendMessage(session, wsMessage);
+                    log.info("已向企业 {} 推送待办数据更新", companyId);
+                } catch (Exception e) {
+                    log.error("推送待办数据失败：sessionId={}, error={}", session.getId(), e.getMessage());
+                }
+            }
+        }
+    }
 }

@@ -235,7 +235,9 @@
                 <if test="companyId != null">
                     and
                 </if>
-                p.position_name like concat('%',#{positionName},'%')
+                (p.position_name like concat('%',#{positionName},'%')
+                 or p.requirements like concat('%',#{positionName},'%')
+                 or p.description like concat('%',#{positionName},'%'))
             </if>
         </where>
         order by p.create_time desc

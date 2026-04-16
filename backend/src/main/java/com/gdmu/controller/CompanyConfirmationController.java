@@ -8,7 +8,9 @@ import com.gdmu.entity.User;
 import com.gdmu.service.InternshipConfirmationRecordService;
 import com.gdmu.service.InternshipProgressRecordService;
 import com.gdmu.service.StudentInternshipStatusService;
+import com.gdmu.service.StudentJobApplicationService;
 import com.gdmu.service.UserService;
+import com.gdmu.websocket.AnnouncementWebSocketHandler;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -37,6 +39,12 @@ public class CompanyConfirmationController {
     @Autowired
     private InternshipProgressRecordService progressRecordService;
 
+    @Autowired
+    private AnnouncementWebSocketHandler webSocketHandler;
+
+    @Autowired
+    private StudentJobApplicationService studentJobApplicationService;
+
     private User getCurrentUser() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth == null || !(auth.getPrincipal() instanceof org.springframework.security.core.userdetails.User)) {
@@ -44,6 +52,29 @@ public class CompanyConfirmationController {
         }
         String username = ((org.springframework.security.core.userdetails.User) auth.getPrincipal()).getUsername();
         return userService.findByUsername(username);
+    }
+
+    /**
+     * 推送企业待办数据更新
+     */
+    private void pushTodoUpdate(Long companyId) {
+        try {
+            // 待处理申请数
+            List<com.gdmu.entity.StudentJobApplication> applications = studentJobApplicationService.findByCompanyId(companyId);
+            long pendingApplications = applications.stream()
+                    .filter(a -> "pending".equals(a.getStatus()))
+                    .count();
+
+            // 待确认实习表数 - 从学生实习状态表查询（company_confirm_status=0表示待确认）
+            List<StudentInternshipStatus> allStatuses = internshipStatusService.list(null, null, null, null, companyId, null, null, null, null, null);
+            long pendingConfirmations = allStatuses.stream()
+                    .filter(s -> s.getCompanyConfirmStatus() != null && s.getCompanyConfirmStatus() == 0)
+                    .count();
+
+            webSocketHandler.sendCompanyTodoUpdate(companyId, pendingApplications, pendingConfirmations);
+        } catch (Exception e) {
+            log.error("推送待办数据失败: {}", e.getMessage());
+        }
     }
 
     /**
@@ -145,6 +176,9 @@ public class CompanyConfirmationController {
             // 更新实习进展记录状态为已确认
             progressRecordService.updateStatusByRelatedId(record.getId(), "internship_confirmation", "success");
 
+            // 推送待办数据更新
+            pushTodoUpdate(user.getId());
+
             return Result.success("确认成功");
         } catch (Exception e) {
             log.error("确认失败: {}", e.getMessage(), e);
@@ -178,6 +212,9 @@ public class CompanyConfirmationController {
 
             // 更新实习进展记录状态为已拒绝
             progressRecordService.updateStatusByRelatedId(record.getId(), "internship_confirmation", "failed");
+
+            // 推送待办数据更新
+            pushTodoUpdate(user.getId());
 
             return Result.success("已拒绝");
         } catch (Exception e) {

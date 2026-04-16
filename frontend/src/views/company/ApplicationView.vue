@@ -408,7 +408,7 @@ const handleExport = async () => {
       '专业': item.major,
       '联系电话': item.phone,
       '申请日期': item.applyDate,
-      '申请状态': item.status === 'pending' ? '待审核' : item.status === 'approved' ? '已通过' : item.status === 'rejected' ? '已拒绝' : item.status,
+      '申请状态': item.status === 'pending' ? '待审核' : item.status === 'approved' ? '已通过' : item.status === 'rejected' ? '已拒绝' : item.status === 'interview_passed' ? '面试通过' : item.status === 'interview_failed' ? '面试没通过' : item.status === 'withdrawn' ? '已撤回' : item.status === 'defaulted' ? '已失效' : '未知状态',
       '自我介绍': item.selfIntroduction
     }))
 
@@ -622,10 +622,12 @@ const handleDownloadFile = async (archiveId, fileName) => {
             <el-tag v-else-if="row.status === 'rejected'" type="danger">已拒绝</el-tag>
             <el-tag v-else-if="row.status === 'interview_passed'" type="success">面试通过</el-tag>
             <el-tag v-else-if="row.status === 'interview_failed'" type="danger">面试没通过</el-tag>
-            <el-tag v-else type="info">{{ row.status }}</el-tag>
+            <el-tag v-else-if="row.status === 'withdrawn'" type="info">已撤回</el-tag>
+            <el-tag v-else-if="row.status === 'defaulted'" type="info">已失效</el-tag>
+            <el-tag v-else type="info">未知状态</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" fixed="right" width="220">
+        <el-table-column label="操作" fixed="right" width="340" align="center">
           <template #default="{ row }">
             <!-- 待审核状态：显示"同意"按钮 -->
             <el-button
@@ -718,7 +720,9 @@ const handleDownloadFile = async (archiveId, fileName) => {
               <el-tag v-if="currentStudent.status === 'pending'" type="warning">待审核</el-tag>
               <el-tag v-else-if="currentStudent.status === 'approved'" type="success">已通过</el-tag>
               <el-tag v-else-if="currentStudent.status === 'rejected'" type="danger">已拒绝</el-tag>
-              <el-tag v-else type="info">{{ currentStudent.status }}</el-tag>
+              <el-tag v-else-if="currentStudent.status === 'withdrawn'" type="info">已撤回</el-tag>
+              <el-tag v-else-if="currentStudent.status === 'defaulted'" type="info">已失效</el-tag>
+              <el-tag v-else type="info">未知状态</el-tag>
             </el-descriptions-item>
           </el-descriptions>
         </div>

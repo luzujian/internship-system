@@ -1,6 +1,7 @@
 package com.gdmu.service;
 
 import com.gdmu.entity.dto.PositionVO;
+import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.RedisTemplate;
@@ -26,6 +27,15 @@ public class PositionCacheService {
 
     @Autowired
     private RedisTemplate<String, Object> redisTemplate;
+
+    /**
+     * 后端启动时清除职位缓存，确保数据格式更新
+     */
+    @PostConstruct
+    public void initClearCache() {
+        log.info("后端启动，清除职位缓存...");
+        clearAllCaches();
+    }
 
     /**
      * 获取缓存的职位列表

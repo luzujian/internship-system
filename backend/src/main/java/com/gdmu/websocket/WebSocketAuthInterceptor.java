@@ -47,22 +47,26 @@ public class WebSocketAuthInterceptor implements HandshakeInterceptor {
             
             try {
                 Claims claims = jwtUtils.parseToken(token);
-                
+
                 Long userId = claims.get("id", Long.class);
                 if (userId == null) {
                     userId = claims.get("userId", Long.class);
                 }
                 String username = claims.get("username", String.class);
                 String role = claims.get("role", String.class);
-                
+                Long companyId = claims.get("companyId", Long.class);
+
                 if (userId == null) {
                     log.warn("WebSocket握手失败：用户ID为空");
                     return false;
                 }
-                
+
                 attributes.put("userId", userId);
                 attributes.put("username", username);
                 attributes.put("role", role);
+                if (companyId != null) {
+                    attributes.put("companyId", companyId);
+                }
                 
                 log.info("WebSocket握手成功：userId={}, username={}, role={}", userId, username, role);
                 return true;

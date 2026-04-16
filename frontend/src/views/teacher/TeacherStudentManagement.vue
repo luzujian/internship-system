@@ -721,7 +721,9 @@ const loadStudents = async () => {
         reportCount: item.reportCount || 0,
         attendanceRate: item.attendanceRate || 0,
         internshipLogCount: item.internshipLogCount || 0,
-        evaluationScore: item.evaluationScore || 0
+        evaluationScore: item.evaluationScore || 0,
+        // 实习状态：后端返回的是 status 字段（StudentInternshipStatus 对象）
+        internshipStatus: item.status !== undefined ? item.status : (item.internshipStatus !== undefined ? item.internshipStatus : null)
       }))
       total.value = response?.total || 0
     }
@@ -947,7 +949,7 @@ const getStatusTagType = (status: number | string): string => {
     case 1: return 'warning'   // 待确认 - 黄色
     case 0: return 'info'      // 无offer - 灰色
     case 5: return 'warning'    // 延期 - 黄色
-    case 3: return ''           // 进行中 - 默认
+    case 3: return 'primary'    // 进行中 - 蓝色
     case 4: return 'success'    // 已完成 - 绿色
     default: return 'info'
   }

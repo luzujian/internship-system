@@ -2557,6 +2557,7 @@ const downloadTemplate = (template) => {
 const handleOptionClick = (option) => {
   switch (option.action) {
     case 'myFavorites':
+      loadFavorites()
       showFavoritesDialog.value = true
       break
     case 'resumeManagement':
@@ -2911,13 +2912,24 @@ const handleApplicationCancelled = async (data) => {
   }
 }
 
+// 处理收藏状态变化事件
+const handleFavoriteChanged = async ({ positionId, isFavorited }) => {
+  console.log('收到收藏状态变化事件:', positionId, isFavorited)
+  // 重新加载收藏列表以获取最新状态
+  if (showFavoritesDialog.value) {
+    await loadFavorites()
+  }
+}
+
 eventBus.on('applicationSubmitted', handleApplicationSubmitted)
 eventBus.on('applicationCancelled', handleApplicationCancelled)
+eventBus.on('favoriteChanged', handleFavoriteChanged)
 
 // 组件卸载时移除事件监听器
 onUnmounted(() => {
   eventBus.off('applicationSubmitted', handleApplicationSubmitted)
   eventBus.off('applicationCancelled', handleApplicationCancelled)
+  eventBus.off('favoriteChanged', handleFavoriteChanged)
 })
 
 // 监听简历管理对话框打开，加载简历和证书列表

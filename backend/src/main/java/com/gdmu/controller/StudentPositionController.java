@@ -574,13 +574,13 @@ public class StudentPositionController {
         }
         vo.setLocation(location.length() > 0 ? location.toString() : "未知");
 
-        // salary <- salaryMin - salaryMax
+        // salary <- salaryMin - salaryMax (单位: K/月)
         if (position.getSalaryMin() != null && position.getSalaryMax() != null) {
-            vo.setSalary(position.getSalaryMin() + "-" + position.getSalaryMax() + "元/天");
+            vo.setSalary(position.getSalaryMin() + "-" + position.getSalaryMax() + "K/月");
         } else if (position.getSalaryMin() != null) {
-            vo.setSalary(position.getSalaryMin() + "元/天以上");
+            vo.setSalary(position.getSalaryMin() + "K/月起");
         } else if (position.getSalaryMax() != null) {
-            vo.setSalary(position.getSalaryMax() + "元/天以下");
+            vo.setSalary("最高" + position.getSalaryMax() + "K/月");
         } else {
             vo.setSalary("面议");
         }
@@ -713,13 +713,13 @@ public class StudentPositionController {
         }
         vo.setLocation(location.length() > 0 ? location.toString() : "未知");
 
-        // salary <- salaryMin - salaryMax
+        // salary <- salaryMin - salaryMax (单位: K/月)
         if (position.getSalaryMin() != null && position.getSalaryMax() != null) {
-            vo.setSalary(position.getSalaryMin() + "-" + position.getSalaryMax() + "元/天");
+            vo.setSalary(position.getSalaryMin() + "-" + position.getSalaryMax() + "K/月");
         } else if (position.getSalaryMin() != null) {
-            vo.setSalary(position.getSalaryMin() + "元/天以上");
+            vo.setSalary(position.getSalaryMin() + "K/月起");
         } else if (position.getSalaryMax() != null) {
-            vo.setSalary(position.getSalaryMax() + "元/天以下");
+            vo.setSalary("最高" + position.getSalaryMax() + "K/月");
         } else {
             vo.setSalary("面议");
         }

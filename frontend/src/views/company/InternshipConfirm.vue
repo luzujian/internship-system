@@ -441,7 +441,7 @@ const handleExport = async () => {
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" fixed="right" width="240">
+        <el-table-column label="操作" fixed="right" width="340" align="center">
           <template #default="{ row }">
             <el-button 
               v-if="row.companyConfirmStatus === 0"

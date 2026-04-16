@@ -9,8 +9,6 @@ import { ElMessage } from 'element-plus'
 import { ElScrollbar } from 'element-plus'
 import FilePreviewDialog from '@/components/FilePreviewDialog.vue'
 import {
-  initAnnouncementWebSocket,
-  disconnectAnnouncementWebSocket
 } from '@/utils/websocket'
 import {
   DocumentChecked,
@@ -131,8 +129,8 @@ const fetchStats = async () => {
     if (response.code === 200) {
       statsData.value[0].value = response.data.publishedPositions || 0
       statsData.value[1].value = response.data.totalApplications || 0
-      statsData.value[2].value = response.data.pendingApplications || 0
-      statsData.value[3].value = response.data.confirmedApplications || 0
+      statsData.value[2].value = response.data.pendingConfirmations || 0
+      statsData.value[3].value = response.data.confirmedConfirmations || 0
     }
   } catch (error) {
     console.error('获取统计数据失败:', error)
@@ -449,39 +447,17 @@ const handleWebSocketMessage = (data) => {
   }
 }
 
-const initWebSocket = () => {
-  let token = authStore.token
-  
-  if (!token) {
-    const rolePrefix = 'company_'
-    const role = 'ROLE_COMPANY'
-    token = localStorage.getItem(`${rolePrefix}accessToken_${role}`) ||
-            localStorage.getItem(`${rolePrefix}token_${role}`) ||
-            localStorage.getItem('accessToken')
-  }
-  
-  if (token) {
-    console.log('初始化 WebSocket 连接，token 存在')
-    initAnnouncementWebSocket(token, handleWebSocketMessage)
-  } else {
-    console.warn('未找到 token，无法初始化 WebSocket')
-  }
-}
-
 onMounted(() => {
   console.log('CompanyHome 组件已挂载')
   fetchStats()
   fetchRecentActivities()
   fetchNotifications()
 
-  initWebSocket()
-
   emitter.on('notification-refresh', handleNotificationRefresh)
 })
 
 onUnmounted(() => {
   console.log('CompanyHome 组件已卸载')
-  disconnectAnnouncementWebSocket()
   emitter.off('notification-refresh', handleNotificationRefresh)
 })
 </script>
