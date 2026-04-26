@@ -3,6 +3,7 @@ package com.gdmu.mapper;
 import com.gdmu.entity.CounselorAISettings;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
+import org.apache.ibatis.annotations.Update;
 
 @Mapper
 public interface CounselorAISettingsMapper {
@@ -18,4 +19,7 @@ public interface CounselorAISettingsMapper {
     int deleteById(@Param("id") Long id);
     
     int deleteByCounselorId(@Param("counselorId") Long counselorId);
+
+    @Update("UPDATE counselor_ai_settings SET ai_model_code = #{modelCode}, update_time = NOW()")
+    int updateAllModelCode(@Param("modelCode") String modelCode);
 }

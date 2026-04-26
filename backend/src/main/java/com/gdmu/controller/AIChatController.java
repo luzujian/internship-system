@@ -55,7 +55,16 @@ public class AIChatController {
     }
 
     private ChatClient getChatClientByModel(String model, String role) {
-        String modelCode = (model != null && model.equals("deepseek-reasoner")) ? "deepseek-reasoner" : "deepseek-chat";
+        String modelCode;
+        if (model != null && model.equals("deepseek-reasoner")) {
+            modelCode = "deepseek-reasoner";
+        } else if (model != null && model.equals("deepseek-v4-flash")) {
+            modelCode = "deepseek-v4-flash";
+        } else if (model != null && model.equals("deepseek-v4-pro")) {
+            modelCode = "deepseek-v4-pro";
+        } else {
+            modelCode = "deepseek-chat";
+        }
         String systemPrompt = getSystemPromptByRole(role);
         return chatClientFactory.createChatClient(modelCode, systemPrompt);
     }

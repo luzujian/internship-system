@@ -1,6 +1,7 @@
 package com.gdmu.service;
 
 import com.gdmu.config.DynamicChatClientFactory;
+import com.gdmu.entity.AIModel;
 import com.gdmu.exception.BusinessException;
 import com.gdmu.vo.StudentUserVO;
 import org.springframework.ai.chat.client.ChatClient;
@@ -24,15 +25,41 @@ public class StudentQueryAgentService {
 
     @Autowired
     private StudentUserService studentUserService;
-    
+
     @Autowired
     private DynamicChatClientFactory chatClientFactory;
-    
+
+    @Autowired
+    private AIModelService aiModelService;
+
     private static final String SYSTEM_PROMPT = "你是实习管理系统的学生查询助手，帮助学生查询个人信息、实习信息等。";
-    
+
     // 根据模型名称获取对应的ChatClient
     private ChatClient getChatClientByModel(String model) {
-        String modelCode = (model != null && model.equals("deepseek-reasoner")) ? "deepseek-reasoner" : "deepseek-chat";
+        String modelCode;
+        if (model == null || model.trim().isEmpty()) {
+            // 使用管理员设置的默认模型
+            try {
+                AIModel defaultModel = aiModelService.findDefaultModel();
+                if (defaultModel != null) {
+                    modelCode = defaultModel.getModelCode();
+                    log.info("使用管理员默认模型: {}", modelCode);
+                } else {
+                    modelCode = "deepseek-chat";
+                }
+            } catch (Exception e) {
+                log.warn("获取默认模型失败，使用deepseek-chat: {}", e.getMessage());
+                modelCode = "deepseek-chat";
+            }
+        } else if (model.equals("deepseek-reasoner")) {
+            modelCode = "deepseek-reasoner";
+        } else if (model.equals("deepseek-v4-flash")) {
+            modelCode = "deepseek-v4-flash";
+        } else if (model.equals("deepseek-v4-pro")) {
+            modelCode = "deepseek-v4-pro";
+        } else {
+            modelCode = "deepseek-chat";
+        }
         return chatClientFactory.createChatClient(modelCode, SYSTEM_PROMPT);
     }
 

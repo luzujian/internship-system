@@ -102,6 +102,39 @@
         </div>
       </div>
       <div class="header-actions">
+        <div class="model-select-wrapper" style="position: relative; margin-right: 8px;">
+          <div
+            class="model-select-trigger"
+            @click.stop="toggleModelDropdown"
+            style="display: flex; align-items: center; gap: 4px; padding: 5px 10px; background: rgba(255,255,255,0.9); border-radius: 4px; cursor: pointer; min-width: 150px;"
+          >
+            <span style="flex: 1; font-size: 12px; color: #333;">{{ getCurrentModelName() }}</span>
+            <span style="font-size: 10px; color: #666;">▼</span>
+          </div>
+          <Teleport to="body" :disabled="false">
+            <div
+              v-if="showModelDropdown"
+              class="model-select-dropdown"
+              :style="getModelDropdownStyle()"
+            >
+              <div
+                v-for="model in availableModels"
+                :key="model.modelCode"
+                @click.stop="selectModel(model.modelCode)"
+                :style="{
+                  padding: '8px 12px',
+                  cursor: 'pointer',
+                  fontSize: '12px',
+                  color: model.modelCode === selectedModel ? '#409EFF' : '#333',
+                  background: model.modelCode === selectedModel ? '#f0f9ff' : 'white',
+                  fontWeight: model.modelCode === selectedModel ? 'bold' : 'normal'
+                }"
+              >
+                {{ model.modelName }}
+              </div>
+            </div>
+          </Teleport>
+        </div>
         <button class="clear-btn" @click.stop="clearHistory">
           <span>清空</span>
         </button>
@@ -252,7 +285,7 @@
 <script setup>
 import { ref, reactive, computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { ElMessage, ElRadioGroup, ElRadioButton, ElScrollbar } from 'element-plus'
+import { ElMessage, ElRadioGroup, ElRadioButton, ElScrollbar, ElSelect, ElOption } from 'element-plus'
 import { Promotion } from '@element-plus/icons-vue'
 import request from '../utils/request'
 import eventBus from '../utils/eventBus'
@@ -281,14 +314,54 @@ const getTitle = () => {
   return titles[props.role] || 'AI助手'
 }
 
+// 获取当前模型名称
+const getCurrentModelName = () => {
+  const model = availableModels.value.find(m => m.modelCode === selectedModel.value)
+  return model ? model.modelName : '选择模型'
+}
+
+// 切换模型下拉框
+const toggleModelDropdown = () => {
+  showModelDropdown.value = !showModelDropdown.value
+}
+
+// 选择模型
+const selectModel = (modelCode) => {
+  selectedModel.value = modelCode
+  showModelDropdown.value = false
+}
+
+// 获取模型下拉框的位置样式
+const getModelDropdownStyle = () => {
+  const trigger = document.querySelector('.model-select-trigger')
+  if (!trigger) return {}
+
+  const rect = trigger.getBoundingClientRect()
+  return {
+    position: 'fixed',
+    top: `${rect.bottom + 4}px`,
+    left: `${rect.left}px`,
+    background: 'white',
+    borderRadius: '4px',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+    zIndex: '1002',
+    minWidth: `${rect.width}px`
+  }
+}
+
 // 基础状态
 const isExpanded = ref(false)
 const isLoading = ref(false)
 const userInput = ref('')
 const messages = ref([])
+const showModelDropdown = ref(false)
 const messagesContainer = ref(null)
 const chatPanel = ref(null)
-const selectedModel = ref('deepseek-chat')
+const selectedModel = ref('deepseek-v4-flash')
+const availableModels = ref([
+  { modelCode: 'deepseek-v4-flash', modelName: 'DeepSeek-V4-Flash' },
+  { modelCode: 'deepseek-v4-pro', modelName: 'DeepSeek-V4-Pro' }
+])
 const streamingMessage = ref('') // 当前流式回复的内容
 
 // 企业端气泡相关状态
@@ -919,6 +992,7 @@ const positionPanelAtCenter = () => {
 // 关闭聊天
 const closeChat = () => {
   isExpanded.value = false
+  showModelDropdown.value = false
 }
 
 // 清除聊天历史
@@ -1322,6 +1396,41 @@ const getStorageKey = (prefix) => {
   return `${prefix}_${props.role}_${getUserIdentifier()}`
 }
 
+// 获取可用的AI模型列表
+const fetchAvailableModels = async () => {
+  try {
+    const response = await request.get('/admin/ai-model/public/enabled')
+    // 后端返回 { code, message, data } 结构
+    // axios拦截器已返回 response.data，所以response直接就是Result对象
+    if (response.data && Array.isArray(response.data)) {
+      availableModels.value = response.data
+      // 如果当前选中的模型不在列表中，切换到第一个
+      if (availableModels.value.length > 0) {
+        const hasCurrentModel = availableModels.value.some(m => m.modelCode === selectedModel.value)
+        if (!hasCurrentModel) {
+          selectedModel.value = availableModels.value[0].modelCode
+        }
+      }
+    } else if (response.data && response.data.data && Array.isArray(response.data.data)) {
+      // 兼容旧写法
+      availableModels.value = response.data.data
+      if (availableModels.value.length > 0) {
+        const hasCurrentModel = availableModels.value.some(m => m.modelCode === selectedModel.value)
+        if (!hasCurrentModel) {
+          selectedModel.value = availableModels.value[0].modelCode
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('获取AI模型列表失败:', e)
+    // 失败时使用默认模型
+    availableModels.value = [
+      { modelCode: 'deepseek-v4-flash', modelName: 'DeepSeek-V4-Flash' },
+      { modelCode: 'deepseek-v4-pro', modelName: 'DeepSeek-V4-Pro' }
+    ]
+  }
+}
+
 // 组件挂载时加载历史数据
 onMounted(() => {
   try {
@@ -1409,6 +1518,9 @@ onMounted(() => {
     startEncouragementCycle()
   }
 
+  // 获取可用的AI模型列表
+  fetchAvailableModels()
+
   window.addEventListener('resize', handleWindowResize)
 })
 
@@ -1479,6 +1591,39 @@ watch([
   () => panelState.height,
   () => messages.value
 ], throttledSaveState)
+
+// 监听模型下拉框，显示时添加全局点击关闭
+watch(showModelDropdown, (newVal) => {
+  if (newVal) {
+    setTimeout(() => {
+      document.addEventListener('click', closeModelDropdownOnClickOutside)
+    }, 0)
+  } else {
+    document.removeEventListener('click', closeModelDropdownOnClickOutside)
+  }
+})
+
+// 监听面板位置变化，更新下拉框位置
+watch([
+  () => panelState.x,
+  () => panelState.y
+], () => {
+  if (showModelDropdown.value) {
+    // 强制更新下拉框位置
+    const style = getModelDropdownStyle()
+    const dropdown = document.querySelector('.model-select-dropdown')
+    if (dropdown) {
+      Object.assign(dropdown.style, style)
+    }
+  }
+})
+
+const closeModelDropdownOnClickOutside = (e) => {
+  const wrapper = document.querySelector('.model-select-wrapper')
+  if (wrapper && !wrapper.contains(e.target)) {
+    showModelDropdown.value = false
+  }
+}
 </script>
 
 <style scoped>
@@ -1535,7 +1680,7 @@ body.panel-resizing .chat-panel {
 
 .chat-panel {
   position: fixed;
-  z-index: 9999;
+  z-index: 1000;
   background: white;
   border-radius: 24px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
@@ -1543,14 +1688,20 @@ body.panel-resizing .chat-panel {
   flex-direction: column;
   overflow: hidden;
   transform-origin: center center;
-  resize: both;
   /* 改用 transform 替代 width/height 变化以获得更好的性能 */
   will-change: transform;
   /* 禁用所有过渡以确保拖拽/调整大小时的即时响应 */
   transition: none;
 }
 
-/* 隐藏浏览器原生的 resize 图标 */
+/* 隐藏浏览器原生的 resize 功能和图标 */
+.chat-panel {
+  resize: none !important;
+  -webkit-resize: none !important;
+  -moz-resize: none !important;
+  resize: none !important;
+}
+
 .chat-panel::-webkit-resizer {
   display: none;
 }
@@ -1618,7 +1769,7 @@ body.panel-resizing .chat-panel {
   display: flex;
   gap: 12px;
   position: relative;
-  z-index: 1;
+  z-index: 1001;
 }
 
 .clear-btn {

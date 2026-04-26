@@ -427,6 +427,10 @@ public class JobRecommendationAgentService {
             modelCode = "deepseek-chat";
         } else if ("deepseek-reasoner".equalsIgnoreCase(model)) {
             modelCode = "deepseek-reasoner";
+        } else if ("deepseek-v4-flash".equalsIgnoreCase(model)) {
+            modelCode = "deepseek-v4-flash";
+        } else if ("deepseek-v4-pro".equalsIgnoreCase(model)) {
+            modelCode = "deepseek-v4-pro";
         } else {
             modelCode = "deepseek-chat";
         }

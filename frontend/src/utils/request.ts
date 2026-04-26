@@ -64,7 +64,8 @@ const CONFIG: Config = {
     '/upload/image',
     '/upload/images',
     '/upload/file',
-    '/upload/files'
+    '/upload/files',
+    '/admin/ai-model/public/enabled'
   ]
 }
 
@@ -283,9 +284,17 @@ request.interceptors.request.use(
       }
     }
 
-    const isPublicEndpoint = CONFIG.PUBLIC_ENDPOINTS.some(endpoint => config.url?.includes(endpoint))
+    // 检查是否为公开接口（支持完整路径或相对路径匹配）
+    const isPublicEndpoint = CONFIG.PUBLIC_ENDPOINTS.some(endpoint => {
+      const url = config.url || ''
+      // 匹配完整路径或去掉 /api 前缀的路径
+      return url.includes(endpoint) || url.replace('/api', '').includes(endpoint)
+    })
 
-    if (!isPublicEndpoint) {
+    // 如果是获取AI模型列表的公开接口，直接跳过token添加
+    const isAIModelPublicEndpoint = config.url?.includes('/admin/ai-model/public/')
+
+    if (!isPublicEndpoint && !isAIModelPublicEndpoint) {
       const accessToken = getAccessToken()
 
       if (accessToken) {

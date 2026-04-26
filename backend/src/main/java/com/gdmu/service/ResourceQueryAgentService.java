@@ -1,6 +1,7 @@
 package com.gdmu.service;
 
 import com.gdmu.config.DynamicChatClientFactory;
+import com.gdmu.entity.AIModel;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -25,6 +26,7 @@ public class ResourceQueryAgentService {
     
     private final ResourceService resourceService;
     private final DynamicChatClientFactory chatClientFactory;
+    private final AIModelService aiModelService;
     
     // 支持的文件类型映射
     private static final Map<String, String> FILE_TYPE_KEYWORDS = new HashMap<String, String>();
@@ -43,13 +45,15 @@ public class ResourceQueryAgentService {
     }
     
     private static final String SYSTEM_PROMPT = "你是实习管理系统的资源查询助手，帮助用户搜索和查找学习资源。";
-    
+
     @Autowired
     public ResourceQueryAgentService(
             ResourceService resourceService,
-            DynamicChatClientFactory chatClientFactory) {
+            DynamicChatClientFactory chatClientFactory,
+            AIModelService aiModelService) {
         this.resourceService = resourceService;
         this.chatClientFactory = chatClientFactory;
+        this.aiModelService = aiModelService;
     }
     
     /**
@@ -164,23 +168,45 @@ public class ResourceQueryAgentService {
      */
     private ChatClient getChatClientByModel(String model) {
         String modelCode;
-        
+
         if (model == null || model.trim().isEmpty()) {
-            modelCode = "deepseek-chat";
+            // 使用管理员设置的默认模型
+            try {
+                AIModel defaultModel = aiModelService.findDefaultModel();
+                if (defaultModel != null) {
+                    modelCode = defaultModel.getModelCode();
+                    log.info("使用管理员默认模型: {}", modelCode);
+                } else {
+                    modelCode = "deepseek-chat";
+                }
+            } catch (Exception e) {
+                log.warn("获取默认模型失败，使用deepseek-chat: {}", e.getMessage());
+                modelCode = "deepseek-chat";
+            }
         } else {
             switch (model.toLowerCase()) {
                 case "deepseek":
+                case "deepseek-chat":
+                case "deepseek-v3":
+                case "deepseek-v3-chat":
                     modelCode = "deepseek-chat";
                     break;
                 case "reasoner":
                 case "deepseek-reasoner":
+                case "deepseek-v3-reasoner":
                     modelCode = "deepseek-reasoner";
+                    break;
+                case "deepseek-v4-flash":
+                    modelCode = "deepseek-v4-flash";
+                    break;
+                case "deepseek-v4-pro":
+                    modelCode = "deepseek-v4-pro";
                     break;
                 default:
                     modelCode = "deepseek-chat";
             }
         }
-        
+
         return chatClientFactory.createChatClient(modelCode, SYSTEM_PROMPT);
     }
     

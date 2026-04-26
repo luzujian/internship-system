@@ -24,7 +24,6 @@
           <div class="duration-info">
             <el-icon class="duration-icon"><Clock /></el-icon>
             <span class="duration-text">{{ currentInternship.startDate }} {{ currentInternship.endDate }}</span>
-            <span class="current-time">{{ currentTime }}</span>
             <span class="current-period" v-if="currentPeriod">第{{ currentPeriod }}期</span>
           </div>
           <div class="progress-section">
@@ -64,8 +63,14 @@
         <div v-for="log in logs" :key="log.id" class="log-card">
           <div class="log-header">
             <div class="log-title">{{ log.title }}</div>
-            <div :class="['status-tag', log.statusClass]">
-              {{ log.status }}
+            <div class="log-header-right">
+              <div :class="['status-tag', log.statusClass]">
+                {{ log.status }}
+              </div>
+              <button v-if="log.statusClass === 'reviewed'" class="action-button view" @click="viewLog(log)">
+                <el-icon><View /></el-icon>
+                查看详情
+              </button>
             </div>
           </div>
           <div class="log-content">
@@ -103,10 +108,6 @@
                 <el-icon><View /></el-icon>
                 查看
               </button>
-              <div class="review-badge">
-                <el-icon class="review-icon"><ChatDotRound /></el-icon>
-                已批阅
-              </div>
             </template>
           </div>
         </div>
@@ -117,8 +118,14 @@
         <div v-for="log in allLogs" :key="log.id" class="log-card">
           <div class="log-header">
             <div class="log-title">{{ log.title }}</div>
-            <div :class="['status-tag', log.statusClass]">
-              {{ log.status }}
+            <div class="log-header-right">
+              <div :class="['status-tag', log.statusClass]">
+                {{ log.status }}
+              </div>
+              <button v-if="log.statusClass === 'reviewed'" class="action-button view" @click="viewLog(log)">
+                <el-icon><View /></el-icon>
+                查看详情
+              </button>
             </div>
           </div>
           <div class="log-content">
@@ -152,45 +159,36 @@
               </button>
             </template>
             <template v-else-if="log.statusClass === 'reviewed'">
-              <button class="action-button view" @click="viewLog(log)">
-                <el-icon><View /></el-icon>
-                查看详情
-              </button>
             </template>
           </div>
         </div>
       </div>
 
       <!-- 已完成档案 -->
-      <div v-else-if="activeTab === 'completed'" class="archives-list">
-        <div v-for="archive in archives" :key="archive.id" class="archive-card">
-          <div class="archive-header">
-            <!-- 实习心得标题 -->
-            <div class="archive-title">{{ archive.title || archive.company || '已完成心得' }}</div>
-            <div class="archive-date">{{ archive.startDate ? `${archive.startDate} - ${archive.endDate}` : '' }}</div>
-            <div class="review-badge">
-              <el-icon class="review-icon"><ChatDotRound /></el-icon>
-              已批阅
+      <div v-else-if="activeTab === 'completed'" class="logs-list">
+        <div v-for="archive in archives" :key="archive.id" class="log-card">
+          <div class="log-header">
+            <div class="log-title">{{ archive.title || archive.company || '已完成心得' }}</div>
+            <div class="log-header-right">
+              <div class="status-tag reviewed">已批阅</div>
+              <button class="action-button view" @click="viewArchive(archive)">
+                <el-icon><View /></el-icon>
+                查看详情
+              </button>
             </div>
           </div>
-          <div class="archive-content">
-            <div class="archive-desc">{{ archive.description || archive.position || '' }}</div>
-            <div class="archive-info-grid">
-              <div class="info-item">
-                <el-icon class="info-icon"><Calendar /></el-icon>
-                <span>{{ archive.duration ? `实习时长: ${archive.duration}` : `提交时间: ${archive.submitTime || ''}` }}</span>
-              </div>
-              <div class="info-item">
-                <el-icon class="info-icon"><Star /></el-icon>
-                <span>评分: {{ archive.scoringDetails?.totalScore || archive.rating || '未评分' }}</span>
-              </div>
-            </div>
+          <div class="log-content">
+            <div class="log-desc">{{ archive.description || archive.position || '' }}</div>
           </div>
-          <div class="archive-actions">
-            <button class="action-button view" @click="viewArchive(archive)">
-              <el-icon><View /></el-icon>
-              查看详情
-            </button>
+          <div class="log-info-grid">
+            <div class="info-item">
+              <el-icon class="info-icon"><Calendar /></el-icon>
+              <span>{{ archive.duration ? `实习时长: ${archive.duration}` : `提交时间: ${archive.submitTime || ''}` }}</span>
+            </div>
+            <div class="info-item">
+              <el-icon class="info-icon"><Star /></el-icon>
+              <span>评分: {{ archive.scoringDetails?.totalScore || archive.rating || '未评分' }}</span>
+            </div>
           </div>
         </div>
       </div>
@@ -688,9 +686,8 @@ const currentPeriod = ref<number | null>(null)
 const canSubmit = ref(true)
 const submitReason = ref('')
 
-// 当前时间
-const currentTime = ref('')
-let timeTimer: ReturnType<typeof setInterval> | null = null
+const hasInternshipRecord = ref(false)
+const currentRecordId = ref(null)
 
 // 处理WebSocket推送的AI分析结果
 const handleAIAnalysisResult = async (data: any) => {
@@ -714,18 +711,6 @@ const handleAIAnalysisResult = async (data: any) => {
   await fetchPeriodStatus()
 }
 
-// 更新时间
-const updateTime = () => {
-  const now = new Date()
-  const year = now.getFullYear()
-  const month = String(now.getMonth() + 1).padStart(2, '0')
-  const day = String(now.getDate()).padStart(2, '0')
-  const hours = String(now.getHours()).padStart(2, '0')
-  const minutes = String(now.getMinutes()).padStart(2, '0')
-  const seconds = String(now.getSeconds()).padStart(2, '0')
-  currentTime.value = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`
-}
-
 const logForm = ref({
   title: "",
   date: "",
@@ -743,9 +728,6 @@ const currentInternship = ref({
   endDate: "",
   progress: 0,
 })
-
-const hasInternshipRecord = ref(false)
-const currentRecordId = ref(null)
 
 const tabs = [
   { key: "all", label: "全部" },
@@ -1162,18 +1144,12 @@ onMounted(() => {
     fetchReflections(),
     fetchPeriodStatus()
   ])
-  updateTime()
-  // 时钟更新改为每分钟，减少不必要的渲染（秒级更新对用户无意义）
-  timeTimer = setInterval(updateTime, 60000)
 
   // 注册AI分析结果监听器
   onAIAnalysisResult(handleAIAnalysisResult)
 })
 
 onUnmounted(() => {
-  if (timeTimer) {
-    clearInterval(timeTimer)
-  }
   // 移除AI分析结果监听器
   offAIAnalysisResult(handleAIAnalysisResult)
 })
@@ -1556,6 +1532,12 @@ onUnmounted(() => {
   gap: 16px;
   width: 100%;
   margin-bottom: 12px;
+}
+
+.log-header-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .log-title,

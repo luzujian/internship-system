@@ -773,33 +773,8 @@ public class EvaluationManagementController {
                 log.error("保存类别评分详情失败: {}", e.getMessage(), e);
             }
 
-            // 更新对应学生的实习心得remark为"1"（已批阅）
-            try {
-                // 计算当前阶段号
-                Integer currentPeriod = internshipReflectionService.calculatePeriodNumber(new Date());
-                // 获取学生的所有实习心得
-                List<InternshipReflection> reflections = internshipReflectionService.list(studentId, null, null, null);
-                // 查找当前阶段的实习心得
-                InternshipReflection reflectionToUpdate = null;
-                if (reflections != null && currentPeriod != null) {
-                    for (InternshipReflection r : reflections) {
-                        if (currentPeriod.equals(r.getPeriodNumber())) {
-                            reflectionToUpdate = r;
-                            break;
-                        }
-                    }
-                }
-                if (reflectionToUpdate != null) {
-                    reflectionToUpdate.setRemark("1");
-                    reflectionToUpdate.setUpdateTime(new Date());
-                    internshipReflectionService.updateById(reflectionToUpdate);
-                    log.info("更新实习心得remark为已批阅，学生ID: {}, 阶段: {}", studentId, currentPeriod);
-                } else {
-                    log.warn("未找到学生ID: {} 当前阶段: {} 的实习心得", studentId, currentPeriod);
-                }
-            } catch (Exception e) {
-                log.error("更新实习心得remark失败: {}", e.getMessage(), e);
-            }
+            // 注意：不再在此处设置实习心得remark为"已批阅"
+            // remark的设置应该在"一键上传学生成绩"时统一处理
 
             // 同时保存到StudentReflectionEvaluation（按阶段评价）
             try {
@@ -884,6 +859,28 @@ public class EvaluationManagementController {
             // 调用批量发布成绩方法
             try {
                 int publishedCount = internshipEvaluationService.publishGrades(studentIds);
+
+                // 同时更新已发布成绩的学生的实习心得remark为"1"（已批阅）
+                try {
+                    Integer currentPeriod = internshipReflectionService.calculatePeriodNumber(new Date());
+                    for (Long studentId : studentIds) {
+                        List<InternshipReflection> reflections = internshipReflectionService.list(studentId, null, null, null);
+                        if (reflections != null && currentPeriod != null) {
+                            for (InternshipReflection r : reflections) {
+                                if (currentPeriod.equals(r.getPeriodNumber())) {
+                                    r.setRemark("1");
+                                    r.setUpdateTime(new Date());
+                                    internshipReflectionService.updateById(r);
+                                    log.info("批量上传成绩时更新实习心得remark为已批阅，学生ID: {}, 阶段: {}", studentId, currentPeriod);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                } catch (Exception e) {
+                    log.error("批量上传成绩时更新实习心得remark失败: {}", e.getMessage(), e);
+                }
+
                 Map<String, Object> result = Map.of(
                         "success", publishedCount,
                         "fail", studentIds.size() - publishedCount,

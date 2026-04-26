@@ -1,6 +1,7 @@
 package com.gdmu.service;
 
 import com.gdmu.config.DynamicChatClientFactory;
+import com.gdmu.entity.AIModel;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -25,6 +26,9 @@ public class JobDescriptionGeneratorService {
     private static final Logger log = LoggerFactory.getLogger(JobDescriptionGeneratorService.class);
 
     private final DynamicChatClientFactory chatClientFactory;
+
+    @Autowired
+    private AIModelService aiModelService;
 
     private static final String SYSTEM_PROMPT = "你是实习岗位描述生成专家，负责为HR生成专业、吸引人的岗位描述和任职要求。";
 
@@ -139,9 +143,25 @@ public class JobDescriptionGeneratorService {
     private ChatClient getChatClientByModel(String model) {
         String modelCode;
         if (model == null || model.trim().isEmpty()) {
-            modelCode = "deepseek-chat";
+            // 使用管理员设置的默认模型
+            try {
+                AIModel defaultModel = aiModelService.findDefaultModel();
+                if (defaultModel != null) {
+                    modelCode = defaultModel.getModelCode();
+                    log.info("使用管理员默认模型: {}", modelCode);
+                } else {
+                    modelCode = "deepseek-chat";
+                }
+            } catch (Exception e) {
+                log.warn("获取默认模型失败，使用deepseek-chat: {}", e.getMessage());
+                modelCode = "deepseek-chat";
+            }
         } else if ("deepseek-reasoner".equalsIgnoreCase(model)) {
             modelCode = "deepseek-reasoner";
+        } else if ("deepseek-v4-flash".equalsIgnoreCase(model)) {
+            modelCode = "deepseek-v4-flash";
+        } else if ("deepseek-v4-pro".equalsIgnoreCase(model)) {
+            modelCode = "deepseek-v4-pro";
         } else {
             modelCode = "deepseek-chat";
         }

@@ -3,6 +3,7 @@ package com.gdmu.service.impl;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.gdmu.config.DynamicChatClientFactory;
+import com.gdmu.entity.AIModel;
 import com.gdmu.entity.CategoryWeight;
 import com.gdmu.entity.InternshipReflection;
 import com.gdmu.entity.InternshipTimeSettings;
@@ -10,6 +11,7 @@ import com.gdmu.entity.KeywordLibrary;
 import com.gdmu.entity.ScoringRule;
 import com.gdmu.entity.SystemSettings;
 import com.gdmu.mapper.InternshipReflectionMapper;
+import com.gdmu.service.AIModelService;
 import com.gdmu.service.CategoryWeightService;
 import com.gdmu.service.InternshipReflectionService;
 import com.gdmu.service.KeywordLibraryService;
@@ -51,6 +53,9 @@ public class InternshipReflectionServiceImpl implements InternshipReflectionServ
 
     @Autowired
     private com.gdmu.service.InternshipTimeSettingsService internshipTimeSettingsService;
+
+    @Autowired
+    private AIModelService aiModelService;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -251,7 +256,30 @@ public class InternshipReflectionServiceImpl implements InternshipReflectionServ
     }
 
     private ChatClient getChatClientByModel(String modelCode) {
-        String actualModelCode = (modelCode != null && modelCode.equals("deepseek-reasoner")) ? "deepseek-reasoner" : "deepseek-chat";
+        String actualModelCode;
+        if (modelCode == null || modelCode.trim().isEmpty()) {
+            // 使用管理员设置的默认模型
+            try {
+                AIModel defaultModel = aiModelService.findDefaultModel();
+                if (defaultModel != null) {
+                    actualModelCode = defaultModel.getModelCode();
+                    log.info("使用管理员默认模型: {}", actualModelCode);
+                } else {
+                    actualModelCode = "deepseek-chat";
+                }
+            } catch (Exception e) {
+                log.warn("获取默认模型失败，使用deepseek-chat: {}", e.getMessage());
+                actualModelCode = "deepseek-chat";
+            }
+        } else if (modelCode.equals("deepseek-reasoner")) {
+            actualModelCode = "deepseek-reasoner";
+        } else if (modelCode.equals("deepseek-v4-flash")) {
+            actualModelCode = "deepseek-v4-flash";
+        } else if (modelCode.equals("deepseek-v4-pro")) {
+            actualModelCode = "deepseek-v4-pro";
+        } else {
+            actualModelCode = "deepseek-chat";
+        }
         return chatClientFactory.createChatClient(actualModelCode, SYSTEM_PROMPT);
     }
 

@@ -47,6 +47,17 @@ public class AIModelController {
         }
     }
 
+    @GetMapping("/public/enabled")
+    public Result getPublicEnabledAIModels() {
+        try {
+            List<AIModel> models = aiModelService.findEnabledModels();
+            return Result.success(models);
+        } catch (Exception e) {
+            log.error("查询启用的AI模型失败: {}", e.getMessage());
+            return Result.error("查询失败: " + e.getMessage());
+        }
+    }
+
     @GetMapping("/enabled")
     @PreAuthorize("hasRole('ADMIN')")
     @Log(module = "AI_MODEL", operationType = "SELECT", description = "查询启用的AI模型")

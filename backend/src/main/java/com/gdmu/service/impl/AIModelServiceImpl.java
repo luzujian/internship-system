@@ -3,6 +3,7 @@ package com.gdmu.service.impl;
 import com.gdmu.entity.AIModel;
 import com.gdmu.exception.BusinessException;
 import com.gdmu.mapper.AIModelMapper;
+import com.gdmu.mapper.CounselorAISettingsMapper;
 import com.gdmu.service.AIConfigRefreshService;
 import com.gdmu.service.AIModelService;
 import lombok.extern.slf4j.Slf4j;
@@ -20,7 +21,10 @@ public class AIModelServiceImpl implements AIModelService {
     
     @Autowired
     private AIConfigRefreshService aiConfigRefreshService;
-    
+
+    @Autowired
+    private CounselorAISettingsMapper counselorAISettingsMapper;
+
     @Autowired
     public AIModelServiceImpl(AIModelMapper aiModelMapper) {
         this.aiModelMapper = aiModelMapper;
@@ -211,17 +215,21 @@ public class AIModelServiceImpl implements AIModelService {
         aiModelMapper.clearDefaultModel(updater);
         int result = aiModelMapper.setAsDefault(id, updater);
         log.info("AI模型设置为默认成功，ID: {}", id);
-        
+
         try {
             aiConfigRefreshService.refreshAIConfig();
             log.info("AI模型配置已刷新，新配置将立即生效");
+
+            // 同步更新所有辅导员的AI模型为新的默认模型
+            counselorAISettingsMapper.updateAllModelCode(existing.getModelCode());
+            log.info("所有辅导员的AI模型已同步更新为: {}", existing.getModelCode());
         } catch (Exception e) {
             log.error("刷新AI模型配置失败，但数据已更新", e);
         }
-        
+
         return result;
     }
-    
+
     @Override
     @Transactional(rollbackFor = Exception.class)
     public int deleteById(Long id) {

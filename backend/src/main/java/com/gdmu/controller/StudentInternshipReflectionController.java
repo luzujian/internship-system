@@ -463,7 +463,7 @@ public class StudentInternshipReflectionController {
                     }
                 }
 
-                // 如果AI分析和教师评语都没有，从缓存的实习总评获取评语
+                // 如果AI分析和教师评语都没有，从缓存的实习总评获取评语（仅用于展示，不显示分数）
                 if (item.get("aiAnalysis") == null && item.get("teacherComment") == null) {
                     InternshipEvaluation evaluation = studentEvaluationMap.get(reflection.getStudentId());
                     if (evaluation != null && evaluation.getComment() != null) {
@@ -471,13 +471,12 @@ public class StudentInternshipReflectionController {
                     }
                 }
 
-                // 如果AI分数和教师评分都没有，从缓存的实习总评获取总评成绩
-                if (item.get("totalScore") == null) {
-                    InternshipEvaluation evaluation = studentEvaluationMap.get(reflection.getStudentId());
-                    if (evaluation != null && evaluation.getTotalScore() != null) {
-                        item.put("totalScore", evaluation.getTotalScore());
-                    }
-                }
+                // 【重要】不再从实习总评(InternshipEvaluation)获取分数显示在心得卡片上
+                // 实习心得的评分应该由教师单独评分得出，不应直接显示实习总评的分数
+                // totalScore只从以下两个来源获取：
+                // 1. reflection.getAiScore() - AI评分（如有）
+                // 2. reflectionEval.getTotalScore() - 教师对该心得的评分（如有）
+                // 注意：InternshipEvaluation是整个实习的总评，不是本次心得的评分，不应显示在此
 
                 // 添加期数信息，用于前端显示"第X期实习心得"
                 item.put("periodNumber", reflection.getPeriodNumber());

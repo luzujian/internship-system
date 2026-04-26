@@ -71,6 +71,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/admin/departments", "/api/admin/departments/**").permitAll()
                         // 允许 AI 聊天接口无需认证
                         .requestMatchers("/api/ai/chat", "/api/ai/chat/stream").permitAll()
+                        // 允许获取启用AI模型的公开接口无需认证
+                        .requestMatchers("/api/admin/ai-model/public/**").permitAll()
                         // 允许学生查询 Agent 接口无需认证
                         .requestMatchers("/api/ai/student/query", "/api/ai/student/query/stream", "/api/ai/student/info").permitAll()
                         // 允许资源查询 Agent 接口无需认证

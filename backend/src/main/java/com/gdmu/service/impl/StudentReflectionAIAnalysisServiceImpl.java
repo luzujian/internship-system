@@ -191,7 +191,7 @@ public class StudentReflectionAIAnalysisServiceImpl implements StudentReflection
 
             CounselorAISettings settings = counselorAISettingsService.findByCounselorId(counselorId);
             String modelCode = (settings != null && settings.getAiModelCode() != null)
-                ? settings.getAiModelCode() : "deepseek-chat";
+                ? settings.getAiModelCode() : "deepseek-v4-flash";
 
             ChatClient chatClient = chatClientFactory.createChatClient(modelCode, SYSTEM_PROMPT);
 
@@ -384,12 +384,13 @@ public class StudentReflectionAIAnalysisServiceImpl implements StudentReflection
             "    \"analysisReport\": \"# 实习心得分析报告\\n\\n## 一、内容概述\\n...\\n\\n## 二、亮点分析\\n...\\n\\n## 三、改进建议\\n...\\n\\n## 四、综合评价\\n...\"\n" +
             "}\n\n" +
             "重要说明：\n" +
-            "1. scoreDetails 中每个评分维度只需返回选中的等级名称（如 \"良好\"），系统会自动根据等级匹配对应分数\n" +
+            "1. 【关键】scoreDetails 中每个评分维度只需返回选中的等级名称（如 \"良好\"），必须是标准等级名称，不得添加任何描述性文字\n" +
             "2. totalScore 是根据各维度分数和权重计算的加权总分\n" +
             "3. 加权总分计算公式：Σ(维度分数 × 权重) / 总权重\n" +
             "4. grade 根据总分判定：90 分以上为优秀，80-89 分为良好，70-79 分为中等，60-69 分为及格，60 分以下为不及格\n" +
             "5. analysisReport 是完整的分析报告，使用 Markdown 格式\n" +
-            "6. 请根据实习心得的实际内容进行评分，不要给出固定分数",
+            "6. 请根据实习心得的实际内容进行评分，不要给出固定分数\n" +
+            "7. 【强制】scoreDetails 的每个值必须是被双引号包裹的纯等级名称（如\"良好\"），禁止是句子或描述",
             content, scoringCriteria.toString(), weightInfo.toString(), aspectsExample.toString()
         );
     }
@@ -655,7 +656,7 @@ public class StudentReflectionAIAnalysisServiceImpl implements StudentReflection
 
             CounselorAISettings settings = counselorAISettingsService.findByCounselorId(counselorId);
             String modelCode = (settings != null && settings.getAiModelCode() != null)
-                ? settings.getAiModelCode() : "deepseek-chat";
+                ? settings.getAiModelCode() : "deepseek-v4-flash";
 
             ChatClient chatClient = chatClientFactory.createChatClient(modelCode, SYSTEM_PROMPT);
 
