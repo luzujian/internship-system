@@ -513,13 +513,8 @@ html, body {
   justify-content: space-between;
   height: 64px;
   box-shadow: 0 2px 12px rgba(103, 194, 58, 0.2);
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  z-index: 1000;
+  position: relative;
   flex-shrink: 0;
-  backdrop-filter: blur(10px);
 }
 
 .header::before {
