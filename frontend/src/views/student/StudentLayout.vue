@@ -701,7 +701,6 @@ html, body {
   overflow: hidden;
   margin: 0;
   height: 100%;
-  padding-top: 64px;
   box-sizing: border-box;
 }
 
