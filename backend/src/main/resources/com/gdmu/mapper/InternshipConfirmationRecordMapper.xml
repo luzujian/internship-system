@@ -88,15 +88,35 @@
     </select>
 
     <select id="findByCompanyId" resultMap="BaseResultMap">
-        SELECT * FROM internship_confirmation_record WHERE company_id = #{companyId} ORDER BY create_time DESC
+        SELECT * FROM internship_confirmation_record WHERE company_id = #{companyId} AND (recall_status IS NULL OR recall_status != 2) ORDER BY create_time DESC
     </select>
 
     <select id="findByCompanyIdAndStatus" resultMap="BaseResultMap">
-        SELECT * FROM internship_confirmation_record WHERE company_id = #{companyId} AND status = #{status} ORDER BY create_time DESC
+        SELECT * FROM internship_confirmation_record WHERE company_id = #{companyId} AND status = #{status} AND (recall_status IS NULL OR recall_status NOT IN (1, 2))
+        <if test="status == 0">
+            AND (recall_status IS NULL OR recall_status != 2)
+        </if>
+        ORDER BY create_time DESC
     </select>
 
     <select id="findByStudentIdAndStatus" resultMap="BaseResultMap">
         SELECT * FROM internship_confirmation_record WHERE student_id = #{studentId} AND status = #{status} ORDER BY create_time DESC
+    </select>
+
+    <!-- 查询待撤回确认记录（撤回状态为2=已撤回） -->
+    <select id="findPendingRecallList" resultMap="BaseResultMap">
+        SELECT * FROM internship_confirmation_record
+        WHERE recall_status = 2
+        <if test="studentId != null">
+            AND student_id = #{studentId}
+        </if>
+        <if test="name != null and name != ''">
+            AND student_name LIKE CONCAT('%', #{name}, '%')
+        </if>
+        <if test="companyName != null and companyName != ''">
+            AND company_name LIKE CONCAT('%', #{companyName}, '%')
+        </if>
+        ORDER BY recall_apply_time DESC
     </select>
 
 </mapper>

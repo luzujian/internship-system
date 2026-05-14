@@ -21,5 +21,7 @@ public interface InternshipConfirmationRecordService {
 
     List<InternshipConfirmationRecord> findByStudentIdAndStatus(Long studentId, Integer status);
 
+    List<InternshipConfirmationRecord> findPendingRecallList(Long studentId, String name, String companyName);
+
     int recall(Long id, String recallReason);
 }

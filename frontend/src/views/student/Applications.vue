@@ -695,8 +695,8 @@
   </div>
 </template>
 
-<script setup>
-import { ref, computed, onMounted } from "vue";
+<script setup lang="ts">
+import { ref, computed, onMounted, onUnmounted } from "vue";
 import { useRouter } from "vue-router";
 import { ElMessageBox, ElMessage } from "element-plus";
 import {
@@ -725,6 +725,8 @@ import {
 
 import request from '@/utils/request';
 import { useAuthStore } from '@/store/auth';
+import type { ApplicationStatusUpdateData } from '@/utils/websocket';
+import { onApplicationStatusUpdate, offApplicationStatusUpdate } from '@/utils/websocket';
 
 const authStore = useAuthStore()
 
@@ -1404,7 +1406,24 @@ onMounted(async () => {
     fetchApplications(),
     fetchSystemInternshipTime()
   ]);
+  // 注册申请状态更新监听器
+  onApplicationStatusUpdate(handleApplicationStatusUpdate)
 });
+
+onUnmounted(() => {
+  // 移除申请状态更新监听器
+  offApplicationStatusUpdate(handleApplicationStatusUpdate)
+});
+
+// 处理WebSocket收到的申请状态更新（静默刷新，不弹通知）
+const handleApplicationStatusUpdate = (data: ApplicationStatusUpdateData) => {
+  console.log('收到申请状态更新:', data)
+  console.log('data.studentId:', data.studentId, 'data.status:', data.status)
+  // 静默刷新申请列表
+  fetchApplications().then(() => {
+    console.log('fetchApplications完成, 当前申请数:', applications.value.length)
+  })
+}
 
 // 获取系统实习时间设置
 const fetchSystemInternshipTime = async () => {

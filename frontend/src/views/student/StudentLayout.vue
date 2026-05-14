@@ -237,6 +237,7 @@ onMounted(() => {
 // 初始化学生端 WebSocket
 const initStudentWebSocket = () => {
   let token = authStore.token
+  console.log('[StudentLayout] initStudentWebSocket - authStore.token:', token)
 
   if (!token) {
     const rolePrefix = 'student_'
@@ -244,18 +245,23 @@ const initStudentWebSocket = () => {
     token = localStorage.getItem(`${rolePrefix}accessToken_${role}`) ||
             localStorage.getItem(`${rolePrefix}token_${role}`) ||
             localStorage.getItem('accessToken')
+    console.log('[StudentLayout] 从 localStorage 获取 token:', token ? token.substring(0, 20) + '...' : 'null')
   }
 
   if (token) {
+    console.log('[StudentLayout] 开始初始化 WebSocket')
     initAnnouncementWebSocket(token, handleStudentWebSocketMessage)
+  } else {
+    console.warn('[StudentLayout] 未找到 token，无法初始化 WebSocket')
   }
 }
 
 // 处理学生端 WebSocket 消息
 const handleStudentWebSocketMessage = (data) => {
-  console.log('[StudentLayout] 收到 WebSocket 消息:', data)
+  console.log('[StudentLayout] 收到 WebSocket 消息, type:', data.type, 'data:', JSON.stringify(data))
 
   if (data.type === 'application_status_update' && data.data) {
+    console.log('[StudentLayout] 收到申请状态更新:', data.data)
     const { companyName, positionName, status, statusText } = data.data
     ElMessage({
       type: status === 'approved' ? 'success' : 'warning',
@@ -265,6 +271,10 @@ const handleStudentWebSocketMessage = (data) => {
     })
     // 触发刷新事件
     emitter.emit('application-status-update', data.data)
+  } else if (data.type === 'confirmation_result_update' && data.data) {
+    console.log('[StudentLayout] 收到实习确认结果更新:', data.data)
+    // 触发刷新事件，让 InternshipConfirmationForm 刷新确认记录
+    emitter.emit('confirmation-result-update', data.data)
   }
 }
 

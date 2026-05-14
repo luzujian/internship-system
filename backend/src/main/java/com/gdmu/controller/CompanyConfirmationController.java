@@ -179,6 +179,17 @@ public class CompanyConfirmationController {
             // 推送待办数据更新
             pushTodoUpdate(user.getId());
 
+            // 推送实习确认结果给学生
+            log.info("准备向学生推送确认结果, studentId={}, company={}, position={}",
+                record.getStudentId(), record.getCompanyName(), record.getPositionName());
+            webSocketHandler.sendConfirmationResultToStudent(
+                record.getStudentId(),
+                1, // 1=已确认
+                record.getCompanyName(),
+                record.getPositionName()
+            );
+            log.info("已调用sendConfirmationResultToStudent");
+
             return Result.success("确认成功");
         } catch (Exception e) {
             log.error("确认失败: {}", e.getMessage(), e);
@@ -215,6 +226,14 @@ public class CompanyConfirmationController {
 
             // 推送待办数据更新
             pushTodoUpdate(user.getId());
+
+            // 推送实习确认结果给学生（拒绝）
+            webSocketHandler.sendConfirmationResultToStudent(
+                record.getStudentId(),
+                2, // 2=已拒绝
+                record.getCompanyName(),
+                record.getPositionName()
+            );
 
             return Result.success("已拒绝");
         } catch (Exception e) {

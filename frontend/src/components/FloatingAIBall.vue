@@ -16,7 +16,7 @@
   <Transition name="bubble-pop">
     <div
       v-if="showCompanyBubble && companyBubbleVisible && props.role === 'company'"
-      class="company-bubble"
+      class="company-bubble glass-effect"
       :style="companyBubbleStyle"
     >
       <div class="company-bubble-header">
@@ -51,7 +51,7 @@
   <Transition name="bubble-pop">
     <div
       v-if="showEncouragementBubble && encouragementBubbleVisible && (props.role === 'teacher' || props.role === 'admin')"
-      class="encouragement-bubble"
+      class="encouragement-bubble glass-effect"
       :style="encouragementBubbleStyle"
     >
       <div class="encouragement-bubble-inner">
@@ -71,7 +71,7 @@
   <Transition name="bubble-pop">
     <div
       v-if="showTipBubble && tipBubbleVisible && props.role === 'student'"
-      class="tip-bubble"
+      class="tip-bubble glass-effect"
       :style="tipBubbleStyle"
     >
       <div class="tip-bubble-inner">
@@ -85,7 +85,7 @@
   <!-- 聊天面板 - 移出为同级元素，不再嵌套在悬浮球内部 -->
   <div
     v-if="isExpanded"
-    class="chat-panel"
+    class="chat-panel glass-effect"
     :style="panelStyle"
     ref="chatPanel"
   >
@@ -94,22 +94,18 @@
       class="chat-header"
       @mousedown="startPanelDrag"
     >
-      <div class="header-content">
+      <div class="header-left">
         <div class="ai-icon-small">AI</div>
-        <div>
-          <h3>{{ getTitle() }}</h3>
-          <p class="header-description">基于DeepSeek AI的智能对话助手</p>
-        </div>
+        <span class="header-title">{{ getTitle() }}</span>
       </div>
       <div class="header-actions">
-        <div class="model-select-wrapper" style="position: relative; margin-right: 8px;">
+        <div class="model-select-wrapper">
           <div
             class="model-select-trigger"
             @click.stop="toggleModelDropdown"
-            style="display: flex; align-items: center; gap: 4px; padding: 5px 10px; background: rgba(255,255,255,0.9); border-radius: 4px; cursor: pointer; min-width: 150px;"
           >
-            <span style="flex: 1; font-size: 12px; color: #333;">{{ getCurrentModelName() }}</span>
-            <span style="font-size: 10px; color: #666;">▼</span>
+            <span class="model-name">{{ getCurrentModelName() }}</span>
+            <span class="model-arrow">▼</span>
           </div>
           <Teleport to="body" :disabled="false">
             <div
@@ -121,46 +117,40 @@
                 v-for="model in availableModels"
                 :key="model.modelCode"
                 @click.stop="selectModel(model.modelCode)"
-                :style="{
-                  padding: '8px 12px',
-                  cursor: 'pointer',
-                  fontSize: '12px',
-                  color: model.modelCode === selectedModel ? '#409EFF' : '#333',
-                  background: model.modelCode === selectedModel ? '#f0f9ff' : 'white',
-                  fontWeight: model.modelCode === selectedModel ? 'bold' : 'normal'
-                }"
+                class="model-option"
+                :class="{ active: model.modelCode === selectedModel }"
               >
                 {{ model.modelName }}
               </div>
             </div>
           </Teleport>
         </div>
-        <button class="clear-btn" @click.stop="clearHistory">
-          <span>清空</span>
-        </button>
-        <button class="close-btn" @click.stop="closeChat">×</button>
+        <button class="icon-btn" @click.stop="clearHistory" title="清空对话">🗑️</button>
+        <button class="icon-btn close-btn" @click.stop="closeChat" title="关闭">×</button>
       </div>
     </div>
 
     <el-scrollbar class="chat-messages" ref="messagesContainer" :native="false">
-      <!-- 欢迎消息 -->
-      <div v-if="messages.length === 0" class="welcome-section">
-        <div class="welcome-icon">AI</div>
-        <h3>您好！我是{{ getTitle() }}</h3>
-        <p>我可以帮助您解答关于实习的常见问题。</p>
-        <div class="quick-suggestions">
-          <div class="suggestion-title">点击下方问题获取详细解答：</div>
-          <div class="suggestion-buttons">
-            <button
-              v-for="(question, index) in quickQuestions"
-              :key="index"
-              @click="selectQuickQuestion(question)"
-              :disabled="isLoading"
-              class="suggestion-btn"
-            >
-              {{ question }}
-            </button>
+      <!-- 欢迎消息作为AI气泡显示 -->
+      <div v-if="messages.length === 0 && isExpanded" class="welcome-messages">
+        <div class="message ai">
+          <div class="message-content-container">
+            <div class="message-bubble">
+              <div class="message-text">您好！我是{{ getTitle() }} 👋<br><br>我可以帮助您解答关于实习的常见问题，有什么可以帮您的吗？</div>
+              <div class="message-time">刚刚</div>
+            </div>
           </div>
+        </div>
+        <div class="quick-suggestions">
+          <button
+            v-for="(question, index) in quickQuestions"
+            :key="index"
+            @click="selectQuickQuestion(question)"
+            :disabled="isLoading"
+            class="suggestion-capsule"
+          >
+            {{ question }}
+          </button>
         </div>
       </div>
 
@@ -173,6 +163,13 @@
       >
         <div class="message-content-container">
           <div class="message-bubble">
+            <!-- 内嵌式 AI 思考呼吸圆点动画 -->
+            <div v-if="message.role === 'assistant' && message.isStreaming" class="inline-typing-indicator">
+              <span class="dot"></span>
+              <span class="dot"></span>
+              <span class="dot"></span>
+            </div>
+
             <!-- 岗位推荐卡片 -->
             <div v-if="message.type === 'job_recommendation' && message.jobData" class="job-recommendation">
               <div class="job-recommendation-title">
@@ -220,38 +217,61 @@
           </div>
         </div>
       </div>
-
-      <!-- 流式回复消息 -->
-      <div v-if="streamingMessage" class="message ai streaming">
-        <div class="message-content-container">
-          <div class="message-bubble">
-            <div class="message-text" v-html="formatMessage(streamingMessage)"></div>
-            <div class="streaming-indicator">
-              <span></span>
-              <span></span>
-              <span></span>
-            </div>
-          </div>
-        </div>
-      </div>
     </el-scrollbar>
 
-    <div class="chat-input">
-      <div class="input-actions">
+    <div class="chat-footer-wrapper">
+      <div class="input-capsule" :class="{ 'is-focused': isInputFocused }">
+
         <textarea
+          ref="chatInputRef"
           v-model="userInput"
-          placeholder="请输入您的问题..."
-          @keydown.enter.exact.prevent="sendMessage"
-          rows="3"
-          class="message-textarea"
+          class="grow-textarea"
+          placeholder="向 AI 助手提问..."
+          rows="1"
+          :readonly="isGenerating"
+          :disabled="isGenerating"
+          @input="handleInput"
+          @focus="isInputFocused = true"
+          @blur="isInputFocused = false"
+          @keydown.enter.prevent="sendMessage"
         ></textarea>
+
         <button
-          @click="sendMessage"
-          :disabled="!userInput.trim() || isLoading"
+          v-if="!isGenerating"
           class="send-btn"
+          :class="{ 'is-active': userInput.trim().length > 0 }"
+          :disabled="!userInput.trim()"
+          @click="sendMessage"
         >
-          <el-icon v-if="!isLoading"><Promotion /></el-icon>
-          <span v-else>生成中...</span>
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2.5"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            style="width: 18px !important; height: 18px !important; min-width: 18px !important; min-height: 18px !important; flex-shrink: 0; margin-left: -2px;"
+          >
+            <line x1="22" y1="2" x2="11" y2="13"></line>
+            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+          </svg>
+        </button>
+
+        <button
+          v-else
+          class="send-btn stop-btn"
+          @click="stopGeneration"
+          title="停止生成"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 24 24"
+            fill="currentColor"
+            style="width: 16px !important; height: 16px !important; flex-shrink: 0; margin: 0;"
+          >
+            <rect x="6" y="6" width="12" height="12" rx="2" ry="2"></rect>
+          </svg>
         </button>
       </div>
     </div>
@@ -286,7 +306,6 @@
 import { ref, reactive, computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElRadioGroup, ElRadioButton, ElScrollbar, ElSelect, ElOption } from 'element-plus'
-import { Promotion } from '@element-plus/icons-vue'
 import request from '../utils/request'
 import eventBus from '../utils/eventBus'
 import { onCompanyTodoUpdate, offCompanyTodoUpdate } from '../utils/websocket'
@@ -352,6 +371,9 @@ const getModelDropdownStyle = () => {
 // 基础状态
 const isExpanded = ref(false)
 const isLoading = ref(false)
+const isGenerating = ref(false) // AI 是否正在生成回复
+const chatInputRef = ref(null)
+const isInputFocused = ref(false)
 const userInput = ref('')
 const messages = ref([])
 const showModelDropdown = ref(false)
@@ -362,7 +384,7 @@ const availableModels = ref([
   { modelCode: 'deepseek-v4-flash', modelName: 'DeepSeek-V4-Flash' },
   { modelCode: 'deepseek-v4-pro', modelName: 'DeepSeek-V4-Pro' }
 ])
-const streamingMessage = ref('') // 当前流式回复的内容
+let abortController = null // 请求中断控制器
 
 // 企业端气泡相关状态
 const showCompanyBubble = ref(false)
@@ -499,17 +521,20 @@ const handleCompanyTodoUpdate = (data) => {
 
 // 更新企业端气泡位置
 const updateCompanyBubblePos = () => {
-  const bubbleWidth = 240
-  const bubbleHeight = 100
+  const bubbleWidth = 220 // 统一气泡宽度
+  const bubbleHeight = 90
+  const ballSize = 60
   const gap = 15
+  const screenWidth = window.innerWidth
   const screenHeight = window.innerHeight
 
   let left = ballState.x - bubbleWidth - gap
-  let top = ballState.y + (60 - bubbleHeight) / 2
+  let top = ballState.y + (ballSize - bubbleHeight) / 2
 
   if (top < 10) top = 10
   if (top + bubbleHeight > screenHeight - 10) top = screenHeight - bubbleHeight - 10
-  if (left < 10) left = ballState.x + 60 + gap
+  if (left < 10) left = ballState.x + ballSize + gap
+  if (left + bubbleWidth > screenWidth - 10) left = ballState.x - bubbleWidth - gap
 
   companyBubblePos.left = left
   companyBubblePos.top = top
@@ -554,17 +579,20 @@ const shouldShowCompanyBubble = () => {
 
 // 计算学生端气泡位置 - 与企业端一致
 const updateTipBubblePos = () => {
-  const bubbleWidth = 240
+  const bubbleWidth = 220 // 统一气泡宽度
   const bubbleHeight = 80
+  const ballSize = 60
   const gap = 15
+  const screenWidth = window.innerWidth
   const screenHeight = window.innerHeight
 
   let left = ballState.x - bubbleWidth - gap
-  let top = ballState.y + (60 - bubbleHeight) / 2
+  let top = ballState.y + (ballSize - bubbleHeight) / 2
 
   if (top < 10) top = 10
   if (top + bubbleHeight > screenHeight - 10) top = screenHeight - bubbleHeight - 10
-  if (left < 10) left = ballState.x + 60 + gap
+  if (left < 10) left = ballState.x + ballSize + gap
+  if (left + bubbleWidth > screenWidth - 10) left = ballState.x - bubbleWidth - gap
 
   tipBubblePos.left = left
   tipBubblePos.top = top
@@ -625,17 +653,20 @@ const fetchEncouragement = async () => {
 
 // 更新鼓励气泡位置
 const updateEncouragementBubblePos = () => {
-  const bubbleWidth = 220
+  const bubbleWidth = 220 // 统一气泡宽度
   const bubbleHeight = 80
+  const ballSize = 60
   const gap = 15
+  const screenWidth = window.innerWidth
   const screenHeight = window.innerHeight
 
   let left = ballState.x - bubbleWidth - gap
-  let top = ballState.y + (60 - bubbleHeight) / 2
+  let top = ballState.y + (ballSize - bubbleHeight) / 2
 
   if (top < 10) top = 10
   if (top + bubbleHeight > screenHeight - 10) top = screenHeight - bubbleHeight - 10
-  if (left < 10) left = ballState.x + 60 + gap
+  if (left < 10) left = ballState.x + ballSize + gap
+  if (left + bubbleWidth > screenWidth - 10) left = ballState.x - bubbleWidth - gap
 
   encouragementBubblePos.left = left
   encouragementBubblePos.top = top
@@ -817,16 +848,16 @@ const startBallDrag = (e) => {
   document.addEventListener('mouseup', stopBallDrag)
 }
 
-// 悬浮球自动吸附到边缘
+// 悬浮球自动吸附到边缘（平滑过渡）
 const snapBallToEdge = () => {
   const ballSize = 60
   const screenWidth = window.innerWidth
   const snapThreshold = 50
 
   if (ballState.x < snapThreshold) {
-    ballState.x = 0
+    ballState.x = 10
   } else if (ballState.x > screenWidth - ballSize - snapThreshold) {
-    ballState.x = screenWidth - ballSize
+    ballState.x = screenWidth - ballSize - 10
   }
 
   // 吸附后更新气泡位置
@@ -998,7 +1029,6 @@ const closeChat = () => {
 // 清除聊天历史
 const clearHistory = () => {
   messages.value = []
-  streamingMessage.value = ''
   localStorage.removeItem(getStorageKey('internshipAIChatHistory'))
   userInput.value = ''
   ElMessage.success('对话已清空')
@@ -1074,9 +1104,10 @@ const toggleFavorite = async (job, message) => {
   }
 }
 
-// 获取格式化的对话上下文
+// 获取格式化的对话上下文（排除正在流式输出的消息）
 const getFormattedContext = () => {
   return messages.value
+    .filter(msg => !msg.isStreaming)
     .slice(-10)
     .map(msg => ({
       role: msg.role,
@@ -1085,41 +1116,78 @@ const getFormattedContext = () => {
 }
 
 // 发送消息
+let isSendingMessage = false // 防止重复发送标志
 const sendMessage = async () => {
   const message = userInput.value.trim()
-  if (!message || isLoading.value) return
+  if (!message || isLoading.value || isSendingMessage) return
 
+  isSendingMessage = true
   const currentInput = message
   userInput.value = ''
   isLoading.value = true
+  isGenerating.value = true
+  abortController = new AbortController()
 
+  // 1. 推入用户消息
   const userMessage = {
     role: 'user',
     content: currentInput,
     timestamp: new Date()
   }
-  const userMessageIndex = messages.value.length
   messages.value.push(userMessage)
-  saveState()
-  // 用户发消息时滚动到该消息位置
-  scrollToMessage(userMessageIndex)
+  scrollToBottom()
+
+  // 2. 立刻同步推入 AI 的占位气泡，确保马上显示三个点
+  const aiMessageIndex = messages.value.length
+  const aiMessage = {
+    role: 'assistant',
+    content: '',
+    isStreaming: true,
+    timestamp: new Date()
+  }
+  messages.value.push(aiMessage)
+  scrollToBottom()
 
   try {
-    await sendStreamingMessage(currentInput)
+    await sendStreamingMessage(currentInput, aiMessageIndex)
   } catch (error) {
-    console.error('发送消息失败:', error)
-    const errorMessage = {
-      role: 'assistant',
-      content: '抱歉，服务暂时不可用，请稍后重试。',
-      timestamp: new Date()
+    // 只有非主动中断的错误才显示错误提示
+    if (error.name !== 'AbortError') {
+      console.error('发送消息失败:', error)
+      messages.value[aiMessageIndex].content = '抱歉，服务暂时不可用，请稍后重试。'
+      messages.value[aiMessageIndex].isStreaming = false
+      saveState()
+      ElMessage.error('请求失败，请检查网络连接或稍后重试')
     }
-    messages.value.push(errorMessage)
-    saveState()
-    // 错误回复时不自动滚动，让用户自由滚动
-    ElMessage.error('请求失败，请检查网络连接或稍后重试')
   } finally {
+    messages.value[aiMessageIndex].isStreaming = false
     isLoading.value = false
+    isGenerating.value = false
+    isSendingMessage = false
+    abortController = null
+    saveState()
+    nextTick(() => { if (chatInputRef.value) chatInputRef.value.style.height = 'auto' })
   }
+}
+
+// 停止 AI 生成
+const stopGeneration = () => {
+  if (abortController) {
+    try {
+      abortController.abort()
+    } catch (e) {
+      // 忽略已中止的错误
+    }
+  }
+  isGenerating.value = false
+  isLoading.value = false
+  // 找到正在流式输出的消息并标记为停止
+  const streamingMsgIndex = messages.value.findIndex(msg => msg.isStreaming)
+  if (streamingMsgIndex !== -1) {
+    messages.value[streamingMsgIndex].isStreaming = false
+    saveState()
+  }
+  ElMessage.info('已停止生成')
 }
 
 // HTML转义函数，防止XSS
@@ -1179,16 +1247,24 @@ const formatTime = (time) => {
   }
 }
 
+// 高度自适应输入处理
+const handleInput = () => {
+  const el = chatInputRef.value
+  if (!el) return
+  el.style.height = 'auto'
+  const newHeight = Math.min(el.scrollHeight, 120)
+  el.style.height = `${newHeight}px`
+}
+
 // 发送流式消息 - 与AIChat.vue保持一致
-const sendStreamingMessage = (message) => {
+const sendStreamingMessage = (message, aiMessageIndex) => {
   return new Promise((resolve, reject) => {
     const token = localStorage.getItem('token')
-    let controller = new AbortController()
     let timeoutId = null
 
     // 设置超时
     timeoutId = setTimeout(() => {
-      controller.abort()
+      if (abortController) abortController.abort()
       ElMessage.warning('请求超时，请重试')
       reject(new Error('请求超时'))
     }, 60000)
@@ -1200,7 +1276,7 @@ const sendStreamingMessage = (message) => {
       headers['Authorization'] = `Bearer ${token}`
     }
 
-    // 获取对话上下文
+    // 获取对话上下文（不包含刚添加的占位消息）
     const context = getFormattedContext()
 
     // 获取用户名（学生用户名为studentId）
@@ -1220,7 +1296,7 @@ const sendStreamingMessage = (message) => {
         role: props.role,
         username: username
       }),
-      signal: controller.signal
+      signal: abortController.signal
     })
       .then(response => {
         clearTimeout(timeoutId)
@@ -1239,14 +1315,8 @@ const sendStreamingMessage = (message) => {
 
         const processStream = ({ done, value }) => {
           if (done) {
-            // 流结束，保存原始内容，渲染时再格式化
-            const aiMessage = {
-              role: 'assistant',
-              content: streamingMessage.value,
-              timestamp: new Date()
-            }
-            messages.value.push(aiMessage)
-            streamingMessage.value = ''
+            // 流结束
+            messages.value[aiMessageIndex].isStreaming = false
             resolve()
             return
           }
@@ -1267,40 +1337,27 @@ const sendStreamingMessage = (message) => {
                 const data = JSON.parse(jsonStr)
 
                 if (data.type === 'chunk') {
-                  streamingMessage.value += data.content
-                  // 流式过程中不自动滚动，让用户自由滚动查看
+                  messages.value[aiMessageIndex].content += data.content
                 } else if (data.type === 'job_recommendation') {
                   // 岗位推荐类型，直接保存完整数据
-                  const aiMessage = {
-                    role: 'assistant',
-                    content: data.content || '',
-                    type: 'job_recommendation',
-                    jobData: data.data,
-                    timestamp: new Date()
-                  }
-                  messages.value.push(aiMessage)
+                  messages.value[aiMessageIndex].content = data.content || ''
+                  messages.value[aiMessageIndex].type = 'job_recommendation'
+                  messages.value[aiMessageIndex].jobData = data.data
+                  messages.value[aiMessageIndex].isStreaming = false
                   saveState()
-                  streamingMessage.value = ''
-                  isLoading.value = false
                   reader.cancel()
                   resolve()
                   return
                 } else if (data.type === 'end') {
-                  // 流结束时，保存原始内容，渲染时再格式化
-                  const aiMessage = {
-                    role: 'assistant',
-                    content: streamingMessage.value, // 保存原始内容，不格式化
-                    timestamp: new Date()
-                  }
-                  messages.value.push(aiMessage)
-                  saveState()
-                  streamingMessage.value = ''
-                  isLoading.value = false
+                  // 流结束时，content 已经通过 chunk 追加完毕
+                  messages.value[aiMessageIndex].isStreaming = false
                   reader.cancel()
                   resolve()
                   return
                 } else if (data.type === 'error') {
                   ElMessage.error(data.message || '生成过程中发生错误')
+                  messages.value[aiMessageIndex].content = '抱歉，生成过程中发生错误。'
+                  messages.value[aiMessageIndex].isStreaming = false
                   reader.cancel()
                   reject(new Error(data.message))
                   return
@@ -1318,9 +1375,9 @@ const sendStreamingMessage = (message) => {
       })
       .catch(error => {
         clearTimeout(timeoutId)
-        isLoading.value = false
-        if (error.name === 'AbortError') {
-          console.log('请求已超时中止')
+        // 忽略 AbortError（用户主动中断或超时导致）
+        if (error.name === 'AbortError' || error.message?.includes('aborted')) {
+          console.log('请求已中止')
         } else {
           console.error('流式连接错误:', error)
           ElMessage.error('连接中断或服务器拒绝访问，请重试')
@@ -1334,7 +1391,12 @@ const sendStreamingMessage = (message) => {
 const scrollToBottom = () => {
   nextTick(() => {
     if (messagesContainer.value) {
-      messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight
+      const scrollEl = messagesContainer.value.$el?.querySelector('.el-scrollbar__wrap')
+      if (scrollEl) {
+        scrollEl.scrollTop = scrollEl.scrollHeight
+      } else if (messagesContainer.value.$el) {
+        messagesContainer.value.$el.scrollTop = messagesContainer.value.$el.scrollHeight
+      }
     }
   })
 }
@@ -1627,13 +1689,23 @@ const closeModelDropdownOnClickOutside = (e) => {
 </script>
 
 <style scoped>
+/* ========== 毛玻璃效果 ========== */
+.glass-effect {
+  background: #FFFFFF;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
+}
+
+/* ========== 悬浮球 ========== */
 .floating-ai-ball {
   position: fixed;
   width: 60px;
   height: 60px;
   z-index: 10000;
-  transition: transform 0.1s ease-out;
-  will-change: transform;
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1),
+              left 0.4s cubic-bezier(0.34, 1.56, 0.64, 1),
+              top 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+  will-change: transform, left, top;
 }
 
 /* 拖拽时禁用过渡效果 */
@@ -1658,7 +1730,11 @@ body.panel-resizing .chat-panel {
   font-weight: bold;
   font-size: 16px;
   cursor: pointer;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  /* 柔和发光阴影 */
+  box-shadow: 0 8px 24px rgba(64, 158, 255, 0.35),
+              0 4px 12px rgba(82, 196, 26, 0.25),
+              inset 0 -2px 6px rgba(0, 0, 0, 0.1),
+              inset 0 2px 6px rgba(255, 255, 255, 0.25);
   transition: all 0.3s ease;
   user-select: none;
   animation: float 3s ease-in-out infinite;
@@ -1669,47 +1745,44 @@ body.panel-resizing .chat-panel {
     transform: translateY(0);
   }
   50% {
-    transform: translateY(-10px);
+    transform: translateY(-8px);
   }
 }
 
 .ai-icon:hover {
-  transform: scale(1.05);
-  box-shadow: 0 6px 25px rgba(0, 0, 0, 0.35);
+  transform: scale(1.08);
+  box-shadow: 0 12px 32px rgba(64, 158, 255, 0.45),
+              0 6px 16px rgba(82, 196, 26, 0.35),
+              inset 0 -2px 6px rgba(0, 0, 0, 0.1),
+              inset 0 2px 6px rgba(255, 255, 255, 0.3);
 }
 
+/* ========== 聊天面板 ========== */
 .chat-panel {
   position: fixed;
   z-index: 1000;
-  background: white;
-  border-radius: 24px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+  border-radius: 20px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  transform-origin: center center;
-  /* 改用 transform 替代 width/height 变化以获得更好的性能 */
   will-change: transform;
-  /* 禁用所有过渡以确保拖拽/调整大小时的即时响应 */
   transition: none;
-}
-
-/* 隐藏浏览器原生的 resize 功能和图标 */
-.chat-panel {
+  background: #FFFFFF;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.12);
   resize: none !important;
   -webkit-resize: none !important;
   -moz-resize: none !important;
-  resize: none !important;
 }
 
 .chat-panel::-webkit-resizer {
   display: none;
 }
 
+/* ========== 聊天头部 ========== */
 .chat-header {
   background: linear-gradient(135deg, #409EFF 0%, #52c41a 100%);
   color: white;
-  padding: 16px 20px;
+  padding: 12px 16px;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -1717,7 +1790,7 @@ body.panel-resizing .chat-panel {
   user-select: none;
   position: relative;
   overflow: hidden;
-  border-radius: 24px 24px 0 0;
+  border-radius: 20px 20px 0 0;
 }
 
 .chat-header::before {
@@ -1727,95 +1800,151 @@ body.panel-resizing .chat-panel {
   right: -50%;
   width: 100%;
   height: 100%;
-  background: radial-gradient(circle, rgba(255, 255, 255, 0.1) 0%, transparent 70%);
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.15) 0%, transparent 70%);
   transform: rotate(30deg);
 }
 
-.header-content {
+.header-left {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   position: relative;
   z-index: 1;
 }
 
 .ai-icon-small {
-  width: 32px;
-  height: 32px;
-  background: rgba(255, 255, 255, 0.2);
+  width: 28px;
+  height: 28px;
+  background: rgba(255, 255, 255, 0.25);
   border-radius: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 14px;
+  font-size: 12px;
   font-weight: bold;
 }
 
-.chat-header h3 {
-  margin: 0;
-  font-size: 18px;
+.header-title {
+  font-size: 15px;
   font-weight: 600;
   color: white;
 }
 
-.header-description {
-  margin: 0;
-  font-size: 12px;
-  opacity: 0.9;
-  margin-top: 2px;
-}
-
 .header-actions {
   display: flex;
-  gap: 12px;
+  align-items: center;
+  gap: 8px;
   position: relative;
   z-index: 1001;
 }
 
-.clear-btn {
-  background: rgba(255, 255, 255, 0.2);
-  border: none;
-  color: white;
-  font-size: 12px;
-  padding: 6px 12px;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all 0.3s ease;
+.model-select-wrapper {
+  position: relative;
+}
+
+.model-select-trigger {
   display: flex;
   align-items: center;
   gap: 4px;
+  padding: 4px 10px;
+  background: #FFFFFF;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 12px;
+  cursor: pointer;
+  min-width: 120px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  transition: all 0.2s;
 }
 
-.clear-btn:hover {
-  background: rgba(255, 255, 255, 0.3);
-  transform: translateY(-1px);
+.model-select-trigger:hover {
+  background: rgba(255, 255, 255, 1);
 }
 
-.close-btn {
-  background: none;
+.model-name {
+  flex: 1;
+  font-size: 11px;
+  color: #333;
+}
+
+.model-arrow {
+  font-size: 9px;
+  color: #666;
+}
+
+.model-select-dropdown {
+  position: fixed;
+  background: #FFFFFF;
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  z-index: 1002;
+  min-width: 120px;
+  overflow: hidden;
+}
+
+.model-option {
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 12px;
+  color: #333;
+  transition: all 0.15s;
+}
+
+.model-option:hover {
+  background: rgba(64, 158, 255, 0.1);
+}
+
+.model-option.active {
+  color: #409EFF;
+  background: #f0f9ff;
+  font-weight: 600;
+}
+
+.icon-btn {
+  background: rgba(255, 255, 255, 0.2);
   border: none;
   color: white;
-  font-size: 24px;
+  font-size: 14px;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
   cursor: pointer;
-  padding: 0;
-  width: 32px;
-  height: 32px;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.3s ease;
-  line-height: 1;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+
+.icon-btn:hover {
+  background: rgba(255, 255, 255, 0.35);
+  transform: scale(1.05);
+}
+
+.close-btn {
+  font-size: 16px;
   font-weight: 300;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  line-height: 1;
+  padding: 0;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .close-btn:hover {
-  transform: scale(1.1);
+  background: rgba(255, 100, 100, 0.4);
 }
 
+/* ========== 消息区域 ========== */
 .chat-messages {
   flex: 1;
-  padding: 20px;
-  background: #fafbfc;
+  padding: 16px;
+  padding-bottom: 80px;
+  background: #FFFFFF;
 }
 
 .chat-messages :deep(.el-scrollbar__wrap) {
@@ -1824,85 +1953,48 @@ body.panel-resizing .chat-panel {
   scroll-behavior: smooth;
 }
 
-/* 欢迎区域 */
-.welcome-section {
-  text-align: center;
-  padding: 40px 20px;
-  max-width: 500px;
-  margin: 0 auto;
-}
-
-.welcome-icon {
-  width: 80px;
-  height: 80px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #409EFF 0%, #52c41a 100%);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin: 0 auto 16px;
-  font-size: 32px;
-  color: white;
-  font-weight: bold;
-}
-
-.welcome-section h3 {
-  font-size: 22px;
-  font-weight: 600;
-  margin-bottom: 12px;
-  color: #333;
-}
-
-.welcome-section p {
-  font-size: 14px;
-  color: #666;
-  margin-bottom: 24px;
-  line-height: 1.6;
+/* 欢迎消息区域 */
+.welcome-messages {
+  padding-top: 8px;
 }
 
 .quick-suggestions {
-  margin-top: 24px;
-}
-
-.suggestion-title {
-  font-size: 13px;
-  color: #999;
-  margin-bottom: 12px;
-}
-
-.suggestion-buttons {
   display: flex;
   flex-wrap: wrap;
-  justify-content: center;
   gap: 8px;
+  margin-top: 16px;
+  padding-left: 4px;
 }
 
-.suggestion-btn {
-  border-radius: 18px;
+.suggestion-capsule {
+  border-radius: 20px;
   font-size: 12px;
   padding: 6px 14px;
-  border: 1px solid #e0e0e0;
-  background: white;
-  color: #333;
+  border: 1px solid rgba(64, 158, 255, 0.3);
+  background: #FFFFFF;
+  color: #409EFF;
   transition: all 0.2s;
   cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
 }
 
-.suggestion-btn:hover {
-  background: #f5f7fa;
-  border-color: #409EFF;
-  color: #409EFF;
+.suggestion-capsule:hover:not(:disabled) {
+  background: linear-gradient(135deg, #409EFF, #52c41a);
+  color: white;
+  border-color: transparent;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(64, 158, 255, 0.25);
 }
 
-.suggestion-btn:disabled {
-  opacity: 0.6;
+.suggestion-capsule:disabled {
+  opacity: 0.5;
   cursor: not-allowed;
 }
 
 /* 消息样式 */
 .message {
   display: flex;
-  margin-bottom: 16px;
+  margin-bottom: 14px;
   animation: fadeIn 0.3s ease-in;
 }
 
@@ -1910,15 +2002,14 @@ body.panel-resizing .chat-panel {
   justify-content: flex-end;
 }
 
-.message.ai,
-.message[data-role="assistant"] {
+.message.ai {
   justify-content: flex-start;
 }
 
 @keyframes fadeIn {
   from {
     opacity: 0;
-    transform: translateY(10px);
+    transform: translateY(8px);
   }
   to {
     opacity: 1;
@@ -1927,7 +2018,7 @@ body.panel-resizing .chat-panel {
 }
 
 .message-content-container {
-  max-width: 80%;
+  max-width: 82%;
 }
 
 .message.user .message-content-container {
@@ -1935,21 +2026,19 @@ body.panel-resizing .chat-panel {
   justify-content: flex-end;
 }
 
-.message.ai .message-content-container,
-.message[data-role="assistant"] .message-content-container {
+.message.ai .message-content-container {
   display: flex;
   justify-content: flex-start;
-  max-width: 100%;
 }
 
 .message-bubble {
-  padding: 12px 16px;
-  border-radius: 18px;
+  padding: 10px 14px;
+  border-radius: 16px;
   position: relative;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
   max-width: 100%;
   line-height: 1.5;
-  min-height: 44px;
+  min-height: 40px;
   display: flex;
   flex-direction: column;
   white-space: normal;
@@ -1957,35 +2046,33 @@ body.panel-resizing .chat-panel {
 }
 
 .message.user .message-bubble {
-  background: #409EFF;
+  background: linear-gradient(135deg, #409EFF, #53a0ff);
   color: white;
-  border-bottom-right-radius: 4px;
+  border-bottom-right-radius: 6px;
 }
 
-.message.ai .message-bubble,
-.message[data-role="assistant"] .message-bubble {
-  background: #f1f3f5;
+.message.ai .message-bubble {
+  background: #FFFFFF;
   color: #333;
-  border-bottom-left-radius: 4px;
-  position: relative;
+  border-bottom-left-radius: 6px;
+  border: 1px solid rgba(0, 0, 0, 0.06);
 }
 
 .message-text {
   line-height: 1.6;
   word-wrap: break-word;
   flex: 1;
-  /* 流式消息字体大小 font-size: px; */
+  font-size: 14px;
 }
 
 .message-time {
-  font-size: 12px;
-  opacity: 0.7;
-  margin-top: 6px;
-  text-align: right;
+  font-size: 11px;
+  opacity: 0.6;
+  margin-top: 4px;
 }
 
 .message.ai .message-time {
-  text-align: left;
+  color: #999;
 }
 
 /* 流式指示器样式 */
@@ -1994,29 +2081,60 @@ body.panel-resizing .chat-panel {
   align-items: center;
   gap: 4px;
   margin-top: 8px;
-  justify-content: flex-start;
 }
 
 .streaming-indicator span {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
   border-radius: 50%;
   background: #10a37f;
   animation: streaming 1.4s infinite ease-in-out;
 }
 
-.streaming-indicator span:nth-child(1) {
-  animation-delay: -0.32s;
-}
-
-.streaming-indicator span:nth-child(2) {
-  animation-delay: -0.16s;
-}
+.streaming-indicator span:nth-child(1) { animation-delay: -0.32s; }
+.streaming-indicator span:nth-child(2) { animation-delay: -0.16s; }
 
 @keyframes streaming {
+  0%, 80%, 100% { transform: scale(0.8); opacity: 0.5; }
+  40% { transform: scale(1); opacity: 1; }
+}
+
+/* 内嵌式 AI 思考呼吸圆点动画 */
+.inline-typing-indicator {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 6px;
+  height: 14px;
+}
+
+.ai-bubble:has(.inline-typing-indicator) {
+  min-height: 40px;
+}
+
+.inline-typing-indicator .dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  animation: bounce-dot 1.4s infinite ease-in-out both;
+}
+
+.inline-typing-indicator .dot:nth-child(1) {
+  background-color: #409EFF;
+  animation-delay: -0.32s;
+}
+.inline-typing-indicator .dot:nth-child(2) {
+  background-color: #67C23A;
+  animation-delay: -0.16s;
+}
+.inline-typing-indicator .dot:nth-child(3) {
+  background-color: #52c41a;
+}
+
+@keyframes bounce-dot {
   0%, 80%, 100% {
-    transform: scale(0.8);
-    opacity: 0.5;
+    transform: scale(0);
+    opacity: 0.4;
   }
   40% {
     transform: scale(1);
@@ -2024,93 +2142,128 @@ body.panel-resizing .chat-panel {
   }
 }
 
-.chat-input {
-  padding: 16px 20px;
-  border-top: 1px solid #f0f0f0;
-  background: white;
-  position: sticky;
+/* ========== 底部输入区域 ========== */
+
+/* 彻底隐形的外层包裹器 */
+.chat-footer-wrapper {
+  position: absolute;
   bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 0 20px 24px 20px;
+  background: transparent;
+  border-top: none;
+  pointer-events: none;
   z-index: 10;
-  border-radius: 0 0 24px 24px;
 }
 
-.input-actions {
+/* 悬浮胶囊本体 */
+.input-capsule {
+  pointer-events: auto;
+  background-color: #FFFFFF;
+  border-radius: 28px;
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 12px;
-  gap: 16px;
-}
-
-.model-selection {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.model-label {
-  font-size: 13px;
-  color: #666;
-  white-space: nowrap;
-}
-
-.textarea-with-button {
-  position: relative;
-  display: flex;
-  gap: 16px;
   align-items: flex-end;
+  padding: 8px 10px 8px 18px;
+  gap: 12px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+  border: 1px solid rgba(0, 0, 0, 0.04);
+  transition: box-shadow 0.3s ease, border-color 0.3s ease;
 }
 
-.message-textarea {
+.input-capsule.is-focused {
+  box-shadow: 0 6px 32px rgba(0, 0, 0, 0.12);
+}
+
+/* 自动伸缩的输入框 */
+.grow-textarea {
   flex: 1;
-  border-radius: 18px;
-  border: 1px solid #e0e0e0;
-  resize: none;
-  font-size: 14px;
-  line-height: 1.5;
-  padding: 12px 16px;
-  transition: all 0.2s;
-  outline: none;
-  font-family: inherit;
-  min-height: 60px;
-  max-height: 120px;
-}
-
-.message-textarea:focus {
-  border-color: #409EFF;
-  box-shadow: 0 0 0 2px rgba(64, 158, 255, 0.1);
-}
-
-.message-textarea:disabled {
-  background-color: #f5f5f5;
-  cursor: not-allowed;
-}
-
-.send-btn {
-  border-radius: 18px;
-  padding: 12px 20px;
-  background: #409EFF;
+  background: transparent;
   border: none;
-  color: white;
-  height: auto;
-  transition: all 0.2s;
-  white-space: nowrap;
+  outline: none;
+  resize: none;
+  font-size: 15px;
+  line-height: 1.5;
+  color: #333;
+  font-family: inherit;
+  font-weight: normal;
+  padding: 7px 0;
+  max-height: 120px;
+  overflow-y: auto;
+  margin-bottom: 2px;
+}
+
+.grow-textarea::-webkit-scrollbar { width: 4px; }
+.grow-textarea::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 4px; }
+
+/* 完美的圆形发送按钮 */
+.send-btn {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background-color: #f3f4f6;
+  color: #9ca3af;
+  cursor: not-allowed;
+  transition: all 0.25s cubic-bezier(0.2, 0, 0, 1);
+  margin-bottom: 0px;
+}
+
+.send-btn svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* 激活状态的按钮 */
+.send-btn.is-active {
+  background-color: #409EFF;
+  color: #ffffff;
   cursor: pointer;
+  box-shadow: 0 4px 12px rgba(64, 158, 255, 0.35);
+}
+
+.send-btn.is-active:active {
+  transform: scale(0.92);
+}
+
+.send-btn.loading {
+  background-color: #409EFF;
+  color: #ffffff;
+  cursor: default;
+}
+
+/* 停止生成按钮 */
+.send-btn.stop-btn {
+  background-color: #fee2e2;
+  color: #ef4444;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.2);
+}
+
+.send-btn.stop-btn:hover {
+  background-color: #fecaca;
+  box-shadow: 0 4px 16px rgba(239, 68, 68, 0.3);
+}
+
+.send-icon {
   font-size: 14px;
 }
 
-.send-btn:hover:not(:disabled) {
-  background: #66b1ff;
-  transform: translateY(-1px);
+.loading-dots {
+  font-size: 14px;
+  animation: pulse 1s infinite;
 }
 
-.send-btn:disabled {
-  background: #c0c4cc;
-  transform: none;
-  cursor: not-allowed;
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
 }
 
-/* 调整大小手柄 - 保持视觉大小，但禁用自身事件 */
+/* ========== 调整大小手柄 ========== */
 .resize-handle {
   position: absolute;
   right: 2px;
@@ -2118,7 +2271,7 @@ body.panel-resizing .chat-panel {
   width: 50px;
   height: 35px;
   cursor: default;
-  opacity: 0.5;
+  opacity: 0.4;
   transition: opacity 0.2s;
   z-index: 20;
   background: none;
@@ -2126,14 +2279,11 @@ body.panel-resizing .chat-panel {
   pointer-events: none;
 }
 
-/* 左下角调整大小手柄 */
 .resize-handle-left {
   left: 2px;
   right: auto;
-  cursor: default;
 }
 
-/* 小触发区域 - 只有这一小块响应拖拽 */
 .resize-hitarea {
   position: absolute;
   right: 6px;
@@ -2145,22 +2295,14 @@ body.panel-resizing .chat-panel {
   pointer-events: auto;
 }
 
-/* 左下角触发区域 */
 .resize-handle-left .resize-hitarea {
   left: 6px;
   right: auto;
   cursor: nesw-resize;
 }
 
-/* 左下角调整大小手柄 */
-.resize-handle-left {
-  left: 2px;
-  right: auto;
-  cursor: nesw-resize;
-}
-
 .resize-handle:hover {
-  opacity: 0.85;
+  opacity: 0.7;
 }
 
 .resize-svg {
@@ -2171,15 +2313,10 @@ body.panel-resizing .chat-panel {
   height: 100%;
   display: block;
   pointer-events: none;
-  opacity: 0.5;
 }
 
-/* 文本选择样式 */
-.chat-header {
-  user-select: none;
-}
-
-.resize-handle {
+/* ========== 文本选择 ========== */
+.chat-header, .resize-handle {
   user-select: none;
 }
 
@@ -2196,16 +2333,19 @@ body.panel-resizing .chat-panel {
   color: white;
 }
 
-/* 企业端待办气泡样式 */
-.company-bubble {
+/* ========== 气泡样式 ========== */
+.company-bubble,
+.encouragement-bubble,
+.tip-bubble {
   position: fixed;
   z-index: 9998;
-  width: 240px;
-  background: linear-gradient(135deg, #FFFDF7 0%, #E8F5E9 100%);
-  border-radius: 16px;
-  box-shadow: 0 4px 20px rgba(46, 125, 50, 0.15);
-  padding: 16px;
-  animation: company-bubble-pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+  width: 220px;
+  border-radius: 20px;
+  padding: 14px 16px;
+  animation: bubble-pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+  background: linear-gradient(135deg, #ffffff 0%, #f0fff4 50%, #e8f8f0 100%);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow: 0 8px 32px rgba(64, 158, 255, 0.15), 0 2px 8px rgba(82, 196, 26, 0.1);
 }
 
 .company-bubble-header {
@@ -2221,7 +2361,7 @@ body.panel-resizing .chat-panel {
 }
 
 .company-bubble-icon {
-  font-size: 20px;
+  font-size: 18px;
 }
 
 .company-bubble-title {
@@ -2232,14 +2372,14 @@ body.panel-resizing .chat-panel {
 
 .company-bubble-divider {
   height: 1px;
-  background: linear-gradient(90deg, transparent, #c8e6c9, transparent);
+  background: linear-gradient(90deg, transparent, rgba(200, 230, 201, 0.8), transparent);
   margin: 10px 0;
 }
 
 .company-bubble-body {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 
 .company-bubble-item {
@@ -2252,40 +2392,19 @@ body.panel-resizing .chat-panel {
 
 .company-bubble-badge {
   color: #ff7eb3;
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 600;
-  transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 20px;
-  height: 20px;
 }
 
 .badge-number {
   display: inline-block;
-  transition: all 0.3s ease;
-}
-
-.badge-flash {
-  animation: badge-pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 @keyframes badge-pop {
   0% { transform: scale(1); }
-  40% { transform: scale(1.25); color: #ff6b9d; }
+  40% { transform: scale(1.2); color: #ff6b9d; }
   70% { transform: scale(0.95); }
   100% { transform: scale(1); }
-}
-
-.company-bubble-flash {
-  animation: bubble-glow 0.5s ease-out;
-}
-
-@keyframes bubble-glow {
-  0% { box-shadow: 0 4px 20px rgba(46, 125, 50, 0.15); transform: scale(1); }
-  35% { box-shadow: 0 5px 25px rgba(46, 125, 50, 0.25); transform: scale(1.015); }
-  100% { box-shadow: 0 4px 20px rgba(46, 125, 50, 0.15); transform: scale(1); }
 }
 
 .company-bubble-empty {
@@ -2293,11 +2412,12 @@ body.panel-resizing .chat-panel {
   color: #909399;
 }
 
-.company-bubble-close {
-  width: 24px;
-  height: 24px;
+.company-bubble-close,
+.tip-bubble-close {
+  width: 22px;
+  height: 22px;
   border-radius: 50%;
-  background: #f5f7fa;
+  background: rgba(0, 0, 0, 0.06);
   border: none;
   color: #909399;
   font-size: 16px;
@@ -2311,68 +2431,14 @@ body.panel-resizing .chat-panel {
   transition: all 0.2s;
 }
 
-.company-bubble-close:hover {
-  background: #fee;
-  color: #f56c6c;
-}
-
-/* 学生端气泡样式 - 改为和企业端一致 */
-.tip-bubble {
-  position: fixed;
-  z-index: 9998;
-  width: 240px;
-  background: linear-gradient(135deg, #FFFDF7 0%, #E8F5E9 100%);
-  border-radius: 16px;
-  box-shadow: 0 4px 20px rgba(46, 125, 50, 0.15);
-  padding: 16px;
-  animation: company-bubble-pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-
-.tip-bubble-inner {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding-right: 20px;
-}
-
-.tip-bubble-icon {
-  font-size: 24px;
-  flex-shrink: 0;
-}
-
-.tip-bubble-text {
-  font-size: 14px;
-  color: #2E7D32;
-  line-height: 1.5;
-}
-
-.tip-bubble-close {
-  position: absolute;
-  top: 6px;
-  right: 8px;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  background: rgba(0, 0, 0, 0.06);
-  border: none;
-  color: #909399;
-  font-size: 14px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  line-height: 1;
-  transition: all 0.2s;
-}
-
+.company-bubble-close:hover,
 .tip-bubble-close:hover {
   background: rgba(245, 108, 108, 0.15);
   color: #f56c6c;
 }
 
 /* 入场动画 */
-@keyframes company-bubble-pop {
+@keyframes bubble-pop {
   0% {
     opacity: 0;
     transform: scale(0.85) translateX(15px);
@@ -2397,16 +2463,36 @@ body.panel-resizing .chat-panel {
   transform: scale(0.85) translateX(10px);
 }
 
-/* 鼓励气泡样式 - 薄荷绿+奶油白配色 */
-.encouragement-bubble {
-  position: fixed;
-  z-index: 9998;
+.tip-bubble {
   width: 220px;
-  background: linear-gradient(135deg, #FFFDF7 0%, #E8F5E9 100%);
-  border-radius: 16px;
-  box-shadow: 0 4px 20px rgba(46, 125, 50, 0.15);
-  padding: 16px;
-  animation: company-bubble-pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.tip-bubble-inner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-right: 24px;
+}
+
+.tip-bubble-icon {
+  font-size: 22px;
+  flex-shrink: 0;
+}
+
+.tip-bubble-text {
+  font-size: 13px;
+  color: #2E7D32;
+  line-height: 1.5;
+}
+
+.tip-bubble-close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+}
+
+.encouragement-bubble {
+  width: 220px;
 }
 
 .encouragement-bubble-inner {
@@ -2417,7 +2503,7 @@ body.panel-resizing .chat-panel {
 }
 
 .encouragement-icon {
-  font-size: 28px;
+  font-size: 24px;
   flex-shrink: 0;
 }
 
@@ -2437,7 +2523,7 @@ body.panel-resizing .chat-panel {
   display: flex;
   align-items: center;
   gap: 4px;
-  font-size: 12px;
+  font-size: 11px;
   color: #999;
   cursor: pointer;
 }
@@ -2446,39 +2532,40 @@ body.panel-resizing .chat-panel {
   cursor: pointer;
 }
 
-/* 岗位推荐卡片样式 */
+/* ========== 岗位推荐卡片样式 ========== */
 .job-recommendation {
-  padding: 10px 0;
+  padding: 8px 0;
 }
 
 .job-recommendation-title {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 14px;
+  gap: 6px;
+  font-size: 13px;
   font-weight: 600;
   color: #333;
-  margin-bottom: 10px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid #eee;
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
 }
 
 .job-icon {
-  font-size: 18px;
+  font-size: 16px;
 }
 
 .job-cards-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 10px;
+  gap: 8px;
 }
 
 .job-card-compact {
-  background: #fff;
-  border: 1px solid #e8e8e8;
-  border-radius: 10px;
-  padding: 14px 16px;
+  background: #FFFFFF;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  border-radius: 12px;
+  padding: 12px;
   transition: all 0.2s;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
 }
 
 .job-card-compact:hover {
@@ -2490,41 +2577,31 @@ body.panel-resizing .chat-panel {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 8px;
+  gap: 6px;
+  margin-bottom: 6px;
 }
 
 .job-name-compact {
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 600;
   color: #333;
 }
 
 .job-salary-compact {
-  font-size: 13px;
+  font-size: 12px;
   color: #22c55e;
   font-weight: 600;
 }
 
-.job-row2 {
+.job-row2, .job-row3 {
   display: flex;
-  gap: 12px;
-  margin-bottom: 8px;
-}
-
-.job-company-compact {
-  font-size: 12px;
-  color: #666;
-}
-
-.job-row3 {
-  display: flex;
-  gap: 12px;
-  font-size: 12px;
+  gap: 8px;
+  font-size: 11px;
   color: #999;
-  margin-bottom: 8px;
+  margin-bottom: 4px;
 }
 
+.job-company-compact,
 .job-location-compact,
 .job-contact-compact,
 .job-phone-compact {
@@ -2535,13 +2612,14 @@ body.panel-resizing .chat-panel {
 
 .job-row4 {
   display: flex;
-  gap: 6px;
+  gap: 4px;
+  margin-top: 8px;
 }
 
 .action-btn {
-  padding: 4px 10px;
+  padding: 3px 8px;
   border-radius: 4px;
-  font-size: 11px;
+  font-size: 10px;
   border: none;
   cursor: pointer;
   transition: all 0.2s;
@@ -2565,19 +2643,19 @@ body.panel-resizing .chat-panel {
 }
 
 .action-btn.go-apply {
-  background: #409EFF;
+  background: linear-gradient(135deg, #409EFF, #53a0ff);
   color: #fff;
   flex: 1;
 }
 
 .action-btn.go-apply:hover {
-  background: #66b1ff;
+  filter: brightness(1.1);
 }
 
 .job-empty {
   text-align: center;
-  padding: 20px;
+  padding: 16px;
   color: #999;
-  font-size: 13px;
+  font-size: 12px;
 }
 </style>

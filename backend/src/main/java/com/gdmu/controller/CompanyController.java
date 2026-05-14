@@ -323,6 +323,10 @@ public class CompanyController {
 
             // 从student_internship_status表获取待确认实习表数
             List<StudentInternshipStatus> allStatuses = studentInternshipStatusService.list(null, null, null, null, companyId, null, null, null, null, null);
+            // 过滤掉已撤回的记录（recall_status=2表示已撤回）
+            allStatuses = allStatuses.stream()
+                    .filter(s -> s.getRecallStatus() == null || s.getRecallStatus() != 2)
+                    .collect(java.util.stream.Collectors.toList());
             Long totalConfirmations = (long) allStatuses.size();
             Long pendingConfirmations = allStatuses.stream()
                     .filter(s -> s.getCompanyConfirmStatus() != null && s.getCompanyConfirmStatus() == 0)
@@ -396,7 +400,9 @@ public class CompanyController {
             if (result > 0) {
                 // 清除职位列表缓存，确保学生端立即看到新职位
                 positionCacheService.clearPositionsCache();
-                log.info("岗位创建成功，已清除职位缓存");
+                // 向所有学生推送新职位数据，实时更新职位列表
+                webSocketHandler.sendPositionUpdateToAll(position);
+                log.info("岗位创建成功，已清除职位缓存并推送更新");
                 return Result.success("岗位创建成功");
             }
             return Result.error("岗位创建失败");
@@ -435,7 +441,9 @@ public class CompanyController {
             if (result > 0) {
                 // 清除职位列表缓存
                 positionCacheService.clearPositionsCache();
-                log.info("岗位删除成功，已清除职位缓存");
+                // 向所有学生推送岗位删除消息
+                webSocketHandler.sendPositionDeleteToAll(id);
+                log.info("岗位删除成功，已清除职位缓存并推送删除消息");
                 return Result.success("岗位删除成功");
             }
             return Result.error("岗位删除失败");
@@ -813,6 +821,12 @@ public class CompanyController {
             if (result > 0) {
                 // 推送待办数据更新
                 pushTodoUpdate(companyId);
+                // 向学生推送申请状态更新通知
+                Long studentUserId = application.getStudentId();
+                if (studentUserId != null) {
+                    notifyStudentApplicationStatus(studentUserId, application.getStudentName(),
+                        application.getPositionName(), newStatus, application.getCompanyName() != null ? application.getCompanyName() : "");
+                }
                 return Result.success("更新成功");
             } else {
                 return Result.error("更新失败");

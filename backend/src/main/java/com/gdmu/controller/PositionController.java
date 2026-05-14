@@ -33,6 +33,9 @@ public class PositionController {
     @Autowired
     private PositionCacheService positionCacheService;
 
+    @Autowired
+    private com.gdmu.websocket.AnnouncementWebSocketHandler webSocketHandler;
+
     /**
      * 分页查询岗位列表
      */
@@ -98,7 +101,9 @@ public class PositionController {
             positionService.insert(position);
             // 清除职位列表缓存，确保学生端立即看到新职位
             positionCacheService.clearPositionsCache();
-            log.info("岗位添加成功，已清除职位缓存");
+            // 推送更新到所有学生端
+            webSocketHandler.sendPositionUpdateToAll(position);
+            log.info("岗位添加成功，已清除职位缓存并推送更新");
             return Result.success("添加成功");
         } catch (Exception e) {
             log.error("新增岗位失败: {}", e.getMessage());
@@ -124,7 +129,9 @@ public class PositionController {
             positionService.update(position);
             // 清除职位列表缓存
             positionCacheService.clearPositionsCache();
-            log.info("岗位更新成功，已清除职位缓存");
+            // 推送更新到所有学生端
+            webSocketHandler.sendPositionUpdateToAll(position);
+            log.info("岗位更新成功，已清除职位缓存并推送更新");
             return Result.success("更新成功");
         } catch (Exception e) {
             log.error("更新岗位失败: {}", e.getMessage());
@@ -144,7 +151,9 @@ public class PositionController {
             positionService.delete(id);
             // 清除职位列表缓存
             positionCacheService.clearPositionsCache();
-            log.info("岗位删除成功，已清除职位缓存");
+            // 推送删除消息到所有学生端
+            webSocketHandler.sendPositionDeleteToAll(id);
+            log.info("岗位删除成功，已清除职位缓存并推送更新");
             return Result.success("删除成功");
         } catch (Exception e) {
             log.error("删除岗位失败: {}", e.getMessage());
@@ -178,7 +187,10 @@ public class PositionController {
             int count = positionService.batchDelete(ids);
             // 清除职位列表缓存
             positionCacheService.clearPositionsCache();
-            log.info("批量删除岗位成功，已清除职位缓存");
+            for (Long id : ids) {
+                webSocketHandler.sendPositionDeleteToAll(id);
+            }
+            log.info("批量删除岗位成功，已清除职位缓存并推送更新");
             return Result.success("成功删除" + count + "个岗位");
         } catch (Exception e) {
             log.error("批量删除岗位失败: {}", e.getMessage());
@@ -244,7 +256,12 @@ public class PositionController {
             positionService.pausePosition(id);
             // 清除职位列表缓存
             positionCacheService.clearPositionsCache();
-            log.info("暂停岗位成功，已清除职位缓存");
+            // 推送更新到所有学生端
+            Position position = positionService.findById(id);
+            if (position != null) {
+                webSocketHandler.sendPositionUpdateToAll(position);
+            }
+            log.info("暂停岗位成功，已清除职位缓存并推送更新");
             return Result.success("暂停成功");
         } catch (Exception e) {
             log.error("暂停岗位失败：{}", e.getMessage());
@@ -260,7 +277,12 @@ public class PositionController {
             positionService.resumePosition(id);
             // 清除职位列表缓存
             positionCacheService.clearPositionsCache();
-            log.info("恢复岗位成功，已清除职位缓存");
+            // 推送更新到所有学生端
+            Position position = positionService.findById(id);
+            if (position != null) {
+                webSocketHandler.sendPositionUpdateToAll(position);
+            }
+            log.info("恢复岗位成功，已清除职位缓存并推送更新");
             return Result.success("恢复成功");
         } catch (Exception e) {
             log.error("恢复岗位失败：{}", e.getMessage());

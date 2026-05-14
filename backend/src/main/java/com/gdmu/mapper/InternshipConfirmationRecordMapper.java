@@ -23,4 +23,6 @@ public interface InternshipConfirmationRecordMapper {
     List<InternshipConfirmationRecord> findByCompanyIdAndStatus(@Param("companyId") Long companyId, @Param("status") Integer status);
 
     List<InternshipConfirmationRecord> findByStudentIdAndStatus(@Param("studentId") Long studentId, @Param("status") Integer status);
+
+    List<InternshipConfirmationRecord> findPendingRecallList(@Param("studentId") Long studentId, @Param("name") String name, @Param("companyName") String companyName);
 }

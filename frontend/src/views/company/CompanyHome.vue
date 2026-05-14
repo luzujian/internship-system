@@ -1,4 +1,6 @@
-<script setup>
+<script setup lang="ts">
+import type { CompanyTodoUpdateData } from '@/utils/websocket'
+import { onNewApplication, offNewApplication, onCompanyTodoUpdate, offCompanyTodoUpdate } from '@/utils/websocket'
 import { ref, computed, onMounted, onUnmounted, markRaw } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/store/auth'
@@ -6,10 +8,7 @@ import request from '@/utils/request'
 import emitter from '@/utils/event-bus'
 import { usePositionStore } from '@/store/position'
 import { ElMessage } from 'element-plus'
-import { ElScrollbar } from 'element-plus'
 import FilePreviewDialog from '@/components/FilePreviewDialog.vue'
-import {
-} from '@/utils/websocket'
 import {
   DocumentChecked,
   User,
@@ -447,6 +446,21 @@ const handleWebSocketMessage = (data) => {
   }
 }
 
+// 静默处理新申请推送
+const handleNewApplication = (data) => {
+  console.log('收到新申请的WebSocket推送, 静默刷新最新动态', data)
+  // 刷新最新动态
+  fetchRecentActivities()
+  // 也可以顺便刷新一下顶部的统计卡片数字
+  fetchStats()
+}
+
+// 处理企业待办数据更新（静默刷新统计卡片）
+const handleCompanyTodoUpdate = (data: CompanyTodoUpdateData) => {
+  console.log('收到企业待办数据更新:', data)
+  fetchStats()
+}
+
 onMounted(() => {
   console.log('CompanyHome 组件已挂载')
   fetchStats()
@@ -454,11 +468,15 @@ onMounted(() => {
   fetchNotifications()
 
   emitter.on('notification-refresh', handleNotificationRefresh)
+  onNewApplication(handleNewApplication)
+  onCompanyTodoUpdate(handleCompanyTodoUpdate)
 })
 
 onUnmounted(() => {
   console.log('CompanyHome 组件已卸载')
   emitter.off('notification-refresh', handleNotificationRefresh)
+  offNewApplication(handleNewApplication)
+  offCompanyTodoUpdate(handleCompanyTodoUpdate)
 })
 </script>
 

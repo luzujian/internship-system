@@ -7,6 +7,7 @@ import { usePositionStore } from '../../store/position'
 import { useAuthStore } from '@/store/auth'
 import applicationApi from '@/api/InternshipApplicationService'
 import studentArchiveService from '@/api/StudentArchiveService'
+import { onNewApplication, offNewApplication } from '@/utils/websocket'
 
 const positionStore = usePositionStore()
 const authStore = useAuthStore()
@@ -43,6 +44,11 @@ const statusOptions = [
   { label: '已查看', value: true }
 ]
 
+const handleNewApplication = () => {
+  console.log('岗位申请查看页面收到新申请通知，静默刷新数据')
+  positionStore.fetchJobApplications()
+}
+
 onMounted(() => {
   if (!companyId.value) {
     ElMessage.error('未获取到企业 ID，无法加载数据')
@@ -50,6 +56,13 @@ onMounted(() => {
   }
   positionStore.fetchPositions(companyId.value)
   positionStore.fetchJobApplications()
+  
+  onNewApplication(handleNewApplication)
+})
+
+import { onUnmounted } from 'vue'
+onUnmounted(() => {
+  offNewApplication(handleNewApplication)
 })
 
 const detailDialogVisible = ref(false)

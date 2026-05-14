@@ -48,10 +48,43 @@ interface AIAnalysisResultData {
   message: string
 }
 
+// 学生申请状态更新消息类型
+export interface ApplicationStatusUpdateData {
+  studentId: number
+  studentName: string
+  positionName: string
+  companyName: string
+  status: string
+  statusText: string
+}
+
 // 企业待办更新消息类型
-interface CompanyTodoUpdateData {
+export interface CompanyTodoUpdateData {
   pendingApplications: number
   pendingConfirmations: number
+}
+
+// 实习确认结果更新消息类型
+export interface ConfirmationResultUpdateData {
+  confirmationStatus: number  // 1=已确认, 2=已拒绝
+  companyName: string
+  positionName: string
+}
+
+// 辅导员待评分数据更新消息类型
+export interface TeacherTodoUpdateData {
+  pendingEvaluations: number
+}
+
+// 成绩发布更新消息类型
+export interface GradePublishedData {
+  message: string
+}
+
+// 新申请消息类型
+interface NewApplicationData {
+  studentName: string
+  positionName: string
 }
 
 // 岗位更新监听器列表
@@ -61,6 +94,11 @@ const interviewCreateListeners: Array<(data: InterviewCreateData) => void> = []
 const interviewStatusUpdateListeners: Array<(data: InterviewStatusUpdateData) => void> = []
 const aiAnalysisResultListeners: Array<(data: AIAnalysisResultData) => void> = []
 const companyTodoUpdateListeners: Array<(data: CompanyTodoUpdateData) => void> = []
+const newApplicationListeners: Array<(data: NewApplicationData) => void> = []
+const applicationStatusUpdateListeners: Array<(data: ApplicationStatusUpdateData) => void> = []
+const confirmationResultUpdateListeners: Array<(data: ConfirmationResultUpdateData) => void> = []
+const teacherTodoUpdateListeners: Array<(data: TeacherTodoUpdateData) => void> = []
+const gradePublishedListeners: Array<(data: GradePublishedData) => void> = []
 type ErrorHandler = (error: Event) => void
 
 interface WebSocketOptions {
@@ -274,7 +312,14 @@ export function initAnnouncementWebSocket(
         logger.log('[WebSocket] 收到新问题反馈:', data.data)
         onMessage(data)
       } else if (data.type === 'application_status_update' && data.data) {
-        logger.log('[WebSocket] 收到申请状态更新:', data.data)
+        console.log('[WebSocket] 收到申请状态更新, data:', JSON.stringify(data.data))
+        applicationStatusUpdateListeners.forEach(callback => {
+          try {
+            callback(data.data as ApplicationStatusUpdateData)
+          } catch (e) {
+            console.error('[WebSocket] 申请状态更新监听器执行失败:', e)
+          }
+        })
         onMessage(data)
       } else if (data.type === 'position_update' && data.data) {
         // 【新增】触发岗位更新监听器
@@ -329,13 +374,52 @@ export function initAnnouncementWebSocket(
         })
         onMessage(data)
       } else if (data.type === 'company_todo_update' && data.data) {
-        console.log('[WebSocket] 收到消息类型:', data.type, '数据:', data.data)
-        logger.log('[WebSocket] 收到企业待办数据更新:', data.data)
+        console.log('[WebSocket] 收到消息类型:', data.type, '数据:', JSON.stringify(data.data))
         companyTodoUpdateListeners.forEach(callback => {
           try {
             callback(data.data as CompanyTodoUpdateData)
           } catch (e) {
-            logger.error('[WebSocket] 企业待办更新监听器执行失败:', e)
+            console.error('[WebSocket] 企业待办更新监听器执行失败:', e)
+          }
+        })
+        onMessage(data)
+      } else if (data.type === 'new_application' && data.data) {
+        logger.log('[WebSocket] 收到新简历申请推送:', data.data)
+        newApplicationListeners.forEach(callback => {
+          try {
+            callback(data.data as NewApplicationData)
+          } catch (e) {
+            logger.error('[WebSocket] 新简历申请监听器执行失败:', e)
+          }
+        })
+        onMessage(data)
+      } else if (data.type === 'confirmation_result_update' && data.data) {
+        console.log('[WebSocket] 收到实习确认结果更新:', data.data)
+        confirmationResultUpdateListeners.forEach(callback => {
+          try {
+            callback(data.data as ConfirmationResultUpdateData)
+          } catch (e) {
+            console.error('[WebSocket] 实习确认结果更新监听器执行失败:', e)
+          }
+        })
+        onMessage(data)
+      } else if (data.type === 'teacher_todo_update' && data.data) {
+        console.log('[WebSocket] 收到辅导员待评分数据更新:', data.data)
+        teacherTodoUpdateListeners.forEach(callback => {
+          try {
+            callback(data.data as TeacherTodoUpdateData)
+          } catch (e) {
+            console.error('[WebSocket] 辅导员待评分数据更新监听器执行失败:', e)
+          }
+        })
+        onMessage(data)
+      } else if (data.type === 'grade_published' && data.data) {
+        console.log('[WebSocket] 收到成绩发布通知:', data.data)
+        gradePublishedListeners.forEach(callback => {
+          try {
+            callback(data.data as GradePublishedData)
+          } catch (e) {
+            console.error('[WebSocket] 成绩发布通知监听器执行失败:', e)
           }
         })
         onMessage(data)
@@ -456,6 +540,81 @@ export function offCompanyTodoUpdate(callback: (data: CompanyTodoUpdateData) => 
   const index = companyTodoUpdateListeners.indexOf(callback)
   if (index > -1) {
     companyTodoUpdateListeners.splice(index, 1)
+  }
+}
+
+// 注册新申请监听器
+export function onNewApplication(callback: (data: NewApplicationData) => void): void {
+  if (!newApplicationListeners.includes(callback)) {
+    newApplicationListeners.push(callback)
+  }
+}
+
+// 移除新申请监听器
+export function offNewApplication(callback: (data: NewApplicationData) => void): void {
+  const index = newApplicationListeners.indexOf(callback)
+  if (index > -1) {
+    newApplicationListeners.splice(index, 1)
+  }
+}
+
+// 注册申请状态更新监听器
+export function onApplicationStatusUpdate(callback: (data: ApplicationStatusUpdateData) => void): void {
+  if (!applicationStatusUpdateListeners.includes(callback)) {
+    applicationStatusUpdateListeners.push(callback)
+  }
+}
+
+// 移除申请状态更新监听器
+export function offApplicationStatusUpdate(callback: (data: ApplicationStatusUpdateData) => void): void {
+  const index = applicationStatusUpdateListeners.indexOf(callback)
+  if (index > -1) {
+    applicationStatusUpdateListeners.splice(index, 1)
+  }
+}
+
+// 注册实习确认结果更新监听器
+export function onConfirmationResultUpdate(callback: (data: ConfirmationResultUpdateData) => void): void {
+  if (!confirmationResultUpdateListeners.includes(callback)) {
+    confirmationResultUpdateListeners.push(callback)
+  }
+}
+
+// 移除实习确认结果更新监听器
+export function offConfirmationResultUpdate(callback: (data: ConfirmationResultUpdateData) => void): void {
+  const index = confirmationResultUpdateListeners.indexOf(callback)
+  if (index > -1) {
+    confirmationResultUpdateListeners.splice(index, 1)
+  }
+}
+
+// 注册辅导员待评分数据更新监听器
+export function onTeacherTodoUpdate(callback: (data: TeacherTodoUpdateData) => void): void {
+  if (!teacherTodoUpdateListeners.includes(callback)) {
+    teacherTodoUpdateListeners.push(callback)
+  }
+}
+
+// 移除辅导员待评分数据更新监听器
+export function offTeacherTodoUpdate(callback: (data: TeacherTodoUpdateData) => void): void {
+  const index = teacherTodoUpdateListeners.indexOf(callback)
+  if (index > -1) {
+    teacherTodoUpdateListeners.splice(index, 1)
+  }
+}
+
+// 注册成绩发布更新监听器
+export function onGradePublished(callback: (data: GradePublishedData) => void): void {
+  if (!gradePublishedListeners.includes(callback)) {
+    gradePublishedListeners.push(callback)
+  }
+}
+
+// 移除成绩发布更新监听器
+export function offGradePublished(callback: (data: GradePublishedData) => void): void {
+  const index = gradePublishedListeners.indexOf(callback)
+  if (index > -1) {
+    gradePublishedListeners.splice(index, 1)
   }
 }
 

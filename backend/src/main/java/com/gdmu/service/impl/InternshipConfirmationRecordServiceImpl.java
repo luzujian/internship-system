@@ -54,10 +54,15 @@ public class InternshipConfirmationRecordServiceImpl implements InternshipConfir
     }
 
     @Override
+    public List<InternshipConfirmationRecord> findPendingRecallList(Long studentId, String name, String companyName) {
+        return confirmationRecordMapper.findPendingRecallList(studentId, name, companyName);
+    }
+
+    @Override
     public int recall(Long id, String recallReason) {
         InternshipConfirmationRecord record = findById(id);
         if (record == null) return 0;
-        record.setRecallStatus(1);  // 撤回申请中
+        record.setRecallStatus(2);  // 直接设为已撤回（自动撤回，无需审核）
         record.setRecallReason(recallReason);
         record.setRecallApplyTime(java.time.LocalDateTime.now());
         return update(record);

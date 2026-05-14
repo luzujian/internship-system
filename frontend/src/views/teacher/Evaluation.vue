@@ -711,7 +711,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { evaluationApi, type EvaluationStudent, type EvaluationSubmitParams, type PeriodInfo } from '../../api/teacherEvaluation'
 import { getScoringRules, getActiveCategoryWeights } from '../../api/counselorAISettings'
@@ -720,6 +720,7 @@ import html2pdf from 'html2pdf.js/dist/html2pdf.bundle.min.js'
 import { Search, Refresh, Edit, View, Select, Close, Check, Setting, DataAnalysis, Download, EditPen, Upload } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { getTeacherClasses, getCounselorRelations } from '../../api/teacherClass'
+import { onTeacherTodoUpdate, offTeacherTodoUpdate } from '@/utils/websocket'
 import request from '../../utils/request'
 
 const router = useRouter()
@@ -1225,7 +1226,19 @@ onMounted(() => {
   loadMajors()
   loadClasses()
   loadStudentList()
+  // 注册辅导员待评分数据更新监听器
+  onTeacherTodoUpdate(handleTeacherTodoUpdate)
 })
+
+onUnmounted(() => {
+  offTeacherTodoUpdate(handleTeacherTodoUpdate)
+})
+
+// 处理WebSocket辅导员待评分数据更新（静默刷新统计数据和列表）
+const handleTeacherTodoUpdate = (data: { pendingEvaluations: number }) => {
+  console.log('智慧评分页面收到待评分数据更新:', data)
+  loadStudentList()
+}
 
 // 总分计算（动态，按权重加权）
 const totalScore = computed(() => {

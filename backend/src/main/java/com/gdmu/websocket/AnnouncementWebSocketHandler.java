@@ -416,4 +416,143 @@ public class AnnouncementWebSocketHandler extends TextWebSocketHandler {
             }
         }
     }
+
+    /**
+     * 向指定企业用户推送新简历申请提醒（用于静默更新最新动态）
+     * @param companyId 企业ID
+     * @param studentName 学生姓名
+     * @param positionName 职位名称
+     */
+    public void sendNewApplicationToCompany(Long companyId, String studentName, String positionName) {
+        log.info("向企业 {} 推送新简历提醒: {} -> {}", companyId, studentName, positionName);
+
+        Map<String, Object> data = new HashMap<>();
+        data.put("studentName", studentName);
+        data.put("positionName", positionName);
+
+        Map<String, Object> wsMessage = new HashMap<>();
+        wsMessage.put("type", "new_application");
+        wsMessage.put("data", data);
+        wsMessage.put("timestamp", System.currentTimeMillis());
+
+        for (WebSocketSession session : sessions.values()) {
+            Long sessionCompanyId = (Long) session.getAttributes().get("companyId");
+            if (sessionCompanyId != null && sessionCompanyId.equals(companyId)) {
+                try {
+                    sendMessage(session, wsMessage);
+                } catch (Exception e) {
+                    log.error("推送新简历提醒失败：sessionId={}, error={}", session.getId(), e.getMessage());
+                }
+            }
+        }
+    }
+
+    /**
+     * 向指定学生用户推送实习确认结果更新
+     * @param studentId 学生ID
+     * @param confirmationStatus 确认状态：1=已确认, 2=已拒绝
+     * @param companyName 企业名称
+     * @param positionName 职位名称
+     */
+    public void sendConfirmationResultToStudent(Long studentId, Integer confirmationStatus, String companyName, String positionName) {
+        log.info("向学生 {} 推送实习确认结果：status={}, company={}, position={}",
+                 studentId, confirmationStatus, companyName, positionName);
+
+        Map<String, Object> data = new HashMap<>();
+        data.put("confirmationStatus", confirmationStatus);
+        data.put("companyName", companyName);
+        data.put("positionName", positionName);
+
+        Map<String, Object> wsMessage = new HashMap<>();
+        wsMessage.put("type", "confirmation_result_update");
+        wsMessage.put("data", data);
+        wsMessage.put("timestamp", System.currentTimeMillis());
+
+        // 推送给对应的学生用户
+        Set<String> userSessionSet = userSessions.get(studentId);
+        if (userSessionSet != null && !userSessionSet.isEmpty()) {
+            for (String sessionId : userSessionSet) {
+                WebSocketSession session = sessions.get(sessionId);
+                if (session != null && session.isOpen()) {
+                    try {
+                        sendMessage(session, wsMessage);
+                        log.info("已向学生 {} 推送实习确认结果", studentId);
+                    } catch (Exception e) {
+                        log.error("推送实习确认结果失败：sessionId={}, error={}", session.getId(), e.getMessage());
+                    }
+                }
+            }
+        } else {
+            log.info("学生 {} 当前无在线session，跳过推送", studentId);
+        }
+    }
+
+    /**
+     * 向指定辅导员用户推送待评分数据更新
+     * @param counselorId 辅导员ID
+     * @param pendingEvaluations 待评分学生数
+     */
+    public void sendTeacherTodoUpdate(Long counselorId, Long pendingEvaluations) {
+        log.info("向辅导员 {} 推送待评分数据更新：待评分={}", counselorId, pendingEvaluations);
+
+        Map<String, Object> data = new HashMap<>();
+        data.put("pendingEvaluations", pendingEvaluations);
+
+        Map<String, Object> wsMessage = new HashMap<>();
+        wsMessage.put("type", "teacher_todo_update");
+        wsMessage.put("data", data);
+        wsMessage.put("timestamp", System.currentTimeMillis());
+
+        // 推送给对应的辅导员用户
+        Set<String> userSessionSet = userSessions.get(counselorId);
+        if (userSessionSet != null && !userSessionSet.isEmpty()) {
+            for (String sessionId : userSessionSet) {
+                WebSocketSession session = sessions.get(sessionId);
+                if (session != null && session.isOpen()) {
+                    try {
+                        sendMessage(session, wsMessage);
+                        log.info("已向辅导员 {} 推送待评分数据更新", counselorId);
+                    } catch (Exception e) {
+                        log.error("推送待评分数据失败：sessionId={}, error={}", session.getId(), e.getMessage());
+                    }
+                }
+            }
+        } else {
+            log.info("辅导员 {} 当前无在线session，跳过推送", counselorId);
+        }
+    }
+
+    /**
+     * 向指定学生用户推送成绩发布通知（评分已发布）
+     * @param studentId 学生ID
+     */
+    public void sendGradePublishedToStudent(Long studentId) {
+        log.info("向学生 {} 推送成绩发布通知", studentId);
+
+        Map<String, Object> data = new HashMap<>();
+        data.put("message", "教师已发布评分成绩");
+
+        Map<String, Object> wsMessage = new HashMap<>();
+        wsMessage.put("type", "grade_published");
+        wsMessage.put("data", data);
+        wsMessage.put("timestamp", System.currentTimeMillis());
+
+        // 推送给对应的学生用户
+        Set<String> userSessionSet = userSessions.get(studentId);
+        if (userSessionSet != null && !userSessionSet.isEmpty()) {
+            for (String sessionId : userSessionSet) {
+                WebSocketSession session = sessions.get(sessionId);
+                if (session != null && session.isOpen()) {
+                    try {
+                        sendMessage(session, wsMessage);
+                        log.info("已向学生 {} 推送成绩发布通知", studentId);
+                    } catch (Exception e) {
+                        log.error("推送成绩发布通知失败：sessionId={}, error={}", session.getId(), e.getMessage());
+                    }
+                }
+            }
+        } else {
+            log.info("学生 {} 当前无在线session，跳过推送", studentId);
+        }
+    }
 }

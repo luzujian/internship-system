@@ -33,6 +33,9 @@ public class StudentJobApplicationController {
     @Autowired
     private InternshipProgressRecordService progressRecordService;
 
+    @Autowired
+    private com.gdmu.websocket.AnnouncementWebSocketHandler webSocketHandler;
+
     private User getCurrentUser() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth == null || !(auth.getPrincipal() instanceof org.springframework.security.core.userdetails.User)) {
@@ -81,6 +84,15 @@ public class StudentJobApplicationController {
             record.setRelatedId(application.getId());
             record.setEventTime(new Date());
             progressRecordService.saveRecord(record);
+
+            // 推送给企业端静默更新最新动态
+            if (application.getCompanyId() != null) {
+                webSocketHandler.sendNewApplicationToCompany(
+                    application.getCompanyId(),
+                    application.getStudentName(),
+                    application.getPositionName()
+                );
+            }
 
             return Result.success("申请成功");
         } catch (Exception e) {

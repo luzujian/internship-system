@@ -1,11 +1,13 @@
-<script setup>
-import { ref, computed, onMounted } from 'vue'
+<script setup lang="ts">
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Download } from '@element-plus/icons-vue'
 import { usePositionStore } from '../../store/position'
 import { useAuthStore } from '@/store/auth'
 import { exportToExcel } from '../../utils/xlsx'
 import emitter from '@/utils/event-bus'
+import { onCompanyTodoUpdate, offCompanyTodoUpdate } from '@/utils/websocket'
+import type { CompanyTodoUpdateData } from '@/utils/websocket'
 
 const positionStore = usePositionStore()
 const authStore = useAuthStore()
@@ -39,7 +41,22 @@ onMounted(() => {
   }
   positionStore.fetchPositions(companyId.value)
   positionStore.fetchInternshipStatuses(companyId.value)
+  // 注册企业待办更新监听器
+  onCompanyTodoUpdate(handleCompanyTodoUpdate)
 })
+
+onUnmounted(() => {
+  offCompanyTodoUpdate(handleCompanyTodoUpdate)
+})
+
+// 处理WebSocket企业待办数据更新（静默刷新统计数据）
+const handleCompanyTodoUpdate = (data: CompanyTodoUpdateData) => {
+  console.log('实习确认页面收到待办数据更新:', data)
+  if (companyId.value) {
+    positionStore.fetchPositions(companyId.value)
+    positionStore.fetchInternshipStatuses(companyId.value)
+  }
+}
 
 const detailDialogVisible = ref(false)
 const currentStudent = ref(null)

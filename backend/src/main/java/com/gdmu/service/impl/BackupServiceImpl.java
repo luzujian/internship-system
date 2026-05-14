@@ -880,6 +880,8 @@ public class BackupServiceImpl implements BackupService {
             writer.write("password=" + datasourcePassword + "\n");
             writer.write("host=" + host + "\n");
             writer.write("port=" + port + "\n");
+            writer.write("ssl = 0\n");
+            writer.write("default-auth = mysql_native_password\n");
         }
         
         tempFile.setReadable(true, true);
@@ -904,12 +906,18 @@ public class BackupServiceImpl implements BackupService {
 
     private void executeMysqlDump(String dbName, String outputPath) throws Exception {
         log.info("准备执行mysqldump命令，数据库: {}, 输出文件: {}", dbName, outputPath);
-        
-        File configFile = createTempConfigFile();
-        
+
+        String host = extractDatabaseHost();
+        String port = extractDatabasePort();
+
         String[] command = {
             "mysqldump",
-            "--defaults-file=" + configFile.getAbsolutePath(),
+            "-h" + host,
+            "-P" + port,
+            "-u" + datasourceUsername,
+            "-p" + datasourcePassword,
+            "--default-auth=mysql_native_password",
+            "--skip-ssl",
             dbName,
             "--result-file=" + outputPath,
             "--default-character-set=utf8mb4",
@@ -925,8 +933,7 @@ public class BackupServiceImpl implements BackupService {
             "--set-charset"
         };
 
-        log.info("执行mysqldump命令: mysqldump --defaults-file=*** {} --result-file={} --default-character-set=utf8mb4 --single-transaction --quick --lock-tables=false --routines --triggers --events --add-drop-table --complete-insert --extended-insert --set-charset",
-            dbName, outputPath);
+        log.info("执行mysqldump命令: mysqldump -h{} -P{} -u{} -p*** {} --result-file={} ...", host, port, datasourceUsername, dbName, outputPath);
 
         Process process = Runtime.getRuntime().exec(command);
         

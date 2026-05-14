@@ -3,6 +3,7 @@ package com.gdmu.controller;
 import com.gdmu.entity.*;
 import com.gdmu.service.*;
 import com.gdmu.utils.CurrentHolder;
+import com.gdmu.websocket.AnnouncementWebSocketHandler;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -72,6 +73,9 @@ public class EvaluationManagementController {
 
     @Autowired
     private InternshipProgressRecordService progressRecordService;
+
+    @Autowired
+    private AnnouncementWebSocketHandler webSocketHandler;
 
     @Data
     public static class StudentEvaluationInfo {
@@ -886,6 +890,12 @@ public class EvaluationManagementController {
                         "fail", studentIds.size() - publishedCount,
                         "total", studentIds.size()
                 );
+
+                // 推送成绩发布更新给学生（让他们知道评分已发布）
+                for (Long studentId : studentIds) {
+                    pushGradePublishedToStudent(studentId);
+                }
+
                 return Result.success("成绩上传完成，成功 " + publishedCount + " 条，失败 " + (studentIds.size() - publishedCount) + " 条", result);
             } catch (Exception e) {
                 log.error("批量发布成绩失败: {}", e.getMessage(), e);
@@ -894,6 +904,19 @@ public class EvaluationManagementController {
         } catch (Exception e) {
             log.error("批量上传成绩失败: {}", e.getMessage(), e);
             return Result.error("批量上传成绩失败：" + e.getMessage());
+        }
+    }
+
+    /**
+     * 推送成绩发布更新给学生
+     * @param studentId 学生ID
+     */
+    private void pushGradePublishedToStudent(Long studentId) {
+        try {
+            webSocketHandler.sendGradePublishedToStudent(studentId);
+            log.info("推送成绩发布更新成功：学生ID={}", studentId);
+        } catch (Exception e) {
+            log.error("推送成绩发布更新失败：studentId={}, error={}", studentId, e.getMessage());
         }
     }
 

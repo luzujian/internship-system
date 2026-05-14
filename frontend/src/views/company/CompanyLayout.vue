@@ -186,10 +186,12 @@ const initWebSocket = () => {
   }
 
   if (token) {
-    console.log('初始化 WebSocket 连接，token 存在')
-    initAnnouncementWebSocket(token, () => {})
+    console.log('[CompanyLayout] 初始化 WebSocket 连接，token:', token.substring(0, 20) + '...')
+    initAnnouncementWebSocket(token, (data) => {
+      console.log('[CompanyLayout] 收到 WebSocket 消息, type:', data.type)
+    })
   } else {
-    console.warn('未找到 token，无法初始化 WebSocket')
+    console.warn('[CompanyLayout] 未找到 token，无法初始化 WebSocket')
   }
 }
 </script>

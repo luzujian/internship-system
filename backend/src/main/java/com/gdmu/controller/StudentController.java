@@ -450,8 +450,8 @@ public class StudentController {
     /**
      * 计算实习进度百分比
      * @param status 学生实习状态
-     * @param startDateStr 实习开始日期字符串
-     * @param endDateStr 实习结束日期字符串
+     * @param startDateStr 实习开始日期字符串（来自系室设置）
+     * @param endDateStr 实习结束日期字符串（来自系室设置）
      */
     private int calculateInternshipProgress(StudentInternshipStatus status, String startDateStr, String endDateStr) {
         if (status == null) {
@@ -462,12 +462,8 @@ public class StudentController {
         Date startTime = null;
         Date endTime = null;
 
-        // 优先使用学生自己的实习时间设置
-        if (status.getInternshipStartTime() != null && status.getInternshipEndTime() != null) {
-            startTime = status.getInternshipStartTime();
-            endTime = status.getInternshipEndTime();
-        } else if (startDateStr != null && endDateStr != null) {
-            // 否则使用传入的日期字符串
+        // 统一使用系室设置的实习时间
+        if (startDateStr != null && endDateStr != null) {
             try {
                 java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("yyyy-MM-dd");
                 startTime = sdf.parse(startDateStr);

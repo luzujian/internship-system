@@ -208,8 +208,8 @@
               <el-icon><View /></el-icon>
               查看
             </button>
-            <!-- 撤回按钮：仅 status=0 待确认时可显示 -->
-            <button v-if="item.status === 0" class="action-button recall" @click="openRecallDialog(item)">
+            <!-- 撤回按钮：仅 status=0 待确认且未在撤回处理中时可显示 -->
+            <button v-if="item.status === 0 && item.recallStatus !== 2" class="action-button recall" @click="openRecallDialog(item)">
               <el-icon><RefreshLeft /></el-icon>
               撤回
             </button>
@@ -537,7 +537,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, computed } from "vue";
+import { ref, reactive, onMounted, onUnmounted, computed } from "vue";
 import { ElMessage } from "element-plus";
 import {
   User,
@@ -562,6 +562,7 @@ import request from '@/utils/request';
 import { useAuthStore } from '@/store/auth';
 import { getInternshipTimeSettings } from '@/api/teacherSettings';
 import { getUnitChangeStatus, submitUnitChange, resubmitUnitChange } from '@/api/studentInternship';
+import emitter from '@/utils/event-bus';
 
 const authStore = useAuthStore()
 
@@ -882,11 +883,15 @@ const fetchPendingConfirmation = async () => {
         return
       }
 
-      // 如果已有待确认或已确认的记录（status=0待确认 或 status=1已确认），不允许再次填写
-      // 只有 status=2（已拒绝）时才允许修改
+      // 如果已有待确认或已确认的记录，不允许再次填写
+      // 如果是已撤回（recallStatus=2），则允许重新填写
       if (confirmationStatus === 0 || confirmationStatus === 1) {
-        hasPendingConfirmation.value = false
-        return
+        const isWithdrawn = historyList.value.length > 0 && historyList.value[0].recallStatus === 2
+        if (!isWithdrawn) {
+          hasPendingConfirmation.value = false
+          return
+        }
+        // 已撤回，继续显示表单（允许重新填写）
       }
 
       // 只有状态为 0（无offer）、5（已中断）或 status=2（已拒绝）时才允许填写
@@ -935,7 +940,8 @@ const fetchConfirmationHistory = async () => {
   try {
     const response = await request.get('/student/internship-confirmation/history')
     if (response.code === 200 && response.data) {
-      historyList.value = response.data || []
+      // 过滤掉已撤回的记录（recallStatus=2），只保留给学生查看的记录
+      historyList.value = (response.data || []).filter((item: any) => item.recallStatus !== 2)
       // 如果当前正在编辑被拒绝的记录，则不自动触发编辑模式
       // 只有在首次加载时检查是否有被拒绝的记录需要处理
       if (!editingRejectedRecord.value && !viewingConfirmation.value) {
@@ -1122,6 +1128,7 @@ const submitRecall = async () => {
       ElMessage.success('撤回成功')
       recallDialogVisible.value = false
       await fetchConfirmationHistory()
+      await fetchPendingConfirmation()
     } else {
       ElMessage.error(response.message || '撤回失败')
     }
@@ -1248,6 +1255,22 @@ const submitConfirmation = async () => {
   }
 }
 
+// 处理实习确认结果更新（企业确认/拒绝后实时刷新）
+const handleConfirmationResultUpdate = (data: { confirmationStatus: number; companyName: string; positionName: string }) => {
+  console.log('收到实习确认结果更新:', data)
+  // 刷新确认记录列表
+  fetchConfirmationHistory()
+  // 如果有待确认的表单，刷新待确认状态
+  if (hasPendingConfirmation.value) {
+    fetchPendingConfirmation()
+  }
+}
+
+// 监听企业确认结果事件（通过 event-bus 触发）
+const onConfirmationResultEvent = (data: any) => {
+  handleConfirmationResultUpdate(data)
+}
+
 onMounted(async () => {
   // 先获取面试通过的数据（用于下拉框）
   await fetchApprovedInterviews()
@@ -1259,6 +1282,14 @@ onMounted(async () => {
   // 获取应聘时间段
   const period = await fetchApplicationPeriod()
   applicationPeriod.value = period
+
+  // 注册实习确认结果更新事件监听
+  emitter.on('confirmation-result-update', onConfirmationResultEvent)
+})
+
+onUnmounted(() => {
+  // 移除实习确认结果更新事件监听
+  emitter.off('confirmation-result-update', onConfirmationResultEvent)
 })
 </script>
 

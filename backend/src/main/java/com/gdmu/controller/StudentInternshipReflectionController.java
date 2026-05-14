@@ -20,6 +20,7 @@ import com.gdmu.service.StudentReflectionAIAnalysisService;
 import com.gdmu.service.StudentReflectionEvaluationService;
 import com.gdmu.service.UserService;
 import com.gdmu.utils.FileParserUtil;
+import com.gdmu.websocket.AnnouncementWebSocketHandler;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -76,6 +77,9 @@ public class StudentInternshipReflectionController {
 
     @Autowired
     private com.gdmu.task.ReflectionTaskGenerator reflectionTaskGenerator;
+
+    @Autowired
+    private AnnouncementWebSocketHandler webSocketHandler;
 
     private User getCurrentUser() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
@@ -240,7 +244,7 @@ public class StudentInternshipReflectionController {
                 progressRecordService.saveRecord(record);
             }
 
-            // 异步触发AI分析
+            // 异步触发AI分析，分析完成后会自动推送待评分数据给辅导员
             final Long reflectionId = reflection.getId();
             final Long finalCounselorId = counselorId;
             triggerAIAnalysisForReflection(reflectionId, user.getId(), finalCounselorId);
@@ -346,7 +350,7 @@ public class StudentInternshipReflectionController {
                 progressRecordService.saveRecord(record);
             }
 
-            // 异步触发AI分析
+            // 异步触发AI分析，分析完成后会自动推送待评分数据给辅导员
             final Long reflectionId = reflection.getId();
             final Long finalCounselorId = counselorId;
             triggerAIAnalysisForReflection(reflectionId, user.getId(), finalCounselorId);
@@ -642,6 +646,11 @@ public class StudentInternshipReflectionController {
             // 删除AI分析记录
             studentReflectionAIAnalysisService.deleteByReflectionId(id);
 
+            // 推送待评分数据更新给辅导员
+            if (reflection.getCounselorId() != null) {
+                pushTeacherTodoUpdate(reflection.getCounselorId());
+            }
+
             return Result.success("撤回成功", reflection);
         } catch (Exception e) {
             log.error("撤回实习心得失败: {}", e.getMessage(), e);
@@ -733,9 +742,26 @@ public class StudentInternshipReflectionController {
                         reflection.getContent(), counselorId, studentId, reflectionId);
 
                 log.info("AI分析完成，反射ID: {}，结果: {}", reflectionId, analysisResult);
+
+                // 4. 推送待评分数据更新给辅导员
+                pushTeacherTodoUpdate(counselorId);
             } catch (Exception e) {
                 log.error("AI分析失败，反射ID: {}，错误: {}", reflectionId, e.getMessage(), e);
             }
         });
+    }
+
+    /**
+     * 推送辅导员待评分数据更新
+     * @param counselorId 辅导员ID
+     */
+    private void pushTeacherTodoUpdate(Long counselorId) {
+        try {
+            // 推送待评分数据更新（具体数量由前端刷新时从后端获取）
+            webSocketHandler.sendTeacherTodoUpdate(counselorId, 1L);
+            log.info("推送待评分数据更新成功：辅导员={}", counselorId);
+        } catch (Exception e) {
+            log.error("推送待评分数据失败: {}", e.getMessage(), e);
+        }
     }
 }

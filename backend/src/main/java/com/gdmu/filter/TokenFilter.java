@@ -249,9 +249,9 @@ public class TokenFilter extends OncePerRequestFilter implements ApplicationCont
         // 检查是否是流式 API 请求
         boolean isStreamingRequest = requestUri.contains("/stream");
 
-        // 对于登录请求和刷新 token 请求，直接放行，不进行 token 验证
-        if (isLoginRequest || isRefreshTokenRequest) {
-            log.debug("登录或刷新 token 请求，跳过 Token 验证，直接放行");
+        // 对于登录请求、刷新 token 请求和 WebSocket 请求，直接放行，不进行 token 验证
+        if (isLoginRequest || isRefreshTokenRequest || requestUri.contains("/ws/")) {
+            log.debug("登录、刷新 token 或 WebSocket 请求，跳过 Token 验证，直接放行");
             filterChain.doFilter(request, response);
             return;
         }

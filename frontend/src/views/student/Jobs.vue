@@ -597,6 +597,7 @@ import { useAuthStore } from '@/store/auth'
 import studentJobApplicationService from '@/api/StudentJobApplicationService'
 import positionService from '@/api/PositionService'
 import { initAnnouncementWebSocket, onPositionUpdate, onPositionDelete, offPositionUpdate, offPositionDelete } from '@/utils/websocket'
+import { getTokenKey } from '@/store/auth/storage'
 import type { PositionUpdateData } from '@/utils/websocket'
 import eventBus from '@/utils/eventBus'
 
@@ -611,7 +612,6 @@ const handlePositionUpdate = (data: PositionUpdateData) => {
     if (data.remainingQuota === 0) {
       // 岗位已满，从列表移除
       jobs.value.splice(index, 1)
-      ElMessage.warning(`岗位"${data.positionName}"已招满，已从列表移除`)
     } else {
       // 更新岗位数据
       jobs.value[index] = {
@@ -621,6 +621,9 @@ const handlePositionUpdate = (data: PositionUpdateData) => {
         plannedRecruit: data.plannedRecruit
       }
     }
+  } else {
+    // 新职位：调用接口获取完整列表以包含所有信息
+    loadPositions()
   }
 }
 
@@ -629,7 +632,6 @@ const handlePositionDelete = (data: { positionId: number }) => {
   const index = jobs.value.findIndex(j => j.id === data.positionId)
   if (index !== -1) {
     jobs.value.splice(index, 1)
-    ElMessage.warning('该岗位已下架')
   }
 }
 
@@ -639,7 +641,7 @@ const handleApplicationSubmitted = (data: { positionId: number }) => {
   const job = jobs.value.find(j => j.id === data.positionId)
   if (job) {
     job.isApplied = true
-    ElMessage.success('申请提交成功！')
+    // 不再显示提示，因为提交申请时已经显示过
   }
 }
 
@@ -1255,12 +1257,9 @@ onMounted(async () => {
   }
 
   // 连接WebSocket并监听岗位更新
-  const token = localStorage.getItem('token')
-  if (token) {
-    initAnnouncementWebSocket(token, () => {})
-    onPositionUpdate(handlePositionUpdate)
-    onPositionDelete(handlePositionDelete)
-  }
+  // 不再重新初始化 WebSocket，直接注册监听器，复用 StudentLayout 中初始化的连接
+  onPositionUpdate(handlePositionUpdate)
+  onPositionDelete(handlePositionDelete)
 
   // 监听收藏页面或其他页面的申请状态变化
   eventBus.on('applicationSubmitted', handleApplicationSubmitted)

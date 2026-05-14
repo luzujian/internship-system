@@ -335,6 +335,35 @@ watch(currentFilter, () => {
   fetchInterviews()
 })
 
+// 面试创建处理函数
+const handleInterviewCreate = (data) => {
+  const newInterview = {
+    id: data.id,
+    jobTitle: data.positionName,
+    company: data.companyName,
+    interviewTime: data.interviewTime,
+    interviewMethod: data.interviewMethod,
+    location: data.interviewLocation,
+    status: getStatusText(data.status),
+    statusClass: getStatusClass(data.status),
+    contactPerson: data.contactPerson || '',
+    contactPhone: data.contactPhone || '',
+    website: data.website || ''
+  }
+  interviews.value.unshift(newInterview)
+  ElMessage.success(`新增面试：${data.positionName}`)
+}
+
+// 面试状态更新处理函数
+const handleInterviewStatusUpdate = (data) => {
+  const interview = interviews.value.find(i => i.id === data.interviewId)
+  if (interview) {
+    interview.status = data.statusText
+    interview.statusClass = getStatusClass(data.status)
+    ElMessage.success(`面试状态更新：${data.statusText}`)
+  }
+}
+
 // 监听申请状态更新事件
 const handleApplicationStatusUpdate = (data) => {
   console.log('收到申请状态更新通知:', data)
@@ -357,40 +386,16 @@ onMounted(async () => {
   }
 
   // 注册面试事件监听
-  onInterviewCreate((data) => {
-    const newInterview = {
-      id: data.id,
-      jobTitle: data.positionName,
-      company: data.companyName,
-      interviewTime: data.interviewTime,
-      interviewMethod: data.interviewMethod,
-      location: data.interviewLocation,
-      status: getStatusText(data.status),
-      statusClass: getStatusClass(data.status),
-      contactPerson: data.contactPerson || '',
-      contactPhone: data.contactPhone || '',
-      website: data.website || ''
-    }
-    interviews.value.unshift(newInterview)
-    ElMessage.success(`新增面试：${data.positionName}`)
-  })
-
-  onInterviewStatusUpdate((data) => {
-    const interview = interviews.value.find(i => i.id === data.interviewId)
-    if (interview) {
-      interview.status = data.statusText
-      interview.statusClass = getStatusClass(data.status)
-      ElMessage.success(`面试状态更新：${data.statusText}`)
-    }
-  })
+  onInterviewCreate(handleInterviewCreate)
+  onInterviewStatusUpdate(handleInterviewStatusUpdate)
 
   // 监听申请状态更新事件
   emitter.on('application-status-update', handleApplicationStatusUpdate)
 })
 
 onUnmounted(() => {
-  offInterviewCreate(() => {})
-  offInterviewStatusUpdate(() => {})
+  offInterviewCreate(handleInterviewCreate)
+  offInterviewStatusUpdate(handleInterviewStatusUpdate)
   emitter.off('application-status-update', handleApplicationStatusUpdate)
 })
 </script>

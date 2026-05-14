@@ -98,7 +98,7 @@
         <el-table-column prop="id" label="ID" width="80" align="center"></el-table-column>
         
         <template v-if="activeTab === 'student'">
-          <el-table-column prop="student.name" label="申请人姓名" width="120" align="center" show-overflow-tooltip></el-table-column>
+          <el-table-column prop="studentName" label="申请人姓名" width="120" align="center" show-overflow-tooltip></el-table-column>
           <el-table-column prop="recallReason" label="撤回原因" min-width="200" show-overflow-tooltip></el-table-column>
           <el-table-column prop="recallApplyTime" label="撤回申请时间" width="170" align="center">
             <template #default="scope">{{ formatDateTime(scope.row.recallApplyTime) }}</template>
@@ -110,8 +110,8 @@
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="company.companyName" label="企业名称" min-width="150" show-overflow-tooltip></el-table-column>
-          <el-table-column prop="position.positionName" label="岗位名称" min-width="100" show-overflow-tooltip></el-table-column>
+          <el-table-column prop="companyName" label="企业名称" min-width="150" show-overflow-tooltip></el-table-column>
+          <el-table-column prop="positionName" label="岗位名称" min-width="100" show-overflow-tooltip></el-table-column>
         </template>
         
         <template v-else-if="activeTab === 'company'">
@@ -134,7 +134,7 @@
           </el-table-column>
           <el-table-column prop="auditRemark" label="注册审核备注" min-width="150" show-overflow-tooltip></el-table-column>
         </template>
-        
+
         <el-table-column label="操作" width="180" align="center" fixed="right">
           <template #default="scope">
             <div class="action-buttons">
@@ -174,11 +174,11 @@
           <div class="view-meta">
             <div class="meta-item">
               <span class="meta-label">申请人姓名:</span>
-              <span class="meta-value">{{ selectedRecord.student?.name || '-' }}</span>
+              <span class="meta-value">{{ selectedRecord.studentName || selectedRecord.student?.name || '-' }}</span>
             </div>
             <div class="meta-item">
               <span class="meta-label">学生ID:</span>
-              <span class="meta-value">{{ selectedRecord.studentId }}</span>
+              <span class="meta-value">{{ selectedRecord.studentId || selectedRecord.student_user_id || '-' }}</span>
             </div>
             <div class="meta-item">
               <span class="meta-label">实习状态:</span>
@@ -195,11 +195,11 @@
           <div class="detail-section">
             <div class="detail-row">
               <span class="detail-label">企业名称:</span>
-              <span class="detail-value">{{ selectedRecord.company?.companyName || '-' }}</span>
+              <span class="detail-value">{{ selectedRecord.companyName || selectedRecord.company?.companyName || '-' }}</span>
             </div>
             <div class="detail-row">
               <span class="detail-label">岗位名称:</span>
-              <span class="detail-value">{{ selectedRecord.position?.positionName || '-' }}</span>
+              <span class="detail-value">{{ selectedRecord.positionName || selectedRecord.position?.positionName || '-' }}</span>
             </div>
             <div class="detail-row">
               <span class="detail-label">撤回原因:</span>
@@ -257,6 +257,7 @@
             </div>
           </div>
         </template>
+
       </div>
       <template #footer>
         <el-button @click="detailDialogVisible = false" class="cancel-btn">关闭</el-button>
@@ -326,22 +327,43 @@ const fetchCompanyData = async (): Promise<unknown> => {
   return response
 }
 
+const fetchConfirmationData = async (): Promise<unknown> => {
+  const params = {
+    page: currentPage.value,
+    pageSize: pageSize.value,
+    name: searchForm.applicantName || null
+  }
+  const response = await request.get('/student/internship-confirmation/recall/pending', { params })
+  return response
+}
+
 const fetchData = async (): Promise<void> => {
   loading.value = true
   try {
     let response
     if (activeTab.value === 'student') {
-      response = await fetchStudentData()
+      // 同时获取学生撤回记录和实习确认表撤回记录，合并展示
+      const [studentRes, confirmationRes] = await Promise.all([
+        fetchStudentData(),
+        fetchConfirmationData()
+      ])
+      const studentData = (studentRes as any)?.data?.rows || []
+      const confirmationData = (confirmationRes as any)?.data?.rows || []
+      tableData.value = [...studentData, ...confirmationData]
+      total.value = tableData.value.length
+      response = { code: 200, data: { rows: tableData.value, total: total.value } }
     } else {
       response = await fetchCompanyData()
     }
-    
+
     logger.log('获取撤回记录响应:', response)
-    
+
     if (response && response.code === 200) {
       const data = response.data || response
-      tableData.value = data.rows || data.list || []
-      total.value = data.total || 0
+      if (activeTab.value === 'company') {
+        tableData.value = data.rows || data.list || []
+        total.value = data.total || 0
+      }
       logger.log('撤回记录数据:', { tableData: tableData.value.length, total: total.value })
     } else {
       ElMessage.error(response?.message || '获取数据失败')

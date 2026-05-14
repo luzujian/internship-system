@@ -1,0 +1,111 @@
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::objectFieldOffset has been called by com.google.common.util.concurrent.AbstractFuture$UnsafeAtomicHelper (file:/D:/Summer-Program/apache-maven-3.9.4/lib/guava-32.0.1-jre.jar)
+WARNING: Please consider reporting this to the maintainers of class com.google.common.util.concurrent.AbstractFuture$UnsafeAtomicHelper
+WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
+[INFO] Scanning for projects...
+[INFO] 
+[INFO] ------------------------< com.gdmu:Internship >-------------------------
+[INFO] Building Internship 0.0.1-SNAPSHOT
+[INFO]   from pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] >>> spring-boot:3.5.6:run (default-cli) > test-compile @ Internship >>>
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ Internship ---
+[INFO] Copying 2 resources from src\main\resources to target\classes
+[INFO] Copying 118 resources from src\main\resources to target\classes
+[INFO] 
+[INFO] --- compiler:3.14.0:compile (default-compile) @ Internship ---
+[INFO] Recompiling the module because of changed source code.
+[INFO] Compiling 468 source files with javac [forked debug parameters release 25] to target\classes
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ Internship ---
+[INFO] skip non existing resourceDirectory D:\Web-work\internship-system\backend\src\test\resources
+[INFO] 
+[INFO] --- compiler:3.14.0:testCompile (default-testCompile) @ Internship ---
+[INFO] Recompiling the module because of changed dependency.
+[INFO] Compiling 18 source files with javac [forked debug parameters release 25] to target\test-classes
+[INFO] 
+[INFO] <<< spring-boot:3.5.6:run (default-cli) < test-compile @ Internship <<<
+[INFO] 
+[INFO] 
+[INFO] --- spring-boot:3.5.6:run (default-cli) @ Internship ---
+[INFO] Attaching agents: []
+
+  .   ____          _            __ _ _
+ /\\ / ___'_ __ _ _(_)_ __  __ _ \ \ \ \
+( ( )\___ | '_ | '_| | '_ \/ _` | \ \ \ \
+ \\/  ___)| |_)| | | | | || (_| |  ) ) ) )
+  '  |____| .__|_| |_|_| |_\__, | / / / /
+ =========|_|==============|___/=/_/_/_/
+
+ :: Spring Boot ::                (v3.5.6)
+
+2026-05-13 12:00:19.605 [background-preinit] INFO  org.hibernate.validator.internal.util.Version - HV000001: Hibernate Validator 8.0.3.Final
+2026-05-13 12:00:19.622 [main] INFO  com.gdmu.config.EnvLoader - 环境变量加载完成，共加载 31 个变量
+2026-05-13 12:00:19.624 [main] INFO  com.gdmu.InternshipApplication - Starting InternshipApplication using Java 25.0.2 with PID 17880 (D:\Web-work\internship-system\backend\target\classes started by 24096 in D:\Web-work\internship-system\backend)
+2026-05-13 12:00:19.626 [main] INFO  com.gdmu.InternshipApplication - No active profile set, falling back to 1 default profile: "default"
+2026-05-13 12:00:20.334 [main] INFO  o.s.b.factory.support.DefaultListableBeanFactory - Overriding bean definition for bean 'stringRedisTemplate' with a different definition: replacing [Root bean: class=null; scope=; abstract=false; lazyInit=null; autowireMode=3; dependencyCheck=0; autowireCandidate=true; primary=false; fallback=false; factoryBeanName=redisConfig; factoryMethodName=stringRedisTemplate; initMethodNames=null; destroyMethodNames=[(inferred)]; defined in class path resource [com/gdmu/config/RedisConfig.class]] with [Root bean: class=null; scope=; abstract=false; lazyInit=null; autowireMode=3; dependencyCheck=0; autowireCandidate=true; primary=false; fallback=false; factoryBeanName=org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration; factoryMethodName=stringRedisTemplate; initMethodNames=null; destroyMethodNames=[(inferred)]; defined in class path resource [org/springframework/boot/autoconfigure/data/redis/RedisAutoConfiguration.class]]
+2026-05-13 12:00:20.392 [main] INFO  o.s.d.r.config.RepositoryConfigurationDelegate - Multiple Spring Data modules found, entering strict repository configuration mode
+2026-05-13 12:00:20.393 [main] INFO  o.s.d.r.config.RepositoryConfigurationDelegate - Bootstrapping Spring Data Redis repositories in DEFAULT mode.
+2026-05-13 12:00:20.430 [main] INFO  o.s.d.r.config.RepositoryConfigurationDelegate - Finished Spring Data repository scanning in 28 ms. Found 0 Redis repository interfaces.
+2026-05-13 12:00:20.930 [main] INFO  o.s.boot.web.embedded.tomcat.TomcatWebServer - Tomcat initialized with port 8080 (http)
+2026-05-13 12:00:20.939 [main] INFO  org.apache.coyote.http11.Http11NioProtocol - Initializing ProtocolHandler ["http-nio-8080"]
+2026-05-13 12:00:20.940 [main] INFO  org.apache.catalina.core.StandardService - Starting service [Tomcat]
+2026-05-13 12:00:20.940 [main] INFO  org.apache.catalina.core.StandardEngine - Starting Servlet engine: [Apache Tomcat/10.1.46]
+2026-05-13 12:00:20.983 [main] INFO  o.a.c.core.ContainerBase.[Tomcat].[localhost].[/] - Initializing Spring embedded WebApplicationContext
+2026-05-13 12:00:20.983 [main] INFO  o.s.b.w.s.c.ServletWebServerApplicationContext - Root WebApplicationContext: initialization completed in 1332 ms
+2026-05-13 12:00:21.073 [main] INFO  com.gdmu.config.RedisConfig - Redis 连接工厂配置成功 - host=localhost, port=6379, database=0
+2026-05-13 12:00:21.200 [main] INFO  com.gdmu.config.RedisConfig - RedisTemplate 配置成功
+2026-05-13 12:00:21.218 [main] INFO  com.gdmu.utils.JwtUtils - JWT 工具类初始化完成，使用密钥长度：71 字节
+2026-05-13 12:00:21.218 [main] INFO  com.gdmu.utils.JwtUtils - JWT 配置：访问令牌过期时间=86400秒，刷新令牌过期时间=604800秒，滑动窗口阈值=3600秒
+ _ _   |_  _ _|_. ___ _ |    _ 
+| | |\/|_)(_| | |_\  |_)||_|_\ 
+     /               |         
+                        3.5.7 
+2026-05-13 12:00:21.608 [main] INFO  com.zaxxer.hikari.HikariDataSource - HikariPool-1 - Starting...
+2026-05-13 12:00:21.684 [main] INFO  com.zaxxer.hikari.pool.HikariPool - HikariPool-1 - Added connection com.mysql.cj.jdbc.ConnectionImpl@7b38db21
+2026-05-13 12:00:21.685 [main] INFO  com.zaxxer.hikari.HikariDataSource - HikariPool-1 - Start completed.
+2026-05-13 12:00:21.704 [main] INFO  com.gdmu.config.SystemSettingsConfig - 系统设置已更新: maxLoginAttempts=5, lockTime=5, sessionTimeout=120
+2026-05-13 12:00:21.753 [main] INFO  com.gdmu.service.impl.UserServiceImpl - 应用启动时清除UserDetails缓存
+2026-05-13 12:00:22.092 [main] INFO  o.s.s.c.a.a.c.InitializeUserDetailsBeanManagerConfigurer$InitializeUserDetailsManagerConfigurer - Global AuthenticationManager configured with UserDetailsService bean with name userServiceImpl
+2026-05-13 12:00:22.125 [main] INFO  com.gdmu.service.impl.BackupServiceImpl - 备份存储类型: OSS, OSS启用: true
+2026-05-13 12:00:22.125 [main] INFO  com.gdmu.service.impl.BackupServiceImpl - 备份文件将存储在阿里云OSS上
+2026-05-13 12:00:22.125 [main] INFO  com.gdmu.service.impl.BackupServiceImpl - 备份文件存储在OSS上，跳过本地文件系统同步
+2026-05-13 12:00:22.218 [main] INFO  com.gdmu.service.PositionCacheService - 后端启动，清除职位缓存...
+2026-05-13 12:00:22.421 [main] INFO  com.gdmu.service.PositionCacheService - 所有职位相关缓存已清除
+2026-05-13 12:00:23.065 [main] INFO  o.s.b.actuate.endpoint.web.EndpointLinksResolver - Exposing 1 endpoint beneath base path '/actuator'
+2026-05-13 12:00:23.611 [main] INFO  org.apache.coyote.http11.Http11NioProtocol - Starting ProtocolHandler ["http-nio-8080"]
+2026-05-13 12:00:23.621 [main] WARN  o.s.b.w.s.c.AnnotationConfigServletWebServerApplicationContext - Exception encountered during context initialization - cancelling refresh attempt: org.springframework.context.ApplicationContextException: Failed to start bean 'webServerStartStop'
+2026-05-13 12:00:23.632 [main] INFO  com.zaxxer.hikari.HikariDataSource - HikariPool-1 - Shutdown initiated...
+2026-05-13 12:00:23.635 [main] INFO  com.zaxxer.hikari.HikariDataSource - HikariPool-1 - Shutdown completed.
+2026-05-13 12:00:23.645 [main] INFO  o.s.b.a.logging.ConditionEvaluationReportLogger - 
+
+Error starting ApplicationContext. To display the condition evaluation report re-run your application with 'debug' enabled.
+2026-05-13 12:00:23.655 [main] ERROR o.s.b.diagnostics.LoggingFailureAnalysisReporter - 
+
+***************************
+APPLICATION FAILED TO START
+***************************
+
+Description:
+
+Web server failed to start. Port 8080 was already in use.
+
+Action:
+
+Identify and stop the process that's listening on port 8080 or configure this application to listen on another port.
+
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD FAILURE
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  18.435 s
+[INFO] Finished at: 2026-05-13T12:00:24+08:00
+[INFO] ------------------------------------------------------------------------
+[ERROR] Failed to execute goal org.springframework.boot:spring-boot-maven-plugin:3.5.6:run (default-cli) on project Internship: Process terminated with exit code: 1 -> [Help 1]
+[ERROR] 
+[ERROR] To see the full stack trace of the errors, re-run Maven with the -e switch.
+[ERROR] Re-run Maven using the -X switch to enable full debug logging.
+[ERROR] 
+[ERROR] For more information about the errors and possible solutions, please read the following articles:
+[ERROR] [Help 1] http://cwiki.apache.org/confluence/display/MAVEN/MojoExecutionException

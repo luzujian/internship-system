@@ -13,6 +13,7 @@ import com.gdmu.service.InternshipConfirmationRecordService;
 import com.gdmu.service.InternshipProgressRecordService;
 import com.gdmu.service.InternshipTimeSettingsService;
 import com.gdmu.service.StudentApplicationService;
+import com.gdmu.service.StudentJobApplicationService;
 import com.gdmu.service.StudentInternshipStatusService;
 import com.gdmu.service.StudentUserService;
 import com.gdmu.service.UserService;
@@ -57,6 +58,12 @@ public class StudentInternshipConfirmationController {
 
     @Autowired
     private InternshipConfirmationRecordService confirmationRecordService;
+
+    @Autowired
+    private StudentJobApplicationService studentJobApplicationService;
+
+    @Autowired
+    private com.gdmu.websocket.AnnouncementWebSocketHandler webSocketHandler;
 
     /**
      * 将Object安全转换为String，处理Integer、Number等类型
@@ -213,6 +220,14 @@ public class StudentInternshipConfirmationController {
             Result validationResult = validateApplicationPeriod();
             if (validationResult != null) {
                 return validationResult;
+            }
+
+            // 检查是否已有待确认的记录，避免重复提交
+            List<InternshipConfirmationRecord> existingRecords = confirmationRecordService.findByStudentId(studentId);
+            boolean hasPendingRecord = existingRecords.stream()
+                .anyMatch(r -> r.getStatus() == 0 && (r.getRecallStatus() == null || r.getRecallStatus() == 0));
+            if (hasPendingRecord) {
+                return Result.error("您已有待确认的实习确认表，请等待企业确认或撤回后再提交");
             }
 
             // 创建新的确认记录
@@ -373,6 +388,10 @@ public class StudentInternshipConfirmationController {
             status.setInternshipDuration(record.getInternshipDuration());
             // 设置企业确认状态为待确认(0)
             status.setCompanyConfirmStatus(0);
+            // 重置撤回状态，允许重新撤回（0=未撤回，2=已撤回）
+            status.setRecallStatus(0);
+            status.setRecallReason(null);
+            status.setRecallApplyTime(null);
             // 同步联系电话和备注
             status.setContactPhone(record.getContactPhone());
             status.setRemark(record.getRemark());
@@ -383,10 +402,39 @@ public class StudentInternshipConfirmationController {
                 internshipStatusService.update(status);
             }
 
+            // 向企业推送待办数据更新（实习确认表已提交，待企业确认）
+            if (record.getCompanyId() != null) {
+                pushTodoUpdate(record.getCompanyId());
+            }
+
             return Result.success("提交成功");
         } catch (Exception e) {
             log.error("提交实习确认表失败: {}", e.getMessage(), e);
             return Result.error("提交失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 推送企业待办数据更新
+     */
+    private void pushTodoUpdate(Long companyId) {
+        try {
+            // 待处理申请数
+            List<com.gdmu.entity.StudentJobApplication> applications = studentJobApplicationService.findByCompanyId(companyId);
+            long pendingApplications = applications.stream()
+                    .filter(a -> "pending".equals(a.getStatus()))
+                    .count();
+
+            // 待确认实习表数 - 从学生实习状态表查询（company_confirm_status=0表示待确认）
+            List<com.gdmu.entity.StudentInternshipStatus> allStatuses = internshipStatusService.list(null, null, null, null, companyId, null, null, null, null, null);
+            long pendingConfirmations = allStatuses.stream()
+                    .filter(s -> s.getCompanyConfirmStatus() != null && s.getCompanyConfirmStatus() == 0)
+                    .count();
+
+            webSocketHandler.sendCompanyTodoUpdate(companyId, pendingApplications, pendingConfirmations);
+            log.info("推送待办数据更新成功：待处理申请={}, 待确认实习表={}", pendingApplications, pendingConfirmations);
+        } catch (Exception e) {
+            log.error("推送待办数据失败: {}", e.getMessage(), e);
         }
     }
 
@@ -475,6 +523,7 @@ public class StudentInternshipConfirmationController {
                 item.put("rejectionReason", record.getRemark());
                 // status: 确认记录状态 0=待确认, 1=已确认, 2=已拒绝
                 item.put("status", record.getStatus());
+                item.put("recallStatus", record.getRecallStatus());
                 // internshipStatus: 学生实习状态：0=待就业，1=待确认，2=已确定，3=实习中，4=已结束，5=已中断
                 item.put("internshipStatus", studentInternshipStatus);
                 item.put("createTime", record.getCreateTime());
@@ -494,7 +543,13 @@ public class StudentInternshipConfirmationController {
                 if (createTimeA == null && createTimeB == null) return 0;
                 if (createTimeA == null) return 1;
                 if (createTimeB == null) return -1;
-                return ((java.util.Date) createTimeB).compareTo((java.util.Date) createTimeA);
+                // 兼容 LocalDateTime 和 java.util.Date
+                if (createTimeA instanceof java.util.Date && createTimeB instanceof java.util.Date) {
+                    return ((java.util.Date) createTimeB).compareTo((java.util.Date) createTimeA);
+                } else if (createTimeA instanceof java.time.LocalDateTime && createTimeB instanceof java.time.LocalDateTime) {
+                    return ((java.time.LocalDateTime) createTimeB).compareTo((java.time.LocalDateTime) createTimeA);
+                }
+                return 0;
             });
 
             return Result.success(history);
@@ -714,8 +769,8 @@ public class StudentInternshipConfirmationController {
                 return Result.error("只能撤回待企业确认的申请");
             }
             // 检查是否已经撤回
-            if (record.getRecallStatus() != null && record.getRecallStatus() == 1) {
-                return Result.error("该申请已在撤回处理中");
+            if (record.getRecallStatus() != null && record.getRecallStatus() == 2) {
+                return Result.error("该申请已撤回，不能重复撤回");
             }
 
             String recallReason = body.get("recallReason");
@@ -724,7 +779,33 @@ public class StudentInternshipConfirmationController {
             }
 
             int result = confirmationRecordService.recall(id, recallReason);
+
+            // 同步重置 student_internship_status，让学生可以重新提交
+            StudentInternshipStatus status = internshipStatusService.findByStudentId(user.getId());
+            if (status != null && status.getStatus() >= 1 && status.getStatus() <= 2) {
+                // status 1=有Offer未确定, 2=已确定实习，这两种情况才需要重置
+                status.setStatus(0); // 重置为无offer状态
+                status.setCompanyConfirmStatus(null);
+                status.setRecallStatus(2); // 设置为已撤回状态（无需审核）
+                status.setRecallReason(recallReason);
+                status.setRecallApplyTime(new Date());
+                status.setCompanyId(null);
+                status.setCompanyName(null);
+                status.setPositionId(null);
+                status.setPositionName(null);
+                status.setCompanyAddress(null);
+                status.setCompanyPhone(null);
+                status.setInternshipStartTime(null);
+                status.setInternshipEndTime(null);
+                status.setInternshipDuration(null);
+                internshipStatusService.update(status);
+            }
+
             if (result > 0) {
+                // 向企业推送待办数据更新（实习确认表已撤回）
+                if (record.getCompanyId() != null) {
+                    pushTodoUpdate(record.getCompanyId());
+                }
                 return Result.success("撤回成功");
             } else {
                 return Result.error("撤回失败");
@@ -732,6 +813,34 @@ public class StudentInternshipConfirmationController {
         } catch (Exception e) {
             log.error("撤回实习确认申请失败: {}", e.getMessage(), e);
             return Result.error("撤回失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 获取实习确认表撤回记录列表（管理员）
+     */
+    @GetMapping("/recall/pending")
+    @PreAuthorize("hasRole('ADMIN')")
+    public Result getConfirmationRecallPendingList(@RequestParam(defaultValue = "1") Integer page,
+                                                   @RequestParam(defaultValue = "10") Integer pageSize,
+                                                   @RequestParam(required = false) Long studentId,
+                                                   @RequestParam(required = false) String name,
+                                                   @RequestParam(required = false) String companyName) {
+        log.info("获取实习确认表撤回记录列表，页码：{}, 每页条数：{}, 学生ID：{}, 姓名：{}, 企业名称：{}",
+                page, pageSize, studentId, name, companyName);
+        try {
+            List<InternshipConfirmationRecord> allRecords = confirmationRecordService.findPendingRecallList(studentId, name, companyName);
+            int total = allRecords.size();
+            int start = (page - 1) * pageSize;
+            int end = Math.min(start + pageSize, total);
+            List<InternshipConfirmationRecord> pageRecords = start < total ? allRecords.subList(start, end) : List.of();
+            return Result.success(new java.util.HashMap<String, Object>() {{
+                put("rows", pageRecords);
+                put("total", total);
+            }});
+        } catch (Exception e) {
+            log.error("获取实习确认表撤回记录列表失败：{}", e.getMessage(), e);
+            return Result.error("获取失败");
         }
     }
 }

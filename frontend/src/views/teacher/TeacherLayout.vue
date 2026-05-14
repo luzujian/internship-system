@@ -84,7 +84,7 @@
 </template>
 
 <script lang="ts" setup>
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ElScrollbar } from 'element-plus'
@@ -112,6 +112,7 @@ import { useAuthStore } from '@/store/auth'
 import { useSystemSettingsStore } from '@/store/systemSettings'
 import { useUserStatusCheck } from '@/composables/useUserStatusCheck'
 import request from '@/utils/request'
+import { initAnnouncementWebSocket, disconnectAnnouncementWebSocket } from '@/utils/websocket'
 import FloatingAIBall from '@/components/FloatingAIBall.vue'
 
 defineOptions({
@@ -329,7 +330,32 @@ onMounted(() => {
     systemSettingsStore.loadSettings()
   }
   fetchTeacherMenus()
+  initWebSocket()
 })
+
+onUnmounted(() => {
+  disconnectAnnouncementWebSocket()
+})
+
+// 初始化WebSocket连接
+const initWebSocket = () => {
+  let token = authStore.token
+
+  if (!token) {
+    const rolePrefix = 'teacher_'
+    const role = authStore.role || 'ROLE_TEACHER'
+    token = localStorage.getItem(`${rolePrefix}accessToken_${role}`) ||
+            localStorage.getItem(`${rolePrefix}token_${role}`) ||
+            localStorage.getItem('accessToken')
+  }
+
+  if (token) {
+    console.log('[TeacherLayout] 初始化 WebSocket')
+    initAnnouncementWebSocket(token, (data) => {
+      console.log('[TeacherLayout] 收到 WebSocket 消息, type:', data.type)
+    })
+  }
+}
 
 watch(() => authStore.role, (newRole) => {
   if (newRole && newRole.startsWith('ROLE_TEACHER')) {

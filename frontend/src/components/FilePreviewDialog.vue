@@ -31,9 +31,54 @@
         </div>
       </div>
 
-      <!-- Office 文档预览 (使用微软在线预览) -->
-      <div v-else-if="['word', 'excel', 'ppt'].includes(fileType)" class="office-preview">
-        <iframe :src="officePreviewUrl" class="office-frame" frameborder="0" sandbox="allow-scripts allow-same-origin allow-forms"></iframe>
+      <!-- Word 文档预览 (使用 docx-preview + iframe 隔离) -->
+      <div v-else-if="fileType === 'word'" class="word-preview">
+        <div v-if="docxLoading" class="docx-loading-overlay">
+          <el-icon class="is-loading"><Loading /></el-icon>
+          <span>加载中...</span>
+        </div>
+        <div v-if="docxError && !docxLoading" class="docx-error-overlay">
+          <el-icon><Warning /></el-icon>
+          <span>Word 文档加载失败</span>
+          <el-button type="primary" size="small" @click="handleDownload">下载文件</el-button>
+        </div>
+        <iframe
+          v-if="!docxLoading && !docxError && docxHtmlContent"
+          :srcdoc="docxHtmlContent"
+          class="docx-iframe"
+          sandbox="allow-same-origin"
+        ></iframe>
+      </div>
+
+      <!-- Excel 文档预览 (使用 xlsx) -->
+      <div v-else-if="fileType === 'excel'" class="excel-preview">
+        <div v-if="excelLoading" class="excel-loading-overlay">
+          <el-icon class="is-loading"><Loading /></el-icon>
+          <span>加载中...</span>
+        </div>
+        <div v-if="excelError && !excelLoading" class="excel-error-overlay">
+          <el-icon><Warning /></el-icon>
+          <span>Excel 文档加载失败</span>
+          <el-button type="primary" size="small" @click="handleDownload">下载文件</el-button>
+        </div>
+        <div v-if="!excelLoading && !excelError && excelHtmlContent" class="excel-container" v-html="excelHtmlContent"></div>
+      </div>
+
+      <!-- PPT 文档预览 -->
+      <div v-else-if="fileType === 'ppt'" class="ppt-preview">
+        <div class="ppt-info">
+          <div class="ppt-icon">
+            <el-icon :size="80" color="#409EFF"><Document /></el-icon>
+          </div>
+          <h3 class="ppt-title">{{ fileName }}</h3>
+          <p class="ppt-tip">PPT文件需要下载后查看</p>
+          <div class="ppt-actions">
+            <el-button type="primary" size="large" @click="handleDownload">
+              <el-icon><Download /></el-icon>
+              下载文件
+            </el-button>
+          </div>
+        </div>
       </div>
 
       <!-- 文本文件预览 -->
@@ -74,7 +119,7 @@
 </template>
 
 <script lang="ts" setup>
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Document, Download, Loading, Warning } from '@element-plus/icons-vue'
 import type { PdfJsLib, PdfDocument } from '@/types'
@@ -105,7 +150,19 @@ const pdfContainer = ref<HTMLDivElement | null>(null)
 const pdfCanvas = ref<HTMLCanvasElement | null>(null)
 let pdfDoc: PdfDocument | null = null
 
-const visibleRef = ref<HTMLElement | null>(null)
+// Word(docx) 相关
+const docxLoading = ref(false)
+const docxError = ref(false)
+const docxContainer = ref<HTMLDivElement | null>(null)
+const docxHtmlContent = ref('')
+let docxRendered = false
+
+// Excel 相关
+const excelLoading = ref(false)
+const excelError = ref(false)
+const excelHtmlContent = ref('')
+
+// PPT 相关（已简化为下载模式，不需要loading和error状态）
 
 // 文件类型判断
 const fileType = ref<string>('unknown')
@@ -116,23 +173,6 @@ const getFileExtension = (): string => {
   if (!fileExtension.value) return ''
   return fileExtension.value
 }
-
-// 微软 Office 在线预览地址（支持 PDF、Word、Excel、PowerPoint）
-const OFFICE_PREVIEW_URL = 'https://view.officeapps.live.com/op/view.aspx?src='
-
-// PDF 预览地址（使用微软 Office Online 预览服务）
-const pdfPreviewUrl = computed(() => {
-  // 需要使用可公开访问的 URL，并进行编码
-  const encodedUrl = encodeURIComponent(props.fileUrl)
-  return OFFICE_PREVIEW_URL + encodedUrl
-})
-
-// Office 文档预览地址
-const officePreviewUrl = computed(() => {
-  // 需要使用可公开访问的 URL
-  const encodedUrl = encodeURIComponent(props.fileUrl)
-  return OFFICE_PREVIEW_URL + encodedUrl
-})
 
 // 预览标题
 const previewTitle = computed(() => {
@@ -323,6 +363,135 @@ const renderPdf = async () => {
   }
 }
 
+// 渲染 Word (docx) 文档
+const renderDocx = async () => {
+  try {
+    docxLoading.value = true
+    docxError.value = false
+
+    // 将 OSS URL 转换为代理 URL
+    const proxyUrl = convertToProxyUrl(props.fileUrl)
+    console.log('[FilePreviewDialog] 渲染 Word 文档，使用代理 URL:', proxyUrl)
+
+    // 获取文件内容
+    const response = await fetch(proxyUrl)
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`)
+    }
+    const blob = await response.blob()
+
+    // 使用 docx-preview 渲染
+    const { renderAsync } = await import('docx-preview')
+
+    // 创建一个完全脱离的临时容器（永远不添加到 DOM）
+    const tempContainer = document.createElement('div')
+    tempContainer.style.cssText = 'position:absolute;left:-9999px;top:-9999px;width:800px;overflow:hidden;'
+
+    // 在临时容器中渲染
+    await renderAsync(blob, tempContainer, null, {
+      className: 'docx',
+      inWrapper: true,
+      ignoreLastRenderedPageBreak: true,
+      experimental: false,
+      trimXmlDeclaration: true,
+      useBase64URL: true,
+      useMathMLPolyfill: true,
+      renderHeaders: true,
+      renderFooters: true,
+      renderFootnotes: true,
+      renderEndnotes: true
+    })
+
+    // 直接获取渲染后的 HTML 字符串
+    docxHtmlContent.value = tempContainer.innerHTML
+
+    docxLoading.value = false
+  } catch (error) {
+    console.error('Word 文档渲染失败:', error)
+    docxError.value = true
+    docxLoading.value = false
+  }
+}
+
+// 渲染 Excel 文档
+const renderExcel = async () => {
+  try {
+    excelLoading.value = true
+    excelError.value = false
+
+    // 将 OSS URL 转换为代理 URL
+    const proxyUrl = convertToProxyUrl(props.fileUrl)
+    console.log('[FilePreviewDialog] 渲染 Excel 文档，使用代理 URL:', proxyUrl)
+
+    // 获取文件内容
+    const response = await fetch(proxyUrl)
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`)
+    }
+    const blob = await response.blob()
+
+    // 使用 FileReader 读取 blob
+    const arrayBuffer = await blob.arrayBuffer()
+    const XLSX_module = await import('xlsx')
+    const XLSX = XLSX_module.default || XLSX_module
+    const workbook = XLSX.read(arrayBuffer, { type: 'array', cellDates: true })
+
+    // 生成 HTML 表格
+    let htmlContent = '<div class="excel-wrapper">'
+
+    workbook.SheetNames.forEach((sheetName: string, index: number) => {
+      const sheet = workbook.Sheets[sheetName]
+      const csvContent = XLSX.utils.sheet_to_csv(sheet)
+      const rows = csvContent.split('\n')
+
+      htmlContent += `<div class="excel-sheet">`
+      if (workbook.SheetNames.length > 1) {
+        htmlContent += `<div class="sheet-title">${sheetName}</div>`
+      }
+      htmlContent += `<table class="excel-table">`
+
+      rows.forEach((row: string, rowIndex: number) => {
+        if (rowIndex === 0) {
+          // 表头
+          htmlContent += '<thead><tr>'
+          const headers = row.split(',')
+          headers.forEach((header: string) => {
+            htmlContent += `<th>${escapeHtml(header.trim())}</th>`
+          })
+          htmlContent += '</tr></thead><tbody>'
+        } else if (row.trim()) {
+          // 数据行
+          htmlContent += '<tr>'
+          const cells = row.split(',')
+          cells.forEach((cell: string) => {
+            htmlContent += `<td>${escapeHtml(cell.trim())}</td>`
+          })
+          htmlContent += '</tr>'
+        }
+      })
+
+      htmlContent += '</tbody></table></div>'
+    })
+
+    htmlContent += '</div>'
+
+    // 设置 HTML 内容
+    excelHtmlContent.value = htmlContent
+    excelLoading.value = false
+  } catch (error) {
+    console.error('Excel 文档渲染失败:', error)
+    excelError.value = true
+    excelLoading.value = false
+  }
+}
+
+// HTML 转义
+const escapeHtml = (str: string): string => {
+  const div = document.createElement('div')
+  div.textContent = str
+  return div.innerHTML
+}
+
 // 图片加载错误处理
 const handleImageError = () => {
   ElMessage.error('图片加载失败')
@@ -342,8 +511,9 @@ const handleDownload = async (event: Event) => {
 
   downloading.value = true
   try {
-    // 使用 axios 下载文件 blob
-    const response = await fetch(props.fileUrl)
+    // 获取代理 URL 进行下载
+    const proxyUrl = convertToProxyUrl(props.fileUrl)
+    const response = await fetch(proxyUrl)
     const blob = await response.blob()
     const url = window.URL.createObjectURL(blob)
     const link = document.createElement('a')
@@ -389,9 +559,21 @@ const handleClosed = () => {
         canvas.remove()
       }
     })
+    // 重置第一个 canvas
+    if (pdfCanvas.value) {
+      pdfCanvas.value.style.display = 'none'
+      pdfCanvas.value.width = 0
+      pdfCanvas.value.height = 0
+    }
   }
   pdfDoc = null
   pdfError.value = false
+  // 清理 docx 容器
+  docxHtmlContent.value = ''
+  docxError.value = false
+  // 清理 excel 容器
+  excelHtmlContent.value = ''
+  excelError.value = false
 }
 
 // 监听对话框打开和文件变化
@@ -421,6 +603,19 @@ watch(() => [visible.value, props.fileUrl, props.fileName] as const, ([newVisibl
         renderPdf()
       }, 100)
     }
+    // Word 文档需要渲染
+    if (fileType.value === 'word') {
+      setTimeout(() => {
+        renderDocx()
+      }, 100)
+    }
+    // Excel 文档需要渲染
+    if (fileType.value === 'excel') {
+      setTimeout(() => {
+        renderExcel()
+      }, 100)
+    }
+    // PPT 文档使用下载模式，无需特殊处理
   }
 }, { immediate: true })
 </script>
@@ -505,6 +700,254 @@ watch(() => [visible.value, props.fileUrl, props.fileName] as const, ([newVisibl
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
   border-radius: 4px;
   background: #fff;
+}
+
+/* Word 文档预览 */
+.word-preview {
+  flex: 1;
+  min-height: 600px;
+  overflow: auto;
+  background: #fff;
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.docx-container {
+  width: 100%;
+  min-height: 500px;
+}
+
+.docx-loading,
+.docx-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: #909399;
+}
+
+.docx-error {
+  color: #f56c6c;
+}
+
+.docx-iframe {
+  width: 100%;
+  height: 70vh;
+  border: none;
+  background: #fff;
+}
+
+.docx-loading-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: rgba(255, 255, 255, 0.9);
+  color: #909399;
+  z-index: 10;
+}
+
+.docx-error-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: rgba(255, 255, 255, 0.9);
+  color: #f56c6c;
+  z-index: 10;
+}
+
+.docx-container :deep(.docx) {
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.docx-container :deep(.docx h1) {
+  font-size: 24px;
+  font-weight: bold;
+  margin: 16px 0;
+}
+
+.docx-container :deep(.docx h2) {
+  font-size: 20px;
+  font-weight: bold;
+  margin: 14px 0;
+}
+
+.docx-container :deep(.docx h3) {
+  font-size: 18px;
+  font-weight: bold;
+  margin: 12px 0;
+}
+
+.docx-container :deep(.docx p) {
+  margin: 8px 0;
+}
+
+.docx-container :deep(.docx table) {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 8px 0;
+}
+
+.docx-container :deep(.docx td),
+.docx-container :deep(.docx th) {
+  border: 1px solid #ddd;
+  padding: 6px 10px;
+}
+
+/* Excel 文档预览 */
+.excel-preview {
+  flex: 1;
+  min-height: 600px;
+  overflow: auto;
+  background: #fff;
+  border-radius: 8px;
+  padding: 16px;
+  position: relative;
+}
+
+.excel-container {
+  width: 100%;
+  min-height: 500px;
+}
+
+.excel-loading-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: rgba(255, 255, 255, 0.9);
+  color: #909399;
+  z-index: 10;
+}
+
+.excel-error-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: rgba(255, 255, 255, 0.9);
+  color: #f56c6c;
+  z-index: 10;
+}
+
+.excel-loading,
+.excel-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  height: 300px;
+  color: #909399;
+}
+
+.excel-error {
+  color: #f56c6c;
+}
+
+.excel-wrapper {
+  width: 100%;
+}
+
+.excel-sheet {
+  margin-bottom: 20px;
+}
+
+.excel-sheet .sheet-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #303133;
+  padding: 8px 0;
+  border-bottom: 2px solid #409EFF;
+  margin-bottom: 8px;
+}
+
+.excel-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.excel-table th {
+  background: #f5f7fa;
+  font-weight: 600;
+  text-align: left;
+  padding: 8px 12px;
+  border: 1px solid #e4e7ed;
+  color: #303133;
+}
+
+.excel-table td {
+  padding: 6px 12px;
+  border: 1px solid #e4e7ed;
+  color: #606266;
+}
+
+.excel-table tr:hover {
+  background: #f0f7ff;
+}
+
+/* PPT 文档预览 */
+.ppt-preview {
+  flex: 1;
+  min-height: 600px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.ppt-info {
+  text-align: center;
+  padding: 40px;
+}
+
+.ppt-icon {
+  margin-bottom: 20px;
+}
+
+.ppt-title {
+  font-size: 18px;
+  color: #303133;
+  margin-bottom: 12px;
+}
+
+.ppt-tip {
+  color: #909399;
+  margin-bottom: 24px;
+}
+
+.ppt-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
 }
 
 /* Office 文档预览 */

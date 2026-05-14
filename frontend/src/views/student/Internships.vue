@@ -658,7 +658,7 @@ import {
 import { useRouter } from 'vue-router'
 import request from '@/utils/request'
 import { useAuthStore } from '@/store/auth'
-import { onAIAnalysisResult, offAIAnalysisResult } from '@/utils/websocket'
+import { onAIAnalysisResult, offAIAnalysisResult, onGradePublished, offGradePublished } from '@/utils/websocket'
 
 const authStore = useAuthStore()
 
@@ -709,6 +709,13 @@ const handleAIAnalysisResult = async (data: any) => {
   }
 
   await fetchPeriodStatus()
+}
+
+// 处理成绩发布更新（教师一键上传成绩后刷新）
+const handleGradePublished = async (data: any) => {
+  console.log('[Internships] 收到成绩发布通知:', data)
+  ElMessage.success('教师已发布评分成绩')
+  await fetchReflections()
 }
 
 const logForm = ref({
@@ -1147,11 +1154,15 @@ onMounted(() => {
 
   // 注册AI分析结果监听器
   onAIAnalysisResult(handleAIAnalysisResult)
+  // 注册成绩发布更新监听器
+  onGradePublished(handleGradePublished)
 })
 
 onUnmounted(() => {
   // 移除AI分析结果监听器
   offAIAnalysisResult(handleAIAnalysisResult)
+  // 移除成绩发布更新监听器
+  offGradePublished(handleGradePublished)
 })
 </script>
 
@@ -1606,6 +1617,8 @@ onUnmounted(() => {
   background: #fafafa;
   border-radius: 6px;
   border: 1px solid #f0f0f0;
+  max-height: 120px;
+  overflow-y: auto;
 }
 
 .log-info-grid,

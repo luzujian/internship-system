@@ -754,6 +754,10 @@ public class StudentInternshipStatusController {
             }
             
             List<StudentInternshipStatus> statusList = studentInternshipStatusService.list(null, null, null, null, companyId, null, null, null, null, null);
+            // 过滤掉已撤回的记录（recall_status=2表示已撤回，企业端不应看到）
+            statusList = statusList.stream()
+                .filter(s -> s.getRecallStatus() == null || s.getRecallStatus() != 2)
+                .collect(java.util.stream.Collectors.toList());
             return Result.success(statusList);
         } catch (Exception e) {
             log.error("获取企业实习状态列表失败：{}", e.getMessage(), e);
@@ -825,6 +829,20 @@ public class StudentInternshipStatusController {
             if (result > 0) {
                 // 推送待办数据更新
                 pushTodoUpdate(status.getCompanyId());
+
+                // 推送实习确认结果给学生
+                log.info("准备向学生推送确认结果, studentId={}, company={}, position={}",
+                    status.getStudentId(),
+                    status.getCompany() != null ? status.getCompany().getCompanyName() : "",
+                    status.getPosition() != null ? status.getPosition().getPositionName() : "");
+                webSocketHandler.sendConfirmationResultToStudent(
+                    status.getStudentId(),
+                    1, // 1=已确认
+                    status.getCompany() != null ? status.getCompany().getCompanyName() : "",
+                    status.getPosition() != null ? status.getPosition().getPositionName() : ""
+                );
+                log.info("已调用sendConfirmationResultToStudent");
+
                 return Result.success("确认成功");
             }
             return Result.error("确认失败");
@@ -885,6 +903,15 @@ public class StudentInternshipStatusController {
             if (result > 0) {
                 // 推送待办数据更新
                 pushTodoUpdate(status.getCompanyId());
+
+                // 推送实习确认拒绝结果给学生
+                webSocketHandler.sendConfirmationResultToStudent(
+                    status.getStudentId(),
+                    2, // 2=已拒绝
+                    status.getCompany() != null ? status.getCompany().getCompanyName() : "",
+                    status.getPosition() != null ? status.getPosition().getPositionName() : ""
+                );
+
                 return Result.success("拒绝成功");
             }
             return Result.error("拒绝失败");
