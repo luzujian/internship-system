@@ -138,6 +138,12 @@ class WebSocketClient {
       return
     }
 
+    // 如果正在连接中，先等待连接完成
+    if (this.ws && this.ws.readyState === WebSocket.CONNECTING) {
+      logger.log('[WebSocket] 连接正在建立中，等待完成')
+      return
+    }
+
     this.isManualClose = false
 
     try {
@@ -275,8 +281,15 @@ class WebSocketClient {
     }
 
     if (this.ws) {
-      this.ws.close(1000, '用户主动断开')
+      // 保存当前 WebSocket 引用
+      const oldWs = this.ws
       this.ws = null
+      // 延迟关闭，让 onclose 处理器完成后再真正关闭
+      setTimeout(() => {
+        if (oldWs) {
+          oldWs.close(1000, '用户主动断开')
+        }
+      }, 100)
     }
   }
 

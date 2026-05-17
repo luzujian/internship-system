@@ -2,7 +2,12 @@ package com.gdmu.websocket;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.gdmu.entity.Position;
+import com.gdmu.entity.StudentInternshipStatus;
+import com.gdmu.entity.StudentJobApplication;
+import com.gdmu.service.StudentInternshipStatusService;
+import com.gdmu.service.StudentJobApplicationService;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
@@ -11,6 +16,7 @@ import org.springframework.web.socket.handler.TextWebSocketHandler;
 
 import java.io.IOException;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -20,9 +26,15 @@ import java.util.concurrent.ConcurrentHashMap;
 public class AnnouncementWebSocketHandler extends TextWebSocketHandler {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
-    
+
     private final Map<String, WebSocketSession> sessions = new ConcurrentHashMap<>();
     private final Map<Long, Set<String>> userSessions = new ConcurrentHashMap<>();
+
+    @Autowired
+    private StudentJobApplicationService applicationService;
+
+    @Autowired
+    private StudentInternshipStatusService internshipStatusService;
 
     @Override
     public void afterConnectionEstablished(WebSocketSession session) throws Exception {
@@ -448,6 +460,47 @@ public class AnnouncementWebSocketHandler extends TextWebSocketHandler {
     }
 
     /**
+     * 向指定企业用户推送待办数据更新（申请撤回时调用）
+     * @param companyId 企业ID
+     */
+    public void sendCompanyTodoUpdateForApplication(Long companyId) {
+        log.info("向企业 {} 推送待办数据更新（申请撤回）", companyId);
+
+        // 查询待处理申请数
+        List<StudentJobApplication> applications = applicationService.findByCompanyId(companyId);
+        long pendingApplications = applications.stream()
+                .filter(a -> "pending".equals(a.getStatus()))
+                .count();
+
+        // 查询待确认实习表数
+        List<StudentInternshipStatus> allStatuses = internshipStatusService.list(null, null, null, null, companyId, null, null, null, null, null);
+        long pendingConfirmations = allStatuses.stream()
+                .filter(s -> s.getCompanyConfirmStatus() != null && s.getCompanyConfirmStatus() == 0)
+                .count();
+
+        Map<String, Object> data = new HashMap<>();
+        data.put("pendingApplications", pendingApplications);
+        data.put("pendingConfirmations", pendingConfirmations);
+
+        Map<String, Object> wsMessage = new HashMap<>();
+        wsMessage.put("type", "company_todo_update");
+        wsMessage.put("data", data);
+        wsMessage.put("timestamp", System.currentTimeMillis());
+
+        for (WebSocketSession session : sessions.values()) {
+            Long sessionCompanyId = (Long) session.getAttributes().get("companyId");
+            if (sessionCompanyId != null && sessionCompanyId.equals(companyId)) {
+                try {
+                    sendMessage(session, wsMessage);
+                    log.info("已向企业 {} 推送待办数据更新（申请撤回）", companyId);
+                } catch (Exception e) {
+                    log.error("推送待办数据失败：sessionId={}, error={}", session.getId(), e.getMessage());
+                }
+            }
+        }
+    }
+
+    /**
      * 向指定学生用户推送实习确认结果更新
      * @param studentId 学生ID
      * @param confirmationStatus 确认状态：1=已确认, 2=已拒绝
@@ -553,6 +606,38 @@ public class AnnouncementWebSocketHandler extends TextWebSocketHandler {
             }
         } else {
             log.info("学生 {} 当前无在线session，跳过推送", studentId);
+        }
+    }
+
+    /**
+     * 向指定学生用户推送提醒消息
+     * @param studentId 学生ID
+     * @param reminderData 提醒数据（包含 id 和 content）
+     */
+    public void sendReminderToStudent(Long studentId, Map<String, Object> reminderData) {
+        log.info("向学生 {} 推送提醒消息：{}", studentId, reminderData.get("content"));
+
+        Map<String, Object> wsMessage = new HashMap<>();
+        wsMessage.put("type", "student_reminder");
+        wsMessage.put("data", reminderData);
+        wsMessage.put("timestamp", System.currentTimeMillis());
+
+        // 推送给对应的学生用户
+        Set<String> userSessionSet = userSessions.get(studentId);
+        if (userSessionSet != null && !userSessionSet.isEmpty()) {
+            for (String sessionId : userSessionSet) {
+                WebSocketSession session = sessions.get(sessionId);
+                if (session != null && session.isOpen()) {
+                    try {
+                        sendMessage(session, wsMessage);
+                        log.info("已向学生 {} 推送提醒消息", studentId);
+                    } catch (Exception e) {
+                        log.error("推送提醒消息失败：sessionId={}, error={}", session.getId(), e.getMessage());
+                    }
+                }
+            }
+        } else {
+            log.info("学生 {} 当前无在线session，提醒将存入数据库待下次连接时显示", studentId);
         }
     }
 }

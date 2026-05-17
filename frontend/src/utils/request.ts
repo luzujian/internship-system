@@ -42,7 +42,7 @@ interface RefreshTokenResponse {
 }
 
 const CONFIG: Config = {
-  BASE_URL: '/api',
+  BASE_URL: import.meta.env.VITE_API_BASE_URL || '/api',
   TIMEOUT: 60000,
   RETRY_COUNT: 2,
   RETRY_DELAY_BASE: 1000,

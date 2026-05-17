@@ -458,6 +458,9 @@ const handleNewApplication = (data) => {
 // 处理企业待办数据更新（静默刷新统计卡片）
 const handleCompanyTodoUpdate = (data: CompanyTodoUpdateData) => {
   console.log('收到企业待办数据更新:', data)
+  // 直接更新statsData中的待确认数量
+  statsData.value[2].value = data.pendingConfirmations || 0
+  statsData.value[1].value = (statsData.value[1].value || 0) - (data.pendingApplications || 0)
   fetchStats()
 }
 

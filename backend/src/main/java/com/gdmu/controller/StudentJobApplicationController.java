@@ -92,6 +92,8 @@ public class StudentJobApplicationController {
                     application.getStudentName(),
                     application.getPositionName()
                 );
+                // 推送待办数据更新（待处理申请数加一）
+                webSocketHandler.sendCompanyTodoUpdateForApplication(application.getCompanyId());
             }
 
             return Result.success("申请成功");
@@ -107,7 +109,21 @@ public class StudentJobApplicationController {
         try {
             User user = getCurrentUser();
             if (user == null) return Result.error("未登录");
+
+            // 获取申请信息用于后续推送
+            StudentJobApplication existingApp = applicationService.findById(id);
+            Long companyId = null;
+            if (existingApp != null) {
+                companyId = existingApp.getCompanyId();
+            }
+
             applicationService.deleteById(id, user.getId());
+
+            // 推送待办数据更新给企业（待处理申请数减一）
+            if (companyId != null) {
+                webSocketHandler.sendCompanyTodoUpdateForApplication(companyId);
+            }
+
             return Result.success("删除成功");
         } catch (Exception e) {
             log.error("删除申请失败: {}", e.getMessage(), e);

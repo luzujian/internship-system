@@ -170,7 +170,7 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" :width="showInternshipFields ? 350 : 180" fixed="right" align="center">
+        <el-table-column label="操作" :width="showInternshipFields ? 240 : 180" fixed="right" align="center">
           <template #default="scope">
             <div class="action-buttons">
               <el-tooltip content="查看实习心得" placement="top" v-if="!showInternshipFields">
@@ -186,25 +186,21 @@
               <el-tooltip content="查看详情" placement="top" v-if="showInternshipFields">
                 <el-button size="small" type="primary" @click="viewStudentDetail(scope.row)" class="table-btn view">
                   <el-icon><View /></el-icon>
-                  查看
                 </el-button>
               </el-tooltip>
               <el-tooltip content="下载申请表" placement="top" v-if="showInternshipFields">
                 <el-button size="small" type="primary" @click="downloadApplicationForm(scope.row)" class="table-btn download">
                   <el-icon><Download /></el-icon>
-                  下载
                 </el-button>
               </el-tooltip>
               <el-tooltip content="导出档案" placement="top" v-if="showInternshipFields">
                 <el-button size="small" type="success" @click="exportStudentProfile(scope.row.id)" class="table-btn export">
                   <el-icon><Download /></el-icon>
-                  导出
                 </el-button>
               </el-tooltip>
               <el-tooltip content="提醒" placement="top" v-if="showInternshipFields">
                 <el-button size="small" type="warning" @click="remindStudent(scope.row.id)" class="table-btn remind">
                   <el-icon><Bell /></el-icon>
-                  提醒
                 </el-button>
               </el-tooltip>
             </div>
@@ -562,11 +558,12 @@ const reminderTemplates = [
   { value: '2', label: '请尽快提交实习周志' },
   { value: '3', label: '实习确认表待审核，请及时处理' },
   { value: '4', label: '请注意实习时间安排' },
-  { value: '5', label: '其他（自定义输入）' }
+  { value: '5', label: '您还未找到实习，请尽快开始寻找' },
+  { value: '6', label: '其他（自定义输入）' }
 ]
 
 const handleTemplateChange = (value: string) => {
-  if (value !== '5') {
+  if (value !== '6') {
     const template = reminderTemplates.find(t => t.value === value)
     reminderForm.value.content = template?.label || ''
   } else {
@@ -1401,14 +1398,14 @@ onMounted(() => {
 
 .action-buttons {
   display: flex;
-  gap: 8px;
+  gap: 4px;
   justify-content: center;
   align-items: center;
 }
 
 .table-btn {
   border-radius: 6px;
-  padding: 6px 8px;
+  padding: 4px 6px;
   transition: all 0.3s ease;
 }
 

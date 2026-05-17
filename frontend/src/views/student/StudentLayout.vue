@@ -260,7 +260,14 @@ const initStudentWebSocket = () => {
 const handleStudentWebSocketMessage = (data) => {
   console.log('[StudentLayout] 收到 WebSocket 消息, type:', data.type, 'data:', JSON.stringify(data))
 
-  if (data.type === 'application_status_update' && data.data) {
+  if (data.type === 'student_reminder' && data.data) {
+    console.log('[StudentLayout] 收到实时提醒:', data.data)
+    currentReminder.value = {
+      id: data.data.id,
+      content: data.data.content
+    }
+    hasUnconfirmedReminder.value = true
+  } else if (data.type === 'application_status_update' && data.data) {
     console.log('[StudentLayout] 收到申请状态更新:', data.data)
     const { companyName, positionName, status, statusText } = data.data
     ElMessage({
