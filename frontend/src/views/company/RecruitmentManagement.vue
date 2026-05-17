@@ -786,9 +786,10 @@ const handleGenerateDescription = async () => {
         stripe
         :row-class-name="getRowClassName"
         :row-style="getRowStyle"
+        :resizable="false"
         style="width: 100%"
       >
-        <el-table-column prop="positionName" label="岗位名称" width="150" show-overflow-tooltip>
+        <el-table-column prop="positionName" label="岗位名称" min-width="120">
           <template #default="{ row }">
             <span v-if="row.status === 'paused'" class="paused-text" style="background-color: #ffebee; color: #909399; text-decoration: line-through; display: inline-block; padding: 8px 12px; border-radius: 4px;">
               <el-icon class="paused-icon" style="color: #f56c6c; margin-right: 6px; font-size: 16px;"><VideoPause /></el-icon>
@@ -797,10 +798,10 @@ const handleGenerateDescription = async () => {
             <span v-else>{{ row.positionName }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="department" label="所属部门" width="90" />
-        <el-table-column label="工作地点" width="330">
+        <el-table-column prop="department" label="所属部门" width="100" />
+        <el-table-column label="工作地点" min-width="180">
           <template #default="{ row }">
-            <div style="white-space: pre-wrap; word-break: break-all; line-height: 1.5;">
+            <div style="white-space: normal; word-break: break-all; line-height: 1.5;">
               <span v-if="row.province && row.city && row.district">
                 {{ row.province }} {{ row.city }} {{ row.district }}
                 <span v-if="row.detailAddress">{{ row.detailAddress }}</span>
@@ -814,34 +815,30 @@ const handleGenerateDescription = async () => {
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="薪资范围" width="90">
-          <template #default="{ row }">
-            {{ row.salaryMin && row.salaryMax ? `${row.salaryMin}-${row.salaryMax}K` : '-' }}
-          </template>
-        </el-table-column>
-        <el-table-column prop="plannedRecruit" label="计划" width="70" align="center" />
-        <el-table-column prop="recruitedCount" label="已确认" width="80" align="center" />
-        <el-table-column prop="remainingQuota" label="缺口" width="70" align="center">
+        <el-table-column label="薪资范围" width="100" align="center" />
+        <el-table-column prop="plannedRecruit" label="招聘人数" width="90" align="center" />
+        <el-table-column prop="recruitedCount" label="已招人数" width="90" align="center" />
+        <el-table-column prop="remainingQuota" label="缺口" width="80" align="center">
           <template #default="{ row }">
             <el-tag :type="row.remainingQuota === 0 ? 'success' : 'warning'" size="small">
               {{ row.remainingQuota }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="status" label="状态" width="150">
+        <el-table-column prop="status" label="状态" width="90" align="center">
           <template #default="{ row }">
             <el-tag :type="statusTypeMap[row.status]" size="small">
               {{ statusMap[row.status] }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="publishDate" label="发布日期" width="120" />
+        <el-table-column prop="publishDate" label="发布日期" width="110" align="center" />
         <el-table-column prop="viewCount" label="浏览次数" width="90" align="center">
           <template #default="{ row }">
             <el-tag type="info" size="small">{{ row.viewCount || 0 }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="220" fixed="right" align="center">
+        <el-table-column label="操作" width="200" align="center">
           <template #default="{ row }">
             <div class="action-buttons">
               <el-button 
@@ -1142,36 +1139,33 @@ const handleGenerateDescription = async () => {
 }
 
 .stats-card {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 20px;
-  margin-bottom: 24px;
+  display: flex;
+  gap: 16px;
+  margin-bottom: 20px;
 }
 
 .stat-item {
+  flex: 1;
   background: white;
-  padding: 24px;
+  padding: 14px 16px;
   border-radius: 8px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  text-align: center;
-  transition: all 0.3s ease;
-}
-
-.stat-item:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .stat-label {
   font-size: 14px;
-  color: #909399;
-  margin-bottom: 12px;
+  color: #606266;
+  font-weight: 500;
+  white-space: nowrap;
 }
 
 .stat-value {
-  font-size: 32px;
-  font-weight: bold;
-  margin-bottom: 4px;
+  font-size: 18px;
+  font-weight: 700;
 }
 
 .stat-value.primary {
@@ -1192,7 +1186,7 @@ const handleGenerateDescription = async () => {
 
 .search-card {
   background: white;
-  padding: 20px;
+  padding: 12px 16px;
   border-radius: 8px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
   margin-bottom: 20px;
@@ -1204,11 +1198,53 @@ const handleGenerateDescription = async () => {
   flex-wrap: wrap;
 }
 
+.search-card :deep(.el-form-item) {
+  margin-bottom: 0;
+  display: flex;
+  align-items: center;
+}
+
+.search-card :deep(.el-form-item__label) {
+  display: flex;
+  align-items: center;
+  height: 32px;
+  line-height: 32px;
+}
+
+.search-card :deep(.el-form-item__content) {
+  display: flex;
+  align-items: center;
+}
+
 .table-card {
   background: white;
   padding: 20px;
   border-radius: 8px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+/* 禁用表格列宽拖动，内容自动换行 */
+.table-card :deep(.el-table) {
+  --el-table-header-cell-resizable-border: none;
+}
+
+.table-card :deep(.el-table__cell) {
+  word-wrap: break-word;
+  word-break: break-all;
+  white-space: normal !important;
+}
+
+.table-card :deep(.el-table .cell) {
+  word-wrap: break-word;
+  word-break: break-all;
+  white-space: normal !important;
+  line-height: 1.4;
+}
+
+/* 隐藏列调整线 */
+.table-card :deep(.el-table__cell.is-hidden > *),
+.table-card :deep(.el-table__resizable-wrapper) {
+  display: none !important;
 }
 
 .empty-state {

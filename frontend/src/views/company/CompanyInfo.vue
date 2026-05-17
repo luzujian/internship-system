@@ -227,6 +227,19 @@ const removePhoto = (index) => {
   })
 }
 
+const removeAllPhotos = () => {
+  photoFileList.value = []
+  promotionForm.value.photos = []
+  console.log('删除所有照片')
+  savePromotionData().then(saveRes => {
+    if (saveRes.code === 200) {
+      ElMessage.success('所有照片已删除')
+    } else {
+      ElMessage.error('删除保存失败: ' + (saveRes.message || '未知错误'))
+    }
+  })
+}
+
 const removeLogo = () => {
   promotionForm.value.logo = ''
   logoFileList.value = []
@@ -871,28 +884,26 @@ watch(companyId, (newVal) => {
               <h3 class="card-title">企业照片</h3>
             </div>
             <div class="card-body">
-              <el-upload
-                class="photo-uploader"
-                :show-file-list="false"
-                :limit="9"
-                :on-change="handlePhotoChange"
-                :auto-upload="false"
-                accept="image/*"
-              >
-                <el-button type="primary">
-                  <el-icon><Upload /></el-icon>
-                  上传照片
-                </el-button>
-              </el-upload>
+              <div class="photo-header">
+                <el-upload
+                  class="photo-uploader"
+                  :show-file-list="false"
+                  :limit="9"
+                  :on-change="handlePhotoChange"
+                  :auto-upload="false"
+                  accept="image/*"
+                >
+                  <el-button type="primary">
+                    <el-icon><Upload /></el-icon>
+                    上传照片
+                  </el-button>
+                </el-upload>
+                <el-button v-if="photoFileList.length > 0" type="danger" size="small" @click="removeAllPhotos" :icon="Delete" />
+              </div>
               <div v-if="photoFileList.length > 0" class="photo-grid">
                 <div v-for="(file, index) in photoFileList" :key="file.uid" class="photo-item">
                   <div class="photo-preview-wrapper" @click="() => handlePhotoPreview(file)">
                     <img :src="file.url" class="photo-thumbnail" />
-                  </div>
-                  <div class="photo-actions">
-                    <el-button type="danger" size="small" @click="() => removePhoto(index)">
-                      <el-icon><Delete /></el-icon>
-                    </el-button>
                   </div>
                 </div>
               </div>
@@ -1409,6 +1420,12 @@ watch(companyId, (newVal) => {
   white-space: nowrap;
 }
 
+.photo-header {
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+
 .photo-grid {
   margin-top: 16px;
   display: grid;
@@ -1434,14 +1451,6 @@ watch(companyId, (newVal) => {
   width: 100%;
   height: 100%;
   object-fit: cover;
-}
-
-.photo-actions {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  display: flex;
-  gap: 8px;
 }
 
 .form-card {
@@ -1594,8 +1603,8 @@ watch(companyId, (newVal) => {
 .promotion-container {
   padding: 32px;
   background: white;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
   gap: 24px;
 }
 
@@ -1642,10 +1651,11 @@ watch(companyId, (newVal) => {
   display: flex;
   gap: 12px;
   justify-content: center;
-  padding: 24px 0;
+  padding: 24px 32px;
   background: white;
   border-top: 1px solid #e8e8e8;
   margin-top: 8px;
+  grid-column: 1 / -1;
   border-radius: 0 0 12px 12px;
 }
 </style>

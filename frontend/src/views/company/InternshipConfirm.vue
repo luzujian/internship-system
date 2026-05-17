@@ -86,6 +86,7 @@ const positionOptions = computed(() => {
 const positionStats = computed(() => {
   const stats = {}
   
+  // 只从当前岗位列表初始化岗位（不包含历史岗位）
   if (positionStore.positions && Array.isArray(positionStore.positions)) {
     positionStore.positions.forEach(pos => {
       if (pos.positionName) {
@@ -101,6 +102,7 @@ const positionStats = computed(() => {
     })
   }
   
+  // 遍历实习状态数据，只统计当前存在的岗位
   if (positionStore.internshipStatuses && Array.isArray(positionStore.internshipStatuses)) {
     positionStore.internshipStatuses.forEach(item => {
       if (item.positionName && stats[item.positionName]) {
@@ -118,18 +120,9 @@ const positionStats = computed(() => {
     })
   }
   
-  const statsArray = Object.values(stats)
-  
-  return statsArray.sort((a, b) => {
-    if (a.status === 'paused' && b.status !== 'paused') return 1
-    if (a.status !== 'paused' && b.status === 'paused') return -1
-    
-    if (a.pending > 0 && b.pending === 0) return -1
-    if (a.pending === 0 && b.pending > 0) return 1
-    
-    if (a.pending > 0 && b.pending > 0) return b.pending - a.pending
-    
-    return b.total - a.total
+  // 按岗位名称字母顺序固定排序
+  return Object.values(stats).sort((a, b) => {
+    return a.position.localeCompare(b.position, 'zh-CN')
   })
 })
 
@@ -438,27 +431,27 @@ const handleExport = async () => {
         stripe
         style="width: 100%"
       >
-        <el-table-column prop="positionName" label="应聘岗位" width="180" />
-        <el-table-column prop="studentName" label="学生姓名" width="120" />
+        <el-table-column prop="positionName" label="应聘岗位" min-width="100" />
+        <el-table-column prop="studentName" label="学生姓名" width="90" />
         <el-table-column prop="studentUserId" label="学号" width="120" />
-        <el-table-column label="年级和专业" width="200">
+        <el-table-column label="年级和专业" min-width="120">
           <template #default="{ row }">
             {{ row.grade }}级 {{ row.majorName || '' }}
           </template>
         </el-table-column>
-        <el-table-column prop="createTime" label="申请日期" width="120">
+        <el-table-column prop="createTime" label="申请日期" width="110" align="center">
           <template #default="{ row }">
             {{ formatDate(row.createTime) }}
           </template>
         </el-table-column>
-        <el-table-column prop="companyConfirmStatus" label="状态" width="100">
+        <el-table-column prop="companyConfirmStatus" label="状态" width="90" align="center">
           <template #default="{ row }">
             <el-tag :type="statusTypeMap[row.companyConfirmStatus]">
               {{ statusMap[row.companyConfirmStatus] }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" fixed="right" width="340" align="center">
+        <el-table-column label="操作" width="280" align="center">
           <template #default="{ row }">
             <el-button 
               v-if="row.companyConfirmStatus === 0"
@@ -620,7 +613,7 @@ const handleExport = async () => {
 
 .stats-cards {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  grid-template-columns: repeat(5, 1fr);
   gap: 16px;
   margin-bottom: 20px;
 }
@@ -629,8 +622,8 @@ const handleExport = async () => {
   background: rgba(255, 255, 255, 0.85);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  padding: 20px;
-  border-radius: 16px;
+  padding: 12px 16px;
+  border-radius: 12px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06),
               0 8px 16px rgba(0, 0, 0, 0.08),
               0 16px 32px rgba(0, 0, 0, 0.1);
@@ -664,24 +657,29 @@ const handleExport = async () => {
   pointer-events: none;
 }
 
-.stat-card:nth-child(4n+1) {
+.stat-card:nth-child(5n+1) {
   --card-color-1: #409EFF;
   --card-color-2: #36d1dc;
 }
 
-.stat-card:nth-child(4n+2) {
+.stat-card:nth-child(5n+2) {
   --card-color-1: #67C23A;
   --card-color-2: #4facfe;
 }
 
-.stat-card:nth-child(4n+3) {
+.stat-card:nth-child(5n+3) {
   --card-color-1: #E6A23C;
   --card-color-2: #f093fb;
 }
 
-.stat-card:nth-child(4n+4) {
+.stat-card:nth-child(5n+4) {
   --card-color-1: #F56C6C;
   --card-color-2: #ff9a9e;
+}
+
+.stat-card:nth-child(5n+5) {
+  --card-color-1: #909399;
+  --card-color-2: #b0b0b0;
 }
 
 .stat-card:hover {
@@ -702,8 +700,15 @@ const handleExport = async () => {
 }
 
 .stat-card.active {
-  border-color: #409EFF;
-  background: rgba(248, 255, 254, 0.9);
+  border: 2px solid #409EFF;
+  background: linear-gradient(135deg, #ecf5ff 0%, #d9ecff 100%);
+  box-shadow: 0 4px 12px rgba(64, 158, 255, 0.3);
+}
+
+.stat-card.active::before {
+  background: linear-gradient(90deg, #409EFF, #66b1ff);
+  opacity: 1;
+  height: 5px;
 }
 
 .stat-card.paused {
@@ -755,33 +760,33 @@ const handleExport = async () => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 16px;
-  padding-bottom: 12px;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
   border-bottom: 1px solid #e8e8e8;
 }
 
 .stat-title {
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 600;
   color: #303133;
 }
 
 .stat-total {
-  font-size: 14px;
+  font-size: 13px;
   color: #909399;
 }
 
 .stat-details {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
+  gap: 8px;
 }
 
 .stat-item {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
 }
 
 .stat-label {
@@ -790,7 +795,7 @@ const handleExport = async () => {
 }
 
 .stat-value {
-  font-size: 20px;
+  font-size: 18px;
   font-weight: bold;
 }
 

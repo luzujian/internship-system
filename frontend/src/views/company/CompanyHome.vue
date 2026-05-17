@@ -507,20 +507,8 @@ onUnmounted(() => {
         :style="{ background: stat.bgGradient }"
         @click="handleNavigate(stat.route)"
       >
-        <div class="stat-icon">
-          <el-icon :size="40" color="white">
-            <component :is="stat.icon" />
-          </el-icon>
-        </div>
-        <div class="stat-info">
-          <div class="stat-value">{{ stat.value }}</div>
-          <div class="stat-title">{{ stat.title }}</div>
-        </div>
-        <div class="stat-arrow">
-          <el-icon :size="24" color="rgba(255, 255, 255, 0.6)">
-            <ArrowRight />
-          </el-icon>
-        </div>
+        <span class="stat-title">{{ stat.title }}</span>
+        <span class="stat-value">{{ stat.value }}</span>
       </div>
     </div>
 
@@ -817,12 +805,12 @@ onUnmounted(() => {
 
 .stat-card {
   background: white;
-  padding: 24px;
+  padding: 16px 20px;
   border-radius: 12px;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
   display: flex;
   align-items: center;
-  gap: 16px;
+  justify-content: space-between;
   cursor: pointer;
   transition: all 0.3s ease;
   position: relative;
@@ -850,40 +838,17 @@ onUnmounted(() => {
   opacity: 1;
 }
 
-.stat-icon {
-  width: 48px;
-  height: 48px;
-  border-radius: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(255, 255, 255, 0.2);
-  flex-shrink: 0;
-}
-
-.stat-info {
-  flex: 1;
+.stat-title {
+  font-size: 16px;
+  color: rgba(255, 255, 255, 0.95);
+  font-weight: 600;
 }
 
 .stat-value {
-  font-size: 24px;
-  font-weight: bold;
-  color: white;
-  margin-bottom: 2px;
-}
-
-.stat-title {
-  font-size: 12px;
+  font-size: 14px;
+  font-weight: 700;
   color: rgba(255, 255, 255, 0.9);
-}
-
-.stat-arrow {
-  opacity: 0.6;
-  transition: opacity 0.3s ease;
-}
-
-.stat-card:hover .stat-arrow {
-  opacity: 1;
+  margin-left: 4px;
 }
 
 .content-grid {

@@ -36,13 +36,26 @@ const searchForm = ref({
 })
 
 const positionOptions = computed(() => {
-  return positionStore.positions.map(pos => ({ label: pos.positionName, value: pos.positionName }))
+  // 从岗位申请数据中提取所有出现过的岗位名称，确保包含历史岗位
+  const jobApplicationPositions = new Set<string>()
+  if (positionStore.jobApplications && Array.isArray(positionStore.jobApplications)) {
+    positionStore.jobApplications.forEach(item => {
+      if (item.positionName) {
+        jobApplicationPositions.add(item.positionName)
+      }
+    })
+  }
+  
+  // 从当前岗位列表中获取岗位名称
+  const currentPositions = positionStore.positions.map(pos => pos.positionName)
+  
+  // 合并两个列表并去重，按字母顺序排序
+  const allPositions = [...new Set([...currentPositions, ...jobApplicationPositions])]
+    .filter(name => name) // 过滤空值
+    .sort((a, b) => a.localeCompare(b, 'zh-CN'))
+  
+  return allPositions.map(name => ({ label: name, value: name }))
 })
-
-const statusOptions = [
-  { label: '未查看', value: false },
-  { label: '已查看', value: true }
-]
 
 const handleNewApplication = () => {
   console.log('岗位申请查看页面收到新申请通知，静默刷新数据')
@@ -72,7 +85,7 @@ const studentArchives = ref([])
 const groupedApplications = computed(() => {
   const groups = {}
 
-  // 1. 先从岗位列表初始化所有岗位
+  // 只从当前岗位列表初始化岗位（不包含历史岗位）
   if (positionStore.positions && Array.isArray(positionStore.positions)) {
     positionStore.positions.forEach(pos => {
       if (pos.positionName) {
@@ -85,44 +98,19 @@ const groupedApplications = computed(() => {
     })
   }
 
-  // 2. 遍历申请列表，将所有申请分配到对应岗位组
-  // 即使岗位不存在于系统岗位列表中，也为其创建组（避免数据丢失）
+  // 遍历申请列表，只将申请分配到当前存在的岗位组
   if (positionStore.jobApplications && Array.isArray(positionStore.jobApplications)) {
-    let data = positionStore.jobApplications
-
-    if (searchForm.value.keyword) {
-      data = data.filter(item =>
-        (item.studentName && item.studentName.includes(searchForm.value.keyword)) ||
-        (item.studentId && item.studentId.includes(searchForm.value.keyword))
-      )
-    }
-
-    if (searchForm.value.position) {
-      data = data.filter(item => (item.position || item.positionName) === searchForm.value.position)
-    }
-
-    if (searchForm.value.status === true || searchForm.value.status === false) {
-      data = data.filter(item => item.viewed === searchForm.value.status)
-    }
-
-    data.forEach(item => {
-      // 优先使用 position 字段，其次使用 positionName，最后使用空字符串
-      const positionName = item.position || item.positionName || '未知岗位'
-      // 如果该岗位不存在于 groups 中，创建一个新的组（保留历史数据）
-      if (!groups[positionName]) {
-        groups[positionName] = {
-          applications: [],
-          status: 'unknown', // 标记为未知状态
-          isSystemPosition: positionStore.positions?.some(p => p.positionName === positionName)
-        }
+    positionStore.jobApplications.forEach(item => {
+      const positionName = item.position || item.positionName || ''
+      // 只处理当前存在的岗位，忽略历史岗位的申请
+      if (groups[positionName]) {
+        groups[positionName].applications.push(item)
       }
-      groups[positionName].applications.push(item)
     })
   }
 
   Object.keys(groups).forEach(position => {
     groups[position].applications.sort((a, b) => {
-      // 待处理的排前面（按时间倒序）
       if (a.status === 'pending' && b.status !== 'pending') return -1
       if (a.status !== 'pending' && b.status === 'pending') return 1
       return new Date(b.applyDate) - new Date(a.applyDate)
@@ -136,22 +124,9 @@ const groupedApplications = computed(() => {
     pending: group.applications.filter(a => a.status === 'pending').length,
     processed: group.applications.filter(a => a.status !== 'pending').length,
     status: group.status,
-    isSystemPosition: group.isSystemPosition
+    isSystemPosition: true
   })).sort((a, b) => {
-    // 系统岗位排前面
-    if (a.isSystemPosition && !b.isSystemPosition) return -1
-    if (!a.isSystemPosition && b.isSystemPosition) return 1
-
-    if (a.status === 'paused' && b.status !== 'paused') return 1
-    if (a.status !== 'paused' && b.status === 'paused') return -1
-
-    // 待处理人数多的排前面
-    if (a.pending > 0 && b.pending === 0) return -1
-    if (a.pending === 0 && b.pending > 0) return 1
-
-    if (a.pending > 0 && b.pending > 0) return b.pending - a.pending
-
-    return b.total - a.total
+    return a.position.localeCompare(b.position, 'zh-CN')
   })
 })
 
@@ -160,7 +135,16 @@ const filteredTableData = computed(() => {
     return []
   }
 
-  let data = [...positionStore.jobApplications]
+  // 获取当前所有岗位名称
+  const currentPositionNames = new Set(
+    positionStore.positions.map(pos => pos.positionName)
+  )
+
+  let data = positionStore.jobApplications.filter(item => {
+    // 只保留当前存在的岗位申请
+    const positionName = item.position || item.positionName || ''
+    return currentPositionNames.has(positionName)
+  })
 
   if (searchForm.value.keyword) {
     data = data.filter(item =>
@@ -186,7 +170,7 @@ const filteredTableData = computed(() => {
 })
 
 const currentPage = ref(1)
-const pageSize = ref(20)
+const pageSize = ref(10)
 
 const paginatedTableData = computed(() => {
   const start = (currentPage.value - 1) * pageSize.value
@@ -549,16 +533,6 @@ const handleDownloadFile = async (archiveId, fileName) => {
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="查看状态">
-          <el-select v-model="searchForm.status" placeholder="请选择状态" clearable style="width: 140px">
-            <el-option
-              v-for="item in statusOptions"
-              :key="item.value"
-              :label="item.label"
-              :value="item.value"
-            />
-          </el-select>
-        </el-form-item>
         <el-form-item>
           <el-button type="primary" @click="handleSearch">搜索</el-button>
           <el-button @click="handleReset">重置</el-button>
@@ -585,8 +559,7 @@ const handleDownloadFile = async (archiveId, fileName) => {
         class="stat-card"
         :class="{
           active: searchForm.position === group.position,
-          paused: group.status === 'paused',
-          'historical': !group.isSystemPosition
+          paused: group.status === 'paused'
         }"
         @click="handlePositionClick(group.position)"
       >
@@ -595,9 +568,6 @@ const handleDownloadFile = async (archiveId, fileName) => {
             {{ group.position }}
             <el-tag v-if="group.status === 'paused'" type="info" size="small" class="pause-tag">
               暂停
-            </el-tag>
-            <el-tag v-if="!group.isSystemPosition" type="warning" size="small" class="pause-tag">
-              历史岗位
             </el-tag>
           </div>
           <div class="stat-total">共 {{ group.total }} 人</div>
@@ -831,8 +801,8 @@ const handleDownloadFile = async (archiveId, fileName) => {
   background: rgba(255, 255, 255, 0.85);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  padding: 20px;
-  border-radius: 16px;
+  padding: 12px 16px;
+  border-radius: 12px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06),
               0 8px 16px rgba(0, 0, 0, 0.08),
               0 16px 32px rgba(0, 0, 0, 0.1);
@@ -909,8 +879,15 @@ const handleDownloadFile = async (archiveId, fileName) => {
 }
 
 .stat-card.active {
-  border-color: #409EFF;
-  background: rgba(248, 255, 254, 0.9);
+  border: 2px solid #409EFF;
+  background: linear-gradient(135deg, #ecf5ff 0%, #d9ecff 100%);
+  box-shadow: 0 4px 12px rgba(64, 158, 255, 0.3);
+}
+
+.stat-card.active::before {
+  background: linear-gradient(90deg, #409EFF, #66b1ff);
+  opacity: 1;
+  height: 5px;
 }
 
 .stat-card.paused {
@@ -958,50 +935,37 @@ const handleDownloadFile = async (archiveId, fileName) => {
   margin-left: 8px;
 }
 
-.stat-card.historical {
-  background: rgba(230, 162, 60, 0.1);
-  border: 1px dashed rgba(230, 162, 60, 0.5);
-}
-
-.stat-card.historical::before {
-  background: linear-gradient(90deg, #E6A23C, #f5dab1);
-}
-
-.stat-card.historical:hover {
-  background: rgba(230, 162, 60, 0.2);
-}
-
 .stat-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 16px;
-  padding-bottom: 12px;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
   border-bottom: 1px solid #e8e8e8;
 }
 
 .stat-title {
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 600;
   color: #303133;
 }
 
 .stat-total {
-  font-size: 14px;
+  font-size: 13px;
   color: #909399;
 }
 
 .stat-details {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 12px;
+  gap: 8px;
 }
 
 .stat-item {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
 }
 
 .stat-label {
@@ -1010,7 +974,7 @@ const handleDownloadFile = async (archiveId, fileName) => {
 }
 
 .stat-value {
-  font-size: 20px;
+  font-size: 18px;
   font-weight: bold;
 }
 
