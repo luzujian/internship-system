@@ -1,5 +1,6 @@
 package com.gdmu.controller;
 
+import com.github.pagehelper.PageHelper;
 import com.gdmu.anno.Log;
 import com.gdmu.entity.PageResult;
 import com.gdmu.entity.Position;
@@ -45,15 +46,17 @@ public class RecruitmentController {
     public Result getRecruitmentApplications(
             @RequestParam(defaultValue = "1") Integer page,
             @RequestParam(defaultValue = "10") Integer pageSize,
-            @RequestParam(required = false) Long studentId,
+            @RequestParam(required = false) String studentId,
             @RequestParam(required = false) String name,
             @RequestParam(required = false) Integer gender,
             @RequestParam(required = false) Long companyId,
             @RequestParam(required = false) String companyName) {
-        log.info("分页查询应聘申请列表，页码: {}, 每页: {}, 学生ID: {}, 学生姓名: {}, 性别: {}, 企业ID: {}, 企业名称: {}",
+        log.info("分页查询应聘申请列表，页码: {}, 每页: {}, 学号: {}, 学生姓名: {}, 性别: {}, 企业ID: {}, 企业名称: {}",
                 page, pageSize, studentId, name, gender, companyId, companyName);
-        PageResult<StudentInternshipStatus> pageResult = studentInternshipStatusService.findPage(
-                page, pageSize, studentId, name, gender, null, companyId, companyName, null, null, null);
+        // 只查询状态为1和2的记录（待确认、已确定）
+        java.util.List<Integer> statusList = java.util.Arrays.asList(1, 2);
+        PageResult<StudentInternshipStatus> pageResult = studentInternshipStatusService.findPageByStatusList(
+                page, pageSize, null, name, gender, statusList, companyId, companyName, null, null, null, studentId);
         log.info("应聘申请列表查询结果，总数: {}, 数据量: {}", pageResult.getTotal(), pageResult.getRows() != null ? pageResult.getRows().size() : 0);
         return Result.success(pageResult);
     }
@@ -67,13 +70,19 @@ public class RecruitmentController {
         List<Position> allPositions = positionService.findAll();
         int totalPositions = allPositions.size();
         int totalPlannedRecruit = allPositions.stream().mapToInt(p -> p.getPlannedRecruit() != null ? p.getPlannedRecruit() : 0).sum();
-        int totalRemainingQuota = allPositions.stream().mapToInt(p -> p.getRemainingQuota() != null ? p.getRemainingQuota() : 0).sum();
         
-        List<StudentInternshipStatus> applicationStudents = studentInternshipStatusService.list(null, null, null, 0, null, null, null, null, null, null);
-        List<StudentInternshipStatus> offerStudents = studentInternshipStatusService.list(null, null, null, 1, null, null, null, null, null, null);
+        // 应聘申请数：状态1（待确认）+ 状态2（已确定）
+        List<StudentInternshipStatus> pendingStudents = studentInternshipStatusService.list(null, null, null, 1, null, null, null, null, null, null);
         List<StudentInternshipStatus> confirmedStudents = studentInternshipStatusService.list(null, null, null, 2, null, null, null, null, null, null);
-        int totalApplications = applicationStudents.size();
-        int totalRecruitedCount = offerStudents.size() + confirmedStudents.size();
+        int totalApplications = pendingStudents.size() + confirmedStudents.size();
+        
+        // 已招人数：状态2（已确定）+ 状态3（实习中）+ 状态4（已结束）
+        List<StudentInternshipStatus> inProgressStudents = studentInternshipStatusService.list(null, null, null, 3, null, null, null, null, null, null);
+        List<StudentInternshipStatus> endedStudents = studentInternshipStatusService.list(null, null, null, 4, null, null, null, null, null, null);
+        int totalRecruitedCount = confirmedStudents.size() + inProgressStudents.size() + endedStudents.size();
+        
+        // 剩余名额 = 计划招聘人数 - 已招人数
+        int totalRemainingQuota = totalPlannedRecruit - totalRecruitedCount;
         
         statistics.put("totalPositions", totalPositions);
         statistics.put("totalPlannedRecruit", totalPlannedRecruit);

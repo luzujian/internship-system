@@ -90,7 +90,7 @@
               <el-option v-for="grade in gradeList" :key="grade" :label="grade + '级'" :value="grade + '级'"></el-option>
             </el-select>
           </el-form-item>
-          <el-form-item label="搜索">
+          <el-form-item label="搜索" class="search-item">
             <el-input
               v-model="filters.search"
               :placeholder="isCounselor ? '输入学生姓名搜索' : '搜索学生姓名或学号'"
@@ -103,23 +103,23 @@
               </template>
             </el-input>
           </el-form-item>
-        </div>
-        <div class="search-actions-row">
-          <el-button type="primary" @click="applyFilters" class="action-btn primary">
-            <el-icon><Search /></el-icon>&nbsp;查询
-          </el-button>
-          <el-button type="warning" @click="resetFilters" class="action-btn warning">
-            <el-icon><Refresh /></el-icon>&nbsp;重置
-          </el-button>
-          <el-button type="primary" @click="oneClickReminder" class="action-btn primary" v-if="showInternshipFields">
-            <el-icon><Bell /></el-icon>&nbsp;一键提醒
-          </el-button>
-          <el-button type="success" @click="exportSelectedStudentProfiles" class="action-btn success" v-if="showInternshipFields">
-            <el-icon><Download /></el-icon>&nbsp;导出已选择
-          </el-button>
-          <el-button type="warning" @click="exportBatchData" class="action-btn warning" v-if="showInternshipFields">
-            <el-icon><FolderOpened /></el-icon>&nbsp;批量导出
-          </el-button>
+          <el-form-item class="search-actions">
+            <el-button type="primary" @click="applyFilters" class="action-btn primary">
+              <el-icon><Search /></el-icon>&nbsp;查询
+            </el-button>
+            <el-button type="warning" @click="resetFilters" class="action-btn warning">
+              <el-icon><Refresh /></el-icon>&nbsp;重置
+            </el-button>
+            <el-button type="primary" @click="oneClickReminder" class="action-btn primary" v-if="showInternshipFields">
+              <el-icon><Bell /></el-icon>&nbsp;一键提醒
+            </el-button>
+            <el-button type="success" @click="exportSelectedStudentProfiles" class="action-btn success" v-if="showInternshipFields">
+              <el-icon><Download /></el-icon>&nbsp;导出已选择
+            </el-button>
+            <el-button type="warning" @click="exportBatchData" class="action-btn warning" v-if="showInternshipFields">
+              <el-icon><FolderOpened /></el-icon>&nbsp;批量导出
+            </el-button>
+          </el-form-item>
         </div>
       </el-form>
     </el-card>
@@ -127,9 +127,7 @@
     <el-card class="table-card" shadow="never">
       <div class="table-header">
         <h3 class="table-title">学生列表</h3>
-        <div class="table-actions">
-          <span class="total-count">共 {{ students.length }} 条记录</span>
-        </div>
+        <div class="table-actions"></div>
       </div>
       <el-table 
         v-loading="loading" 
@@ -531,7 +529,7 @@ const filters = ref<StudentFilters>({
 })
 
 const currentPage = ref(1)
-const pageSize = ref(20)
+const pageSize = ref(10)
 const total = ref(0)
 
 const showExportModal = ref(false)
@@ -1299,41 +1297,59 @@ onMounted(() => {
 
 .stats-container {
   display: flex;
-  gap: 20px;
+  gap: 8px;
   align-items: center;
 }
 
 .stat-item {
   display: flex;
-  flex-direction: column;
-  align-items: center;
+  flex-direction: row;
+  align-items: baseline;
+  gap: 3px;
+  padding: 0 6px;
 }
 
 .stat-value {
-  font-size: 24px;
+  font-size: 18px;
   font-weight: 700;
   color: #409eff;
+  line-height: 1;
 }
 
 .stat-label {
-  font-size: 12px;
+  font-size: 13px;
   color: #909399;
-  margin-top: 2px;
+  line-height: 1;
 }
 
-.search-card,
-.table-card {
-  border-radius: 12px;
+.stats-card {
+  border-radius: 8px;
   border: none;
   background: white;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
-  margin-bottom: 16px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
+  margin-bottom: 8px;
   overflow: hidden;
+  padding: 6px 10px;
+}
+
+.table-card {
+  border-radius: 8px;
+  border: none;
+  background: white;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
+  margin-bottom: 8px;
+  overflow: hidden;
+  padding: 0;
 }
 
 .search-card {
-  padding: 8px 20px;
-  margin-top: 20px;
+  border-radius: 8px;
+  border: none;
+  background: white;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
+  margin-bottom: 8px;
+  overflow: hidden;
+  padding: 8px 12px;
 }
 
 .table-card {
@@ -1343,37 +1359,33 @@ onMounted(() => {
 .search-form {
   display: flex;
   flex-wrap: wrap;
-  gap: 16px;
+  gap: 8px;
+  align-items: center;
 }
 
 .search-row {
   display: flex;
   align-items: center;
-  gap: 16px;
-  width: 100%;
+  gap: 6px;
   flex-wrap: wrap;
-}
-
-.search-actions-row {
-  display: flex;
-  gap: 12px;
-  width: 100%;
-  justify-content: center;
-  padding-top: 8px;
-  border-top: 1px solid #f0f0f0;
-  margin-top: 8px;
+  flex: 1;
 }
 
 .search-actions {
+  flex-shrink: 0;
   margin-left: auto;
 }
 
+.search-item {
+  flex-shrink: 0;
+}
+
 .select-input {
-  width: 200px;
+  width: 140px;
 }
 
 .search-input {
-  width: 200px;
+  width: 220px;
 }
 
 .table-header {
@@ -1428,8 +1440,13 @@ onMounted(() => {
 }
 
 .action-btn {
-  border-radius: 8px;
-  padding: 10px 20px;
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 12px;
+}
+
+.action-btn .el-icon {
+  margin-right: 2px;
 }
 
 .action-btn.primary {

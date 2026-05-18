@@ -60,7 +60,7 @@
     <!-- 总体状态卡片 -->
     <div class="card fade-in" style="animation-delay: 0.6s">
       <div class="card-header">
-        <h3>总体状态</h3>
+        <h3>应届毕业生实习状态</h3>
       </div>
       <div class="card-body">
         <div class="status-bar">
@@ -172,8 +172,8 @@
       </div>
     </div>
 
-    <!-- 班级维度看板 -->
-    <div class="dimension-board" v-if="classData.length > 0">
+    <!-- 班级维度看板（仅辅导员可见） -->
+    <div class="dimension-board" v-if="classData.length > 0 && isCounselor">
       <div class="board-header">
         <h3>班级状态</h3>
         <span class="board-hint" v-if="isCounselor">（仅显示我负责的班级，共 {{ classData.length }} 个班级，{{ classData.reduce((sum, cls) => sum + cls.total, 0) }} 名学生）</span>
@@ -467,18 +467,18 @@ const calculatePercentage = (value: number, total: number) => {
 /* 总览统计卡片 */
 .overview-cards {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 20px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
 }
 
 .stat-card {
   background-color: white;
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-md);
-  padding: 24px;
+  padding: 12px 16px;
   display: flex;
   align-items: center;
-  gap: 20px;
+  gap: 12px;
   transition: all var(--transition-normal);
   overflow: hidden;
   position: relative;
@@ -520,13 +520,13 @@ const calculatePercentage = (value: number, total: number) => {
 }
 
 .stat-icon {
-  width: 60px;
-  height: 60px;
+  width: 40px;
+  height: 40px;
   border-radius: var(--radius-full);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 28px;
+  font-size: 20px;
   flex-shrink: 0;
   transition: all var(--transition-normal);
   box-shadow: var(--shadow-sm);
@@ -567,9 +567,9 @@ const calculatePercentage = (value: number, total: number) => {
 }
 
 .stat-label {
-  font-size: 16px;
+  font-size: 24px;
   color: #666;
-  margin-bottom: 8px;
+  margin-bottom: 4px;
   font-weight: 500;
 }
 
@@ -577,23 +577,50 @@ const calculatePercentage = (value: number, total: number) => {
   font-size: 32px;
   font-weight: 700;
   color: #333;
-  margin-bottom: 6px;
+  margin-bottom: 4px;
   line-height: 1;
 }
 
 .stat-percentage {
-  font-size: 16px;
+  font-size: 12px;
   color: #999;
   font-weight: 500;
+}
+
+/* 总体状态卡片 */
+.card {
+  background-color: white;
+  border-radius: var(--radius-lg);
+  box-shadow: none;
+  overflow: hidden;
+  padding: 0 16px;
+  margin-bottom: 16px;
+}
+
+.card-header {
+  padding: 8px 0;
+  background-color: transparent;
+  border-bottom: 2px solid #f0f0f0;
+}
+
+.card-header h3 {
+  font-size: 18px;
+  font-weight: 600;
+  color: #333;
+  margin: 0;
+}
+
+.card-body {
+  padding: 12px 0;
 }
 
 /* 状态条 */
 .status-bar {
   display: flex;
-  height: 28px;
+  height: 18px;
   border-radius: var(--radius-sm);
   overflow: hidden;
-  margin-bottom: 20px;
+  margin-bottom: 12px;
   background-color: #f0f2f5;
   box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.1);
 }
@@ -654,19 +681,19 @@ const calculatePercentage = (value: number, total: number) => {
 /* 状态图例 */
 .status-legend {
   display: flex;
-  gap: 28px;
+  gap: 12px;
   flex-wrap: wrap;
-  padding: 16px;
-  background-color: #fafafa;
+  padding: 8px 12px;
+  background-color: transparent;
   border-radius: var(--radius-md);
-  box-shadow: var(--shadow-sm);
+  box-shadow: none;
 }
 
 .legend-item {
   display: flex;
   align-items: center;
-  gap: 10px;
-  font-size: 14px;
+  gap: 6px;
+  font-size: 12px;
   color: #333;
   font-weight: 500;
 }
@@ -818,7 +845,7 @@ const calculatePercentage = (value: number, total: number) => {
   justify-content: space-between;
   align-items: center;
   padding: 16px 20px;
-  background-color: #fafafa;
+  background-color: transparent;
   border-bottom: 1px solid #f0f0f0;
 }
 

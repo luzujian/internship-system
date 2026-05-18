@@ -117,6 +117,26 @@ public interface StudentInternshipStatusService {
      */
     PageResult<StudentInternshipStatus> findPage(Integer page, Integer pageSize, Long studentId, String name, Integer gender, Integer status, Long companyId, String companyName, String grade, String major, String className);
 
+    PageResult<StudentInternshipStatus> findPage(Integer page, Integer pageSize, Long studentId, String name, Integer gender, Integer status, Long companyId, String companyName, String grade, String major, String className, String studentUserId);
+
+    /**
+     * 分页查询学生实习状态（支持状态列表）
+     * @param page 页码
+     * @param pageSize 每页大小
+     * @param studentId 学生ID
+     * @param name 学生姓名
+     * @param gender 性别
+     * @param statusList 实习状态列表
+     * @param companyId 企业ID
+     * @param companyName 企业名称
+     * @param grade 年级
+     * @param major 专业
+     * @param className 班级名称
+     * @param studentUserId 学号
+     * @return 分页结果
+     */
+    PageResult<StudentInternshipStatus> findPageByStatusList(Integer page, Integer pageSize, Long studentId, String name, Integer gender, java.util.List<Integer> statusList, Long companyId, String companyName, String grade, String major, String className, String studentUserId);
+
     PageResult<StudentInternshipStatus> findPendingRecallAuditPage(Integer page, Integer pageSize, Long studentId, String name, Integer gender, Long companyId, String companyName);
 
     List<StudentInternshipStatus> findPendingRecallAuditList(Long studentId, String name, Integer gender, Long companyId, String companyName);

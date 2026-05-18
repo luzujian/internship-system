@@ -12,20 +12,21 @@
       </div>
     </div>
 
-    <!-- 搜索区域卡片 -->
+    <!-- 搜索和操作区域 -->
     <el-card class="search-card" shadow="never">
       <el-form ref="searchFormRef" :inline="true" :model="searchForm" class="search-form" @keyup.enter="filterResources">
         <div class="search-row">
-          <el-form-item label="资源标题">
+          <el-form-item label="标题">
             <el-input
               v-model="searchForm.title"
               placeholder="请输入资源标题"
               clearable
+              style="width: 160px;"
               @keyup.enter="filterResources"
             ></el-input>
           </el-form-item>
-          <el-form-item label="资源类型">
-            <el-select v-model="searchForm.fileType" placeholder="请选择资源类型" clearable style="width: 150px;" filterable>
+          <el-form-item label="状态">
+            <el-select v-model="searchForm.fileType" placeholder="请选择资源类型" clearable style="width: 120px;" filterable>
               <el-option label="全部类型" value="" />
               <el-option label="文档" value="document" />
               <el-option label="视频" value="video" />
@@ -33,11 +34,12 @@
               <el-option label="数据集" value="dataset" />
             </el-select>
           </el-form-item>
-          <el-form-item label="上传者">
+          <el-form-item label="发布人">
             <el-input
               v-model="searchForm.uploader"
               placeholder="请输入上传者"
               clearable
+              style="width: 140px;"
               @keyup.enter="filterResources"
             ></el-input>
           </el-form-item>
@@ -49,27 +51,22 @@
               <el-icon><Refresh /></el-icon>&nbsp;重置
             </el-button>
           </el-form-item>
+          <el-divider direction="vertical" class="divider"></el-divider>
+          <el-form-item>
+            <div class="action-buttons-row">
+              <el-button type="primary" @click="uploadResource" class="action-btn primary">
+                <el-icon><Plus /></el-icon>&nbsp;上传资源
+              </el-button>
+              <el-button type="danger" @click="batchDeleteResources" class="action-btn danger">
+                <el-icon><Delete /></el-icon>&nbsp;批量删除
+              </el-button>
+              <el-button type="success" @click="refreshResources" class="action-btn success">
+                <el-icon><Refresh /></el-icon>&nbsp;刷新列表
+              </el-button>
+            </div>
+          </el-form-item>
         </div>
       </el-form>
-    </el-card>
-
-    <!-- 操作按钮区域 -->
-    <el-card class="actions-card" shadow="never">
-      <div class="actions-container">
-        <div class="primary-actions">
-          <el-button type="primary" @click="uploadResource" class="action-btn primary">
-            <el-icon><Plus /></el-icon>&nbsp;上传资源
-          </el-button>
-          <el-button type="danger" @click="batchDeleteResources" class="action-btn danger">
-            <el-icon><Delete /></el-icon>&nbsp;批量删除
-          </el-button>
-        </div>
-        <div class="secondary-actions">
-          <el-button type="success" @click="refreshResources" class="action-btn success">
-            <el-icon><Refresh /></el-icon>&nbsp;刷新列表
-          </el-button>
-        </div>
-      </div>
     </el-card>
 
     <!-- 资源列表卡片区域 -->
@@ -876,24 +873,24 @@ const handleCurrentChange = (newCurrent) => {
 .search-card,
 .actions-card,
 .resources-card {
-  border-radius: 16px;
+  border-radius: 12px;
   border: none;
   background: white;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
-  margin-bottom: 24px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  margin-bottom: 16px;
   overflow: hidden;
 }
 
 .search-card {
-  padding: 24px;
+  padding: 16px 20px;
 }
 
 .actions-card {
-  padding: 20px 24px;
+  padding: 16px 20px;
 }
 
 .resources-card {
-  padding: 24px;
+  padding: 16px 20px;
 }
 
 /* 搜索表单样式 */
@@ -903,24 +900,33 @@ const handleCurrentChange = (newCurrent) => {
 
 .search-row {
   display: flex;
-  gap: 20px;
-  align-items: flex-start;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
 }
 
 .search-row .el-form-item {
   margin-bottom: 0;
-  flex: 1;
 }
 
 .search-actions {
   flex: none;
-  margin-left: auto;
+}
+
+.divider {
+  margin: 0 8px;
+  height: 28px;
+}
+
+.action-buttons-row {
+  display: flex;
+  gap: 8px;
 }
 
 .search-btn,
 .reset-btn {
-  border-radius: 8px;
-  padding: 10px 20px;
+  border-radius: 6px;
+  padding: 8px 16px;
 }
 
 /* 操作按钮区域 */
@@ -933,12 +939,12 @@ const handleCurrentChange = (newCurrent) => {
 .primary-actions,
 .secondary-actions {
   display: flex;
-  gap: 12px;
+  gap: 8px;
 }
 
 .action-btn {
-  border-radius: 8px;
-  padding: 10px 20px;
+  border-radius: 6px;
+  padding: 8px 16px;
   font-weight: 500;
   transition: all 0.3s ease;
 }

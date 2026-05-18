@@ -189,21 +189,29 @@
                 class="data-table"
               >
                 <el-table-column type="index" label="序号" width="60" align="center" :index="(index) => (applicationPagination.currentPage - 1) * applicationPagination.pageSize + index + 1" />
-                <el-table-column prop="student.studentUserId" label="学号" width="120" />
-                <el-table-column prop="student.name" label="学生姓名" width="100" />
-                <el-table-column prop="student.gender" label="性别" width="80" align="center">
+                <el-table-column prop="studentUserId" label="学号" width="120">
                   <template #default="{ row }">
-                    {{ row.student?.gender === 0 ? '男' : '女' }}
+                    {{ row.student?.studentUserId || row.studentId || '-' }}
                   </template>
                 </el-table-column>
-                <el-table-column prop="company.companyName" label="企业名称" min-width="150">
+                <el-table-column prop="studentName" label="学生姓名" width="100">
                   <template #default="{ row }">
-                    {{ row.company?.companyName || '未申请' }}
+                    {{ row.student?.name || row.studentName || '-' }}
                   </template>
                 </el-table-column>
-                <el-table-column prop="position.positionName" label="岗位名称" min-width="150">
+                <el-table-column prop="gender" label="性别" width="80" align="center">
                   <template #default="{ row }">
-                    {{ row.position?.positionName || '未申请' }}
+                    {{ row.gender === '男' ? '男' : row.gender === '女' ? '女' : '-' }}
+                  </template>
+                </el-table-column>
+                <el-table-column prop="companyName" label="企业名称" min-width="150">
+                  <template #default="{ row }">
+                    {{ row.company?.companyName || row.companyName || '未申请' }}
+                  </template>
+                </el-table-column>
+                <el-table-column prop="positionName" label="岗位名称" min-width="150">
+                  <template #default="{ row }">
+                    {{ row.position?.positionName || row.positionName || '未申请' }}
                   </template>
                 </el-table-column>
                 <el-table-column prop="createTime" label="申请时间" width="180">
@@ -406,21 +414,31 @@ const getStatusText = (status) => {
 }
 
 const getApplicationStatusType = (status) => {
+  // 学生状态统一标签：0无offer 1待确认 2已确定 3实习中 4已结束 5已中断 6延期
   const statusMap = {
-    0: 'warning',
-    1: 'primary',
-    2: 'success'
+    0: 'info',      // 无offer
+    1: 'warning',   // 待确认
+    2: 'success',   // 已确定
+    3: '',          // 实习中
+    4: 'info',      // 已结束
+    5: 'danger',    // 已中断
+    6: 'warning'    // 延期
   }
-  return statusMap[status] || 'info'
+  return statusMap[status] ?? 'info'
 }
 
 const getApplicationStatusText = (status) => {
+  // 学生状态统一标签
   const statusMap = {
-    0: '申请中',
-    1: '有Offer未确定',
-    2: '已确认'
+    0: '无offer',
+    1: '待确认',
+    2: '已确定',
+    3: '实习中',
+    4: '已结束',
+    5: '已中断',
+    6: '延期'
   }
-  return statusMap[status] || '未知'
+  return statusMap[status] ?? '未知'
 }
 
 const loadStatistics = async () => {

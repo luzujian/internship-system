@@ -12,7 +12,7 @@
       </div>
     </div>
 
-    <!-- 搜索区域卡片 -->
+    <!-- 搜索和操作区域 -->
     <el-card class="search-card" shadow="never">
       <el-form :inline="true" :model="searchForm" class="search-form" @keyup.enter="handleSearch">
         <div class="search-row">
@@ -21,12 +21,12 @@
               v-model="searchForm.title"
               placeholder="请输入公告标题"
               clearable
-              style="width: 200px;"
+              style="width: 180px;"
               @keyup.enter="handleSearch"
             ></el-input>
           </el-form-item>
           <el-form-item label="状态">
-            <el-select v-model="searchForm.status" placeholder="请选择状态" clearable style="width: 120px;">
+            <el-select v-model="searchForm.status" placeholder="请选择状态" clearable style="width: 110px;">
               <el-option label="全部" value=""></el-option>
               <el-option label="草稿" value="DRAFT"></el-option>
               <el-option label="已发布" value="PUBLISHED"></el-option>
@@ -41,38 +41,22 @@
               <el-icon><Refresh /></el-icon>&nbsp;重置
             </el-button>
           </el-form-item>
+          <el-divider direction="vertical" class="divider"></el-divider>
+          <el-form-item>
+            <div class="action-buttons-row">
+              <el-button v-if="authStore.hasPermission('announcement:add')" type="primary" @click="handleAdd" class="action-btn primary">
+                <el-icon><Plus /></el-icon>&nbsp;发布公告
+              </el-button>
+              <el-button v-if="authStore.hasPermission('announcement:delete')" type="danger" @click="handleBatchDelete" class="action-btn danger">
+                <el-icon><Delete /></el-icon>&nbsp;批量删除
+              </el-button>
+              <el-button v-if="authStore.hasPermission('announcement:view')" type="success" @click="handleExport" class="action-btn success">
+                <el-icon><Download /></el-icon>&nbsp;导出Excel
+              </el-button>
+            </div>
+          </el-form-item>
         </div>
       </el-form>
-    </el-card>
-
-    <!-- 操作按钮区域 -->
-    <el-card class="actions-card" shadow="never">
-      <div class="actions-container">
-        <div class="primary-actions">
-          <el-button v-if="authStore.hasPermission('announcement:add')" type="primary" @click="handleAdd" class="action-btn primary">
-            <el-icon><Plus /></el-icon>&nbsp;发布公告
-          </el-button>
-          <el-button v-if="authStore.hasPermission('announcement:delete')" type="danger" @click="handleBatchDelete" class="action-btn danger">
-            <el-icon><Delete /></el-icon>&nbsp;批量删除
-          </el-button>
-        </div>
-        <div class="secondary-actions">
-                    <el-dropdown v-if="authStore.hasPermission('announcement:view')" trigger="click" class="import-dropdown">
-            <el-button type="primary" class="action-btn warning">
-              <el-icon><Upload /></el-icon>&nbsp;导入 Excel<el-icon class="el-icon--right"><ArrowDown /></el-icon>
-            </el-button>
-            <template #dropdown>
-              <el-dropdown-menu>
-                <el-dropdown-item @click="showImportDialog">选择文件导入</el-dropdown-item>
-                <el-dropdown-item @click="downloadTemplate">下载导入模板</el-dropdown-item>
-              </el-dropdown-menu>
-            </template>
-          </el-dropdown>
-          <el-button v-if="authStore.hasPermission('announcement:view')" type="success" @click="handleExport" class="action-btn success">
-            <el-icon><Download /></el-icon>&nbsp;导出Excel
-          </el-button>
-        </div>
-      </div>
     </el-card>
 
     <!-- 数据列表卡片 -->
@@ -87,7 +71,6 @@
         class="data-table"
       >
         <el-table-column type="selection" width="55" align="center"></el-table-column>
-        <el-table-column prop="id" label="ID" width="80" align="center"></el-table-column>
         <el-table-column prop="title" label="标题" min-width="200" show-overflow-tooltip></el-table-column>
         <el-table-column prop="priority" label="优先级" width="100" align="center">
           <template #default="scope">
@@ -1468,20 +1451,20 @@ const downloadTemplate = async (): Promise<void> => {
 .search-card,
 .actions-card,
 .table-card {
-  border-radius: 16px;
+  border-radius: 12px;
   border: none;
   background: white;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
-  margin-bottom: 24px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  margin-bottom: 16px;
   overflow: hidden;
 }
 
 .search-card {
-  padding: 24px;
+  padding: 16px 20px;
 }
 
 .actions-card {
-  padding: 20px 24px;
+  padding: 16px 20px;
 }
 
 .table-card {
@@ -1495,24 +1478,33 @@ const downloadTemplate = async (): Promise<void> => {
 
 .search-row {
   display: flex;
-  gap: 20px;
-  align-items: flex-start;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
 }
 
 .search-row .el-form-item {
   margin-bottom: 0;
-  flex: 1;
 }
 
 .search-actions {
   flex: none;
-  margin-left: auto;
+}
+
+.divider {
+  margin: 0 8px;
+  height: 28px;
+}
+
+.action-buttons-row {
+  display: flex;
+  gap: 8px;
 }
 
 .search-btn,
 .reset-btn {
-  border-radius: 8px;
-  padding: 10px 20px;
+  border-radius: 6px;
+  padding: 8px 16px;
 }
 
 /* 操作按钮区域 */
@@ -1524,17 +1516,17 @@ const downloadTemplate = async (): Promise<void> => {
 
 .primary-actions {
   display: flex;
-  gap: 12px;
+  gap: 8px;
 }
 
 .secondary-actions {
   display: flex;
-  gap: 12px;
+  gap: 8px;
 }
 
 .action-btn {
-  border-radius: 8px;
-  padding: 10px 20px;
+  border-radius: 6px;
+  padding: 8px 16px;
   font-weight: 500;
   transition: all 0.3s ease;
 }

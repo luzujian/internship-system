@@ -329,17 +329,35 @@ public class StudentInternshipStatusServiceImpl implements StudentInternshipStat
     @Override
     public PageResult<StudentInternshipStatus> findPage(Integer page, Integer pageSize) {
         log.debug("分页查询学生实习状态，页码: {}, 每页大小: {}", page, pageSize);
-        return findPage(page, pageSize, null, null, null, null, null, null, null, null, null);
+        return findPage(page, pageSize, null, null, null, null, null, null, null, null, null, null);
     }
-    
+
     @Override
     public PageResult<StudentInternshipStatus> findPage(Integer page, Integer pageSize, Long studentId, String name, Integer gender, Integer status, Long companyId, String companyName, String grade, String major, String className) {
-        log.debug("分页查询学生实习状态，页码: {}, 每页大小: {}, 学生ID: {}, 学生姓名: {}, 性别: {}, 状态: {}, 企业ID: {}, 企业名称: {}, 年级: {}, 专业: {}, 班级: {}", 
-                page, pageSize, studentId, name, gender, status, companyId, companyName, grade, major, className);
-        
+        return findPage(page, pageSize, studentId, name, gender, status, companyId, companyName, grade, major, className, null);
+    }
+
+    @Override
+    public PageResult<StudentInternshipStatus> findPage(Integer page, Integer pageSize, Long studentId, String name, Integer gender, Integer status, Long companyId, String companyName, String grade, String major, String className, String studentUserId) {
+        log.debug("分页查询学生实习状态，页码: {}, 每页大小: {}, 学生ID: {}, 学生姓名: {}, 性别: {}, 状态: {}, 企业ID: {}, 企业名称: {}, 年级: {}, 专业: {}, 班级: {}, 学号: {}",
+                page, pageSize, studentId, name, gender, status, companyId, companyName, grade, major, className, studentUserId);
+
         PageHelper.startPage(page, pageSize);
-        List<StudentInternshipStatus> statuses = studentInternshipStatusMapper.list(studentId, name, gender, status, companyId, companyName, grade, major, className, null);
-        
+        List<StudentInternshipStatus> statuses = studentInternshipStatusMapper.list(studentId, name, gender, status, companyId, companyName, grade, major, className, studentUserId);
+
+        PageInfo<StudentInternshipStatus> pageInfo = new PageInfo<>(statuses);
+        return PageResult.build(pageInfo.getTotal(), pageInfo.getList(),
+                pageInfo.getPages(), pageInfo.getPageNum(), pageInfo.getPageSize());
+    }
+
+    @Override
+    public PageResult<StudentInternshipStatus> findPageByStatusList(Integer page, Integer pageSize, Long studentId, String name, Integer gender, java.util.List<Integer> statusList, Long companyId, String companyName, String grade, String major, String className, String studentUserId) {
+        log.debug("分页查询学生实习状态（支持状态列表），页码: {}, 每页大小: {}, 学生ID: {}, 学生姓名: {}, 性别: {}, 状态列表: {}, 企业ID: {}, 企业名称: {}, 年级: {}, 专业: {}, 班级: {}, 学号: {}",
+                page, pageSize, studentId, name, gender, statusList, companyId, companyName, grade, major, className, studentUserId);
+
+        PageHelper.startPage(page, pageSize);
+        List<StudentInternshipStatus> statuses = studentInternshipStatusMapper.listByStatusList(studentId, name, gender, statusList, companyId, companyName, grade, major, className, studentUserId);
+
         PageInfo<StudentInternshipStatus> pageInfo = new PageInfo<>(statuses);
         return PageResult.build(pageInfo.getTotal(), pageInfo.getList(),
                 pageInfo.getPages(), pageInfo.getPageNum(), pageInfo.getPageSize());

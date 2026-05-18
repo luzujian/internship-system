@@ -49,7 +49,7 @@ public class ApprovalController {
             stats.put("selfPracticePending", studentApplicationService.countByTypeAndStatus("selfPractice", "pending"));
             stats.put("unitChangePending", studentApplicationService.countByTypeAndStatus("unitChange", "pending"));
             stats.put("delayPending", studentApplicationService.countByTypeAndStatus("delay", "pending"));
-            stats.put("companyQualificationPending", companyUserService.countByAuditStatus(0));
+            stats.put("companyQualificationPending", companyQualificationService.countByStatus("pending"));
             
             return Result.success(stats);
         } catch (Exception e) {

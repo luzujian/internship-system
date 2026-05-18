@@ -11,6 +11,7 @@
       </div>
     </div>
 
+    <!-- 搜索和操作区域 -->
     <el-card class="search-card" shadow="never">
       <el-form ref="searchFormRef" :inline="true" :model="searchForm" class="search-form" @keyup.enter="handleSearch">
         <div class="search-row">
@@ -19,12 +20,12 @@
               v-model="searchForm.title"
               placeholder="请输入文档标题"
               clearable
-              style="width: 200px;"
+              style="width: 180px;"
               @keyup.enter="handleSearch"
             ></el-input>
           </el-form-item>
           <el-form-item label="状态">
-            <el-select v-model="searchForm.status" placeholder="请选择状态" clearable style="width: 120px;">
+            <el-select v-model="searchForm.status" placeholder="请选择状态" clearable style="width: 110px;">
               <el-option label="全部" value=""></el-option>
               <el-option label="草稿" value="DRAFT"></el-option>
               <el-option label="已发布" value="PUBLISHED"></el-option>
@@ -32,7 +33,7 @@
             </el-select>
           </el-form-item>
           <el-form-item label="发布人身份">
-            <el-select v-model="searchForm.publisherRole" placeholder="请选择发布人身份" clearable style="width: 120px;">
+            <el-select v-model="searchForm.publisherRole" placeholder="请选择发布人身份" clearable style="width: 110px;">
               <el-option label="全部" value=""></el-option>
               <el-option label="管理员" value="ADMIN"></el-option>
               <el-option label="教师" value="TEACHER"></el-option>
@@ -46,26 +47,22 @@
               <el-icon><Refresh /></el-icon>&nbsp;重置
             </el-button>
           </el-form-item>
+          <el-divider direction="vertical" class="divider"></el-divider>
+          <el-form-item>
+            <div class="action-buttons-row">
+              <el-button v-if="authStore.hasPermission('resource:add')" type="primary" @click="handleAdd" class="action-btn primary">
+                <el-icon><Plus /></el-icon>&nbsp;发布文档
+              </el-button>
+              <el-button v-if="authStore.hasPermission('resource:delete')" type="danger" @click="handleBatchDelete" class="action-btn danger">
+                <el-icon><Delete /></el-icon>&nbsp;批量删除
+              </el-button>
+              <el-button v-if="authStore.hasPermission('resource:view')" type="success" @click="refreshData" class="action-btn success">
+                <el-icon><Refresh /></el-icon>&nbsp;刷新列表
+              </el-button>
+            </div>
+          </el-form-item>
         </div>
       </el-form>
-    </el-card>
-
-    <el-card class="actions-card" shadow="never">
-      <div class="actions-container">
-        <div class="primary-actions">
-          <el-button v-if="authStore.hasPermission('resource:add')" type="primary" @click="handleAdd" class="action-btn primary">
-            <el-icon><Plus /></el-icon>&nbsp;发布文档
-          </el-button>
-          <el-button v-if="authStore.hasPermission('resource:delete')" type="danger" @click="handleBatchDelete" class="action-btn danger">
-            <el-icon><Delete /></el-icon>&nbsp;批量删除
-          </el-button>
-        </div>
-        <div class="secondary-actions">
-          <el-button v-if="authStore.hasPermission('resource:view')" type="success" @click="refreshData" class="action-btn success">
-            <el-icon><Refresh /></el-icon>&nbsp;刷新列表
-          </el-button>
-        </div>
-      </div>
     </el-card>
 
     <el-card class="resources-card" shadow="never" v-loading="loading">
@@ -489,7 +486,10 @@ const getStatusTagType = (status) => {
 const getPublisherRoleText = (role) => {
   const roleMap = {
     'ADMIN': '管理员',
-    'TEACHER': '教师'
+    'COLLEGE': '院系教师',
+    'DEPARTMENT': '系室教师',
+    'COUNSELOR': '辅导员',
+    'TEACHER': '系室教师'
   }
   return roleMap[role] || role
 }
@@ -497,7 +497,10 @@ const getPublisherRoleText = (role) => {
 const getPublisherRoleType = (role) => {
   const typeMap = {
     'ADMIN': 'danger',
-    'TEACHER': 'primary'
+    'COLLEGE': 'primary',
+    'DEPARTMENT': 'success',
+    'COUNSELOR': 'warning',
+    'TEACHER': 'info'
   }
   return typeMap[role] || 'info'
 }
@@ -862,9 +865,9 @@ const handleSubmit = async (): Promise<void> => {
     return
   }
   
-  // 编辑模式下，如果删除了文件但没有上传新文件，提示用户
-  if (dialogTitle.value === '编辑文档' && fileList.value.length === 0) {
-    ElMessage.warning('请上传新文件')
+  // 编辑模式下，如果删除了文件但没有上传新文件，且没有原文件，提示用户
+  if (dialogTitle.value === '编辑文档' && fileList.value.length === 0 && !originalFileUrl.value) {
+    ElMessage.warning('请上传文件')
     return
   }
 
@@ -916,9 +919,8 @@ const handleSubmit = async (): Promise<void> => {
         }
 
         logger.log('[ResourceDocumentManagement] 更新数据:', updateData)
-        
-        const response = await resourceDocumentApi.updateResourceDocument(formData.id, updateData)
-        const result = response.data
+
+        const result = await resourceDocumentApi.updateResourceDocument(formData.id, updateData)
         if (result && result.code === 200) {
           ElMessage.success('更新成功')
           dialogVisible.value = false
@@ -937,9 +939,8 @@ const handleSubmit = async (): Promise<void> => {
           publisherRole: formData.publisherRole,
           targetType: formData.targetType
         }
-        
-        const response = await resourceDocumentApi.updateResourceDocument(formData.id, updateData)
-        const result = response.data
+
+        const result = await resourceDocumentApi.updateResourceDocument(formData.id, updateData)
         if (result && result.code === 200) {
           ElMessage.success('更新成功')
           dialogVisible.value = false
@@ -1055,24 +1056,24 @@ const handleDialogClose = () => {
 .search-card,
 .actions-card,
 .resources-card {
-  border-radius: 16px;
+  border-radius: 12px;
   border: none;
   background: white;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
-  margin-bottom: 24px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  margin-bottom: 16px;
   overflow: hidden;
 }
 
 .search-card {
-  padding: 24px;
+  padding: 16px 20px;
 }
 
 .actions-card {
-  padding: 20px 24px;
+  padding: 16px 20px;
 }
 
 .resources-card {
-  padding: 20px 24px;
+  padding: 16px 20px;
 }
 
 .search-form {
@@ -1081,25 +1082,33 @@ const handleDialogClose = () => {
 
 .search-row {
   display: flex;
-  gap: 20px;
-  align-items: flex-start;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
 }
 
 .search-row .el-form-item {
   margin-bottom: 0;
-  flex: 1;
 }
 
 .search-actions {
   flex: none;
-  margin-left: auto;
-  margin-bottom: 0;
+}
+
+.divider {
+  margin: 0 8px;
+  height: 28px;
+}
+
+.action-buttons-row {
+  display: flex;
+  gap: 8px;
 }
 
 .search-btn,
 .reset-btn {
-  border-radius: 8px;
-  padding: 10px 20px;
+  border-radius: 6px;
+  padding: 8px 16px;
 }
 
 .actions-container {
@@ -1111,12 +1120,12 @@ const handleDialogClose = () => {
 .primary-actions,
 .secondary-actions {
   display: flex;
-  gap: 12px;
+  gap: 8px;
 }
 
 .action-btn {
-  border-radius: 8px;
-  padding: 10px 20px;
+  border-radius: 6px;
+  padding: 8px 16px;
   font-weight: 500;
   transition: all 0.3s ease;
 }
@@ -1162,9 +1171,14 @@ const handleDialogClose = () => {
   padding: 4px;
 }
 
+.resource-checkbox :deep(.el-checkbox__inner) {
+  border-color: #303133;
+  border-width: 2px;
+}
+
 .resource-card:hover {
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
-  transform: translateY(-4px);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.1);
+  transform: translateY(-2px);
   border-color: #409EFF;
 }
 

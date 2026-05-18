@@ -37,9 +37,6 @@
             <div class="metric-content">
               <h4>企业入驻数量</h4>
               <p class="metric-value">{{ metrics.companyCount }}</p>
-              <p class="metric-change" :class="metrics.companyChange >= 0 ? 'positive' : 'negative'">
-                {{ metrics.companyChange >= 0 ? '+' : '' }}{{ metrics.companyChange }}%
-              </p>
             </div>
           </div>
           <div class="metric-card">
@@ -47,9 +44,6 @@
             <div class="metric-content">
               <h4>学生实习率</h4>
               <p class="metric-value">{{ metrics.internshipRate }}%</p>
-              <p class="metric-change" :class="metrics.internshipRateChange >= 0 ? 'positive' : 'negative'">
-                {{ metrics.internshipRateChange >= 0 ? '+' : '' }}{{ metrics.internshipRateChange }}%
-              </p>
             </div>
           </div>
           <div class="metric-card">
@@ -57,9 +51,6 @@
             <div class="metric-content">
               <h4>申请审核数量</h4>
               <p class="metric-value">{{ metrics.approvalCount }}</p>
-              <p class="metric-change" :class="metrics.approvalCountChange >= 0 ? 'positive' : 'negative'">
-                {{ metrics.approvalCountChange >= 0 ? '+' : '' }}{{ metrics.approvalCountChange }}%
-              </p>
             </div>
           </div>
           <div class="metric-card">
@@ -67,9 +58,6 @@
             <div class="metric-content">
               <h4>资源下载量</h4>
               <p class="metric-value">{{ metrics.resourceDownloads }}</p>
-              <p class="metric-change" :class="metrics.resourceDownloadsChange >= 0 ? 'positive' : 'negative'">
-                {{ metrics.resourceDownloadsChange >= 0 ? '+' : '' }}{{ metrics.resourceDownloadsChange }}%
-              </p>
             </div>
           </div>
         </div>

@@ -20,6 +20,26 @@ export interface RecruitmentApplication {
   resumeUrl?: string
   createTime?: string
   updateTime?: string
+  student_id?: string
+  student_name?: string
+  company_name?: string
+  position_name?: string
+  gender?: string | number
+  major?: string
+  phone?: string
+  email?: string
+  remark?: string
+  student?: {
+    studentUserId?: string
+    name?: string
+    gender?: number
+  }
+  company?: {
+    companyName?: string
+  }
+  position?: {
+    positionName?: string
+  }
 }
 
 export interface RecruitmentResponse {

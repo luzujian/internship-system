@@ -81,6 +81,31 @@ public interface StudentInternshipStatusMapper {
                                        @Param("studentUserId") String studentUserId);
     
     /**
+     * 动态条件查询学生实习状态（支持状态列表）
+     * @param studentId 学生ID
+     * @param name 学生姓名
+     * @param gender 性别
+     * @param statusList 实习状态列表
+     * @param companyId 企业ID
+     * @param companyName 企业名称
+     * @param grade 年级
+     * @param major 专业
+     * @param className 班级名称
+     * @param studentUserId 学号
+     * @return 学生实习状态列表
+     */
+    List<StudentInternshipStatus> listByStatusList(@Param("studentId") Long studentId,
+                                       @Param("name") String name,
+                                       @Param("gender") Integer gender,
+                                       @Param("statusList") List<Integer> statusList,
+                                       @Param("companyId") Long companyId,
+                                       @Param("companyName") String companyName,
+                                       @Param("grade") String grade,
+                                       @Param("major") String major,
+                                       @Param("className") String className,
+                                       @Param("studentUserId") String studentUserId);
+    
+    /**
      * 根据ID列表查询学生实习状态
      * @param ids 状态ID列表
      * @return 学生实习状态列表

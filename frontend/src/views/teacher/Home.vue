@@ -55,7 +55,7 @@
         <router-link to="/teacher/announcements" class="view-more-link">查看更多</router-link>
       </div>
         <div class="announcement-list-container">
-          <el-scrollbar height="600px">
+          <el-scrollbar max-height="400px">
             <div class="announcement-list">
               <div 
                 v-for="announcement in announcements" 
@@ -102,7 +102,7 @@
             </div>
           </div>
           <div class="pie-chart">
-            <svg width="300" height="300" viewBox="0 0 300 300">
+            <svg width="250" height="250" viewBox="0 0 300 300">
               <path 
                 v-for="(path, index) in piePaths" 
                 :key="index" 
@@ -299,7 +299,7 @@ const currentFileUrl = ref('')
 const currentFileName = ref('')
 
 const statusCardTitle = computed(() => {
-  return teacherType.value === 'COUNSELOR' ? '负责班级实习状态占比' : '全院实习状态占比'
+  return teacherType.value === 'COUNSELOR' ? '负责班级实习状态占比' : '应届毕业生实习状态占比'
 })
 
 const internshipCardDesc = computed(() => {
@@ -658,6 +658,10 @@ onUnmounted(() => {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
 }
 
+.overview-card :deep(.el-card__body) {
+  padding: 16px;
+}
+
 .announcement-card,
 .status-card {
   border-radius: 16px;
@@ -666,16 +670,24 @@ onUnmounted(() => {
   margin-bottom: 20px;
 }
 
+.announcement-card :deep(.el-card__body) {
+  padding: 16px;
+}
+
+.status-card :deep(.el-card__body) {
+  padding: 24px;
+}
+
 .overview-cards {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 12px;
 }
 
 .card {
   display: flex;
   align-items: center;
-  padding: 20px;
+  padding: 16px;
   background-color: white;
   border-radius: 16px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
@@ -747,7 +759,7 @@ onUnmounted(() => {
 
 .content-section {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr 1.2fr;
   gap: 20px;
 }
 
@@ -784,7 +796,8 @@ onUnmounted(() => {
 
 /* 公告栏样式 */
 .announcement-list-container {
-  height: 600px;
+  max-height: 600px;
+  overflow-y: auto;
 }
 
 .announcement-list {
@@ -870,7 +883,7 @@ onUnmounted(() => {
 .chart-container {
   display: flex;
   align-items: center;
-  gap: 30px;
+  gap: 20px;
   justify-content: center;
   flex-wrap: wrap;
 }
@@ -894,19 +907,19 @@ onUnmounted(() => {
 .chart-legend {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
   width: 100%;
-  max-width: 300px;
-  margin-right: 30px;
+  max-width: 280px;
+  margin-right: 20px;
 }
 
 .legend-item {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
   font-size: 14px;
   color: #303133;
-  padding: 12px 16px;
+  padding: 8px 12px;
   transition: all 0.3s ease;
 }
 

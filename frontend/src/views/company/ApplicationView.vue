@@ -591,28 +591,29 @@ const handleDownloadFile = async (archiveId, fileName) => {
         border
         stripe
         style="width: 100%"
+        :header-cell-style="{ padding: '8px 4px', fontSize: '13px' }"
+        :cell-style="{ padding: '6px 4px', fontSize: '12px' }"
       >
-        <el-table-column prop="positionName" label="应聘岗位" width="180" />
-        <el-table-column prop="studentName" label="学生姓名" width="120" />
-        <el-table-column prop="studentNo" label="学号" width="120" />
-        <el-table-column prop="major" label="专业" width="180" />
-        <el-table-column prop="phone" label="联系电话" width="140" />
-        <el-table-column prop="applyDate" label="申请日期" width="120" />
-        <el-table-column prop="status" label="申请状态" width="120">
+        <el-table-column prop="positionName" label="应聘岗位" width="140" />
+        <el-table-column prop="studentName" label="学生姓名" width="90" />
+        <el-table-column prop="studentNo" label="学号" width="110" />
+        <el-table-column prop="major" label="专业" width="140" />
+        <el-table-column prop="phone" label="联系电话" width="120" />
+        <el-table-column prop="applyDate" label="申请日期" width="100" />
+        <el-table-column prop="status" label="申请状态" width="90">
           <template #default="{ row }">
-            <el-tag v-if="row.status === 'pending'" type="warning">待审核</el-tag>
-            <el-tag v-else-if="row.status === 'approved'" type="success">已同意</el-tag>
-            <el-tag v-else-if="row.status === 'rejected'" type="danger">已拒绝</el-tag>
-            <el-tag v-else-if="row.status === 'interview_passed'" type="success">面试通过</el-tag>
-            <el-tag v-else-if="row.status === 'interview_failed'" type="danger">面试没通过</el-tag>
-            <el-tag v-else-if="row.status === 'withdrawn'" type="info">已撤回</el-tag>
-            <el-tag v-else-if="row.status === 'defaulted'" type="info">已失效</el-tag>
-            <el-tag v-else type="info">未知状态</el-tag>
+            <el-tag v-if="row.status === 'pending'" type="warning" size="small">待审核</el-tag>
+            <el-tag v-else-if="row.status === 'approved'" type="success" size="small">已同意</el-tag>
+            <el-tag v-else-if="row.status === 'rejected'" type="danger" size="small">已拒绝</el-tag>
+            <el-tag v-else-if="row.status === 'interview_passed'" type="success" size="small">面试通过</el-tag>
+            <el-tag v-else-if="row.status === 'interview_failed'" type="danger" size="small">面试没通过</el-tag>
+            <el-tag v-else-if="row.status === 'withdrawn'" type="info" size="small">已撤回</el-tag>
+            <el-tag v-else-if="row.status === 'defaulted'" type="info" size="small">已失效</el-tag>
+            <el-tag v-else type="info" size="small">未知状态</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" fixed="right" width="340" align="center">
+        <el-table-column label="操作" fixed="right" width="280" align="center">
           <template #default="{ row }">
-            <!-- 待审核状态：显示"同意"按钮 -->
             <el-button
               v-if="row.status === 'pending'"
               type="success"
@@ -630,7 +631,6 @@ const handleDownloadFile = async (archiveId, fileName) => {
               拒绝
             </el-button>
 
-            <!-- 已同意状态：显示"面试通过"和"面试没通过"按钮 -->
             <template v-else-if="row.status === 'approved'">
               <el-button
                 type="success"
@@ -648,7 +648,6 @@ const handleDownloadFile = async (archiveId, fileName) => {
               </el-button>
             </template>
 
-            <!-- 其他状态：只显示查看详情 -->
             <el-button
               type="primary"
               size="small"
@@ -755,15 +754,15 @@ const handleDownloadFile = async (archiveId, fileName) => {
 .page-header {
   background: linear-gradient(135deg, #409EFF 0%, #52c41a 100%);
   color: white;
-  padding: 24px 40px;
-  border-radius: 12px;
-  box-shadow: 0 4px 20px rgba(64, 158, 255, 0.3);
-  margin-bottom: 24px;
+  padding: 16px 24px;
+  border-radius: 8px;
+  box-shadow: 0 2px 12px rgba(64, 158, 255, 0.3);
+  margin-bottom: 16px;
 }
 
 .page-header h2 {
-  margin: 0 0 8px 0;
-  font-size: 28px;
+  margin: 0 0 4px 0;
+  font-size: 22px;
   font-weight: bold;
   letter-spacing: 1px;
   color: white;
@@ -771,41 +770,40 @@ const handleDownloadFile = async (archiveId, fileName) => {
 
 .page-header p {
   margin: 0;
-  font-size: 14px;
+  font-size: 13px;
   opacity: 0.95;
 }
 
 .search-card {
   background: white;
-  padding: 20px;
+  padding: 12px 16px;
   border-radius: 8px;
-  margin-bottom: 20px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  margin-bottom: 12px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
 }
 
 .search-form {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: 8px;
 }
 
 .stats-cards {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
-  gap: 16px;
-  margin-bottom: 20px;
+  gap: 12px;
+  margin-bottom: 12px;
 }
 
 .stat-card {
   background: rgba(255, 255, 255, 0.85);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  padding: 12px 16px;
-  border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06),
-              0 8px 16px rgba(0, 0, 0, 0.08),
-              0 16px 32px rgba(0, 0, 0, 0.1);
+  padding: 10px 12px;
+  border-radius: 10px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06),
+              0 4px 8px rgba(0, 0, 0, 0.08);
   cursor: pointer;
   transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
   border: 1px solid rgba(255, 255, 255, 0.6);
@@ -819,7 +817,7 @@ const handleDownloadFile = async (archiveId, fileName) => {
   top: 0;
   left: 0;
   right: 0;
-  height: 4px;
+  height: 3px;
   background: linear-gradient(90deg, var(--card-color-1), var(--card-color-2));
   opacity: 0.8;
 }
@@ -939,13 +937,13 @@ const handleDownloadFile = async (archiveId, fileName) => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 10px;
-  padding-bottom: 8px;
+  margin-bottom: 6px;
+  padding-bottom: 6px;
   border-bottom: 1px solid #e8e8e8;
 }
 
 .stat-title {
-  font-size: 15px;
+  font-size: 13px;
   font-weight: 600;
   color: #303133;
 }
@@ -988,21 +986,21 @@ const handleDownloadFile = async (archiveId, fileName) => {
 
 .table-card {
   background: white;
-  padding: 20px;
+  padding: 12px;
   border-radius: 8px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
 }
 
 .empty-state {
-  padding: 40px 20px;
+  padding: 24px 16px;
   text-align: center;
   color: #909399;
   font-size: 14px;
 }
 
 :deep(.el-button--small) {
-  padding: 6px 12px;
-  font-size: 13px;
+  padding: 4px 10px;
+  font-size: 12px;
 }
 
 .student-detail {
@@ -1124,7 +1122,7 @@ const handleDownloadFile = async (archiveId, fileName) => {
 }
 
 .pagination {
-  margin-top: 20px;
+  margin-top: 12px;
   display: flex;
   justify-content: flex-end;
 }

@@ -104,8 +104,8 @@
         <el-table-column label="状态" align="center">
           <template #default="scope">
             <div class="status-wrapper">
-              <el-tag :type="getStatusTagType(activeTab === 'companyQualification' ? scope.row.auditStatus : scope.row.status)" size="small" class="status-tag">
-                {{ getStatusText(activeTab === 'companyQualification' ? scope.row.auditStatus : scope.row.status) }}
+              <el-tag :type="getStatusTagType(scope.row.status)" size="small" class="status-tag">
+                {{ getStatusText(scope.row.status) }}
               </el-tag>
               <el-tag v-if="activeTab === 'companyQualification'" :type="scope.row.isInternshipBase ? 'success' : 'danger'" size="small" class="status-tag-base">
                 {{ scope.row.isInternshipBase ? '实习基地' : '非实习基地' }}
@@ -121,10 +121,10 @@
         <el-table-column label="操作" width="280" fixed="right" align="center">
           <template #default="scope">
             <div class="action-buttons">
-              <el-button v-if="(activeTab === 'companyQualification' && scope.row.auditStatus === 0) || (activeTab !== 'companyQualification' && scope.row.status === 'pending')" size="small" type="success" @click="approveApplication(scope.row)" class="table-btn success">
+              <el-button v-if="scope.row.status === 'pending'" size="small" type="success" @click="approveApplication(scope.row)" class="table-btn success">
                 通过
               </el-button>
-              <el-button v-if="(activeTab === 'companyQualification' && scope.row.auditStatus === 0) || (activeTab !== 'companyQualification' && scope.row.status === 'pending')" size="small" type="danger" @click="rejectApplication(scope.row)" class="table-btn danger">
+              <el-button v-if="scope.row.status === 'pending'" size="small" type="danger" @click="rejectApplication(scope.row)" class="table-btn danger">
                 驳回
               </el-button>
               <el-button size="small" type="primary" @click="activeTab === 'companyQualification' ? viewCompanyQualification(scope.row) : viewApplication(scope.row)" class="table-btn primary">
@@ -508,20 +508,14 @@ const fetchApplications = async () => {
   try {
     let response
     if (activeTab.value === 'companyQualification') {
-      // 将前端状态字符串转换为后端整数值
-      let auditStatus
-      if (searchForm.status === 'pending') auditStatus = 0
-      else if (searchForm.status === 'approved') auditStatus = 1
-      else if (searchForm.status === 'rejected') auditStatus = 2
-      // 不传status表示查询所有状态
-      response = await companyService.getPendingAuditCompanies({
+      response = await approvalApi.getCompanyQualifications({
         page: currentPage.value,
         pageSize: pageSize.value,
         companyName: searchForm.keyword || undefined,
-        status: auditStatus
+        status: searchForm.status || undefined
       })
-      applications.value = response.data?.rows || []
-      total.value = response.data?.total || 0
+      applications.value = response.rows || []
+      total.value = response.total || 0
     } else {
       response = await approvalApi.getStudentApplications({
         page: currentPage.value,
@@ -686,7 +680,7 @@ const approveApplication = async (application: any) => {
     const reviewerId = currentUser.id || 1
     
     if (application.type === 'companyQualification') {
-      response = await companyService.auditCompanyTeacher(application.id, { auditStatus: 1 })
+      response = await approvalApi.approveCompanyQualification(application.id, reviewerId)
     } else {
       response = await approvalApi.approveStudentApplication(application.id, reviewerId)
     }
@@ -716,7 +710,8 @@ const rejectApplication = (application: any) => {
 // 查看企业资质
 const viewCompanyQualification = async (application: any) => {
   try {
-    currentApplication.value = application
+    const response = await approvalApi.getCompanyQualificationById(application.id)
+    currentApplication.value = response.data
     showCompanyQualificationModal.value = true
   } catch (error) {
     showOperationFeedback('获取企业资质详情失败', 'error')
@@ -741,9 +736,10 @@ const confirmReject = async () => {
     const reviewerId = currentUser.id || 1
     
     if (currentApplication.value.type === 'companyQualification') {
-      response = await companyService.auditCompanyTeacher(
+      response = await approvalApi.rejectCompanyQualification(
         currentApplication.value.id, 
-        { auditStatus: 2, auditRemark: rejectReason.value }
+        reviewerId, 
+        rejectReason.value
       )
     } else {
       response = await approvalApi.rejectStudentApplication(
@@ -821,6 +817,7 @@ const downloadMaterial = (url: string, name: string) => {
 onMounted(() => {
   fetchStats()
   fetchApplications()
+  enableTableScrollBubbling()
 })
 
 // 监听路由变化，当从首页跳转过来时自动加载数据
@@ -830,6 +827,35 @@ watch(() => route.state?.fromHome, (fromHome) => {
     fetchApplications()
   }
 }, { immediate: true })
+
+// 使表格区域的滚轮事件冒泡到外层，解决鼠标在表格上时页面无法滚动的问题
+const enableTableScrollBubbling = () => {
+  setTimeout(() => {
+    const tableElement = document.querySelector('.data-table')
+    if (!tableElement) return
+
+    // 查找父级的 el-scrollbar 容器
+    const findParentScrollbar = (el: Element | null): HTMLElement | null => {
+      if (!el) return null
+      const scrollbarWrap = el.closest('.el-scrollbar__wrap')
+      if (scrollbarWrap) return scrollbarWrap as HTMLElement
+      return findParentScrollbar(el.parentElement)
+    }
+
+    const parentScrollbar = findParentScrollbar(tableElement)
+
+    tableElement.addEventListener('wheel', (e: Event) => {
+      const wheelEvent = e as WheelEvent
+      
+      // 如果找到了父级滚动容器，手动滚动它
+      if (parentScrollbar) {
+        wheelEvent.preventDefault()
+        parentScrollbar.scrollTop += wheelEvent.deltaY
+        parentScrollbar.scrollLeft += wheelEvent.deltaX
+      }
+    }, { passive: false })
+  }, 500)
+}
 </script>
 
 <style scoped>
@@ -837,6 +863,7 @@ watch(() => route.state?.fromHome, (fromHome) => {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  padding-bottom: 20px;
 }
 
 .page-header {
@@ -929,6 +956,22 @@ watch(() => route.state?.fromHome, (fromHome) => {
 
 .data-table {
   margin-top: 8px;
+}
+
+.data-table :deep(.el-table__body-wrapper) {
+  overflow: visible !important;
+}
+
+.data-table :deep(.el-scrollbar) {
+  overflow: visible !important;
+}
+
+.data-table :deep(.el-scrollbar__wrap) {
+  overflow: visible !important;
+}
+
+.data-table :deep(.el-table__inner-wrapper) {
+  overflow: visible !important;
 }
 
 .action-buttons {

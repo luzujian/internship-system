@@ -75,25 +75,29 @@ const formatGender = (_row: unknown, _column: unknown, cellValue: number): strin
 }
 
 const formatStatus = (_row: unknown, _column: unknown, cellValue: number): string => {
+  // 学生状态统一标签：0无offer 1待确认 2已确定 3实习中 4已结束 5已中断 6延期
   switch (cellValue) {
-    case 0: return '未找到'
-    case 1: return '已有Offer'
-    case 2: return '已确认'
-    case 3: return '已结束'
-    case 4: return '已中断'
-    case 5: return '延期'
+    case 0: return '无offer'
+    case 1: return '待确认'
+    case 2: return '已确定'
+    case 3: return '实习中'
+    case 4: return '已结束'
+    case 5: return '已中断'
+    case 6: return '延期'
     default: return '未知状态'
   }
 }
 
 const getStatusTagType = (status: number): string => {
+  // 学生状态统一标签
   switch (status) {
-    case 0: return 'info'
-    case 1: return 'warning'
-    case 2: return 'success'
-    case 3: return 'primary'
-    case 4: return 'danger'
-    case 5: return 'warning'
+    case 0: return 'info'      // 无offer
+    case 1: return 'warning'  // 待确认
+    case 2: return 'success'  // 已确定
+    case 3: return ''         // 实习中
+    case 4: return 'info'     // 已结束
+    case 5: return 'danger'   // 已中断
+    case 6: return 'warning'  // 延期
     default: return 'info'
   }
 }

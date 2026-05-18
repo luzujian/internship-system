@@ -314,8 +314,18 @@
             p.salary_max AS salaryMax,
             p.requirements,
             p.planned_recruit AS plannedRecruit,
-            p.recruited_count AS recruitedCount,
-            p.remaining_quota AS remainingQuota,
+            COALESCE((
+                SELECT COUNT(*)
+                FROM student_internship_status sis
+                WHERE sis.position_id = p.id
+                AND sis.status IN (1, 2)
+            ), 0) AS recruitedCount,
+            p.planned_recruit - COALESCE((
+                SELECT COUNT(*)
+                FROM student_internship_status sis
+                WHERE sis.position_id = p.id
+                AND sis.status IN (1, 2)
+            ), 0) AS remainingQuota,
             p.status,
             p.publish_date AS publishDate,
             p.create_time AS createTime,
@@ -333,7 +343,7 @@
                 p.position_name LIKE CONCAT('%', #{positionName}, '%')
             </if>
         </where>
-        ORDER BY p.remaining_quota DESC, p.create_time DESC
+        ORDER BY p.create_time DESC
     </select>
 
     <!-- 获取岗位统计数据 -->
