@@ -1,11 +1,10 @@
 package com.gdmu.controller;
 
 import com.gdmu.anno.Log;
-import com.gdmu.entity.CompanyQualification;
+import com.gdmu.entity.CompanyUser;
 import com.gdmu.entity.PageResult;
 import com.gdmu.entity.Result;
 import com.gdmu.entity.StudentApplication;
-import com.gdmu.service.CompanyQualificationService;
 import com.gdmu.service.CompanyUserService;
 import com.gdmu.service.StudentApplicationService;
 import lombok.extern.slf4j.Slf4j;
@@ -15,12 +14,13 @@ import org.springframework.web.bind.annotation.*;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
 
 /**
  * 审核管理控制器
- * 处理学生申请和企业资质审核的所有接口请求
+ * 处理学生申请和企业注册申请审核的所有接口请求
  */
 @Slf4j
 @RestController
@@ -30,9 +30,6 @@ public class ApprovalController {
 
     @Autowired
     private StudentApplicationService studentApplicationService;
-
-    @Autowired
-    private CompanyQualificationService companyQualificationService;
 
     @Autowired
     private CompanyUserService companyUserService;
@@ -45,12 +42,12 @@ public class ApprovalController {
         log.info("获取审核统计数据");
         try {
             Map<String, Object> stats = new HashMap<>();
-            
+
             stats.put("selfPracticePending", studentApplicationService.countByTypeAndStatus("selfPractice", "pending"));
             stats.put("unitChangePending", studentApplicationService.countByTypeAndStatus("unitChange", "pending"));
             stats.put("delayPending", studentApplicationService.countByTypeAndStatus("delay", "pending"));
-            stats.put("companyQualificationPending", companyQualificationService.countByStatus("pending"));
-            
+            stats.put("companyQualificationPending", companyUserService.countByAuditStatus(0));
+
             return Result.success(stats);
         } catch (Exception e) {
             log.error("获取审核统计数据失败: {}", e.getMessage(), e);
@@ -69,7 +66,7 @@ public class ApprovalController {
             @RequestParam(required = false) String status,
             @RequestParam(required = false) String studentName,
             @RequestParam(required = false) String studentUserId) {
-        log.info("获取学生申请列表: page={}, pageSize={}, type={}, status={}, name={}, userId={}", 
+        log.info("获取学生申请列表: page={}, pageSize={}, type={}, status={}, name={}, userId={}",
                 page, pageSize, applicationType, status, studentName, studentUserId);
         try {
             PageResult<StudentApplication> result = studentApplicationService.findPage(
@@ -141,7 +138,7 @@ public class ApprovalController {
     }
 
     /**
-     * 获取企业资质审核列表
+     * 获取企业注册申请列表
      */
     @GetMapping("/company-qualifications")
     public Result getCompanyQualifications(
@@ -149,79 +146,105 @@ public class ApprovalController {
             @RequestParam(defaultValue = "10") Integer pageSize,
             @RequestParam(required = false) String status,
             @RequestParam(required = false) String companyName) {
-        log.info("获取企业资质审核列表: page={}, pageSize={}, status={}, companyName={}", 
+        log.info("获取企业注册申请列表: page={}, pageSize={}, status={}, companyName={}",
                 page, pageSize, status, companyName);
         try {
-            PageResult<CompanyQualification> result = companyQualificationService.findPage(
-                    page, pageSize, status, companyName);
+            // status 参数转换为 Integer (0=待审核, 1=已通过, 2=已拒绝)
+            Integer auditStatus = null;
+            if (status != null && !status.isEmpty()) {
+                if ("pending".equals(status) || "0".equals(status)) {
+                    auditStatus = 0;
+                } else if ("approved".equals(status) || "1".equals(status)) {
+                    auditStatus = 1;
+                } else if ("rejected".equals(status) || "2".equals(status)) {
+                    auditStatus = 2;
+                }
+            }
+            PageResult<CompanyUser> result = companyUserService.findPendingAuditPage(
+                    page, pageSize, companyName, null, null, auditStatus);
             return Result.success(result);
         } catch (Exception e) {
-            log.error("获取企业资质审核列表失败: {}", e.getMessage(), e);
-            return Result.error("获取企业资质审核列表失败: " + e.getMessage());
+            log.error("获取企业注册申请列表失败: {}", e.getMessage(), e);
+            return Result.error("获取企业注册申请列表失败: " + e.getMessage());
         }
     }
 
     /**
-     * 根据ID获取企业资质审核详情
+     * 根据ID获取企业注册申请详情
      */
     @GetMapping("/company-qualifications/{id}")
     public Result getCompanyQualificationById(@PathVariable Long id) {
-        log.info("获取企业资质审核详情: id={}", id);
+        log.info("获取企业注册申请详情: id={}", id);
         try {
-            CompanyQualification qualification = companyQualificationService.findById(id);
-            if (qualification == null) {
-                return Result.error("资质审核不存在");
+            CompanyUser company = companyUserService.findById(id);
+            if (company == null) {
+                return Result.error("企业不存在");
             }
-            return Result.success(qualification);
+            return Result.success(company);
         } catch (Exception e) {
-            log.error("获取企业资质审核详情失败: {}", e.getMessage(), e);
-            return Result.error("获取企业资质审核详情失败: " + e.getMessage());
+            log.error("获取企业注册申请详情失败: {}", e.getMessage(), e);
+            return Result.error("获取企业注册申请详情失败: " + e.getMessage());
         }
     }
 
     /**
-     * 批准企业资质审核
+     * 批准企业注册申请
      */
     @PostMapping("/company-qualifications/{id}/approve")
-    @Log(operationType = "AUDIT", module = "COMPANY_MANAGEMENT", description = "批准企业资质审核")
+    @Log(operationType = "AUDIT", module = "COMPANY_MANAGEMENT", description = "批准企业注册申请")
     public Result approveCompanyQualification(@PathVariable Long id, @RequestParam @NotNull Long reviewerId) {
-        log.info("批准企业资质审核: id={}, reviewerId={}", id, reviewerId);
+        log.info("批准企业注册申请: id={}, reviewerId={}", id, reviewerId);
         try {
-            int result = companyQualificationService.approve(id, reviewerId);
-            if (result > 0) {
-                return Result.success("资质审核已成功通过");
+            CompanyUser company = companyUserService.findById(id);
+            if (company == null) {
+                return Result.error("企业不存在");
             }
-            return Result.error("批准资质审核失败");
+            company.setAuditStatus(1);
+            company.setAuditTime(new Date());
+            company.setReviewerId(reviewerId);
+            int result = companyUserService.update(company);
+            if (result > 0) {
+                return Result.success("企业注册申请已通过");
+            }
+            return Result.error("批准失败");
         } catch (Exception e) {
-            log.error("批准企业资质审核失败: {}", e.getMessage(), e);
-            return Result.error("批准资质审核失败: " + e.getMessage());
+            log.error("批准企业注册申请失败: {}", e.getMessage(), e);
+            return Result.error("批准企业注册申请失败: " + e.getMessage());
         }
     }
 
     /**
-     * 驳回企业资质审核
+     * 驳回企业注册申请
      */
     @PostMapping("/company-qualifications/{id}/reject")
-    @Log(operationType = "AUDIT", module = "COMPANY_MANAGEMENT", description = "驳回企业资质审核")
+    @Log(operationType = "AUDIT", module = "COMPANY_MANAGEMENT", description = "驳回企业注册申请")
     public Result rejectCompanyQualification(
             @PathVariable Long id,
             @RequestParam @NotNull Long reviewerId,
             @RequestParam @NotNull String rejectReason) {
-        log.info("驳回企业资质审核: id={}, reviewerId={}, reason={}", id, reviewerId, rejectReason);
+        log.info("驳回企业注册申请: id={}, reviewerId={}, reason={}", id, reviewerId, rejectReason);
         try {
-            int result = companyQualificationService.reject(id, reviewerId, rejectReason);
-            if (result > 0) {
-                return Result.success("资质审核已成功驳回");
+            CompanyUser company = companyUserService.findById(id);
+            if (company == null) {
+                return Result.error("企业不存在");
             }
-            return Result.error("驳回资质审核失败");
+            company.setAuditStatus(2);
+            company.setAuditTime(new Date());
+            company.setReviewerId(reviewerId);
+            company.setAuditRemark(rejectReason);
+            int result = companyUserService.update(company);
+            if (result > 0) {
+                return Result.success("企业注册申请已驳回");
+            }
+            return Result.error("驳回失败");
         } catch (Exception e) {
-            log.error("驳回企业资质审核失败: {}", e.getMessage(), e);
-            return Result.error("驳回资质审核失败: " + e.getMessage());
+            log.error("驳回企业注册申请失败: {}", e.getMessage(), e);
+            return Result.error("驳回企业注册申请失败: " + e.getMessage());
         }
     }
 
     /**
-     * 获取综合审核列表（包含学生申请和企业资质）
+     * 获取综合审核列表（包含学生申请和企业注册申请）
      */
     @GetMapping("/applications")
     public Result getApplications(
@@ -230,14 +253,24 @@ public class ApprovalController {
             @RequestParam(required = false) String type,
             @RequestParam(required = false) String status,
             @RequestParam(required = false) String keyword) {
-        log.info("获取综合审核列表: page={}, pageSize={}, type={}, status={}, keyword={}", 
+        log.info("获取综合审核列表: page={}, pageSize={}, type={}, status={}, keyword={}",
                 page, pageSize, type, status, keyword);
         try {
             Map<String, Object> result = new HashMap<>();
-            
+
             if ("companyQualification".equals(type)) {
-                PageResult<CompanyQualification> companyResult = companyQualificationService.findPage(
-                        page, pageSize, status, keyword);
+                Integer auditStatus = null;
+                if (status != null && !status.isEmpty()) {
+                    if ("pending".equals(status) || "0".equals(status)) {
+                        auditStatus = 0;
+                    } else if ("approved".equals(status) || "1".equals(status)) {
+                        auditStatus = 1;
+                    } else if ("rejected".equals(status) || "2".equals(status)) {
+                        auditStatus = 2;
+                    }
+                }
+                PageResult<CompanyUser> companyResult = companyUserService.findPendingAuditPage(
+                        page, pageSize, keyword, null, null, auditStatus);
                 result.put("type", "companyQualification");
                 result.put("data", companyResult);
             } else {
@@ -246,7 +279,7 @@ public class ApprovalController {
                 result.put("type", type);
                 result.put("data", studentResult);
             }
-            
+
             return Result.success(result);
         } catch (Exception e) {
             log.error("获取综合审核列表失败: {}", e.getMessage(), e);

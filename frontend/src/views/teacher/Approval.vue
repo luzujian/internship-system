@@ -60,11 +60,6 @@
         fit
         class="data-table"
       >
-        <el-table-column prop="type" label="申请类型" width="180" align="center">
-          <template #default="scope">
-            {{ getApplicationTypeText(scope.row.type) }}
-          </template>
-        </el-table-column>
         <el-table-column v-if="activeTab === 'companyQualification'" label="企业名称" width="200">
           <template #default="scope">
             <div class="company-info-detail compact">
@@ -72,10 +67,14 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column v-else label="学生信息" width="280">
+        <el-table-column v-else label="学生姓名" width="120" align="center">
+          <template #default="scope">
+            <div class="student-name-display">{{ scope.row.studentName }}</div>
+          </template>
+        </el-table-column>
+        <el-table-column v-if="activeTab !== 'companyQualification'" label="学号/年级班级" width="240" align="center">
           <template #default="scope">
             <div class="student-info">
-              <div>{{ scope.row.studentName }}</div>
               <div class="info-details">
                 <div class="student-id">{{ scope.row.studentUserId || scope.row.studentId }}</div>
                 <div class="student-grade">{{ scope.row.grade }}</div>
@@ -101,7 +100,7 @@
           </template>
         </el-table-column>
         <el-table-column prop="applyTime" label="申请时间" width="200" align="center"></el-table-column>
-        <el-table-column label="状态" align="center">
+        <el-table-column label="状态" width="180" align="center">
           <template #default="scope">
             <div class="status-wrapper">
               <el-tag :type="getStatusTagType(scope.row.status)" size="small" class="status-tag">
@@ -121,10 +120,10 @@
         <el-table-column label="操作" width="280" fixed="right" align="center">
           <template #default="scope">
             <div class="action-buttons">
-              <el-button v-if="scope.row.status === 'pending'" size="small" type="success" @click="approveApplication(scope.row)" class="table-btn success">
+              <el-button v-if="activeTab === 'companyQualification' ? scope.row.auditStatus === 0 : scope.row.status === 'pending'" size="small" type="success" @click="approveApplication(scope.row)" class="table-btn success">
                 通过
               </el-button>
-              <el-button v-if="scope.row.status === 'pending'" size="small" type="danger" @click="rejectApplication(scope.row)" class="table-btn danger">
+              <el-button v-if="activeTab === 'companyQualification' ? scope.row.auditStatus === 0 : scope.row.status === 'pending'" size="small" type="danger" @click="rejectApplication(scope.row)" class="table-btn danger">
                 驳回
               </el-button>
               <el-button size="small" type="primary" @click="activeTab === 'companyQualification' ? viewCompanyQualification(scope.row) : viewApplication(scope.row)" class="table-btn primary">
@@ -711,7 +710,7 @@ const rejectApplication = (application: any) => {
 const viewCompanyQualification = async (application: any) => {
   try {
     const response = await approvalApi.getCompanyQualificationById(application.id)
-    currentApplication.value = response.data
+    currentApplication.value = { ...response, type: 'companyQualification' }
     showCompanyQualificationModal.value = true
   } catch (error) {
     showOperationFeedback('获取企业资质详情失败', 'error')
@@ -998,20 +997,15 @@ const enableTableScrollBubbling = () => {
 
 .student-info {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.student-info > div:first-child {
-  font-size: 18px;
-  font-weight: 600;
-  color: #333;
+  gap: 6px;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
 }
 
 .student-info .info-details {
   display: flex;
   gap: 6px;
-  justify-content: flex-end;
   align-items: center;
   flex-wrap: wrap;
 }
@@ -1094,6 +1088,8 @@ const enableTableScrollBubbling = () => {
   font-size: 14px;
   color: #333;
   font-weight: 500;
+  background-color: #fff;
+  border: none;
 }
 
 .company-change-info {
@@ -1257,12 +1253,12 @@ const enableTableScrollBubbling = () => {
 .company-display,
 .reason-display {
   padding: 12px 16px;
-  background-color: #f8f9fa;
+  background-color: #fff;
   border-radius: 4px;
   font-size: 14px;
   color: #333;
   font-weight: 500;
-  border: 1px solid #e9ecef;
+  border: none;
 }
 
 .form-row {
