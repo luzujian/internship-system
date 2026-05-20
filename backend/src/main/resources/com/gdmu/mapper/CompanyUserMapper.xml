@@ -385,9 +385,14 @@
     <select id="findPendingAuditWithStatus" resultMap="CompanyUserResultMap">
         SELECT * FROM company_users
         WHERE recall_status = 0
-        <if test="status != null">
-            AND audit_status = #{status}
-        </if>
+        <choose>
+            <when test="status != null">
+                AND audit_status = #{status}
+            </when>
+            <otherwise>
+                AND audit_status = 0
+            </otherwise>
+        </choose>
         <if test="companyName != null and companyName != ''">
             AND company_name LIKE CONCAT('%', #{companyName}, '%')
         </if>

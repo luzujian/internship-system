@@ -59,6 +59,7 @@ let isEdit = ref(false)
 let formRef = ref<InstanceType<typeof ElForm> | null>(null)
 let companyForm = ref<Partial<CompanyUser>>({
   id: null,
+  username: '',
   companyName: '',
   contactPerson: '',
   contactPhone: '',
@@ -189,7 +190,7 @@ const showAddDialog = (): void => {
   isEdit.value = false
   formDialogTitle.value = '新增企业'
   companyForm.value = {
-    id: null, companyName: '', contactPerson: '', contactPhone: '',
+    id: null, username: '', companyName: '', contactPerson: '', contactPhone: '',
     contactEmail: '', address: '', introduction: '', status: 1
   }
   formDialogVisible.value = true
@@ -884,6 +885,9 @@ onMounted(async () => {
       <el-form ref="formRef" :model="companyForm" :rules="formRules" label-width="100px">
         <el-form-item label="企业名称" prop="companyName">
           <el-input v-model="companyForm.companyName" placeholder="请输入企业名称" />
+        </el-form-item>
+        <el-form-item label="登录账号" prop="username">
+          <el-input v-model="companyForm.username" placeholder="请输入登录账号" />
         </el-form-item>
         <el-form-item label="联系人" prop="contactPerson">
           <el-input v-model="companyForm.contactPerson" placeholder="请输入联系人" />

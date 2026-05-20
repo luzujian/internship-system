@@ -90,6 +90,15 @@ public class CompanyUserServiceImpl implements CompanyUserService {
             throw new BusinessException("企业不存在");
         }
 
+        // 校验用户名唯一性
+        if (StringUtils.isNotBlank(companyUser.getUsername())
+                && !companyUser.getUsername().equals(existingCompany.getUsername())) {
+            CompanyUser byUsername = companyUserMapper.findByUsername(companyUser.getUsername());
+            if (byUsername != null) {
+                throw new BusinessException("登录账号已存在，请使用其他账号");
+            }
+        }
+
         // 如果提供了新密码，则进行加密
         if (StringUtils.isNotBlank(companyUser.getPassword())) {
             // 加密后设置到 existingCompany

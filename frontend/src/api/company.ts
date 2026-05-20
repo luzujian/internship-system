@@ -2,6 +2,7 @@ import request from '@/utils/request'
 
 export interface Company {
   id: number
+  username?: string
   companyName: string
   contactPerson?: string
   contactPhone?: string

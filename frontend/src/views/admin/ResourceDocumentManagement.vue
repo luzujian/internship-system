@@ -140,11 +140,9 @@
       <div class="pagination-container">
         <el-pagination
           v-model:current-page="currentPage"
-          v-model:page-size="pageSize"
-          :page-sizes="[12, 24, 36, 48]"
-          layout="total, sizes, prev, pager, next, jumper"
+          :page-size="6"
+          layout="total, prev, pager, next, jumper"
           :total="total"
-          @size-change="handleSizeChange"
           @current-change="handleCurrentChange"
           class="custom-pagination"
         />
@@ -335,7 +333,7 @@ import FilePreviewDialog from '@/components/FilePreviewDialog.vue'
 const authStore = useAuthStore()
 
 const currentPage = ref<number>(1)
-const pageSize = ref(12)
+const pageSize = ref(6)
 const total = ref<number>(0)
 const loading = ref<boolean>(false)
 const resourcesList = ref<unknown[]>([])
@@ -1085,14 +1083,22 @@ const handleDialogClose = () => {
   gap: 12px;
   align-items: center;
   flex-wrap: wrap;
+  width: 100%;
 }
 
 .search-row .el-form-item {
   margin-bottom: 0;
 }
 
+.search-row .search-actions {
+  margin-left: auto !important;
+  float: right !important;
+}
+
 .search-actions {
   flex: none;
+  margin-left: auto !important;
+  justify-content: flex-end !important;
 }
 
 .divider {
@@ -1102,7 +1108,10 @@ const handleDialogClose = () => {
 
 .action-buttons-row {
   display: flex;
-  gap: 8px;
+  justify-content: center;
+  align-items: center;
+  gap: 16px;
+  flex: 1;
 }
 
 .search-btn,
@@ -1145,7 +1154,7 @@ const handleDialogClose = () => {
 .resources-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: 20px;
+  gap: 16px;
   margin-bottom: 20px;
 }
 
@@ -1153,7 +1162,7 @@ const handleDialogClose = () => {
   background: white;
   border: 1px solid #e4e7ed;
   border-radius: 12px;
-  padding: 20px;
+  padding: 16px;
   cursor: pointer;
   transition: all 0.3s ease;
   position: relative;
@@ -1162,18 +1171,22 @@ const handleDialogClose = () => {
 
 .resource-checkbox-wrapper {
   position: absolute;
-  top: 16px;
-  left: 16px;
+  top: 12px;
+  left: 12px;
   z-index: 10;
 }
 
 .resource-checkbox {
-  padding: 4px;
+  padding: 2px;
 }
 
 .resource-checkbox :deep(.el-checkbox__inner) {
   border-color: #303133;
   border-width: 2px;
+}
+
+.resource-checkbox :deep(.el-checkbox__inner::before) {
+  border: 1px solid #000;
 }
 
 .resource-card:hover {
@@ -1192,8 +1205,8 @@ const handleDialogClose = () => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 12px;
-  padding-left: 32px;
+  margin-bottom: 10px;
+  padding-left: 28px;
 }
 
 .resource-type {
@@ -1209,14 +1222,14 @@ const handleDialogClose = () => {
 }
 
 .resource-content {
-  margin-bottom: 16px;
+  margin-bottom: 12px;
 }
 
 .resource-title {
   font-size: 16px;
   font-weight: 600;
   color: #303133;
-  margin: 0 0 8px 0;
+  margin: 0 0 6px 0;
   line-height: 1.4;
 }
 
@@ -1232,22 +1245,35 @@ const handleDialogClose = () => {
 }
 
 .resource-footer {
-  border-top: 1px solid #f0f0f0;
-  padding-top: 12px;
+  padding-top: 10px;
 }
 
-.resource-meta {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  font-size: 12px;
+.resource-footer .resource-meta {
+  display: flex !important;
+  justify-content: flex-start !important;
+  align-items: center;
+  gap: 16px;
+  font-size: 11px;
   color: #909399;
+  width: 100% !important;
+  flex-wrap: nowrap !important;
 }
 
-.meta-item {
+.resource-footer .meta-item {
   display: flex;
   align-items: center;
   gap: 4px;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.resource-footer .meta-item .el-icon {
+  flex-shrink: 0;
+  font-size: 12px;
+}
+
+.resource-footer .meta-item span {
+  white-space: nowrap;
 }
 
 .empty-resources {
@@ -1331,6 +1357,39 @@ const handleDialogClose = () => {
   margin: 0;
   padding: 20px;
   border-bottom: 1px solid #e6f7ff;
+}
+
+.form-dialog :deep(.el-dialog__headerbtn),
+.resource-detail-dialog :deep(.el-dialog__headerbtn),
+.preview-dialog :deep(.el-dialog__headerbtn) {
+  top: 16px;
+  right: 16px;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: transparent;
+  transition: all 0.3s ease;
+}
+
+.form-dialog :deep(.el-dialog__headerbtn:hover),
+.resource-detail-dialog :deep(.el-dialog__headerbtn:hover),
+.preview-dialog :deep(.el-dialog__headerbtn:hover) {
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.form-dialog :deep(.el-dialog__headerbtn .el-icon),
+.resource-detail-dialog :deep(.el-dialog__headerbtn .el-icon),
+.preview-dialog :deep(.el-dialog__headerbtn .el-icon) {
+  color: #606266;
+  font-size: 16px;
+  transition: all 0.3s ease;
+}
+
+.form-dialog :deep(.el-dialog__headerbtn:hover .el-icon),
+.resource-detail-dialog :deep(.el-dialog__headerbtn:hover .el-icon),
+.preview-dialog :deep(.el-dialog__headerbtn:hover .el-icon) {
+  color: #303133;
+  transform: scale(1.1);
 }
 
 .resource-document-form {

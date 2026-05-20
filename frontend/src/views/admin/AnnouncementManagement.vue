@@ -14,49 +14,42 @@
 
     <!-- 搜索和操作区域 -->
     <el-card class="search-card" shadow="never">
-      <el-form :inline="true" :model="searchForm" class="search-form" @keyup.enter="handleSearch">
-        <div class="search-row">
-          <el-form-item label="标题">
-            <el-input
-              v-model="searchForm.title"
-              placeholder="请输入公告标题"
-              clearable
-              style="width: 180px;"
-              @keyup.enter="handleSearch"
-            ></el-input>
-          </el-form-item>
-          <el-form-item label="状态">
-            <el-select v-model="searchForm.status" placeholder="请选择状态" clearable style="width: 110px;">
-              <el-option label="全部" value=""></el-option>
-              <el-option label="草稿" value="DRAFT"></el-option>
-              <el-option label="已发布" value="PUBLISHED"></el-option>
-              <el-option label="已过期" value="EXPIRED"></el-option>
-            </el-select>
-          </el-form-item>
-          <el-form-item class="search-actions">
-            <el-button type="primary" @click="handleSearch" class="search-btn">
-              <el-icon><Search /></el-icon>&nbsp;查询
-            </el-button>
-            <el-button type="warning" @click="resetForm" class="reset-btn">
-              <el-icon><Refresh /></el-icon>&nbsp;重置
-            </el-button>
-          </el-form-item>
-          <el-divider direction="vertical" class="divider"></el-divider>
-          <el-form-item>
-            <div class="action-buttons-row">
-              <el-button v-if="authStore.hasPermission('announcement:add')" type="primary" @click="handleAdd" class="action-btn primary">
-                <el-icon><Plus /></el-icon>&nbsp;发布公告
-              </el-button>
-              <el-button v-if="authStore.hasPermission('announcement:delete')" type="danger" @click="handleBatchDelete" class="action-btn danger">
-                <el-icon><Delete /></el-icon>&nbsp;批量删除
-              </el-button>
-              <el-button v-if="authStore.hasPermission('announcement:view')" type="success" @click="handleExport" class="action-btn success">
-                <el-icon><Download /></el-icon>&nbsp;导出Excel
-              </el-button>
-            </div>
-          </el-form-item>
+      <div class="search-row">
+        <div class="search-item">
+          <label class="search-label">标题</label>
+          <el-input
+            v-model="searchForm.title"
+            placeholder="请输入公告标题"
+            clearable
+            style="width: 400px;"
+            @keyup.enter="handleSearch"
+          ></el-input>
         </div>
-      </el-form>
+        <div class="search-item status-item">
+          <label class="search-label">状态</label>
+          <el-select v-model="searchForm.status" placeholder="请选择状态" clearable style="width: 160px;">
+            <el-option label="全部" value=""></el-option>
+            <el-option label="草稿" value="DRAFT"></el-option>
+            <el-option label="已发布" value="PUBLISHED"></el-option>
+            <el-option label="已过期" value="EXPIRED"></el-option>
+          </el-select>
+        </div>
+        <el-button type="primary" @click="handleSearch" class="search-btn">
+          <el-icon><Search /></el-icon>&nbsp;查询
+        </el-button>
+        <el-button type="warning" @click="resetForm" class="reset-btn">
+          <el-icon><Refresh /></el-icon>&nbsp;重置
+        </el-button>
+        <el-button v-if="authStore.hasPermission('announcement:add')" type="primary" @click="handleAdd" class="action-btn primary">
+          <el-icon><Plus /></el-icon>&nbsp;发布公告
+        </el-button>
+        <el-button v-if="authStore.hasPermission('announcement:delete')" type="danger" @click="handleBatchDelete" class="action-btn danger">
+          <el-icon><Delete /></el-icon>&nbsp;批量删除
+        </el-button>
+        <el-button v-if="authStore.hasPermission('announcement:view')" type="success" @click="handleExport" class="action-btn success">
+          <el-icon><Download /></el-icon>&nbsp;刷新列表
+        </el-button>
+      </div>
     </el-card>
 
     <!-- 数据列表卡片 -->
@@ -1451,60 +1444,161 @@ const downloadTemplate = async (): Promise<void> => {
 .search-card,
 .actions-card,
 .table-card {
-  border-radius: 12px;
-  border: none;
+  border-radius: 8px;
+  border: none !important;
+  outline: none !important;
   background: white;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-  margin-bottom: 16px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+  margin-bottom: 12px;
   overflow: hidden;
 }
 
 .search-card {
-  padding: 16px 20px;
+  padding: 12px 16px;
+}
+
+.search-card :deep(.el-card__header) {
+  border: none !important;
+  background: white;
+  padding: 0;
+  box-shadow: none;
+}
+
+.search-card :deep(.el-card__body) {
+  padding: 0;
+  border: none !important;
+}
+
+.search-card :deep(.el-card) {
+  border: none !important;
+}
+
+.search-card :deep(.el-button) {
+  margin: 0 !important;
+}
+
+.search-card :deep(.el-input) {
+  margin: 0 !important;
+}
+
+.search-card :deep(.el-select) {
+  margin: 0 !important;
 }
 
 .actions-card {
-  padding: 16px 20px;
+  padding: 12px 16px;
+}
+
+.actions-card :deep(.el-card__header) {
+  border: none !important;
 }
 
 .table-card {
   padding: 0;
 }
 
-/* 搜索表单样式 */
-.search-form {
-  width: 100%;
+.table-card :deep(.el-card__header) {
+  border: none !important;
 }
 
+/* 搜索行样式 */
 .search-row {
   display: flex;
-  gap: 12px;
   align-items: center;
-  flex-wrap: wrap;
+  gap: 12px;
+  width: 100%;
+  flex-wrap: nowrap;
 }
 
-.search-row .el-form-item {
-  margin-bottom: 0;
+.search-row > * {
+  margin: 0 !important;
 }
 
-.search-actions {
-  flex: none;
-}
-
-.divider {
-  margin: 0 8px;
-  height: 28px;
-}
-
-.action-buttons-row {
+.search-item {
   display: flex;
-  gap: 8px;
+  align-items: center;
+  gap: 6px;
+}
+
+.search-item.status-item {
+  transform: translateX(-20%);
+}
+
+.search-label {
+  font-size: 13px;
+  color: #606266;
+  white-space: nowrap;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  height: 32px;
+}
+
+.search-item .el-input,
+.search-item .el-select {
+  width: auto;
+  display: flex;
+  vertical-align: middle;
+  height: 32px;
+}
+
+.search-item .el-input__wrapper,
+.search-item .el-select .el-input__wrapper {
+  height: 32px;
+  padding: 0 10px;
+  box-shadow: none !important;
+  border: none !important;
+  background: #f5f7fa;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+}
+
+.search-item .el-input__inner {
+  height: 32px;
+  line-height: 32px;
+  font-size: 13px;
+  padding: 0;
+}
+
+.search-item .el-select__wrapper {
+  height: 32px;
+  display: flex;
+  align-items: center;
 }
 
 .search-btn,
-.reset-btn {
-  border-radius: 6px;
-  padding: 8px 16px;
+.reset-btn,
+.action-btn {
+  height: 32px !important;
+  min-height: 32px !important;
+  max-height: 32px !important;
+  padding: 0 12px !important;
+  margin: 0 !important;
+  border-radius: 4px;
+  font-size: 13px;
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+}
+
+.search-btn :deep(.el-icon),
+.reset-btn :deep(.el-icon),
+.action-btn :deep(.el-icon) {
+  margin-right: 4px;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+}
+
+.search-btn :deep(span),
+.reset-btn :deep(span),
+.action-btn :deep(span) {
+  display: flex;
+  align-items: center;
+  line-height: 1;
+  height: 32px;
 }
 
 /* 操作按钮区域 */
@@ -1516,24 +1610,29 @@ const downloadTemplate = async (): Promise<void> => {
 
 .primary-actions {
   display: flex;
-  gap: 8px;
+  gap: 6px;
 }
 
 .secondary-actions {
   display: flex;
-  gap: 8px;
+  gap: 6px;
 }
 
 .action-btn {
-  border-radius: 6px;
-  padding: 8px 16px;
+  border-radius: 4px;
+  padding: 6px 12px;
+  height: 32px;
+  font-size: 13px;
   font-weight: 500;
-  transition: all 0.3s ease;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .action-btn:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
 .action-btn:disabled {
