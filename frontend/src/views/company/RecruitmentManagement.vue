@@ -815,7 +815,11 @@ const handleGenerateDescription = async () => {
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="薪资范围" width="100" align="center" />
+        <el-table-column label="薪资范围" width="100" align="center">
+          <template #default="{ row }">
+            {{ row.salaryMin ? row.salaryMin + '-' + row.salaryMax + 'K' : '-' }}
+          </template>
+        </el-table-column>
         <el-table-column prop="plannedRecruit" label="招聘人数" width="90" align="center" />
         <el-table-column prop="recruitedCount" label="已招人数" width="90" align="center" />
         <el-table-column prop="remainingQuota" label="缺口" width="80" align="center">
