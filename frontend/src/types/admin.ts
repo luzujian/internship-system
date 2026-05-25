@@ -103,6 +103,7 @@ export interface AdminUserSearch extends BaseSearchForm {
 // 企业用户
 export interface CompanyUser {
   id: string
+  username?: string
   companyName: string
   contactPerson: string
   contactPhone: string
@@ -135,12 +136,29 @@ export interface Department {
   updateTime?: string
 }
 
+// 系
+export interface Division {
+  id: string
+  name: string
+  departmentId: string
+  departmentName?: string
+  createTime?: string
+  updateTime?: string
+  teacherCount?: number
+  studentCount?: number
+  confirmedCount?: number
+  notFoundCount?: number
+  hasOfferCount?: number
+}
+
 // 专业
 export interface Major {
   id: string
   name: string
   departmentId: string
   departmentName?: string
+  divisionId?: string
+  divisionName?: string
   createTime?: string
   updateTime?: string
 }

@@ -60,19 +60,19 @@
         fit
         class="data-table"
       >
-        <el-table-column v-if="activeTab === 'companyQualification'" label="企业名称" width="200">
+        <el-table-column v-if="activeTab === 'companyQualification'" label="企业名称" min-width="180">
           <template #default="scope">
             <div class="company-info-detail compact">
               <div class="company-name">{{ scope.row.companyName }}</div>
             </div>
           </template>
         </el-table-column>
-        <el-table-column v-else label="学生姓名" width="120" align="center">
+        <el-table-column v-else label="学生姓名" min-width="120" align="center">
           <template #default="scope">
             <div class="student-name-display">{{ scope.row.studentName }}</div>
           </template>
         </el-table-column>
-        <el-table-column v-if="activeTab !== 'companyQualification'" label="学号/年级班级" width="240" align="center">
+        <el-table-column v-if="activeTab !== 'companyQualification'" label="学号/年级/班级" min-width="200" align="center">
           <template #default="scope">
             <div class="student-info">
               <div class="info-details">
@@ -99,8 +99,8 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column prop="applyTime" label="申请时间" width="200" align="center"></el-table-column>
-        <el-table-column label="状态" width="180" align="center">
+        <el-table-column prop="applyTime" label="申请时间" min-width="160" align="center"></el-table-column>
+        <el-table-column label="状态" min-width="120" align="center">
           <template #default="scope">
             <div class="status-wrapper">
               <el-tag :type="getStatusTagType(scope.row.status)" size="small" class="status-tag">

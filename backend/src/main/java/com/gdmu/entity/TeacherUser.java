@@ -33,8 +33,9 @@ public class TeacherUser {
     private Date lastLoginTime;
     
     // 教师特有字段
-    private String teacherUserId; 
+    private String teacherUserId;
     private String departmentId;
+    private String divisionId;
     private String phone;
     private String email;
     

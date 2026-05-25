@@ -57,7 +57,7 @@
           <el-icon><Plus /></el-icon>&nbsp;新增类别
         </el-button>
         <el-button 
-          v-if="authStore.hasPermission('recruitment:add') && fixedCategoryId"
+          v-if="authStore.hasPermission('recruitment:add') && activeCategoryId"
           type="success" 
           @click="handleAddPosition" 
           class="action-btn success"
@@ -105,41 +105,37 @@
           <span class="total-count">共 {{ pagination.total }} 个类别</span>
         </div>
       </div>
-      <el-table 
-        :data="categories" 
-        border 
-        style="width: 100%" 
-        fit 
+      <el-table
+        :data="categories"
+        border
+        style="width: 100%"
+        fit
         @cell-mouse-enter="handleTableMouseEnter"
         @cell-mouse-leave="handleTableMouseLeave"
         class="data-table"
         v-loading="loading"
+        highlight-current-row
+        @row-click="handleCategoryRowClick"
       >
         <el-table-column type="index" label="序号" width="80" align="center" :index="(index) => (pagination.currentPage - 1) * pagination.pageSize + index + 1" />
-        <el-table-column prop="name" label="类别名称" align="center" min-width="150" />
+        <el-table-column prop="name" label="类别名称" align="center" min-width="150">
+          <template #default="scope">
+            <span :class="{ 'active-row-name': fixedCategoryId === scope.row.id }">{{ scope.row.name }}</span>
+          </template>
+        </el-table-column>
         <el-table-column prop="description" label="类别描述" align="center" min-width="200" show-overflow-tooltip />
         <el-table-column prop="positionCount" label="岗位数量" align="center" width="100" />
         <el-table-column prop="createTime" label="创建时间" width="180" align="center" :formatter="formatDate" />
-        <el-table-column label="操作" align="center" width="200" fixed="right">
+        <el-table-column label="操作" align="center" width="120" fixed="right">
           <template #default="scope">
             <div class="action-buttons">
-              <el-tooltip content="查看岗位" placement="top">
-                <el-button 
-                  :type="fixedCategoryId === scope.row.id ? 'danger' : 'success'" 
-                  size="small" 
-                  @click="handleShowCategoryPositions(scope.row.id)"
-                  class="table-btn position"
-                >
-                  <el-icon><View /></el-icon>
-                </el-button>
-              </el-tooltip>
               <el-tooltip v-if="authStore.hasPermission('position-category:edit')" content="编辑" placement="top">
-                <el-button type="primary" size="small" @click="handleUpdateCategory(scope.row.id)" class="table-btn edit">
+                <el-button type="primary" size="small" @click.stop="handleUpdateCategory(scope.row.id)" class="table-btn edit">
                   <el-icon><Edit /></el-icon>
                 </el-button>
               </el-tooltip>
               <el-tooltip v-if="authStore.hasPermission('position-category:delete')" content="删除" placement="top">
-                <el-button type="danger" size="small" @click="delById(scope.row.id)" class="table-btn delete">
+                <el-button type="danger" size="small" @click.stop="delById(scope.row.id)" class="table-btn delete">
                   <el-icon><Delete /></el-icon>
                 </el-button>
               </el-tooltip>
@@ -168,26 +164,16 @@
     >
       <div class="table-header">
         <h3 class="table-title">
-          {{ fixedCategoryId || hoveredCategoryId ? getCategoryName(fixedCategoryId || hoveredCategoryId): '岗位列表' }}
+          {{ activeCategoryId ? getCategoryName(activeCategoryId) + ' - 岗位列表' : '岗位列表' }}
           <span class="position-count" v-if="displayedPositions.length > 0">({{ displayedPositions.length }}个岗位)</span>
         </h3>
-        <div class="table-actions">
-          <el-button 
-            v-if="fixedCategoryId" 
-            type="default" 
-            size="small" 
-            @click="handleCloseFixedPositions" 
-            class="action-btn"
-          >
-            <el-icon><Close /></el-icon>&nbsp;关闭
-          </el-button>
-        </div>
       </div>
-      <el-table 
-        :data="displayedPositions" 
-        border 
-        style="width: 100%" 
-        fit 
+      <el-table
+        v-if="activeCategoryId"
+        :data="displayedPositions"
+        border
+        style="width: 100%"
+        fit
         class="data-table"
         height="400"
       >
@@ -216,6 +202,10 @@
             </template>
           </el-table-column>
         </el-table>
+
+        <div v-if="!activeCategoryId" class="no-data">
+          <el-empty description="悬停或点击左侧类别行查看岗位信息" :image-size="80" />
+        </div>
 
       <div v-if="searchPositionPagination.total > 0" class="search-pagination">
         <el-pagination 
@@ -369,7 +359,7 @@ import PositionCategoryService from '../../api/positionCategory'
 import PositionService from '../../api/position'
 import request from '../../utils/request'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search, Refresh, Plus, Edit, Delete, View, Download, Upload, Close, ArrowDown } from '@element-plus/icons-vue'
+import { Search, Refresh, Plus, Edit, Delete, Download, Upload, ArrowDown } from '@element-plus/icons-vue'
 import { exportToExcel, readExcelFile } from '../../utils/xlsx'
 import { useAuthStore } from '../../store/auth'
 
@@ -382,6 +372,7 @@ let positionList = ref<unknown[]>([])
 let hoveredCategoryId = ref(null)
 let fixedCategoryId = ref(null)
 let categoryPositions = ref(new Map())
+let hoverTimer = ref(null)
 let searchPositionName = ref<string>('')
 let searchPositionResult = ref(null)
 let importLoading = ref<boolean>(false)
@@ -595,8 +586,15 @@ const getCategoryPositions = (categoryId) => {
   return positions
 }
 
+const activeCategoryId = computed(() => {
+  return hoveredCategoryId.value || fixedCategoryId.value || null
+})
+
 const handleMouseEnterCategory = (categoryId) => {
-  hoveredCategoryId.value = categoryId
+  clearTimeout(hoverTimer.value)
+  hoverTimer.value = setTimeout(() => {
+    hoveredCategoryId.value = categoryId
+  }, 120)
 }
 
 const getCategoryName = (categoryId) => {
@@ -604,16 +602,12 @@ const getCategoryName = (categoryId) => {
   return category ? category.name : '未知类别'
 }
 
-const handleShowCategoryPositions = (categoryId) => {
-  logger.log(`点击了类别ID ${categoryId} 的岗位按钮`)
-  if (fixedCategoryId.value === categoryId) {
-    logger.log('取消固定类别岗位')
+const handleCategoryRowClick = (row) => {
+  if (fixedCategoryId.value === row.id) {
     fixedCategoryId.value = null
-    searchPositionResult.value = null
   } else {
-    logger.log(`固定显示类别ID ${categoryId} 的岗位`)
-    fixedCategoryId.value = categoryId
-    searchPositionResult.value = null
+    fixedCategoryId.value = row.id
+    hoveredCategoryId.value = null
   }
 }
 
@@ -622,37 +616,9 @@ const handlePositionClick = (position) => {
 }
 
 const displayedPositions = computed(() => {
-  logger.log('计算displayedPositions:', {
-    searchPositionPagination: {
-      currentPage: searchPositionPagination.value.currentPage,
-      total: searchPositionPagination.value.total
-    },
-    fixedCategoryId: fixedCategoryId.value,
-    hoveredCategoryId: hoveredCategoryId.value
-  })
-
-  if (searchPositionPagination.value.total > 0 && fixedCategoryId.value) {
-    logger.log(`显示搜索结果中的类别ID ${fixedCategoryId.value} 的岗位`)
-    const positions = getCategoryPositions(fixedCategoryId.value)
-    logger.log(`搜索结果类别岗位数量: ${positions.length}`)
-    return positions
+  if (activeCategoryId.value) {
+    return getCategoryPositions(activeCategoryId.value)
   }
-
-  if (hoveredCategoryId.value) {
-    logger.log(`显示悬停类别ID ${hoveredCategoryId.value} 的岗位`)
-    const positions = getCategoryPositions(hoveredCategoryId.value)
-    logger.log(`悬停类别岗位数量: ${positions.length}`)
-    return positions
-  }
-
-  if (fixedCategoryId.value) {
-    logger.log(`显示固定类别ID ${fixedCategoryId.value} 的岗位`)
-    const positions = getCategoryPositions(fixedCategoryId.value)
-    logger.log(`固定类别岗位数量: ${positions.length}`)
-    return positions
-  }
-
-  logger.log('没有要显示的岗位')
   return []
 })
 
@@ -709,7 +675,7 @@ const handleUpdateCategory = async (id): Promise<void> => {
 const handleAddPosition = () => {
   logger.log('点击新增岗位按钮')
   clearAddPositionForm()
-  positionForm.value.categoryId = fixedCategoryId.value
+  positionForm.value.categoryId = activeCategoryId.value
   formTitle.value = '新增岗位'
   dialogFormVisible.value = true
 }
@@ -938,12 +904,13 @@ const handleTableMouseEnter = (row) => {
 }
 
 const handleTableMouseLeave = () => {
-  hoveredCategoryId.value = null
-}
-
-const handleCloseFixedPositions = () => {
-  fixedCategoryId.value = null
-  searchPositionResult.value = null
+  clearTimeout(hoverTimer.value)
+  // 延迟清除悬停，给用户时间移到右侧操作岗位
+  hoverTimer.value = setTimeout(() => {
+    if (!fixedCategoryId.value) {
+      hoveredCategoryId.value = null
+    }
+  }, 300)
 }
 
 const handlePositionFilter = (query, option) => {
@@ -1022,6 +989,7 @@ const clear = () => {
   searchCategory.value.name = ''
   searchPositionName.value = ''
   fixedCategoryId.value = null
+  hoveredCategoryId.value = null
   searchPositionResult.value = null
   searchPositionPagination.value.departments = []
   searchPositionPagination.value.total = 0
@@ -1478,12 +1446,12 @@ const handleExportToExcel = async (): Promise<void> => {
 
 .left-table {
   flex: 1;
-  min-width: 400px;
+  min-width: 350px;
 }
 
 .right-table {
-  flex: 0 0 450px;
-  margin-left: auto;
+  flex: 1;
+  min-width: 350px;
 }
 
 /* 表格头部样式 */
@@ -1707,8 +1675,10 @@ const handleExportToExcel = async (): Promise<void> => {
     flex-direction: column;
   }
   
+  .left-table,
   .right-table {
     flex: 1;
+    min-width: 100%;
   }
   
   .search-row {

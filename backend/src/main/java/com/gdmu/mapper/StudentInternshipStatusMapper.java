@@ -235,6 +235,8 @@ public interface StudentInternshipStatusMapper {
 
     Map<String, Object> getDashboardStatsByClassIds(@Param("classIds") List<Long> classIds, @Param("startDate") String startDate, @Param("endDate") String endDate);
 
+    Map<String, Object> getDashboardStatsByDivisionIds(@Param("divisionIds") List<Long> divisionIds, @Param("startDate") String startDate, @Param("endDate") String endDate);
+
     List<Map<String, Object>> getStatsByClassIds(@Param("classIds") List<Long> classIds, @Param("startDate") String startDate, @Param("endDate") String endDate);
 
     List<Map<String, Object>> getStatsByGradeByClassIds(@Param("classIds") List<Long> classIds, @Param("startDate") String startDate, @Param("endDate") String endDate);

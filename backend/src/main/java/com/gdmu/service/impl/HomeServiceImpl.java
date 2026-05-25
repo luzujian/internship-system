@@ -3,6 +3,7 @@ package com.gdmu.service.impl;
 import com.gdmu.entity.Announcement;
 import com.gdmu.entity.AnnouncementReadRecord;
 import com.gdmu.entity.ClassCounselorRelation;
+import com.gdmu.entity.Division;
 import com.gdmu.entity.InternshipTimeSettings;
 import com.gdmu.entity.TeacherUser;
 import com.gdmu.entity.dto.AnnouncementWithReadStatusDTO;
@@ -12,6 +13,8 @@ import com.gdmu.mapper.AnnouncementMapper;
 import com.gdmu.mapper.AnnouncementReadRecordMapper;
 import com.gdmu.mapper.ClassCounselorRelationMapper;
 import com.gdmu.mapper.CompanyUserMapper;
+import com.gdmu.mapper.DepartmentMapper;
+import com.gdmu.mapper.DivisionMapper;
 import com.gdmu.mapper.StudentApplicationMapper;
 import com.gdmu.mapper.StudentInternshipStatusMapper;
 import com.gdmu.mapper.TeacherUserMapper;
@@ -58,6 +61,12 @@ public class HomeServiceImpl implements HomeService {
     private ClassCounselorRelationMapper classCounselorRelationMapper;
 
     @Autowired
+    private DivisionMapper divisionMapper;
+
+    @Autowired
+    private DepartmentMapper departmentMapper;
+
+    @Autowired
     private InternshipTimeSettingsService internshipTimeSettingsService;
 
     @Override
@@ -85,7 +94,7 @@ public class HomeServiceImpl implements HomeService {
 
             Map<String, Object> dashboardStats;
 
-            // 根据teacherType判断身份：辅导员显示负责班级数据，系室和学院教师显示所有数据
+            // 根据teacherType判断身份：辅导员按班级、系室教师按系、学院教师显示所有
             if ("COUNSELOR".equals(userType) && userId != null && userId > 0) {
                 List<ClassCounselorRelation> relations = classCounselorRelationMapper.findByCounselorId(userId);
                 if (relations != null && !relations.isEmpty()) {
@@ -97,6 +106,62 @@ public class HomeServiceImpl implements HomeService {
                 } else {
                     dashboardStats = studentInternshipStatusMapper.getDashboardStats(startDate, endDate);
                     log.info("辅导员未分配班级，使用全院统计数据");
+                }
+            } else if ("DEPARTMENT".equals(userType) && userId != null && userId > 0) {
+                // 系室教师：根据division_id获取对应系的学生数据
+                TeacherUser teacher = teacherUserMapper.findById(userId);
+                Long divId = null;
+                if (teacher != null && teacher.getDivisionId() != null) {
+                    try {
+                        divId = Long.valueOf(teacher.getDivisionId());
+                    } catch (NumberFormatException e) {
+                        log.warn("系室教师的division_id格式异常: {}", teacher.getDivisionId());
+                    }
+                }
+                if (divId != null) {
+                    List<Long> divisionIds = java.util.Collections.singletonList(divId);
+                    dashboardStats = studentInternshipStatusMapper.getDashboardStatsByDivisionIds(divisionIds, startDate, endDate);
+                    // 获取系名称
+                    Division division = divisionMapper.findById(divId);
+                    if (division != null) {
+                        homeStats.setDivisionName(division.getName());
+                    }
+                    log.info("系室教师统计（系ID={}）：{} 名学生", divId, dashboardStats != null ? dashboardStats.get("totalStudents") : 0);
+                } else {
+                    dashboardStats = studentInternshipStatusMapper.getDashboardStats(startDate, endDate);
+                    log.info("系室教师未关联系，使用全院统计数据");
+                }
+            } else if ("COLLEGE".equals(userType) && userId != null && userId > 0) {
+                // 学院教师：根据department_id获取对应学院的学生数据
+                TeacherUser teacher = teacherUserMapper.findById(userId);
+                Long deptId = null;
+                if (teacher != null && teacher.getDepartmentId() != null) {
+                    try {
+                        deptId = Long.valueOf(teacher.getDepartmentId());
+                    } catch (NumberFormatException e) {
+                        log.warn("学院教师的department_id格式异常: {}", teacher.getDepartmentId());
+                    }
+                }
+                if (deptId != null) {
+                    List<Division> divisions = divisionMapper.findByDepartmentId(deptId);
+                    if (divisions != null && !divisions.isEmpty()) {
+                        List<Long> divisionIds = divisions.stream()
+                            .map(Division::getId)
+                            .collect(Collectors.toList());
+                        dashboardStats = studentInternshipStatusMapper.getDashboardStatsByDivisionIds(divisionIds, startDate, endDate);
+                        log.info("学院教师统计（学院ID={}，{} 个系）：{} 名学生", deptId, divisionIds.size(), dashboardStats != null ? dashboardStats.get("totalStudents") : 0);
+                    } else {
+                        dashboardStats = studentInternshipStatusMapper.getDashboardStats(startDate, endDate);
+                        log.info("学院教师所属学院下无系，使用全院统计数据");
+                    }
+                    // 获取学院名称
+                    var department = departmentMapper.findById(deptId);
+                    if (department != null) {
+                        homeStats.setDepartmentName(department.getName());
+                    }
+                } else {
+                    dashboardStats = studentInternshipStatusMapper.getDashboardStats(startDate, endDate);
+                    log.info("学院教师未关联学院，使用全院统计数据");
                 }
             } else {
                 dashboardStats = studentInternshipStatusMapper.getDashboardStats(startDate, endDate);

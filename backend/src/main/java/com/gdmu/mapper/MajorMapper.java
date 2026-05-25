@@ -19,7 +19,10 @@ public interface MajorMapper {
     
     // 根据院系ID查询专业
     List<Major> findByDepartmentId(@Param("departmentId") Long departmentId);
-    
+
+    // 根据系ID查询专业
+    List<Major> findByDivisionId(@Param("divisionId") Long divisionId);
+
     // 新增专业
     int insert(Major major);
     

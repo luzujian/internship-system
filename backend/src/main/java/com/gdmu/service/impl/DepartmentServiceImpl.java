@@ -2,8 +2,10 @@ package com.gdmu.service.impl;
 
 import com.gdmu.mapper.DepartmentMapper;
 import com.gdmu.entity.Department;
+import com.gdmu.entity.Division;
 import com.gdmu.entity.Major;
 import com.gdmu.service.DepartmentService;
+import com.gdmu.service.DivisionService;
 import com.gdmu.service.MajorService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -27,10 +29,14 @@ public class DepartmentServiceImpl implements DepartmentService {
 
     @Autowired
     private DepartmentMapper departmentMapper;
-    
+
     @Autowired
     @Lazy
     private MajorService majorService;
+
+    @Autowired
+    @Lazy
+    private DivisionService divisionService;
 
     @Transactional(rollbackFor = Exception.class)
     @Override
@@ -212,16 +218,17 @@ public class DepartmentServiceImpl implements DepartmentService {
             throw new RuntimeException("院系不存在");
         }
         
-        log.info("开始删除院系 {} 下的所有专业", id);
-        List<Major> majors = majorService.findByDepartmentId(id);
-        if (majors != null && !majors.isEmpty()) {
-            for (Major major : majors) {
-                log.info("删除专业: {}", major.getName());
-                majorService.delete(major.getId());
+        // 级联删除：院系 → 系 → 专业 → 班级
+        log.info("开始删除院系 {} 下的所有系", id);
+        List<Division> divisions = divisionService.findByDepartmentId(id);
+        if (divisions != null && !divisions.isEmpty()) {
+            for (Division division : divisions) {
+                log.info("删除系: {}", division.getName());
+                divisionService.deleteDivision(division.getId());
             }
         }
-        log.info("成功删除院系 {} 下的 {} 个专业", id, majors != null ? majors.size() : 0);
-        
+        log.info("成功删除院系 {} 下的 {} 个系", id, divisions != null ? divisions.size() : 0);
+
         int result = departmentMapper.deleteById(id);
         log.info("院系删除成功，院系ID: {}", id);
         return result;

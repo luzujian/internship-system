@@ -36,25 +36,22 @@
             </el-button>
           </el-form-item>
         </div>
+        <div class="action-buttons-row">
+          <div class="primary-actions">
+            <el-button type="primary" @click="handleAdd" class="action-btn primary">
+              <el-icon><Plus /></el-icon>&nbsp;发布公告
+            </el-button>
+            <el-button type="danger" @click="handleBatchDelete" class="action-btn danger">
+              <el-icon><Delete /></el-icon>&nbsp;批量删除
+            </el-button>
+          </div>
+          <div class="secondary-actions">
+            <el-button type="success" @click="refreshData" class="action-btn success">
+              <el-icon><Refresh /></el-icon>&nbsp;刷新列表
+            </el-button>
+          </div>
+        </div>
       </el-form>
-    </el-card>
-
-    <el-card class="actions-card" shadow="never">
-      <div class="actions-container">
-        <div class="primary-actions">
-          <el-button type="primary" @click="handleAdd" class="action-btn primary">
-            <el-icon><Plus /></el-icon>&nbsp;发布公告
-          </el-button>
-          <el-button type="danger" @click="handleBatchDelete" class="action-btn danger">
-            <el-icon><Delete /></el-icon>&nbsp;批量删除
-          </el-button>
-        </div>
-        <div class="secondary-actions">
-          <el-button type="success" @click="refreshData" class="action-btn success">
-            <el-icon><Refresh /></el-icon>&nbsp;刷新列表
-          </el-button>
-        </div>
-      </div>
     </el-card>
 
     <el-card class="table-card" shadow="never">
@@ -957,7 +954,6 @@ const nextTick = (callback: () => void) => {
 
 /* 卡片通用样式 */
 .search-card,
-.actions-card,
 .table-card {
   border-radius: 16px;
   border: none;
@@ -968,11 +964,7 @@ const nextTick = (callback: () => void) => {
 }
 
 .search-card {
-  padding: 24px;
-}
-
-.actions-card {
-  padding: 20px 24px;
+  padding: 20px;
 }
 
 .table-card {
@@ -992,16 +984,13 @@ const nextTick = (callback: () => void) => {
 }
 
 .search-form {
-  display: flex;
-  align-items: center;
-  width: 100%;
+  margin: 0;
 }
 
 .search-row {
   display: flex;
-  align-items: center;
-  gap: 16px;
-  width: 100%;
+  gap: 20px;
+  align-items: flex-start;
 }
 
 .search-row .el-form-item {
@@ -1010,10 +999,9 @@ const nextTick = (callback: () => void) => {
 }
 
 .search-actions {
-  display: flex;
-  gap: 8px;
   flex: none;
   margin-left: auto;
+  margin-bottom: 0;
 }
 
 .search-btn,
@@ -1023,6 +1011,35 @@ const nextTick = (callback: () => void) => {
   gap: 4px;
   border-radius: 8px;
   padding: 10px 20px;
+}
+
+.action-buttons-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #f0f0f0;
+}
+
+.primary-actions,
+.secondary-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.action-btn {
+  border-radius: 6px;
+  padding: 8px 16px;
+  font-weight: 500;
+  font-size: 14px;
+  transition: all 0.3s ease;
+}
+
+.action-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 
 .announcement-tabs {
@@ -1041,19 +1058,6 @@ const nextTick = (callback: () => void) => {
 .announcement-tabs :deep(.el-tabs__item.is-active) {
   color: #409EFF;
   font-weight: 500;
-}
-
-.actions-container {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 16px;
-}
-
-.primary-actions,
-.secondary-actions {
-  display: flex;
-  gap: 12px;
 }
 
 .action-btn {
@@ -1338,16 +1342,6 @@ const nextTick = (callback: () => void) => {
 
   .header-illustration {
     margin-top: 15px;
-  }
-
-  .actions-container {
-    flex-direction: column;
-    gap: 12px;
-    align-items: stretch;
-  }
-
-  .primary-actions {
-    justify-content: center;
   }
 
   .search-row {

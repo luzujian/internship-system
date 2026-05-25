@@ -124,7 +124,12 @@ public class MajorServiceImpl implements MajorService {
     public List<Major> findByDepartmentId(Long departmentId) {
         return majorMapper.findByDepartmentId(departmentId);
     }
-    
+
+    @Override
+    public List<Major> findByDivisionId(Long divisionId) {
+        return majorMapper.findByDivisionId(divisionId);
+    }
+
     @Override
     @CacheEvict(value = "majors", key = "'all'")
     public int save(Major major) {

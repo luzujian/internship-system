@@ -14,6 +14,8 @@ public class Class implements Serializable {
     private String name; // 班级名称
     private Long majorId; // 所属专业 ID
     private String majorName; // 专业名称
+    private Long divisionId; // 所属系 ID
+    private String divisionName; // 系名称
     private Long departmentId; // 所属院系 ID
     private String departmentName; // 院系名称
     private String teacherId; // 负责教师 ID

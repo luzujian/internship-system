@@ -12,7 +12,8 @@ public class Major implements Serializable {
     private static final long serialVersionUID = 1L;
     private Long id;
     private String name; // 专业名称
-    private Long departmentId; // 所属院系
+    private Long departmentId; // 所属学院ID
+    private Long divisionId; // 所属系ID
     private Date createTime;
     private Date updateTime;
     
@@ -30,4 +31,8 @@ public class Major implements Serializable {
     
     // 有Offer未确定的学生数
     private Integer hasOfferCount = 0;
+
+    // 显示用字段（非数据库字段）
+    private String divisionName; // 所属系名称
+    private String departmentName; // 所属学院名称
 }

@@ -63,7 +63,21 @@ public class MajorController {
             return Result.error("搜索专业失败: " + e.getMessage());
         }
     }
-    
+
+    // 根据系ID获取专业列表
+    @GetMapping("/division/{divisionId}")
+    @PreAuthorize("hasAnyRole('ADMIN', 'TEACHER') or hasAuthority('major:view')")
+    public Result getMajorsByDivisionId(@PathVariable Long divisionId) {
+        log.info("根据系ID获取专业列表: {}", divisionId);
+        try {
+            List<Major> majors = majorService.findByDivisionId(divisionId);
+            return Result.success(majors);
+        } catch (Exception e) {
+            log.error("获取专业列表失败: {}", e.getMessage(), e);
+            return Result.error("获取专业列表失败: " + e.getMessage());
+        }
+    }
+
     // 新增专业
     @Log(operationType = "ADD", module = "MAJOR_MANAGEMENT", description = "新增专业")
     @PostMapping

@@ -9,6 +9,7 @@
         <id property="id" column="id"/>
         <result property="name" column="name"/>
         <result property="departmentId" column="department_id"/>
+        <result property="divisionId" column="division_id"/>
         <result property="createTime" column="create_time"/>
         <result property="updateTime" column="update_time"/>
         <result property="teacherCount" column="teacher_count"/>
@@ -16,6 +17,8 @@
         <result property="confirmedCount" column="confirmed_count"/>
         <result property="notFoundCount" column="not_found_count"/>
         <result property="hasOfferCount" column="has_offer_count"/>
+        <result property="divisionName" column="division_name"/>
+        <result property="departmentName" column="department_name"/>
     </resultMap>
     
     <!-- 根据ID查询专业 -->
@@ -25,20 +28,23 @@
     
     <!-- 查询所有专业 -->
     <select id="findAll" resultMap="MajorResultMap">
-        SELECT * FROM major
-        order by update_time desc
+        SELECT m.*, d.name as division_name, dep.name as department_name
+        FROM major m
+        LEFT JOIN division d ON m.division_id = d.id
+        LEFT JOIN department dep ON m.department_id = dep.id
+        order by m.update_time desc
     </select>
     
     <!-- 新增专业 -->
     <insert id="insert" parameterType="com.gdmu.entity.Major" useGeneratedKeys="true" keyProperty="id">
-        INSERT INTO major(name, department_id, create_time, update_time)
-        VALUES(#{name}, #{departmentId}, #{createTime}, #{updateTime})
+        INSERT INTO major(name, department_id, division_id, create_time, update_time)
+        VALUES(#{name}, #{departmentId}, #{divisionId}, #{createTime}, #{updateTime})
     </insert>
-    
+
     <!-- 更新专业 -->
     <update id="update" parameterType="com.gdmu.entity.Major">
         UPDATE major
-        SET name=#{name}, department_id=#{departmentId}, update_time=#{updateTime}
+        SET name=#{name}, department_id=#{departmentId}, division_id=#{divisionId}, update_time=#{updateTime}
         WHERE id=#{id}
     </update>
     
@@ -56,7 +62,16 @@
     <select id="findByDepartmentId" parameterType="java.lang.Long" resultMap="MajorResultMap">
         SELECT * FROM major WHERE department_id = #{departmentId}
     </select>
-    
+
+    <!-- 根据系ID查询专业 -->
+    <select id="findByDivisionId" parameterType="java.lang.Long" resultMap="MajorResultMap">
+        SELECT m.*, d.name as division_name, dep.name as department_name
+        FROM major m
+        LEFT JOIN division d ON m.division_id = d.id
+        LEFT JOIN department dep ON m.department_id = dep.id
+        WHERE m.division_id = #{divisionId}
+    </select>
+
     <!-- 根据专业ID查询教师人数 -->
     <select id="getTeacherCountByMajorId" resultType="java.lang.Integer" parameterType="java.lang.Long">
         <!-- 由于course表不存在，直接返回0 -->

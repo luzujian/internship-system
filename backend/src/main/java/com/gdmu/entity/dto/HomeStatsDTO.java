@@ -10,6 +10,8 @@ import java.util.List;
 @Data
 public class HomeStatsDTO {
     private Double internshipRate;
+    private String divisionName;
+    private String departmentName;
     private Integer unreadCount;
     private Integer pendingApprovalCount;
     private Integer companyCount;

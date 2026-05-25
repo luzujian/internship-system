@@ -8,8 +8,8 @@
     
     <!-- 插入教师用户 -->
     <insert id="insert" parameterType="com.gdmu.entity.TeacherUser">
-        insert into teacher_users (username, password, name, gender, create_time, update_time, teacher_user_id, department_id, teacher_type, phone)
-        values (#{username}, #{password}, #{name}, #{gender}, #{createTime}, #{updateTime}, #{teacherUserId}, #{departmentId}, #{teacherType}, #{phone})
+        insert into teacher_users (username, password, name, gender, create_time, update_time, teacher_user_id, department_id, division_id, teacher_type, phone)
+        values (#{username}, #{password}, #{name}, #{gender}, #{createTime}, #{updateTime}, #{teacherUserId}, #{departmentId}, #{divisionId}, #{teacherType}, #{phone})
     </insert>
     
     <!-- 根据ID查询教师用户 -->
@@ -32,6 +32,9 @@
             </if>
             <if test="departmentId != null">
                 department_id = #{departmentId},
+            </if>
+            <if test="divisionId != null and divisionId != ''">
+                division_id = #{divisionId},
             </if>
             <if test="teacherUserId != null">
                 teacher_user_id = #{teacherUserId},

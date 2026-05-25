@@ -871,6 +871,34 @@
         </where>
     </select>
 
+    <!-- 按系ID统计实习状态 -->
+    <select id="getDashboardStatsByDivisionIds" resultType="java.util.Map">
+        SELECT
+            COUNT(DISTINCT CASE WHEN sis.status IS NULL OR sis.status != 4 THEN su.id END) AS totalStudents,
+            SUM(CASE WHEN sis.status IN (2, 3) THEN 1 ELSE 0 END) AS confirmed,
+            SUM(CASE WHEN sis.status = 1 THEN 1 ELSE 0 END) AS offer,
+            SUM(CASE WHEN sis.status = 0 OR sis.status IS NULL THEN 1 ELSE 0 END) AS noOffer,
+            SUM(CASE WHEN sis.status = 6 THEN 1 ELSE 0 END) AS delay
+        FROM student_users su
+        LEFT JOIN student_internship_status sis ON su.id = sis.student_id
+        LEFT JOIN major m ON su.major_id = m.id
+        <where>
+            AND su.status = 1
+            <if test="divisionIds != null and divisionIds.size() > 0">
+                AND m.division_id IN
+                <foreach collection="divisionIds" item="divId" open="(" separator="," close=")">
+                    #{divId}
+                </foreach>
+            </if>
+            <if test="startDate != null and startDate != ''">
+                AND (sis.update_time &gt;= #{startDate} OR sis.update_time IS NULL)
+            </if>
+            <if test="endDate != null and endDate != ''">
+                AND (sis.update_time &lt;= #{endDate} OR sis.update_time IS NULL)
+            </if>
+        </where>
+    </select>
+
     <select id="getStatsByClassIds" resultType="java.util.Map">
         SELECT
             c.name AS className,

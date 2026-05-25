@@ -34,8 +34,10 @@ import java.util.Arrays;
 import java.util.Calendar;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * 统计报表控制器
@@ -145,37 +147,32 @@ public class ReportController {
         log.info("获取企业入驻趋势数据，年份: {}", year);
         try {
             List<CompanyTrendDTO> trend = reportMapper.getCompanyTrendByQuarter(year);
-            if (trend.isEmpty()) {
-                CompanyTrendDTO q1 = new CompanyTrendDTO();
-                q1.setLabel("第一季度");
-                q1.setValue(0);
-                CompanyTrendDTO q2 = new CompanyTrendDTO();
-                q2.setLabel("第二季度");
-                q2.setValue(0);
-                CompanyTrendDTO q3 = new CompanyTrendDTO();
-                q3.setLabel("第三季度");
-                q3.setValue(0);
-                CompanyTrendDTO q4 = new CompanyTrendDTO();
-                q4.setLabel("第四季度");
-                q4.setValue(0);
-                trend = Arrays.asList(q1, q2, q3, q4);
+            // 补全四个季度，缺失的季度补 0
+            Map<String, Integer> quarterMap = new java.util.LinkedHashMap<>();
+            quarterMap.put("第一季度", 0);
+            quarterMap.put("第二季度", 0);
+            quarterMap.put("第三季度", 0);
+            quarterMap.put("第四季度", 0);
+            for (CompanyTrendDTO dto : trend) {
+                quarterMap.put(dto.getLabel(), dto.getValue());
             }
-            return Result.success(trend);
+            List<CompanyTrendDTO> result = quarterMap.entrySet().stream()
+                .map(e -> {
+                    CompanyTrendDTO dto = new CompanyTrendDTO();
+                    dto.setLabel(e.getKey());
+                    dto.setValue(e.getValue());
+                    return dto;
+                })
+                .collect(Collectors.toList());
+            return Result.success(result);
         } catch (Exception e) {
             log.error("获取企业入驻趋势数据失败: {}", e.getMessage(), e);
-            CompanyTrendDTO q1 = new CompanyTrendDTO();
-            q1.setLabel("第一季度");
-            q1.setValue(0);
-            CompanyTrendDTO q2 = new CompanyTrendDTO();
-            q2.setLabel("第二季度");
-            q2.setValue(0);
-            CompanyTrendDTO q3 = new CompanyTrendDTO();
-            q3.setLabel("第三季度");
-            q3.setValue(0);
-            CompanyTrendDTO q4 = new CompanyTrendDTO();
-            q4.setLabel("第四季度");
-            q4.setValue(0);
-            return Result.success(Arrays.asList(q1, q2, q3, q4));
+            return Result.success(Arrays.asList(
+                new CompanyTrendDTO("第一季度", 0),
+                new CompanyTrendDTO("第二季度", 0),
+                new CompanyTrendDTO("第三季度", 0),
+                new CompanyTrendDTO("第四季度", 0)
+            ));
         }
     }
 
@@ -321,6 +318,28 @@ public class ReportController {
         Date currentStartDate = dateRange[0];
         Date currentEndDate = dateRange[1];
 
+        // 计算核心指标
+        int companyCount = 0;
+        try { companyCount = companyUserMapper.countApproved(); } catch (Exception e) { log.warn("获取企业数量失败: {}", e.getMessage()); }
+        long totalStudents = 0;
+        try { totalStudents = studentUserMapper.count() != null ? studentUserMapper.count() : 0; } catch (Exception e) { log.warn("获取学生总数失败: {}", e.getMessage()); }
+        long internshipStudents = 0;
+        try { internshipStudents = internshipStatusMapper.countByStatus(1) + internshipStatusMapper.countByStatus(2) + internshipStatusMapper.countByStatus(3); } catch (Exception e) { log.warn("获取实习学生数失败: {}", e.getMessage()); }
+        double internshipRate = totalStudents > 0 ? (double) internshipStudents / totalStudents * 100 : 0;
+        int approvalCount = getApprovalCount(currentStartDate, currentEndDate);
+        int resourceDownloads = 0;
+        try { resourceDownloads = reportMapper.getResourceDownloads(currentStartDate, currentEndDate); } catch (Exception e) { log.warn("获取资源下载量失败: {}", e.getMessage()); }
+
+        // 获取企业入驻趋势
+        int currentYear = Calendar.getInstance().get(Calendar.YEAR);
+        List<CompanyTrendDTO> rawTrend = reportMapper.getCompanyTrendByQuarter(currentYear);
+        Map<String, Integer> quarterMap = new LinkedHashMap<>();
+        quarterMap.put("第一季度", 0);
+        quarterMap.put("第二季度", 0);
+        quarterMap.put("第三季度", 0);
+        quarterMap.put("第四季度", 0);
+        for (CompanyTrendDTO dto : rawTrend) { quarterMap.put(dto.getLabel(), dto.getValue()); }
+
         List<CompanyDetailDTO> companies = reportMapper.getCompanyDetails(0, 1000);
         List<StudentInternshipDetailDTO> students = reportMapper.getStudentInternshipDetails(0, 1000);
         List<ApprovalDetailDTO> approvals = reportMapper.getApprovalDetails(0, 1000);
@@ -351,6 +370,59 @@ public class ReportController {
 
             CellStyle headerStyle = createHeaderStyle(workbook);
             CellStyle titleStyle = createTitleStyle(workbook);
+
+            // 核心指标概览Sheet
+            Sheet metricsSheet = workbook.createSheet("核心指标概览");
+            Row metricsTitleRow = metricsSheet.createRow(0);
+            Cell metricsTitleCell = metricsTitleRow.createCell(0);
+            metricsTitleCell.setCellValue("核心指标概览");
+            metricsTitleCell.setCellStyle(titleStyle);
+            metricsSheet.addMergedRegion(new org.apache.poi.ss.util.CellRangeAddress(0, 0, 0, 1));
+
+            String[] metricsHeaders = {"指标名称", "数值"};
+            Row metricsHeaderRow = metricsSheet.createRow(1);
+            for (int i = 0; i < metricsHeaders.length; i++) {
+                Cell cell = metricsHeaderRow.createCell(i);
+                cell.setCellValue(metricsHeaders[i]);
+                cell.setCellStyle(headerStyle);
+                metricsSheet.setColumnWidth(i, 5000);
+            }
+
+            String[][] metricsData = {
+                {"企业入驻数量", String.valueOf(companyCount)},
+                {"学生实习率", String.format("%.1f%%", internshipRate)},
+                {"申请审核数量", String.valueOf(approvalCount)},
+                {"资源下载量", String.valueOf(resourceDownloads)}
+            };
+            for (int i = 0; i < metricsData.length; i++) {
+                Row row = metricsSheet.createRow(i + 2);
+                row.createCell(0).setCellValue(metricsData[i][0]);
+                row.createCell(1).setCellValue(metricsData[i][1]);
+            }
+
+            // 企业入驻趋势Sheet
+            Sheet trendSheet = workbook.createSheet("企业入驻趋势");
+            Row trendTitleRow = trendSheet.createRow(0);
+            Cell trendTitleCell = trendTitleRow.createCell(0);
+            trendTitleCell.setCellValue("企业入驻趋势（" + currentYear + "年）");
+            trendTitleCell.setCellStyle(titleStyle);
+            trendSheet.addMergedRegion(new org.apache.poi.ss.util.CellRangeAddress(0, 0, 0, 1));
+
+            String[] trendHeaders = {"季度", "入驻企业数"};
+            Row trendHeaderRow = trendSheet.createRow(1);
+            for (int i = 0; i < trendHeaders.length; i++) {
+                Cell cell = trendHeaderRow.createCell(i);
+                cell.setCellValue(trendHeaders[i]);
+                cell.setCellStyle(headerStyle);
+                trendSheet.setColumnWidth(i, 5000);
+            }
+
+            int trendRowNum = 2;
+            for (Map.Entry<String, Integer> entry : quarterMap.entrySet()) {
+                Row row = trendSheet.createRow(trendRowNum++);
+                row.createCell(0).setCellValue(entry.getKey());
+                row.createCell(1).setCellValue(entry.getValue());
+            }
 
             // 企业入驻详情Sheet
             Sheet companySheet = workbook.createSheet("企业入驻详情");
@@ -388,7 +460,7 @@ public class ReportController {
             studentTitleCell.setCellStyle(titleStyle);
             studentSheet.addMergedRegion(new org.apache.poi.ss.util.CellRangeAddress(0, 0, 0, 5));
 
-            String[] studentHeaders = {"学院", "专业", "学生总数", "已实习人数", "实习率(%)", "备注"};
+            String[] studentHeaders = {"学院", "专业", "学生总数", "已实习人数", "实习率(%)", "未实习人数"};
             Row studentHeaderRow = studentSheet.createRow(1);
             for (int i = 0; i < studentHeaders.length; i++) {
                 Cell cell = studentHeaderRow.createCell(i);
@@ -405,7 +477,7 @@ public class ReportController {
                 row.createCell(2).setCellValue(student.getTotalCount());
                 row.createCell(3).setCellValue(student.getInternshipCount());
                 row.createCell(4).setCellValue(student.getInternshipRate());
-                row.createCell(5).setCellValue("");
+                row.createCell(5).setCellValue(student.getTotalCount() - student.getInternshipCount());
             }
 
             // 申请审核详情Sheet
@@ -416,7 +488,7 @@ public class ReportController {
             approvalTitleCell.setCellStyle(titleStyle);
             approvalSheet.addMergedRegion(new org.apache.poi.ss.util.CellRangeAddress(0, 0, 0, 5));
 
-            String[] approvalHeaders = {"申请类型", "申请数量", "通过数量", "驳回数量", "通过率(%)", "备注"};
+            String[] approvalHeaders = {"申请类型", "申请数量", "通过数量", "驳回数量", "通过率(%)", "待审核数量"};
             Row approvalHeaderRow = approvalSheet.createRow(1);
             for (int i = 0; i < approvalHeaders.length; i++) {
                 Cell cell = approvalHeaderRow.createCell(i);
@@ -433,7 +505,7 @@ public class ReportController {
                 row.createCell(2).setCellValue(approval.getApprovedCount());
                 row.createCell(3).setCellValue(approval.getRejectedCount());
                 row.createCell(4).setCellValue(approval.getApprovalRate());
-                row.createCell(5).setCellValue("");
+                row.createCell(5).setCellValue(approval.getTotalCount() - approval.getApprovedCount() - approval.getRejectedCount());
             }
 
             workbook.write(out);

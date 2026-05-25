@@ -298,12 +298,21 @@ const filePreviewVisible = ref(false)
 const currentFileUrl = ref('')
 const currentFileName = ref('')
 
+const divisionName = ref('')
+const departmentName = ref('')
+
 const statusCardTitle = computed(() => {
-  return teacherType.value === 'COUNSELOR' ? '负责班级实习状态占比' : '应届毕业生实习状态占比'
+  if (teacherType.value === 'COUNSELOR') return '负责班级实习状态占比'
+  if (teacherType.value === 'DEPARTMENT' && divisionName.value) return `${divisionName.value} - 实习状态占比`
+  if (teacherType.value === 'COLLEGE' && departmentName.value) return `${departmentName.value} - 实习状态占比`
+  return '应届毕业生实习状态占比'
 })
 
 const internshipCardDesc = computed(() => {
-  return teacherType.value === 'COUNSELOR' ? '负责班级学生实习进展情况' : '全院学生实习进展情况'
+  if (teacherType.value === 'COUNSELOR') return '负责班级学生实习进展情况'
+  if (teacherType.value === 'DEPARTMENT' && divisionName.value) return `${divisionName.value}学生实习进展情况`
+  if (teacherType.value === 'COLLEGE' && departmentName.value) return `${departmentName.value}学生实习进展情况`
+  return '全院学生实习进展情况'
 })
 
 const loadTeacherInfo = async () => {
@@ -348,6 +357,8 @@ const loadHomeData = async () => {
       statusData.value = response.statusData
     }
 
+    divisionName.value = response.divisionName || ''
+    departmentName.value = response.departmentName || ''
     backendInternshipRate.value = response.internshipRate || 0
     approvalData.value.pending = response.pendingApprovalCount || 0
     operationData.value.companies = response.companyCount || 0
@@ -676,6 +687,9 @@ onUnmounted(() => {
 
 .status-card :deep(.el-card__body) {
   padding: 24px;
+  display: flex;
+  flex-direction: column;
+  min-height: 400px;
 }
 
 .overview-cards {
@@ -886,6 +900,8 @@ onUnmounted(() => {
   gap: 20px;
   justify-content: center;
   flex-wrap: wrap;
+  flex: 1;
+  padding-top: 0;
 }
 
 .pie-chart {

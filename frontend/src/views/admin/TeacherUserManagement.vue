@@ -3,6 +3,7 @@ import logger from '@/utils/logger'
 import { createRequiredValidator, createPhoneValidator, createEmailValidator } from '@/utils/validation'
 import { onMounted, ref, nextTick, computed } from 'vue'
 import DepartmentService from '../../api/department'
+import DivisionService from '../../api/division'
 import MajorService from '../../api/major'
 import TeacherUserService from '../../api/TeacherUserService'
 import { useSystemSettingsStore } from '../../store/systemSettings'
@@ -61,7 +62,7 @@ const formatDepartmentName = (row: unknown, column: unknown, cellValue: string):
 
   // 从departments数组中查找对应的院系名称，确保类型一致
   const department = departments.value.find(item => item.value === String(cellValue))
-  return department ? department.name : '未知院系'
+  return department ? department.name : '未知学院'
 }
 
 // 专业名称格式化方法 - 用于格式化课程的专业显示
@@ -98,6 +99,8 @@ let searchForm = ref<Partial<TeacherUser>>({
 let tableData = ref<TeacherUser[]>([])
 //院系列表数据
 let departments = ref<Department[]>([])
+//系列表数据
+let divisions = ref<any[]>([])
 //专业列表数据
 let majors = ref<Major[]>([])
 //加载状态
@@ -158,6 +161,7 @@ let addTeacher = ref<Partial<TeacherUser>>({
   name: '',
   gender: 1,
   departmentId: null,
+  divisionId: null,
   teacherType: 'DEPARTMENT',
   phone: ''
 })
@@ -169,6 +173,7 @@ let editTeacher = ref<Partial<TeacherUser>>({
   name: '',
   gender: 1,
   departmentId: null,
+  divisionId: null,
   teacherType: 'DEPARTMENT',
   phone: ''
 })
@@ -243,7 +248,7 @@ const getDepartmentList = async () => {
       .filter(department => department && (department.id || department.departmentId)) // 过滤无效数据
       .map(department => {
         const deptId = String(department.id || department.departmentId || '')
-        const deptName = department.name || department.departmentName || '未知院系'
+        const deptName = department.name || department.departmentName || '未知学院'
         logger.log(`处理院系: ID=${deptId}, Name=${deptName}`)
         return {
           value: deptId,
@@ -298,6 +303,35 @@ const getMajorList = async () => {
 const handleSelectionChange = (selection) => {
   selectIds.value = selection.map(item => item.id)
 }
+
+//获取系列表
+const getDivisionList = async () => {
+  try {
+    const response = await DivisionService.getDivisions()
+    if (response && response.data) {
+      if (Array.isArray(response.data)) {
+        divisions.value = response.data
+      } else if (response.code === 200 && response.data) {
+        divisions.value = Array.isArray(response.data) ? response.data : []
+      }
+    }
+    divisions.value = divisions.value.map((d: any) => ({
+      ...d,
+      departmentId: d.departmentId || d.department_id || ''
+    }))
+    logger.log('系列表数据:', divisions.value)
+  } catch (error) {
+    logger.error('获取系列表失败:', error)
+    divisions.value = []
+  }
+}
+
+//根据选中学院过滤系
+const getFilteredDivisions = computed(() => {
+  const deptId = formTitle.value.includes('编辑') ? editTeacher.value.departmentId : addTeacher.value.departmentId
+  if (!deptId) return divisions.value
+  return divisions.value.filter((d: any) => Number(d.departmentId) === Number(deptId))
+})
 
 //分页处理函数
 const handleSizeChange = (newSize) => {
@@ -354,13 +388,15 @@ const queryPage = async () => {
       const dataList = response.data.rows || []
       const totalCount = response.data.total || 0
 
-      //添加院系名称到数据中
+      //添加院系和系名称到数据中
       const enhancedData = dataList.map(teacher => {
         //找到对应的院系，使用value而不是id进行匹配
         const department = departments.value.find(d => String(d.value) === String(teacher.departmentId))
+        const division = divisions.value.find((d: any) => String(d.id) === String(teacher.divisionId))
         return {
           ...teacher,
-          departmentName: department ? department.name : '未知院系',
+          departmentName: department ? department.name : '未知学院',
+          divisionName: division ? division.name : '-',
           // 确保日期字段名称与表格中使用的一致
           createdTime: teacher.createdTime || teacher.createTime,
           updatedTime: teacher.updatedTime || teacher.updateTime
@@ -527,6 +563,9 @@ const handleUpdateTeacher = async (id) => {
       teacherId: '',
       name: '',
       departmentId: null,
+      divisionId: null,
+      teacherType: 'DEPARTMENT',
+      phone: ''
     }
     
     // 重置表单引用状态
@@ -558,12 +597,10 @@ const handleUpdateTeacher = async (id) => {
         teacherUserId: teacherData.teacherUserId || '',
         name: teacherData.name || '',
         gender: teacherData.gender || 1,
-        // 确保departmentId类型与departments数组中的value类型一致
-        // 先检查departments数组是否为空
         departmentId: departments.value.length > 0 && teacherData.departmentId !== undefined ?
-          // 检查departments数组中第一个元素的value类型，然后进行相应转换
           (typeof departments.value[0].value === 'number' ? Number(teacherData.departmentId) : teacherData.departmentId.toString()) :
           null,
+        divisionId: teacherData.divisionId != null ? String(teacherData.divisionId) : null,
         teacherType: teacherData.teacherType || 'DEPARTMENT',
         phone: teacherData.phone || ''
       })
@@ -1013,6 +1050,7 @@ onMounted(async () => {
   logger.log('页面挂载，开始加载数据...')
   try {
     await getDepartmentList()
+    await getDivisionList()
     await getMajorList()
   } finally {
     await queryPage()
@@ -1061,8 +1099,8 @@ onMounted(async () => {
               <el-option label="女" :value="2"></el-option>
             </el-select>
           </el-form-item>
-          <el-form-item label="院系">
-            <el-select v-model="searchForm.department" placeholder="请选择院系" clearable style="width: 150px;" filterable>
+          <el-form-item label="学院">
+            <el-select v-model="searchForm.department" placeholder="请选择学院" clearable style="width: 150px;" filterable>
               <el-option v-for="department in departments" :key="department.value" :label="department.name" :value="department.value" />
             </el-select>
           </el-form-item>
@@ -1145,7 +1183,8 @@ onMounted(async () => {
             <span>{{ scope.row.gender === 1 ? '男' : scope.row.gender === 2 ? '女' : '-' }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="departmentName" label="院系" align="center" width="210"/>
+        <el-table-column prop="departmentName" label="学院" align="center" width="150"/>
+        <el-table-column prop="divisionName" label="系" align="center" width="150"/>
         <el-table-column prop="teacherType" label="身份" align="center" width="120">
           <template #default="scope">
             <el-tag :type="getTeacherTypeTagType(scope.row.teacherType)" size="small">
@@ -1234,10 +1273,15 @@ onMounted(async () => {
               <el-radio :label="2">女</el-radio>
             </el-radio-group>
           </el-form-item>
-          <el-form-item label="院系" prop="departmentId">
-            <el-select v-model="addTeacher.departmentId" placeholder="请选择院系" filterable>
+          <el-form-item label="学院" prop="departmentId">
+            <el-select v-model="addTeacher.departmentId" placeholder="请选择学院" filterable>
               <el-option v-for="department in departments" :key="department.value" :label="department.name"
                 :value="department.value" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="系" prop="divisionId" v-if="addTeacher.teacherType === 'DEPARTMENT'">
+            <el-select v-model="addTeacher.divisionId" placeholder="请选择系" filterable clearable>
+              <el-option v-for="div in getFilteredDivisions" :key="div.id" :label="div.name" :value="String(div.id)" />
             </el-select>
           </el-form-item>
           <el-form-item label="身份" prop="teacherType">
@@ -1277,10 +1321,15 @@ onMounted(async () => {
               <el-radio :label="2">女</el-radio>
             </el-radio-group>
           </el-form-item>
-          <el-form-item label="院系" prop="departmentId">
-            <el-select v-model="editTeacher.departmentId" placeholder="请选择院系" filterable>
+          <el-form-item label="学院" prop="departmentId">
+            <el-select v-model="editTeacher.departmentId" placeholder="请选择学院" filterable>
               <el-option v-for="department in departments" :key="department.value" :label="department.name"
                 :value="department.value" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="系" prop="divisionId" v-if="editTeacher.teacherType === 'DEPARTMENT'">
+            <el-select v-model="editTeacher.divisionId" placeholder="请选择系" filterable clearable>
+              <el-option v-for="div in getFilteredDivisions" :key="div.id" :label="div.name" :value="String(div.id)" />
             </el-select>
           </el-form-item>
           <el-form-item label="身份" prop="teacherType">
@@ -1339,7 +1388,7 @@ onMounted(async () => {
           </div>
         </div>
         <div class="import-tip">
-          提示：请确保Excel文件包含工号、姓名、院系等必要字段
+          提示：请确保Excel文件包含工号、姓名、学院等必要字段
         </div>
       </div>
       <template #footer>

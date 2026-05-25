@@ -140,9 +140,11 @@
       <div class="pagination-container">
         <el-pagination
           v-model:current-page="currentPage"
-          :page-size="6"
-          layout="total, prev, pager, next, jumper"
+          v-model:page-size="pageSize"
+          :page-sizes="[12, 24, 36, 48]"
+          layout="total, sizes, prev, pager, next, jumper"
           :total="total"
+          @size-change="handleSizeChange"
           @current-change="handleCurrentChange"
           class="custom-pagination"
         />
@@ -333,7 +335,7 @@ import FilePreviewDialog from '@/components/FilePreviewDialog.vue'
 const authStore = useAuthStore()
 
 const currentPage = ref<number>(1)
-const pageSize = ref(6)
+const pageSize = ref(12)
 const total = ref<number>(0)
 const loading = ref<boolean>(false)
 const resourcesList = ref<unknown[]>([])
@@ -1249,22 +1251,17 @@ const handleDialogClose = () => {
 }
 
 .resource-footer .resource-meta {
-  display: flex !important;
-  justify-content: flex-start !important;
-  align-items: center;
-  gap: 16px;
-  font-size: 11px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 12px;
+  font-size: 12px;
   color: #909399;
-  width: 100% !important;
-  flex-wrap: nowrap !important;
 }
 
 .resource-footer .meta-item {
   display: flex;
   align-items: center;
   gap: 4px;
-  flex-shrink: 0;
-  white-space: nowrap;
 }
 
 .resource-footer .meta-item .el-icon {

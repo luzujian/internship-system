@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import logger from '@/utils/logger'
 import { onMounted, ref, computed, nextTick } from 'vue'
-import type { Department, Major, Class } from '@/types/admin'
+import type { Department, Division, Major, Class } from '@/types/admin'
 
 import DepartmentService from '../../api/department'
+import DivisionService from '../../api/division'
 import MajorService from '../../api/major'
 import ClassService from '../../api/class'
 import StudentUserService from '../../api/StudentUserService'
@@ -23,12 +24,16 @@ let searchDepartment = ref({ name: '', majorId: null })
 let loading = ref<boolean>(false)
 //列表展示数据 - 院系列表
 let departments = ref<unknown[]>([])
+//系列表数据
+let divisionList = ref<unknown[]>([])
 //专业列表数据
 let majorList = ref<unknown[]>([])
 //当前悬停的院系ID
 let hoveredDepartmentId = ref(null)
 //当前固定显示的院系ID
 let fixedDepartmentId = ref(null)
+//当前选中的系ID
+let fixedDivisionId = ref(null)
 //当前选中的专业ID
 let selectedMajorId = ref(null)
 //专业操作框显示状态
@@ -41,6 +46,8 @@ let importLoading = ref<boolean>(false)
 let currentMajor = ref<Record<string, unknown>>({})
 //根据ID获取院系对应的专业
 let departmentMajors = ref(new Map())
+//根据ID获取系对应的专业
+let divisionMajors = ref(new Map())
 //搜索专业名称
 let searchMajorName = ref<string>('')
 //搜索专业结果
@@ -57,7 +64,8 @@ let addMajorDialogVisible = ref<boolean>(false)
 let addMajorFormRef = ref()
 let addMajorForm = ref({
   name: '',
-  departmentId: ''
+  departmentId: '',
+  divisionId: ''
 })
 
 // 编辑专业相关状态
@@ -66,7 +74,40 @@ let editMajorFormRef = ref()
 let editMajorForm = ref({
   id: '',
   name: '',
+  departmentId: '',
+  divisionId: ''
+})
+
+// 新增系相关状态
+let addDivisionDialogVisible = ref<boolean>(false)
+let addDivisionFormRef = ref()
+let addDivisionForm = ref({
+  name: '',
   departmentId: ''
+})
+
+// 编辑系相关状态
+let editDivisionDialogVisible = ref<boolean>(false)
+let editDivisionFormRef = ref()
+let editDivisionForm = ref({
+  id: '',
+  name: '',
+  departmentId: ''
+})
+
+// 系表单验证规则
+const addDivisionRules = ref({
+  name: [
+    { required: true, message: '系名称为必填项', trigger: 'blur' },
+    { min: 2, max: 30, message: '系名称长度为2-30个字', trigger: 'blur' }
+  ]
+})
+
+const editDivisionRules = ref({
+  name: [
+    { required: true, message: '系名称为必填项', trigger: 'blur' },
+    { min: 2, max: 30, message: '系名称长度为2-30个字', trigger: 'blur' }
+  ]
 })
 
 const addMajorRules = ref({
@@ -112,6 +153,7 @@ onMounted(async () => {
   logger.log('页面开始加载...')
   try {
     await getMajorList()
+    await getDivisionList()
   } finally {
     await queryDepartments()
   }
@@ -160,6 +202,7 @@ const getMajorList = async (): Promise<void> => {
           id: major.id || major.majorId || '',
           name: major.name || major.majorName || '未知专业',
           departmentId: departmentId,
+          divisionId: major.divisionId || major.division_id || '',
           updateTime: major.updateTime || major.update_time || '',
           createTime: major.createTime || major.create_time || '',
           teacherCount: major.teacherCount || 0,
@@ -177,6 +220,41 @@ const getMajorList = async (): Promise<void> => {
     logger.error('获取专业列表失败:', error)
     majorList.value = []
     ElMessage.error('获取专业列表失败: ' + (error.message || '未知错误'))
+  }
+}
+
+//获取系列表
+const getDivisionList = async (): Promise<void> => {
+  try {
+    logger.log('开始获取系列表...')
+    const response = await DivisionService.getDivisions()
+    logger.log('系列表响应:', response)
+
+    if (response && response.data) {
+      if (Array.isArray(response.data)) {
+        divisionList.value = response.data
+      } else if (response.code === 200 && response.data) {
+        divisionList.value = Array.isArray(response.data) ? response.data : []
+      } else {
+        divisionList.value = []
+      }
+    } else {
+      divisionList.value = []
+    }
+
+    // 统一字段名处理
+    if (divisionList.value.length > 0) {
+      divisionList.value = divisionList.value.map(div => ({
+        ...div,
+        departmentId: div.departmentId || div.department_id || ''
+      }))
+    }
+
+    logger.log('最终的系列表数据:', divisionList.value)
+  } catch (error) {
+    logger.error('获取系列表失败:', error)
+    divisionList.value = []
+    ElMessage.error('获取系列表失败: ' + (error.message || '未知错误'))
   }
 }
 
@@ -276,10 +354,177 @@ const getDepartmentMajors = (departmentId) => {
   return majors
 }
 
-//鼠标悬停院系时触发
-const handleMouseEnterDepartment = (departmentId) => {
-  // 直接设置悬停的院系ID，无论是否有固定显示的院系
-  hoveredDepartmentId.value = departmentId
+//获取指定院系的系列表
+const getDepartmentDivisions = (departmentId) => {
+  logger.log(`获取院系ID ${departmentId} 的系列表, type: ${typeof departmentId}`)
+  logger.log(`divisionList数据:`, divisionList.value)
+  const divisions = divisionList.value.filter(d => {
+    const divDeptId = Number(d.departmentId) || Number(d.department_id)
+    return divDeptId === Number(departmentId)
+  })
+  logger.log(`院系ID ${departmentId} 有 ${divisions.length} 个系`)
+  return divisions
+}
+
+//获取指定系的专业列表
+const getDivisionMajors = (divisionId) => {
+  logger.log(`获取系ID ${divisionId} 的专业列表`)
+  const majors = majorList.value.filter(m => Number(m.divisionId) === Number(divisionId))
+  logger.log(`系ID ${divisionId} 有 ${majors.length} 个专业`)
+  return majors
+}
+
+//点击学院行选中/取消
+const handleDepartmentRowClick = (row) => {
+  if (fixedDepartmentId.value === row.id) {
+    // 再次点击取消选中
+    fixedDepartmentId.value = null
+    fixedDivisionId.value = null
+  } else {
+    fixedDepartmentId.value = row.id
+    fixedDivisionId.value = null
+  }
+}
+
+//点击系行选中/取消
+const handleDivisionRowClick = (row) => {
+  if (fixedDivisionId.value === row.id) {
+    fixedDivisionId.value = null
+  } else {
+    fixedDivisionId.value = row.id
+  }
+}
+
+//新增系
+const handleAddDivision = () => {
+  addDivisionForm.value.departmentId = fixedDepartmentId.value
+  addDivisionForm.value.name = ''
+  addDivisionDialogVisible.value = true
+}
+
+//保存系信息
+const saveDivision = async (): Promise<void> => {
+  if (!addDivisionFormRef.value) return
+
+  addDivisionFormRef.value.validate(async (valid) => {
+    if (valid) {
+      try {
+        const result = await DivisionService.addDivision(addDivisionForm.value)
+
+        if (result && (result.code === 200 || result.data?.code === 200)) {
+          ElMessage.success('系添加成功')
+          addDivisionDialogVisible.value = false
+          await getDivisionList()
+          await queryDepartments()
+        } else {
+          ElMessage.error('系添加失败: ' + (result?.msg || '未知错误'))
+        }
+      } catch (error) {
+        logger.error('添加系失败:', error)
+        ElMessage.error('添加系失败: ' + (error.message || '未知错误'))
+      }
+    }
+  })
+}
+
+//关闭新增系对话框
+const closeAddDivisionDialog = () => {
+  addDivisionDialogVisible.value = false
+  addDivisionForm.value = {
+    name: '',
+    departmentId: ''
+  }
+  if (addDivisionFormRef.value) {
+    addDivisionFormRef.value.resetFields()
+  }
+}
+
+//编辑系
+const handleEditDivision = (division) => {
+  editDivisionForm.value = { ...division }
+  editDivisionDialogVisible.value = true
+}
+
+//保存编辑的系信息
+const saveEditDivision = async (): Promise<void> => {
+  if (!editDivisionFormRef.value) return
+
+  editDivisionFormRef.value.validate(async (valid) => {
+    if (valid) {
+      if (!editDivisionForm.value.id || editDivisionForm.value.id === 'undefined') {
+        ElMessage.error('无效的系ID')
+        return
+      }
+
+      try {
+        const result = await DivisionService.updateDivision(editDivisionForm.value.id, editDivisionForm.value)
+
+        if (result && (result.code === 200 || result.data?.code === 200)) {
+          ElMessage.success('系编辑成功')
+          editDivisionDialogVisible.value = false
+          await getDivisionList()
+          await queryDepartments()
+        } else {
+          ElMessage.error('系编辑失败: ' + (result?.msg || '未知错误'))
+        }
+      } catch (error) {
+        logger.error('编辑系失败:', error)
+        ElMessage.error('编辑系失败: ' + (error.message || '未知错误'))
+      }
+    }
+  })
+}
+
+//关闭编辑系对话框
+const closeEditDivisionDialog = () => {
+  editDivisionDialogVisible.value = false
+  editDivisionForm.value = {
+    id: '',
+    name: '',
+    departmentId: ''
+  }
+  if (editDivisionFormRef.value) {
+    editDivisionFormRef.value.resetFields()
+  }
+}
+
+//删除系
+const handleDeleteDivision = async (division): Promise<void> => {
+  if (!division || !division.id || division.id === 'undefined') {
+    ElMessage.error('无效的系ID')
+    return
+  }
+
+  try {
+    await ElMessageBox.confirm(
+      '确定要删除该系吗？此操作将删除该系及其所有相关数据（包括专业、班级、学生等），此操作不可撤销！',
+      '确认删除',
+      {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'warning',
+        center: true
+      }
+    )
+
+    const result = await DivisionService.deleteDivision(division.id)
+    if (result && (result.code === 200 || result.data?.code === 200)) {
+      ElMessage.success('系删除成功')
+      await getDivisionList()
+      await getMajorList()
+      await queryDepartments()
+      if (fixedDivisionId.value === division.id) {
+        fixedDivisionId.value = null
+      }
+    } else {
+      ElMessage.error('系删除失败: ' + (result?.msg || '未知错误'))
+    }
+  } catch (error) {
+    if (error !== 'cancel') {
+      logger.error('删除系失败:', error)
+      ElMessage.error('删除失败: ' + (error.message || '未知错误'))
+    }
+  }
 }
 
 //导出Excel功能
@@ -335,11 +580,6 @@ const formatDateForFilename = (date) => {
   return `${year}${month}${day}${hours}${minutes}${seconds}`
 }
 
-//鼠标离开院系时触发
-const handleMouseLeaveDepartment = () => {
-  // 直接清除悬停的院系ID
-  hoveredDepartmentId.value = null
-}
 
 //测试专业显示功能
 const testMajorDisplay = (departmentId) => {
@@ -639,12 +879,13 @@ const clearMajorSearch = () => {
 
 // 打开新增专业对话框
 const handleAddMajor = () => {
-// 设置当前院系ID
-addMajorForm.value.departmentId = fixedDepartmentId.value
-// 重置表单数据
-addMajorForm.value.name = ''
-// 显示对话框
-addMajorDialogVisible.value = true
+  // 设置当前院系ID和系ID
+  addMajorForm.value.departmentId = fixedDepartmentId.value
+  addMajorForm.value.divisionId = fixedDivisionId.value
+  // 重置表单数据
+  addMajorForm.value.name = ''
+  // 显示对话框
+  addMajorDialogVisible.value = true
 }
 
 // 保存专业信息
@@ -1235,27 +1476,18 @@ fixedDepartmentId.value = null
 searchMajorResult.value = null
 }
 
-//表格鼠标进入事件
-const handleTableMouseEnter = (row) => {
-// 确保传入的是正确的row对象
-if (row && row.id) {
-handleMouseEnterDepartment(row.id)
-} else if (row && row.row && row.row.id) {
-// 处理Element Plus v2.x的事件参数格式
-handleMouseEnterDepartment(row.row.id)
-}
-}
-
-//表格鼠标离开事件
-const handleTableMouseLeave = () => {
-handleMouseLeaveDepartment()
-}
-
 //获取院系名称
 const getDepartmentName = (departmentId) => {
 if (!departmentId) return ''
 const department = departments.value.find(dept => dept.id === departmentId)
 return department ? department.name : '未知院系'
+}
+
+//获取系名称
+const getDivisionName = (divisionId) => {
+  if (!divisionId) return ''
+  const division = divisionList.value.find(div => div.id === divisionId)
+  return division ? division.name : '未知系'
 }
 
 //------- 删除院系
@@ -1416,8 +1648,8 @@ await queryDepartments()
     <!-- 顶部标题区域 -->
     <div class="page-header">
       <div class="header-content">
-        <h1 class="page-title">院系专业管理</h1>
-        <p class="page-description">管理系统中的所有院系与专业信息</p>
+        <h1 class="page-title">学院系专业管理</h1>
+        <p class="page-description">管理系统中的所有学院、系与专业信息</p>
       </div>
       <div class="header-illustration">
         <div class="illustration-circle circle-1"></div>
@@ -1470,13 +1702,21 @@ await queryDepartments()
       <div class="actions-container">
         <div class="primary-actions">
           <el-button v-if="authStore.hasPermission('department:add')" type="primary" @click="handleAddDepartment()" class="action-btn primary">
-            <el-icon><Plus /></el-icon>&nbsp;新增院系
+            <el-icon><Plus /></el-icon>&nbsp;新增学院
           </el-button>
-          <el-button 
-            v-if="authStore.hasPermission('major:add') && fixedDepartmentId"
-            type="success" 
-            @click="handleAddMajor" 
+          <el-button
+            v-if="authStore.hasPermission('division:add') && fixedDepartmentId"
+            type="success"
+            @click="handleAddDivision"
             class="action-btn success"
+          >
+            <el-icon><Plus /></el-icon>&nbsp;新增系
+          </el-button>
+          <el-button
+            v-if="authStore.hasPermission('major:add') && fixedDivisionId"
+            type="warning"
+            @click="handleAddMajor"
+            class="action-btn warning"
           >
             <el-icon><Plus /></el-icon>&nbsp;新增专业
           </el-button>
@@ -1516,49 +1756,42 @@ await queryDepartments()
 
     <!-- 数据列表卡片 -->
     <div class="tables-container">
-      <!-- 左侧院系列表 -->
+      <!-- 左侧学院列表 -->
       <el-card class="table-card left-table" shadow="never">
         <div class="table-header">
-          <h3 class="table-title">院系列表</h3>
+          <h3 class="table-title">学院列表</h3>
           <div class="table-actions">
-            <span class="total-count">共 {{ pagination.total }} 个院系</span>
+            <span class="total-count">共 {{ pagination.total }} 个学院</span>
           </div>
         </div>
-        <el-table 
-          :data="departments" 
-          border 
-          style="width: 100%" 
-          fit 
-          @cell-mouse-enter="handleTableMouseEnter"
-          @cell-mouse-leave="handleTableMouseLeave"
+        <el-table
+          :data="departments"
+          border
+          style="width: 100%"
+          fit
           class="data-table"
           v-loading="loading"
+          highlight-current-row
+          @row-click="handleDepartmentRowClick"
         >
-          <el-table-column type="index" label="序号" width="80" align="center" :index="(index) => (pagination.currentPage - 1) * pagination.pageSize + index + 1" />
-          <el-table-column prop="name" label="院系名称" align="center" min-width="150" />
-          <el-table-column prop="teacherCount" label="教师人数" align="center" width="100" />
-          <el-table-column prop="studentCount" label="学生人数" align="center" width="100" />
-          <el-table-column prop="updateTime" label="更新时间" width="180" align="center" :formatter="formatDate" />
-          <el-table-column label="操作" align="center" width="200" fixed="right">
+          <el-table-column type="index" label="序号" width="60" align="center" :index="(index) => (pagination.currentPage - 1) * pagination.pageSize + index + 1" />
+          <el-table-column prop="name" label="学院名称" align="center" min-width="120">
+            <template #default="scope">
+              <span :class="{ 'active-row-name': fixedDepartmentId === scope.row.id }">{{ scope.row.name }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column prop="teacherCount" label="教师" align="center" width="70" />
+          <el-table-column prop="studentCount" label="学生" align="center" width="70" />
+          <el-table-column label="操作" align="center" width="100" fixed="right">
             <template #default="scope">
               <div class="action-buttons">
-                <el-tooltip content="查看专业" placement="top">
-                  <el-button 
-                    :type="fixedDepartmentId === scope.row.id ? 'danger' : 'success'" 
-                    size="small" 
-                    @click="handleShowDepartmentMajors(scope.row.id)"
-                    class="table-btn major"
-                  >
-                    <el-icon><View /></el-icon>
-                  </el-button>
-                </el-tooltip>
                 <el-tooltip v-if="authStore.hasPermission('department:edit')" content="编辑" placement="top">
-                  <el-button type="primary" size="small" @click="handleUpdateDepartment(scope.row.id)" class="table-btn edit">
+                  <el-button type="primary" size="small" @click.stop="handleUpdateDepartment(scope.row.id)" class="table-btn edit">
                     <el-icon><Edit /></el-icon>
                   </el-button>
                 </el-tooltip>
                 <el-tooltip v-if="authStore.hasPermission('department:delete')" content="删除" placement="top">
-                  <el-button type="danger" size="small" @click="delById(scope.row.id)" class="table-btn delete">
+                  <el-button type="danger" size="small" @click.stop="delById(scope.row.id)" class="table-btn delete">
                     <el-icon><Delete /></el-icon>
                   </el-button>
                 </el-tooltip>
@@ -1582,48 +1815,45 @@ await queryDepartments()
         </div>
       </el-card>
 
-      <!-- 右侧专业列表 -->
-      <el-card 
-        class="table-card right-table" 
+      <!-- 中间系列表 -->
+      <el-card
+        class="table-card middle-table"
         shadow="never"
       >
         <div class="table-header">
           <h3 class="table-title">
-            {{ fixedDepartmentId || hoveredDepartmentId ? getDepartmentName(fixedDepartmentId || hoveredDepartmentId): '专业列表' }}
-            <span class="major-count" v-if="displayedMajors.length > 0">({{ displayedMajors.length }}个专业)</span>
+            {{ fixedDepartmentId ? getDepartmentName(fixedDepartmentId) + ' - 系列表' : '系列表' }}
+            <span class="major-count" v-if="fixedDepartmentId">({{ getDepartmentDivisions(fixedDepartmentId).length }}个系)</span>
           </h3>
-          <div class="table-actions">
-            <el-button 
-              v-if="fixedDepartmentId" 
-              type="default" 
-              size="small" 
-              @click="handleCloseFixedMajors" 
-              class="action-btn"
-            >
-              <el-icon><Close /></el-icon>&nbsp;关闭
-            </el-button>
-          </div>
         </div>
         <el-scrollbar height="400px">
-          <el-table :data="displayedMajors" border style="width: 100%" fit class="data-table">
-            <el-table-column type="index" label="序号" width="60" align="center" :index="(index) => index + 1" />
-            <el-table-column prop="name" label="专业名称" align="center" min-width="150">
+          <el-table
+            v-if="fixedDepartmentId"
+            :data="getDepartmentDivisions(fixedDepartmentId)"
+            border
+            style="width: 100%"
+            fit
+            class="data-table"
+            highlight-current-row
+            @row-click="handleDivisionRowClick"
+          >
+            <el-table-column type="index" label="序号" width="50" align="center" />
+            <el-table-column prop="name" label="系名称" align="center" min-width="120">
               <template #default="scope">
-                <span class="major-name" @click.stop="handleMajorClick(scope.row)">{{ scope.row.name }}</span>
+                <span :class="{ 'active-row-name': fixedDivisionId === scope.row.id }">{{ scope.row.name }}</span>
               </template>
             </el-table-column>
-            <el-table-column prop="studentCount" label="学生人数" align="center" width="100" />
-            <el-table-column prop="updateTime" label="更新时间" width="180" align="center" :formatter="formatDate" />
-            <el-table-column label="操作" align="center" width="120" fixed="right">
+            <el-table-column prop="studentCount" label="学生" align="center" width="70" />
+            <el-table-column label="操作" align="center" width="100" fixed="right">
               <template #default="scope">
                 <div class="action-buttons">
-                  <el-tooltip v-if="authStore.hasPermission('major:edit')" content="编辑" placement="top">
-                    <el-button type="primary" size="small" @click="handleEditMajor(scope.row)" class="table-btn edit">
+                  <el-tooltip v-if="authStore.hasPermission('division:edit')" content="编辑" placement="top">
+                    <el-button type="primary" size="small" @click.stop="handleEditDivision(scope.row)" class="table-btn edit">
                       <el-icon><Edit /></el-icon>
                     </el-button>
                   </el-tooltip>
-                  <el-tooltip v-if="authStore.hasPermission('major:delete')" content="删除" placement="top">
-                    <el-button type="danger" size="small" @click="handleDeleteMajor(scope.row)" class="table-btn delete">
+                  <el-tooltip v-if="authStore.hasPermission('division:delete')" content="删除" placement="top">
+                    <el-button type="danger" size="small" @click.stop="handleDeleteDivision(scope.row)" class="table-btn delete">
                       <el-icon><Delete /></el-icon>
                     </el-button>
                   </el-tooltip>
@@ -1631,24 +1861,74 @@ await queryDepartments()
               </template>
             </el-table-column>
           </el-table>
-          <div v-if="displayedMajors.length === 0" class="no-data">
-            <el-empty 
-              :description="fixedDepartmentId || hoveredDepartmentId ? '暂无专业数据' : '请将鼠标悬停到左侧院系查看专业信息'" 
-              :image-size="100" 
+          <div v-if="!fixedDepartmentId" class="no-data">
+            <el-empty
+              description="点击左侧学院行查看系信息"
+              :image-size="80"
+            />
+          </div>
+          <div v-else-if="getDepartmentDivisions(fixedDepartmentId).length === 0" class="no-data">
+            <el-empty
+              description="暂无系数据"
+              :image-size="80"
             />
           </div>
         </el-scrollbar>
+      </el-card>
 
-        <!-- 搜索结果院系分页 -->
-        <div v-if="searchMajorPagination.total > 0" class="search-pagination">
-          <el-pagination 
-            v-model:current-page="searchMajorPagination.currentPage" 
-            layout="prev, pager, next" 
-            :page-size="1" 
-            :total="searchMajorPagination.total" 
-            @current-change="handleSearchMajorPageChange" 
-          />
+      <!-- 右侧专业列表 -->
+      <el-card
+        class="table-card right-table"
+        shadow="never"
+      >
+        <div class="table-header">
+          <h3 class="table-title">
+            {{ fixedDivisionId ? getDivisionName(fixedDivisionId) + ' - 专业列表' : '专业列表' }}
+            <span class="major-count" v-if="fixedDivisionId">({{ getDivisionMajors(fixedDivisionId).length }}个专业)</span>
+          </h3>
         </div>
+        <el-scrollbar height="400px">
+          <el-table
+            v-if="fixedDivisionId"
+            :data="getDivisionMajors(fixedDivisionId)"
+            border
+            style="width: 100%"
+            fit
+            class="data-table"
+          >
+            <el-table-column type="index" label="序号" width="50" align="center" />
+            <el-table-column prop="name" label="专业名称" align="center" min-width="120" />
+            <el-table-column prop="studentCount" label="学生" align="center" width="70" />
+            <el-table-column label="操作" align="center" width="100" fixed="right">
+              <template #default="scope">
+                <div class="action-buttons">
+                  <el-tooltip v-if="authStore.hasPermission('major:edit')" content="编辑" placement="top">
+                    <el-button type="primary" size="small" @click.stop="handleEditMajor(scope.row)" class="table-btn edit">
+                      <el-icon><Edit /></el-icon>
+                    </el-button>
+                  </el-tooltip>
+                  <el-tooltip v-if="authStore.hasPermission('major:delete')" content="删除" placement="top">
+                    <el-button type="danger" size="small" @click.stop="handleDeleteMajor(scope.row)" class="table-btn delete">
+                      <el-icon><Delete /></el-icon>
+                    </el-button>
+                  </el-tooltip>
+                </div>
+              </template>
+            </el-table-column>
+          </el-table>
+          <div v-if="!fixedDivisionId" class="no-data">
+            <el-empty
+              description="点击中间系列表中的系查看专业信息"
+              :image-size="80"
+            />
+          </div>
+          <div v-else-if="getDivisionMajors(fixedDivisionId).length === 0" class="no-data">
+            <el-empty
+              description="暂无专业数据"
+              :image-size="80"
+            />
+          </div>
+        </el-scrollbar>
       </el-card>
     </div>
 
@@ -1679,11 +1959,50 @@ await queryDepartments()
       </template>
     </el-dialog>
 
+    <!-- 新增系对话框 -->
+    <el-dialog v-model="addDivisionDialogVisible" title="新增系" width="400px" @close="closeAddDivisionDialog" class="form-dialog">
+      <el-form ref="addDivisionFormRef" :model="addDivisionForm" :rules="addDivisionRules" label-width="80px">
+        <el-form-item label="所属学院" disabled>
+          <el-input :value="getDepartmentName(addDivisionForm.departmentId)" readonly />
+        </el-form-item>
+        <el-form-item label="系名称" prop="name">
+          <el-input v-model="addDivisionForm.name" placeholder="请输入系名称" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <span class="dialog-footer">
+          <el-button @click="closeAddDivisionDialog" class="cancel-btn">取消</el-button>
+          <el-button type="primary" @click="saveDivision" class="confirm-btn">确定</el-button>
+        </span>
+      </template>
+    </el-dialog>
+
+    <!-- 编辑系对话框 -->
+    <el-dialog v-model="editDivisionDialogVisible" title="编辑系" width="400px" @close="closeEditDivisionDialog" class="form-dialog">
+      <el-form ref="editDivisionFormRef" :model="editDivisionForm" :rules="editDivisionRules" label-width="80px">
+        <el-form-item label="所属学院" disabled>
+          <el-input :value="getDepartmentName(editDivisionForm.departmentId)" readonly />
+        </el-form-item>
+        <el-form-item label="系名称" prop="name">
+          <el-input v-model="editDivisionForm.name" placeholder="请输入系名称" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <span class="dialog-footer">
+          <el-button @click="closeEditDivisionDialog" class="cancel-btn">取消</el-button>
+          <el-button type="primary" @click="saveEditDivision" class="confirm-btn">确定</el-button>
+        </span>
+      </template>
+    </el-dialog>
+
     <!-- 新增专业对话框 -->
     <el-dialog v-model="addMajorDialogVisible" title="新增专业" width="400px" @close="closeAddMajorDialog" class="form-dialog">
       <el-form ref="addMajorFormRef" :model="addMajorForm" :rules="addMajorRules" label-width="80px">
-        <el-form-item label="院系名称" disabled>
+        <el-form-item label="所属学院" disabled>
           <el-input :value="getDepartmentName(addMajorForm.departmentId)" readonly />
+        </el-form-item>
+        <el-form-item label="所属系" disabled>
+          <el-input :value="getDivisionName(addMajorForm.divisionId)" readonly />
         </el-form-item>
         <el-form-item label="专业名称" prop="name">
           <el-input v-model="addMajorForm.name" placeholder="请输入专业名称" />
@@ -1700,8 +2019,11 @@ await queryDepartments()
     <!-- 编辑专业对话框 -->
     <el-dialog v-model="editMajorDialogVisible" title="编辑专业" width="400px" @close="closeEditMajorDialog" class="form-dialog">
       <el-form ref="editMajorFormRef" :model="editMajorForm" :rules="editMajorRules" label-width="80px">
-        <el-form-item label="院系名称" disabled>
+        <el-form-item label="所属学院" disabled>
           <el-input :value="getDepartmentName(editMajorForm.departmentId)" readonly />
+        </el-form-item>
+        <el-form-item label="所属系" disabled>
+          <el-input :value="getDivisionName(editMajorForm.divisionId)" readonly />
         </el-form-item>
         <el-form-item label="专业名称" prop="name">
           <el-input v-model="editMajorForm.name" placeholder="请输入专业名称" />
@@ -2024,21 +2346,27 @@ await queryDepartments()
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 
-/* 表格容器布局 */
+/* 表格容器布局 - 等比例三栏 */
 .tables-container {
   display: flex;
-  gap: 20px;
+  gap: 16px;
   width: 100%;
+  align-items: stretch;
 }
 
 .left-table {
   flex: 1;
-  min-width: 400px;
+  min-width: 280px;
+}
+
+.middle-table {
+  flex: 1;
+  min-width: 280px;
 }
 
 .right-table {
-  flex: 0 0 450px;
-  margin-left: auto;
+  flex: 1;
+  min-width: 280px;
 }
 
 /* 表格头部样式 */
@@ -2101,6 +2429,24 @@ await queryDepartments()
   color: #66b1ff;
 }
 
+/* 系名称样式 */
+.division-name {
+  color: #67C23A;
+  cursor: pointer;
+  font-weight: 500;
+  transition: color 0.3s;
+}
+
+.division-name:hover {
+  color: #85ce61;
+}
+
+/* 选中行名称高亮 */
+.active-row-name {
+  color: #409EFF;
+  font-weight: 600;
+}
+
 /* 表格操作按钮 */
 .action-buttons {
   display: flex;
@@ -2131,8 +2477,18 @@ await queryDepartments()
 }
 
 .no-data {
-  padding: 40px 20px;
+  padding: 24px 20px;
   text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+}
+
+/* 统一滚动区高度 */
+.middle-table :deep(.el-scrollbar),
+.right-table :deep(.el-scrollbar) {
+  height: 420px;
 }
 
 /* 搜索结果分页 */
@@ -2186,15 +2542,18 @@ await queryDepartments()
   .tables-container {
     flex-direction: column;
   }
-  
+
+  .left-table,
+  .middle-table,
   .right-table {
     flex: 1;
+    min-width: 100%;
   }
-  
+
   .search-row {
     flex-wrap: wrap;
   }
-  
+
   .search-actions {
     margin-left: 0;
     width: 100%;

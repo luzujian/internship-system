@@ -16,7 +16,10 @@ public interface MajorService {
     
     // 根据院系ID查询专业
     List<Major> findByDepartmentId(Long departmentId);
-    
+
+    // 根据系ID查询专业
+    List<Major> findByDivisionId(Long divisionId);
+
     // 新增专业
     int save(Major major);
     

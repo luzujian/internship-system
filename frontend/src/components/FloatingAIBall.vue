@@ -805,11 +805,15 @@ const startBallDrag = (e) => {
   onBallDrag = (e) => {
     if (!ballState.isDragging) return
 
+    // 在 requestAnimationFrame 外部获取最新的鼠标坐标
+    const currentX = e.clientX
+    const currentY = e.clientY
+
     requestAnimationFrame(() => {
       ballState.hasDragged = true
 
-      const newX = e.clientX - ballState.dragOffset.x
-      const newY = e.clientY - ballState.dragOffset.y
+      const newX = currentX - ballState.dragOffset.x
+      const newY = currentY - ballState.dragOffset.y
 
       const ballSize = 60
       ballState.x = Math.max(0, Math.min(newX, window.innerWidth - ballSize))

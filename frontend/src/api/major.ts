@@ -8,6 +8,9 @@ interface Major {
   name: string
   code: string
   departmentId?: number
+  divisionId?: number
+  divisionName?: string
+  departmentName?: string
   description?: string
   createTime?: string
   updateTime?: string
@@ -80,6 +83,19 @@ const MajorService = {
     } catch (error) {
       logger.error('搜索专业失败:', error)
       // 如果后端 API 不支持搜索，返回空结果或使用前端过滤
+      return { data: { code: 200, data: [] } }
+    }
+  },
+
+  // 根据系ID获取专业列表
+  getMajorsByDivisionId: async (divisionId: number) => {
+    try {
+      logger.log('根据系ID获取专业列表:', divisionId)
+      const response = await request.get<Major[]>(`majors/division/${divisionId}`)
+      logger.log('获取专业列表响应:', response)
+      return response
+    } catch (error) {
+      logger.error('获取专业列表失败:', error)
       return { data: { code: 200, data: [] } }
     }
   },

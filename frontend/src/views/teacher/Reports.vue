@@ -334,7 +334,7 @@ const loadCoreMetrics = async () => {
 const loadCompanyTrend = async () => {
   loading.value.companyTrend = true
   try {
-    const response = await reportsApi.getCompanyTrend({ year: 2026 })
+    const response = await reportsApi.getCompanyTrend({ year: new Date().getFullYear() })
     if (response.data) {
       companyTrend.value = response.data
     }
@@ -597,6 +597,7 @@ const downloadBlob = (blob: Blob, filename: string) => {
 const exportReport = async () => {
   try {
     const response = await reportsApi.exportReport({
+      timeRange: 'custom',
       startDate: startDate.value,
       endDate: endDate.value
     })
@@ -749,21 +750,21 @@ const getTagClass = (tag: string) => {
 
 /* 核心指标卡片 */
 .core-metrics {
-  padding: 32px;
+  padding: 12px;
   background: white;
   border: 1px solid #e0e0e0;
   box-shadow: var(--shadow-sm);
   transition: all var(--transition-normal);
-  min-height: 450px;
   display: flex;
   flex-direction: column;
+  height: 100%;
 }
 
 .core-metrics h3 {
   font-size: 18px;
   font-weight: 600;
   color: var(--color-primary);
-  margin: 0 0 24px 0;
+  margin: 0 0 8px 0;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -771,16 +772,15 @@ const getTagClass = (tag: string) => {
 
 .metrics-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 24px;
-  flex: 1;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
 }
 
 .metric-card {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 24px;
+  padding: 10px 8px;
   background-color: white;
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-sm);
@@ -789,6 +789,8 @@ const getTagClass = (tag: string) => {
   position: relative;
   text-align: center;
   border: 1px solid #e0e0e0;
+  height: 180px;
+  justify-content: center;
 }
 
 .metric-card:hover {
@@ -823,14 +825,14 @@ const getTagClass = (tag: string) => {
 }
 
 .metric-icon {
-  font-size: 32px;
-  width: 60px;
-  height: 60px;
+  font-size: 20px;
+  width: 32px;
+  height: 32px;
   border-radius: var(--radius-full);
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: 16px;
+  margin-bottom: 4px;
   transition: all var(--transition-normal);
   box-shadow: var(--shadow-sm);
 }
@@ -867,7 +869,7 @@ const getTagClass = (tag: string) => {
   font-size: 16px;
   font-weight: 500;
   color: #666;
-  margin: 0 0 12px 0;
+  margin: 0 0 6px 0;
 }
 
 .metric-value {
@@ -908,17 +910,18 @@ const getTagClass = (tag: string) => {
 .charts-section {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 24px;
-  margin-bottom: 24px;
+  gap: 12px;
+  margin-bottom: 12px;
+  align-items: stretch;
 }
 
 .chart-container {
-  padding: 24px;
+  padding: 12px;
   transition: all var(--transition-normal);
   margin-bottom: 0;
-  min-height: 450px;
   display: flex;
   flex-direction: column;
+  height: 100%;
 }
 
 /* 图表容器简化样式 */
@@ -933,7 +936,7 @@ const getTagClass = (tag: string) => {
   font-size: 18px;
   font-weight: 600;
   color: var(--color-primary);
-  margin: 0 0 24px 0;
+  margin: 0 0 12px 0;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -958,10 +961,9 @@ const getTagClass = (tag: string) => {
 .chart-bar-container {
   display: flex;
   align-items: flex-end;
-  gap: 32px;
-  height: 100%;
+  gap: 16px;
   width: 100%;
-  padding: 60px 40px 80px 40px;
+  padding: 5px 30px 25px 30px;
   background-color: #f8f9ff;
   border-radius: 12px;
   border: 1px solid #e0e0e0;
@@ -970,6 +972,7 @@ const getTagClass = (tag: string) => {
   align-items: center;
   margin: 0 auto;
   max-width: 100%;
+  min-height: 180px;
 }
 
 .chart-bar {
@@ -977,11 +980,11 @@ const getTagClass = (tag: string) => {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 20px;
-  height: 100%;
+  justify-content: center;
+  gap: 8px;
   position: relative;
-  min-height: 300px;
-  max-width: 120px;
+  min-height: 120px;
+  max-width: 60px;
 }
 
 .bar-wrapper {
@@ -992,7 +995,7 @@ const getTagClass = (tag: string) => {
   position: relative;
   background-color: transparent;
   border-radius: 12px 12px 0 0;
-  padding: 20px 0;
+  padding: 15px 0;
   overflow: hidden;
 }
 
@@ -1049,11 +1052,12 @@ const getTagClass = (tag: string) => {
   margin-top: 8px;
   font-weight: 600;
   text-align: center;
-  padding: 8px 16px;
+  padding: 6px 12px;
   background-color: transparent;
   border-radius: 0;
   min-width: auto;
   box-shadow: none;
+  white-space: nowrap;
 }
 
 /* 折线图 */
@@ -1563,42 +1567,50 @@ const getTagClass = (tag: string) => {
   }
 
   .core-metrics {
-    grid-template-columns: 1fr;
-    gap: 16px;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+    height: auto;
   }
 
   .metric-card {
-    padding: 20px;
+    padding: 6px;
+    height: 120px;
   }
 
   .metric-icon {
-    width: 60px;
-    height: 60px;
-    font-size: 32px;
-    margin-right: 16px;
+    width: 32px;
+    height: 32px;
+    font-size: 20px;
+    margin-right: 8px;
   }
 
   .metric-value {
-    font-size: 28px;
+    font-size: 24px;
   }
 
   .charts-section {
     grid-template-columns: 1fr;
-    gap: 20px;
+    gap: 12px;
   }
 
   .chart-container {
     min-width: unset;
-    padding: 24px;
+    padding: 12px;
+    height: auto;
   }
 
   .chart-placeholder {
-    height: 280px;
+    min-height: 150px;
   }
 
   .chart-bar-container {
-    gap: 16px;
-    padding: 20px 0;
+    gap: 12px;
+    padding: 15px 10px;
+    min-height: 150px;
+  }
+
+  .chart-bar {
+    min-height: 100px;
   }
 
   .details-tabs {

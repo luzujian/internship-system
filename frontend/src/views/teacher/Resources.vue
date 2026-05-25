@@ -5,8 +5,13 @@
         <h1 class="page-title">资源文档管理</h1>
         <p class="page-description">管理系统中的所有资源文档信息</p>
       </div>
+      <div class="header-illustration">
+        <div class="illustration-circle circle-1"></div>
+        <div class="illustration-circle circle-2"></div>
+      </div>
     </div>
 
+    <!-- 搜索和操作区域 -->
     <el-card class="search-card" shadow="never">
       <el-form ref="searchFormRef" :inline="true" :model="searchForm" class="search-form" @keyup.enter="handleSearch">
         <div class="search-row">
@@ -15,23 +20,16 @@
               v-model="searchForm.title"
               placeholder="请输入文档标题"
               clearable
-              style="width: 200px;"
+              style="width: 180px;"
               @keyup.enter="handleSearch"
             ></el-input>
           </el-form-item>
           <el-form-item label="状态">
-            <el-select v-model="searchForm.status" placeholder="请选择状态" clearable style="width: 120px;">
+            <el-select v-model="searchForm.status" placeholder="请选择状态" clearable style="width: 110px;">
               <el-option label="全部" value=""></el-option>
               <el-option label="草稿" value="DRAFT"></el-option>
               <el-option label="已发布" value="PUBLISHED"></el-option>
               <el-option label="已归档" value="ARCHIVED"></el-option>
-            </el-select>
-          </el-form-item>
-          <el-form-item label="发布人身份">
-            <el-select v-model="searchForm.publisherRole" placeholder="请选择发布人身份" clearable style="width: 120px;">
-              <el-option label="全部" value=""></el-option>
-              <el-option label="管理员" value="ADMIN"></el-option>
-              <el-option label="教师" value="TEACHER"></el-option>
             </el-select>
           </el-form-item>
           <el-form-item class="search-actions">
@@ -43,32 +41,25 @@
             </el-button>
           </el-form-item>
         </div>
-      </el-form>
-    </el-card>
-
-    <el-card class="actions-card" shadow="never">
-      <div class="actions-container">
-        <div class="primary-actions">
+        <div class="action-buttons-row">
           <el-button type="primary" @click="handleAdd" class="action-btn primary">
             <el-icon><Plus /></el-icon>&nbsp;发布文档
           </el-button>
           <el-button type="danger" @click="handleBatchDelete" class="action-btn danger">
             <el-icon><Delete /></el-icon>&nbsp;批量删除
           </el-button>
-        </div>
-        <div class="secondary-actions">
-          <el-radio-group v-model="filterType" @change="handleFilterChange" class="filter-radio-group">
-            <el-radio-button value="all">全部资源</el-radio-button>
-            <el-radio-button value="mine">我的资源</el-radio-button>
-          </el-radio-group>
           <el-button type="success" @click="refreshData" class="action-btn success">
             <el-icon><Refresh /></el-icon>&nbsp;刷新列表
           </el-button>
         </div>
-      </div>
+      </el-form>
     </el-card>
 
     <el-card class="resources-card" shadow="never" v-loading="loading">
+      <div class="filter-tabs">
+        <span :class="{ active: filterType === 'all' }" @click="filterType = 'all'; handleFilterChange()">全部资源</span>
+        <span :class="{ active: filterType === 'mine' }" @click="filterType = 'mine'; handleFilterChange()">我的资源</span>
+      </div>
       <div class="resources-grid">
         <div 
           v-for="resource in resourcesList" 
@@ -948,28 +939,61 @@ const handleDialogClose = () => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 20px;
+  background: linear-gradient(135deg, #409EFF 0%, #52c41a 100%);
+  border-radius: 16px;
+  padding: 24px 32px;
+  color: white;
+  margin-bottom: 24px;
+  box-shadow: 0 8px 25px rgba(102, 126, 234, 0.25);
+  position: relative;
+  overflow: hidden;
+}
+
+.page-header::before {
+  content: '';
+  position: absolute;
+  top: -50%;
+  right: -50%;
+  width: 100%;
+  height: 100%;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.1) 0%, transparent 70%);
+  transform: rotate(30deg);
 }
 
 .header-content {
   z-index: 1;
 }
 
+.header-content h1 {
+  font-size: 28px;
+  font-weight: 700;
+  margin-bottom: 8px;
+  color: white;
+}
+
+.header-content p {
+  font-size: 14px;
+  opacity: 0.95;
+  font-weight: 500;
+  margin: 0;
+}
+
 .page-title {
-  font-size: 24px;
-  font-weight: 600;
-  color: #303133;
+  font-size: 28px;
+  font-weight: 700;
   margin: 0 0 8px 0;
+  color: white;
 }
 
 .page-description {
   font-size: 14px;
-  color: #909399;
+  opacity: 0.95;
+  font-weight: 500;
   margin: 0;
+  color: white;
 }
 
 .search-card,
-.actions-card,
 .resources-card {
   border-radius: 16px;
   border: none;
@@ -980,15 +1004,11 @@ const handleDialogClose = () => {
 }
 
 .search-card {
-  padding: 24px;
-}
-
-.actions-card {
-  padding: 20px 24px;
+  padding: 12px 20px;
 }
 
 .resources-card {
-  padding: 20px 24px;
+  padding: 12px 24px 20px 24px;
 }
 
 .search-form {
@@ -997,48 +1017,120 @@ const handleDialogClose = () => {
 
 .search-row {
   display: flex;
-  gap: 20px;
-  align-items: flex-start;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+  width: 100%;
 }
 
 .search-row .el-form-item {
   margin-bottom: 0;
-  flex: 1;
+}
+
+.search-row .search-actions {
+  margin-left: auto !important;
 }
 
 .search-actions {
   flex: none;
-  margin-left: auto;
-  margin-bottom: 0;
+  margin-left: auto !important;
+}
+
+.action-buttons-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 10px;
+}
+
+.filter-tabs {
+  display: flex;
+  gap: 24px;
+  margin-bottom: 16px;
+  margin-top: -8px;
+  border-bottom: 1px solid #e4e7ed;
+  padding-bottom: 10px;
+}
+
+.filter-tabs span {
+  font-size: 14px;
+  color: #606266;
+  cursor: pointer;
+  padding-bottom: 12px;
+  margin-bottom: -13px;
+  border-bottom: 2px solid transparent;
+  transition: all 0.3s;
+}
+
+.filter-tabs span:hover {
+  color: #409EFF;
+}
+
+.filter-tabs span.active {
+  color: #409EFF;
+  border-bottom-color: #409EFF;
+  font-weight: 600;
+}
+
+.header-illustration {
+  position: relative;
+  width: 100px;
+  height: 100px;
+}
+
+.illustration-circle {
+  position: absolute;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.15);
+  animation: float 6s ease-in-out infinite;
+}
+
+.circle-1 {
+  width: 60px;
+  height: 60px;
+  top: 0;
+  right: 0;
+  animation-delay: 0s;
+}
+
+.circle-2 {
+  width: 40px;
+  height: 40px;
+  bottom: 10px;
+  right: 20px;
+  animation-delay: 3s;
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
 }
 
 .search-btn,
 .reset-btn {
-  border-radius: 8px;
-  padding: 10px 20px;
-}
-
-.actions-container {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.primary-actions,
-.secondary-actions {
-  display: flex;
-  gap: 12px;
-  align-items: center;
+  border-radius: 6px;
+  padding: 8px 16px;
 }
 
 .filter-radio-group {
-  margin-right: 12px;
+  display: inline-flex;
+}
+
+.filter-radio-group .el-radio-button {
+  margin: 0;
+}
+
+.filter-radio-group .el-radio-button__inner {
+  padding: 8px 16px;
+  font-size: 14px;
+  border-radius: 6px;
 }
 
 .action-btn {
-  border-radius: 8px;
-  padding: 10px 20px;
+  border-radius: 6px;
+  padding: 8px 16px;
   font-weight: 500;
+  font-size: 14px;
   transition: all 0.3s ease;
 }
 
@@ -1065,7 +1157,7 @@ const handleDialogClose = () => {
   background: white;
   border: 1px solid #e4e7ed;
   border-radius: 12px;
-  padding: 20px;
+  padding: 14px 16px;
   cursor: pointer;
   transition: all 0.3s ease;
   position: relative;
@@ -1074,8 +1166,8 @@ const handleDialogClose = () => {
 
 .resource-checkbox-wrapper {
   position: absolute;
-  top: 16px;
-  left: 16px;
+  top: 10px;
+  left: 12px;
   z-index: 10;
 }
 
@@ -1099,8 +1191,8 @@ const handleDialogClose = () => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 12px;
-  padding-left: 32px;
+  margin-bottom: 8px;
+  padding-left: 28px;
 }
 
 .resource-type {
@@ -1116,14 +1208,14 @@ const handleDialogClose = () => {
 }
 
 .resource-content {
-  margin-bottom: 16px;
+  margin-bottom: 10px;
 }
 
 .resource-title {
   font-size: 16px;
   font-weight: 600;
   color: #303133;
-  margin: 0 0 8px 0;
+  margin: 0 0 6px 0;
   line-height: 1.4;
 }
 
@@ -1140,13 +1232,13 @@ const handleDialogClose = () => {
 
 .resource-footer {
   border-top: 1px solid #f0f0f0;
-  padding-top: 12px;
+  padding-top: 8px;
 }
 
 .resource-meta {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 12px;
   font-size: 12px;
   color: #909399;
 }
@@ -1330,14 +1422,8 @@ const handleDialogClose = () => {
     margin-top: 15px;
   }
 
-  .actions-container {
-    flex-direction: column;
-    gap: 12px;
-    align-items: stretch;
-  }
-
-  .primary-actions {
-    justify-content: center;
+  .action-buttons-row {
+    flex-wrap: wrap;
   }
 
   .search-row {
