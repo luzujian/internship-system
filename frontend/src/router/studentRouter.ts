@@ -24,16 +24,6 @@ const studentRoutes: RouteRecordRaw[] = [
     component: () => import('../views/student/Applications.vue')
   },
   {
-    path: 'job-application-form',
-    name: 'studentJobApplicationForm',
-    component: () => import('../views/student/JobApplicationForm.vue')
-  },
-  {
-    path: 'internship-application-form',
-    name: 'studentInternshipApplicationForm',
-    component: () => import('../views/student/InternshipApplicationForm.vue')
-  },
-  {
     path: 'internship-confirmation-form',
     name: 'studentInternshipConfirmationForm',
     component: () => import('../views/student/InternshipConfirmationForm.vue')
@@ -50,11 +40,6 @@ const studentRoutes: RouteRecordRaw[] = [
     meta: {
       preload: true
     }
-  },
-  {
-    path: 'confirmation',
-    name: 'studentConfirmation',
-    component: () => import('../views/student/Confirmation.vue')
   },
   {
     path: 'internships',

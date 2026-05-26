@@ -79,7 +79,20 @@ public interface StudentInternshipStatusMapper {
                                        @Param("major") String major,
                                        @Param("className") String className,
                                        @Param("studentUserId") String studentUserId);
-    
+
+    List<StudentInternshipStatus> listByScope(@Param("studentId") Long studentId,
+                                              @Param("name") String name,
+                                              @Param("gender") Integer gender,
+                                              @Param("status") Integer status,
+                                              @Param("companyId") Long companyId,
+                                              @Param("companyName") String companyName,
+                                              @Param("grade") String grade,
+                                              @Param("major") String major,
+                                              @Param("className") String className,
+                                              @Param("studentUserId") String studentUserId,
+                                              @Param("divisionIds") List<Long> divisionIds,
+                                              @Param("classIds") List<Long> classIds);
+
     /**
      * 动态条件查询学生实习状态（支持状态列表）
      * @param studentId 学生ID
@@ -243,10 +256,18 @@ public interface StudentInternshipStatusMapper {
 
     List<Map<String, Object>> getStatsByMajorByClassIds(@Param("classIds") List<Long> classIds, @Param("startDate") String startDate, @Param("endDate") String endDate);
 
+    List<Map<String, Object>> getStatsByGradeByDivisionIds(@Param("divisionIds") List<Long> divisionIds, @Param("startDate") String startDate, @Param("endDate") String endDate);
+
+    List<Map<String, Object>> getStatsByMajorByDivisionIds(@Param("divisionIds") List<Long> divisionIds, @Param("startDate") String startDate, @Param("endDate") String endDate);
+
+    List<Map<String, Object>> getStatsByClassByDivisionIds(@Param("divisionIds") List<Long> divisionIds, @Param("startDate") String startDate, @Param("endDate") String endDate);
+
     /**
      * 将学生实习状态改为已中断（不清空公司信息，保留记录）
      * @param studentId 学生ID
      * @return 更新的记录数
      */
     int updateStatusToInterrupted(@Param("studentId") Long studentId);
+
+    int updateStatusToDelayed(@Param("studentId") Long studentId);
 }

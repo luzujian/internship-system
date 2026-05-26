@@ -456,14 +456,6 @@
             />
           </div>
 
-          <div class="form-item">
-            <label>新实习单位<span class="required">*</span></label>
-            <el-input
-              v-model="unitChangeForm.newCompany"
-              placeholder="请输入新实习单位名称"
-              maxlength="100"
-            />
-          </div>
         </div>
 
         <!-- 上传资料 -->
@@ -475,53 +467,19 @@
 
           <div class="upload-items">
             <div class="upload-item">
-              <label>家庭证明<span class="required">*</span></label>
+              <label>个人申请书<span class="required">*</span></label>
               <el-upload
                 :action="uploadUrl"
                 :headers="uploadHeaders"
-                :on-success="(res) => handleUploadSuccess(res, '家庭证明')"
+                :on-success="(res) => handleUploadSuccess(res, '个人申请书')"
                 :before-upload="beforeUpload"
                 accept="image/*,.pdf"
                 :show-file-list="false"
               >
-                <el-button type="primary" plain>上传家庭证明</el-button>
+                <el-button type="primary" plain>上传个人申请书</el-button>
               </el-upload>
-              <div v-if="unitChangeForm.materials?.['家庭证明']" class="uploaded-file">
-                <img :src="unitChangeForm.materials['家庭证明']" class="preview-image" @click="previewImage(unitChangeForm.materials['家庭证明'])" />
-              </div>
-            </div>
-
-            <div class="upload-item">
-              <label>新单位接收证明<span class="required">*</span></label>
-              <el-upload
-                :action="uploadUrl"
-                :headers="uploadHeaders"
-                :on-success="(res) => handleUploadSuccess(res, '新单位接收证明')"
-                :before-upload="beforeUpload"
-                accept="image/*,.pdf"
-                :show-file-list="false"
-              >
-                <el-button type="primary" plain>上传新单位接收证明</el-button>
-              </el-upload>
-              <div v-if="unitChangeForm.materials?.['新单位接收证明']" class="uploaded-file">
-                <img :src="unitChangeForm.materials['新单位接收证明']" class="preview-image" @click="previewImage(unitChangeForm.materials['新单位接收证明'])" />
-              </div>
-            </div>
-
-            <div class="upload-item">
-              <label>调动申请书<span class="required">*</span></label>
-              <el-upload
-                :action="uploadUrl"
-                :headers="uploadHeaders"
-                :on-success="(res) => handleUploadSuccess(res, '调动申请书')"
-                :before-upload="beforeUpload"
-                accept="image/*,.pdf"
-                :show-file-list="false"
-              >
-                <el-button type="primary" plain>上传调动申请书</el-button>
-              </el-upload>
-              <div v-if="unitChangeForm.materials?.['调动申请书']" class="uploaded-file">
-                <img :src="unitChangeForm.materials['调动申请书']" class="preview-image" @click="previewImage(unitChangeForm.materials['调动申请书'])" />
+              <div v-if="unitChangeForm.materials?.['个人申请书']" class="uploaded-file">
+                <img :src="unitChangeForm.materials['个人申请书']" class="preview-image" @click="previewImage(unitChangeForm.materials['个人申请书'])" />
               </div>
             </div>
           </div>
@@ -1057,15 +1015,10 @@ const submitUnitChangeApp = async () => {
     ElMessage.warning('请填写申请理由')
     return
   }
-  if (!unitChangeForm.value.newCompany) {
-    ElMessage.warning('请填写新实习单位名称')
-    return
-  }
 
   submittingChange.value = true
   try {
     const data = {
-      newCompany: unitChangeForm.value.newCompany,
       reason: unitChangeForm.value.reason,
       materials: unitChangeForm.value.materials
     }

@@ -44,7 +44,7 @@
     </div>
 
     <!-- 提示信息区域：选择申请类型后显示 -->
-    <div v-if="selectedType !== 'all'" class="tips-section">
+    <div v-if="selectedType === 'job'" class="tips-section">
       <div class="tips-card">
         <el-icon class="tips-icon"><InfoFilled /></el-icon>
         <div class="tips-content">
@@ -106,18 +106,11 @@
             <span class="apply-time">{{ application.applyDate }}</span>
             <div class="card-actions">
               <button
-                v-if="application.status === 'pending'"
+                v-if="application.status === 'pending' && application.applicationType === 'job'"
                 class="action-button withdraw"
                 @click.stop="withdrawApplication(application.id)"
               >
                 撤回申请
-              </button>
-              <button
-                v-if="application.status === 'withdrawn'"
-                class="action-button delete"
-                @click.stop="deleteApplication(application.id)"
-              >
-                删除
               </button>
               <button
                 class="action-button view"
@@ -461,16 +454,11 @@
                 </el-select>
               </el-form-item>
               <el-form-item label="年级" required>
-                <el-select
+                <el-input
                   v-model="jobApplicationForm.grade"
-                  placeholder="请选择年级"
+                  placeholder="请输入年级，如：2024级"
                   clearable
-                >
-                  <el-option label="一年级" value="grade1" />
-                  <el-option label="二年级" value="grade2" />
-                  <el-option label="三年级" value="grade3" />
-                  <el-option label="四年级" value="grade4" />
-                </el-select>
+                />
               </el-form-item>
               <el-form-item label="专业" required>
                 <el-input
@@ -954,7 +942,7 @@ const applicationTypes = [
 
 const applications = ref([])
 
-// 状态值转换：后端String到前端字符串
+// 状态值转换：后端数字/字符串到前端字符串
 const statusMap = {
   '0': 'pending',
   '1': 'approved',
@@ -965,18 +953,7 @@ const statusMap = {
   'approved': 'approved',
   'rejected': 'rejected',
   'hired': 'hired',
-  'withdrawn': 'withdrawn',
-  'interview_passed': 'approved',
-  'interview_failed': 'rejected'
-};
-
-// 状态值转换：前端字符串到后端Integer
-const reverseStatusMap = {
-  'pending': 0,
-  'approved': 1,
-  'rejected': 2,
-  'hired': 3,
-  'withdrawn': 4
+  'withdrawn': 'withdrawn'
 };
 
 // 从后端API获取申请数据
@@ -1110,9 +1087,8 @@ const getStatusText = (status) => {
     'pending': '待审核',
     'approved': '已通过',
     'rejected': '已拒绝',
-    'withdrawn': '已撤回',
-    'interview_passed': '已通过',
-    'interview_failed': '面试未通过'
+    'hired': '已录用',
+    'withdrawn': '已撤回'
   };
   return statusMap[status] || status;
 };
@@ -1159,10 +1135,9 @@ const loadApplicationMaterials = async () => {
   materialsLoading.value = true;
   try {
     // 并行加载简历、证书和系统实习时间设置
-    const [resumeRes, certRes, timeRes] = await Promise.all([
+    const [resumeRes, certRes] = await Promise.all([
       request.get('/student/profile/resumes'),
-      request.get('/student/profile/certificates'),
-      request.get('/settings/internship-time')
+      request.get('/student/profile/certificates')
     ]);
 
     if (resumeRes.code === 200) {
@@ -1171,14 +1146,6 @@ const loadApplicationMaterials = async () => {
 
     if (certRes.code === 200) {
       applicationMaterials.value.certificates = certRes.data || [];
-    }
-
-    // 获取系统实习时间设置
-    if (timeRes.code === 200) {
-      systemInternshipTime.value = {
-        startDate: timeRes.data?.startDate || '',
-        endDate: timeRes.data?.endDate || ''
-      };
     }
 
     // 标记缓存已加载，后续不再重复请求
@@ -1221,44 +1188,25 @@ const downloadCertificate = (cert) => {
   window.open(cert.url, '_blank')
 };
 
-// 方法：撤回申请
+// 方法：撤回申请（仅岗位申请，后端物理删除）
 const withdrawApplication = async (id) => {
   try {
-    const response = await request.delete(`/student/job-applications/${id}`);
-    if (response.code === 200) {
-      const application = applications.value.find((app) => app.id === id);
-      if (application) {
-        application.status = "withdrawn";
-      }
-      ElMessage.success("申请已撤回");
-    } else {
-      ElMessage.error("撤回申请失败");
-    }
-  } catch (error) {
-    console.error('撤回申请失败:', error);
-    ElMessage.error("撤回申请失败");
-  }
-};
-
-// 方法：删除撤回的申请
-const deleteApplication = async (id) => {
-  try {
-    // 确认是否删除
-    await ElMessageBox.confirm('确定要删除这条申请记录吗？', '删除申请', {
+    await ElMessageBox.confirm('确定要撤回这条申请吗？撤回后无法恢复。', '撤回申请', {
       confirmButtonText: '确定',
       cancelButtonText: '取消',
       type: 'warning'
     });
-    // 从本地列表移除（后端数据已在撤回时删除）
-    const index = applications.value.findIndex((app) => app.id === id);
-    if (index !== -1) {
-      applications.value.splice(index, 1);
+    const response = await request.delete(`/student/job-applications/${id}`);
+    if (response.code === 200) {
+      const index = applications.value.findIndex((app) => app.id === id);
+      if (index !== -1) {
+        applications.value.splice(index, 1);
+      }
+      ElMessage.success('申请已撤回');
     }
-    ElMessage.success("申请记录已删除");
   } catch (error) {
     if (error !== 'cancel') {
-      console.error('删除申请失败:', error);
-      ElMessage.error("删除申请失败");
+      ElMessage.error('撤回申请失败');
     }
   }
 };
@@ -1289,6 +1237,25 @@ const handleApplicationTypeChange = () => {
   delayApplicationFileList.value = [];
 };
 
+// 材料文件列表映射（用于上传失败时清除 UI）
+const fileListMap = {
+  'enterpriseIntro': enterpriseIntroFileList,
+  'internshipPlan': internshipPlanFileList,
+  'safetyAgreement': safetyAgreementFileList,
+  '考研计划': delayPlanFileList,
+  '学习计划': studyPlanFileList,
+  '延迟申请书': delayApplicationFileList,
+};
+
+// 从文件列表中移除指定的文件
+const removeFileFromList = (materialKey, file) => {
+  const list = fileListMap[materialKey];
+  if (list) {
+    const index = list.value.findIndex(f => f.uid === file.uid);
+    if (index !== -1) list.value.splice(index, 1);
+  }
+};
+
 // 材料文件变更处理 - 上传到OSS
 const handleMaterialChange = async (file, materialKey) => {
   try {
@@ -1306,9 +1273,11 @@ const handleMaterialChange = async (file, materialKey) => {
       jobApplicationForm.value.materials[materialKey] = response.data.url;
       ElMessage.success('文件上传成功');
     } else {
+      removeFileFromList(materialKey, file);
       ElMessage.error(response.message || '文件上传失败');
     }
   } catch (error) {
+    removeFileFromList(materialKey, file);
     console.error('文件上传失败:', error);
     ElMessage.error('文件上传失败');
   }
@@ -2056,63 +2025,27 @@ const fetchSystemInternshipTime = async () => {
   box-shadow: 0 4px 12px rgba(64, 158, 255, 0.3);
 }
 
-/* 申请详情对话框样式：统一风格 */
-.detail-dialog :deep(.el-dialog) {
-  border-radius: 8px;
-  overflow: hidden;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
-}
-
-.detail-dialog :deep(.el-dialog__header) {
-  padding: 0;
-  border-bottom: none;
-  margin: 0;
-}
-
-.detail-dialog :deep(.el-dialog__title) {
-  display: none;
-}
-
-.detail-dialog :deep(.el-dialog__headerbtn .el-dialog__close) {
-  color: white;
-  font-size: 20px;
-  top: 15px;
-  right: 20px;
-  background: rgba(255, 255, 255, 0.2);
-  border-radius: 50%;
-  width: 30px;
-  height: 30px;
-  transition: all 0.3s ease;
-}
-
-.detail-dialog :deep(.el-dialog__headerbtn .el-dialog__close:hover) {
-  background: rgba(255, 255, 255, 0.3);
-}
-
-.detail-dialog :deep(.el-dialog__body) {
-  padding: 0;
-  background-color: #ffffff;
-  max-height: 75vh;
-  overflow-y: auto;
-}
-
-/* 岗位申请表对话框样式：完全匹配示例风格 */
+/* 对话框通用样式：申请详情 和 申请表对话框 */
+.detail-dialog :deep(.el-dialog),
 .job-application-dialog :deep(.el-dialog) {
   border-radius: 8px;
   overflow: hidden;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
 }
 
+.detail-dialog :deep(.el-dialog__header),
 .job-application-dialog :deep(.el-dialog__header) {
   padding: 0;
   border-bottom: none;
   margin: 0;
 }
 
+.detail-dialog :deep(.el-dialog__title),
 .job-application-dialog :deep(.el-dialog__title) {
   display: none;
 }
 
+.detail-dialog :deep(.el-dialog__headerbtn .el-dialog__close),
 .job-application-dialog :deep(.el-dialog__headerbtn .el-dialog__close) {
   color: white;
   font-size: 20px;
@@ -2125,10 +2058,12 @@ const fetchSystemInternshipTime = async () => {
   transition: all 0.3s ease;
 }
 
+.detail-dialog :deep(.el-dialog__headerbtn .el-dialog__close:hover),
 .job-application-dialog :deep(.el-dialog__headerbtn .el-dialog__close:hover) {
   background: rgba(255, 255, 255, 0.3);
 }
 
+.detail-dialog :deep(.el-dialog__body),
 .job-application-dialog :deep(.el-dialog__body) {
   padding: 0;
   background-color: #ffffff;
@@ -2899,408 +2834,6 @@ const fetchSystemInternshipTime = async () => {
   transform: translateY(-3px);
   box-shadow: 0 6px 20px rgba(64, 158, 255, 0.3);
   border-color: #409eff;
-}
-
-/* 职位详情对话框样式（与Jobs.vue保持完全一致） */
-.job-detail-dialog :deep(.el-dialog) {
-  border-radius: 20px !important;
-  overflow: hidden;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
-  animation: dialog-fade-in 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.job-detail-dialog :deep(.el-dialog__header) {
-  background: linear-gradient(135deg, #409EFF 0%, #67C23A 100%);
-  color: white;
-  padding: 28px 36px;
-  margin: 0;
-  border-radius: 0;
-  position: relative;
-}
-
-.job-detail-dialog :deep(.el-dialog__title) {
-  color: white;
-  font-weight: 700;
-  font-size: 22px;
-}
-
-.job-detail-dialog :deep(.el-dialog__headerbtn .el-dialog__close) {
-  color: white;
-  font-size: 24px;
-  background: rgba(255, 255, 255, 0.2);
-  border-radius: 50%;
-  width: 36px;
-  height: 36px;
-  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid rgba(255, 255, 255, 0.3);
-}
-
-.job-detail-dialog :deep(.el-dialog__headerbtn .el-dialog__close:hover) {
-  background: rgba(255, 255, 255, 0.4);
-  transform: rotate(90deg) scale(1.1);
-  box-shadow: 0 4px 12px rgba(255, 255, 255, 0.4);
-}
-
-.job-detail-dialog :deep(.el-dialog__body) {
-  padding: 28px 36px;
-  background: white;
-  max-height: 70vh;
-  overflow-y: auto;
-}
-
-.job-detail-content {
-  display: flex;
-  flex-direction: column;
-  gap: 28px;
-}
-
-.detail-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  padding-bottom: 20px;
-  border-bottom: 2px solid #f0f0f0;
-}
-
-.detail-title {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.detail-title h3 {
-  font-size: 28px;
-  font-weight: 700;
-  color: #1e293b;
-  margin: 0;
-}
-
-.internship-base-badges {
-  display: flex;
-  gap: 10px;
-  flex-shrink: 0;
-}
-
-.base-badge {
-  font-weight: 600;
-  padding: 6px 16px;
-  border-radius: 12px;
-}
-
-.detail-actions {
-  flex-shrink: 0;
-}
-
-.detail-status {
-  padding: 8px 20px;
-  border-radius: 24px;
-  font-size: 15px;
-  font-weight: 700;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-}
-
-.detail-status.pending {
-  background: linear-gradient(135deg, #fff7e6 0%, #ffe7ba 100%);
-  color: #fa8c16;
-  border: 1px solid #ffd591;
-}
-
-.detail-status.approved {
-  background: linear-gradient(135deg, #f6ffed 0%, #d9f7be 100%);
-  color: #52c41a;
-  border: 1px solid #b7eb8f;
-}
-
-.detail-status.rejected {
-  background: linear-gradient(135deg, #fff1f0 0%, #ffccc7 100%);
-  color: #f5222d;
-  border: 1px solid #ffa39e;
-}
-
-.detail-section {
-  background: linear-gradient(135deg, #fafbfc 0%, #f5f7fa 100%);
-  border-radius: 16px;
-  padding: 24px;
-  border: 1px solid #e8e8e8;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
-}
-
-.section-title {
-  font-size: 18px;
-  font-weight: 700;
-  color: #1e293b;
-  margin: 0 0 20px 0;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding-bottom: 12px;
-  border-bottom: 2px solid #e8e8e8;
-}
-
-.info-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 16px 32px;
-}
-
-.info-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 15px;
-  color: #64748b;
-  background: white;
-  padding: 12px 16px;
-  border-radius: 10px;
-  border: 1px solid #e2e8f0;
-  transition: all 0.3s ease;
-}
-
-.info-item:hover {
-  border-color: #409eff;
-  box-shadow: 0 4px 12px rgba(64, 158, 255, 0.15);
-  transform: translateY(-2px);
-}
-
-.info-item .el-icon {
-  color: #409eff;
-  font-size: 18px;
-}
-
-.info-label {
-  font-weight: 600;
-  color: #1e293b;
-}
-
-.detail-description {
-  font-size: 15px;
-  line-height: 2;
-  color: #64748b;
-  margin: 0;
-  padding: 16px;
-  background: white;
-  border-radius: 10px;
-  border: 1px solid #e2e8f0;
-}
-
-.detail-list {
-  padding-left: 24px;
-  margin: 0;
-}
-
-.detail-list li {
-  font-size: 15px;
-  line-height: 2;
-  color: #64748b;
-  margin-bottom: 12px;
-  padding-left: 8px;
-  position: relative;
-}
-
-.detail-list li::before {
-  content: '•';
-  position: absolute;
-  left: -12px;
-  color: #409eff;
-  font-weight: 700;
-}
-
-.contact-info {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.contact-item {
-  font-size: 15px;
-  color: #64748b;
-  background: white;
-  padding: 14px 18px;
-  border-radius: 10px;
-  border: 1px solid #e2e8f0;
-  transition: all 0.3s ease;
-}
-
-.contact-item:hover {
-  border-color: #409eff;
-  box-shadow: 0 4px 12px rgba(64, 158, 255, 0.15);
-  transform: translateY(-2px);
-}
-
-.contact-label {
-  font-weight: 600;
-  color: #1e293b;
-  margin-right: 10px;
-}
-
-.stats-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 24px;
-}
-
-.stat-item {
-  text-align: center;
-  padding: 16px;
-  background: white;
-  border-radius: 8px;
-  border: 1px solid #e8e8e8;
-}
-
-.stat-number {
-  font-size: 24px;
-  font-weight: 700;
-  color: #409eff;
-  margin-bottom: 4px;
-}
-
-.stat-label {
-  font-size: 14px;
-  color: #909399;
-}
-
-/* 申请材料样式 */
-.material-list {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.material-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 16px 20px;
-  background: white;
-  border-radius: 12px;
-  border: 1px solid #e2e8f0;
-  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
-}
-
-.material-item:hover {
-  border-color: #409eff;
-  box-shadow: 0 6px 20px rgba(64, 158, 255, 0.2);
-  transform: translateY(-3px);
-}
-
-.material-item > div {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-}
-
-.material-icon {
-  font-size: 28px;
-  color: #409eff;
-  transition: all 0.3s ease;
-}
-
-.material-item:hover .material-icon {
-  transform: scale(1.1);
-  color: #409eff;
-}
-
-/* 材料模块新样式 */
-.materials-section {
-  margin-bottom: 20px;
-}
-
-.materials-section:last-child {
-  margin-bottom: 0;
-}
-
-.materials-subtitle {
-  font-size: 14px;
-  font-weight: 600;
-  color: #606266;
-  margin-bottom: 12px;
-  padding-left: 4px;
-}
-
-.material-info {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.material-name {
-  font-size: 14px;
-  color: #303133;
-  font-weight: 500;
-}
-
-.material-actions {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.upload-time-tag {
-  font-size: 12px;
-}
-
-.materials-loading {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  padding: 30px;
-  color: #909399;
-  font-size: 14px;
-}
-
-.no-materials {
-  text-align: center;
-  padding: 20px;
-}
-
-.no-materials-tip {
-  font-size: 13px;
-  color: #909399;
-  margin-top: 8px;
-}
-
-.dialog-footer {
-  display: flex;
-  justify-content: flex-end;
-  padding: 16px 0 0 0;
-  border-top: 2px solid #e8e8e8;
-}
-
-.close-btn {
-  padding: 12px 32px;
-  border-radius: 10px;
-  font-weight: 600;
-  font-size: 15px;
-  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-  border: 2px solid #409eff;
-  color: #409eff;
-  background: white;
-  box-shadow: 0 2px 8px rgba(64, 158, 255, 0.1);
-}
-
-.close-btn:hover {
-  background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
-  transform: translateY(-3px);
-  box-shadow: 0 6px 20px rgba(64, 158, 255, 0.3);
-  border-color: #409eff;
-}
-
-/* 动画 */
-@keyframes dialog-fade-in {
-  from {
-    opacity: 0;
-    transform: scale(0.95) translateY(-20px);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1) translateY(0);
-  }
 }
 
 /* 响应式适配：匹配网格布局的响应式规则 */

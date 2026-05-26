@@ -636,7 +636,7 @@ public class StudentInternshipConfirmationController {
 
             application.setApplicationType("unitChange");
             application.setOldCompany(status.getCompanyName());  // 原单位
-            application.setNewCompany(objectToString(body.get("newCompany")));
+            application.setNewCompany(objectToString(body.getOrDefault("newCompany", "")));
             application.setReason(objectToString(body.get("reason")));
             application.setStatus("pending");
 

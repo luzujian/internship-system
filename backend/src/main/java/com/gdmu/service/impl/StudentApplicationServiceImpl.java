@@ -3,6 +3,7 @@ package com.gdmu.service.impl;
 import com.gdmu.entity.InternshipTimeSettings;
 import com.gdmu.entity.PageResult;
 import com.gdmu.entity.StudentApplication;
+import com.gdmu.entity.StudentInternshipStatus;
 import com.gdmu.exception.BusinessException;
 import com.gdmu.mapper.StudentApplicationMapper;
 import com.gdmu.service.InternshipTimeSettingsService;
@@ -237,6 +238,8 @@ public class StudentApplicationServiceImpl implements StudentApplicationService 
         // 如果是单位变更申请，需要处理学生实习状态
         if ("unitChange".equals(application.getApplicationType())) {
             handleUnitChangeApproval(application);
+        } else if ("delay".equals(application.getApplicationType())) {
+            handleDelayApproval(application);
         }
 
         log.info("学生申请批准成功，ID: {}", id);
@@ -253,6 +256,27 @@ public class StudentApplicationServiceImpl implements StudentApplicationService 
         internshipStatusMapper.updateStatusToInterrupted(application.getStudentId());
 
         log.info("单位变更申请批准处理完成，学生ID: {}, 状态已更新为已中断", application.getStudentId());
+    }
+
+    /**
+     * 处理考研延迟申请批准后的学生状态变更
+     */
+    private void handleDelayApproval(StudentApplication application) {
+        log.debug("处理考研延迟申请批准，学生ID: {}", application.getStudentId());
+
+        StudentInternshipStatus status = internshipStatusMapper
+                .findByStudentId(application.getStudentId());
+        if (status != null) {
+            internshipStatusMapper.updateStatusToDelayed(application.getStudentId());
+        } else {
+            StudentInternshipStatus newStatus = new StudentInternshipStatus();
+            newStatus.setStudentId(application.getStudentId());
+            newStatus.setStatus(6); // DELAYED
+            newStatus.setIsDelayed(true);
+            internshipStatusMapper.insert(newStatus);
+        }
+
+        log.info("考研延迟申请批准处理完成，学生ID: {}, 状态已更新为延期", application.getStudentId());
     }
 
     /**

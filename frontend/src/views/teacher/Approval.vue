@@ -90,10 +90,7 @@
                 {{ scope.row.company || '-' }}
               </template>
               <template v-else-if="scope.row.type === 'unitChange'">
-                <div class="company-change-info">
-                  <div class="old-company">原：{{ scope.row.oldCompany || '-' }}</div>
-                  <div class="new-company">新：{{ scope.row.newCompany || '-' }}</div>
-                </div>
+                {{ scope.row.oldCompany || '-' }}
               </template>
               <template v-else>-</template>
             </div>
@@ -305,23 +302,16 @@
             </div>
             
             <!-- 单位变更申请特有信息 -->
-            <div v-if="currentApplication.type === 'unitChange'" class="form-row">
-              <div class="form-group half">
-                <label>原实习单位：</label>
-                <div class="company-display">{{ currentApplication.oldCompany }}</div>
-              </div>
-              <div class="form-group half">
-                <label>新实习单位：</label>
-                <div class="company-display">{{ currentApplication.newCompany }}</div>
-              </div>
+            <div v-if="currentApplication.type === 'unitChange'" class="form-group">
+              <label>原实习单位：</label>
+              <div class="company-display">{{ currentApplication.oldCompany }}</div>
             </div>
             <div v-if="currentApplication.type === 'unitChange' && currentApplication.materials" class="form-group">
-              <label>上传资料：</label>
+              <label>个人申请书：</label>
               <div class="document-grid horizontal">
-                <div class="document-item fade-in" v-for="label in materialItems.unitChange" :key="label">
-                  <label>{{ label }}：</label>
+                <div class="document-item fade-in">
                   <div class="document-preview">
-                    <img v-if="currentApplication.materials[label]" :src="currentApplication.materials[label]" :alt="label" class="document-image" @click="previewMaterial(currentApplication.materials[label], label)">
+                    <img v-if="currentApplication.materials['个人申请书']" :src="currentApplication.materials['个人申请书']" alt="个人申请书" class="document-image" @click="previewMaterial(currentApplication.materials['个人申请书'], '个人申请书')">
                     <span v-else class="no-document">未上传</span>
                   </div>
                 </div>
@@ -480,7 +470,7 @@ const showOperationFeedback = (message: string, type: 'success' | 'error' | 'inf
 
 const materialItems = ref({
   selfPractice: ['企业介绍', '实习计划', '安全协议'],
-  unitChange: ['家庭证明', '新单位接收证明', '调动申请书'],
+  unitChange: ['个人申请书'],
   delay: ['考研计划', '学习计划', '延迟申请书']
 })
 

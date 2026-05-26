@@ -92,9 +92,6 @@ public class StudentApplicationController {
                 if (application.getOldCompany() == null || application.getOldCompany().isEmpty()) {
                     return Result.error("请填写原实习单位");
                 }
-                if (application.getNewCompany() == null || application.getNewCompany().isEmpty()) {
-                    return Result.error("请填写新实习单位");
-                }
             } else if ("delay".equals(application.getApplicationType())) {
                 // 考研延迟申请 - materials字段用于存储考研计划、学习计划、延迟申请书等
                 if (application.getMaterials() == null || application.getMaterials().isEmpty()) {
