@@ -464,6 +464,7 @@ public class BackupServiceImpl implements BackupService {
 
     @Override
     @Scheduled(cron = "0 0/5 * * * ?")
+    @Transactional
     public void autoBackup() {
         BackupAuditLog auditLog = null;
         long startTime = System.currentTimeMillis();

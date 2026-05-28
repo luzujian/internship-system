@@ -28,20 +28,17 @@
       </div>
       <div class="company-bubble-divider"></div>
       <div class="company-bubble-body">
-        <div class="company-bubble-item" v-if="pendingApplications > 0">
+        <div class="company-bubble-item">
           <span class="company-bubble-badge">
             <span class="badge-number">{{ pendingApplications }}</span>
           </span>
           <span>个岗位申请待处理</span>
         </div>
-        <div class="company-bubble-item" v-if="pendingConfirmations > 0">
+        <div class="company-bubble-item">
           <span class="company-bubble-badge">
             <span class="badge-number">{{ pendingConfirmations }}</span>
           </span>
           <span>个实习确认表待确认</span>
-        </div>
-        <div class="company-bubble-empty" v-if="pendingApplications === 0 && pendingConfirmations === 0">
-          <span>暂无待办事项</span>
         </div>
       </div>
     </div>

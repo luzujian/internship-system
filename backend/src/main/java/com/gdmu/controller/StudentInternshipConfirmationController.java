@@ -76,7 +76,40 @@ public class StudentInternshipConfirmationController {
     }
 
     /**
-     * 校验当前时间是否在应聘时间范围内
+     * 校验实习单位确认时间范围
+     * 起：应聘开始日期  止：实习单位确认截止日期
+     * 用于：提交实习确认表、单位变更、撤回申请
+     */
+    private Result validateConfirmationPeriod() {
+        InternshipTimeSettings settings = internshipTimeSettingsService.findLatest();
+        if (settings == null) {
+            return Result.error("系统未设置时间节点，请联系管理员");
+        }
+
+        LocalDate today = LocalDate.now();
+
+        // 校验：不得早于应聘开始时间
+        if (settings.getApplicationStartDate() != null && !settings.getApplicationStartDate().isEmpty()) {
+            LocalDate startDate = LocalDate.parse(settings.getApplicationStartDate(), DateTimeFormatter.ISO_LOCAL_DATE);
+            if (today.isBefore(startDate)) {
+                return Result.error("应聘尚未开始，开始时间为：" + settings.getApplicationStartDate());
+            }
+        }
+
+        // 校验：不得晚于实习单位确认截止日期
+        if (settings.getCompanyConfirmationDeadline() != null && !settings.getCompanyConfirmationDeadline().isEmpty()) {
+            LocalDate deadline = LocalDate.parse(settings.getCompanyConfirmationDeadline(), DateTimeFormatter.ISO_LOCAL_DATE);
+            if (today.isAfter(deadline)) {
+                return Result.error("实习单位确认已截止，截止时间为：" + settings.getCompanyConfirmationDeadline());
+            }
+        }
+
+        return null; // 验证通过
+    }
+
+    /**
+     * 校验应聘时间范围（投递简历用）
+     * 起：应聘开始日期  止：应聘截止日期
      */
     private Result validateApplicationPeriod() {
         InternshipTimeSettings settings = internshipTimeSettingsService.findLatest();
@@ -86,7 +119,6 @@ public class StudentInternshipConfirmationController {
 
         LocalDate today = LocalDate.now();
 
-        // 校验应聘开始时间
         if (settings.getApplicationStartDate() != null && !settings.getApplicationStartDate().isEmpty()) {
             LocalDate startDate = LocalDate.parse(settings.getApplicationStartDate(), DateTimeFormatter.ISO_LOCAL_DATE);
             if (today.isBefore(startDate)) {
@@ -94,7 +126,6 @@ public class StudentInternshipConfirmationController {
             }
         }
 
-        // 校验应聘截止时间
         if (settings.getApplicationEndDate() != null && !settings.getApplicationEndDate().isEmpty()) {
             LocalDate endDate = LocalDate.parse(settings.getApplicationEndDate(), DateTimeFormatter.ISO_LOCAL_DATE);
             if (today.isAfter(endDate)) {
@@ -102,7 +133,7 @@ public class StudentInternshipConfirmationController {
             }
         }
 
-        return null; // 验证通过
+        return null;
     }
 
     private User getCurrentUser() {
@@ -217,7 +248,7 @@ public class StudentInternshipConfirmationController {
             Long studentId = user.getId();
 
             // 校验应聘时间范围
-            Result validationResult = validateApplicationPeriod();
+            Result validationResult = validateConfirmationPeriod();
             if (validationResult != null) {
                 return validationResult;
             }
@@ -321,7 +352,7 @@ public class StudentInternshipConfirmationController {
             Long studentId = user.getId();
 
             // 校验应聘时间范围
-            Result validationResult = validateApplicationPeriod();
+            Result validationResult = validateConfirmationPeriod();
             if (validationResult != null) {
                 return validationResult;
             }
@@ -604,7 +635,7 @@ public class StudentInternshipConfirmationController {
             Long studentId = user.getId();
 
             // 校验应聘时间范围
-            Result validationResult = validateApplicationPeriod();
+            Result validationResult = validateConfirmationPeriod();
             if (validationResult != null) {
                 return validationResult;
             }
@@ -689,7 +720,7 @@ public class StudentInternshipConfirmationController {
             Long studentId = user.getId();
 
             // 校验应聘时间范围
-            Result validationResult = validateApplicationPeriod();
+            Result validationResult = validateConfirmationPeriod();
             if (validationResult != null) {
                 return validationResult;
             }

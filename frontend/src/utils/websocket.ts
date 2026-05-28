@@ -148,7 +148,8 @@ class WebSocketClient {
 
     try {
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-      const host = window.location.host
+      // 开发环境直连后端端口，避免 Vite WS 代理转发问题
+      const host = import.meta.env.DEV ? 'localhost:8080' : window.location.host
       const fullUrl = `${protocol}//${host}${this.options.url}?token=${encodeURIComponent(this.options.token)}`
       
       logger.log('[WebSocket] 正在连接:', `${protocol}//${host}${this.options.url}?token=***`)
@@ -281,15 +282,10 @@ class WebSocketClient {
     }
 
     if (this.ws) {
-      // 保存当前 WebSocket 引用
-      const oldWs = this.ws
+      const state = this.ws.readyState
+      this.ws.close(1000, '用户主动断开')
       this.ws = null
-      // 延迟关闭，让 onclose 处理器完成后再真正关闭
-      setTimeout(() => {
-        if (oldWs) {
-          oldWs.close(1000, '用户主动断开')
-        }
-      }, 100)
+      logger.log('[WebSocket] 已断开连接，先前状态:', state)
     }
   }
 

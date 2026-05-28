@@ -242,9 +242,11 @@ export const useAuthStore = defineStore('auth', {
         }
 
         return this.handleLoginSuccess(response, '')
-      } catch (error) {
+      } catch (error: any) {
         logger.error('登录失败:', error)
-        ElMessage.error(ERROR_MESSAGES.LOGIN_FAILED)
+        // 优先显示后端返回的具体错误信息（如锁定提示、审核未通过等）
+        const message = error?.message || error?.response?.data?.message || ERROR_MESSAGES.LOGIN_FAILED
+        ElMessage.error(message)
         return false
       }
     },

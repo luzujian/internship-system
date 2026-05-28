@@ -236,7 +236,12 @@ function handleLogout(): void {
     }
   }
 
-  ElMessage.warning('您已成功登出系统')
+  ElMessage.warning('会话已超时，请重新登录')
+  // 清除 in-memory authStore 状态，避免路由守卫把用户踢回 dashboard
+  authStore.user = null
+  authStore.token = null
+  authStore.role = null
+  authStore.isAuthenticated = false
   cleanupTokens()
   router.push('/login')
 }
@@ -342,6 +347,8 @@ async function refreshToken(): Promise<string | null> {
   }
 
   if (!refreshToken) {
+    // 无刷新令牌，通知等待者停止等待
+    executeSubscribers(null)
     return null
   }
 
@@ -353,6 +360,8 @@ async function refreshToken(): Promise<string | null> {
     return newToken
   }
 
+  // 刷新失败，通知所有等待者停止等待
+  executeSubscribers(null)
   return null
 }
 
@@ -408,7 +417,7 @@ request.interceptors.response.use(
         return Promise.reject(error)
       }
 
-      if (config?.url === '/auth/refresh-token') {
+      if (config?.url?.includes('/auth/refresh-token')) {
         ElMessage.warning(ERROR_MESSAGES.TOKEN_REFRESH_FAILED)
         return Promise.reject(error)
       }
@@ -435,13 +444,17 @@ request.interceptors.response.use(
       try {
         const newToken = await refreshToken()
 
-        if (newToken && config.headers) {
+        if (!newToken) {
+          throw new Error('Token refresh failed')
+        }
+
+        if (config.headers) {
           config.headers.Authorization = `${CONFIG.BEARER_PREFIX}${newToken}`
         }
 
         return request(config as InternalAxiosRequestConfig)
       } catch (refreshError) {
-        console.error('[request] 刷新令牌失败:', refreshError)
+        console.error('[request] 刷新令牌失败，自动退出到登录页:', refreshError)
         refreshSubscribers = []
         handleLogout()
         return Promise.reject(refreshError)

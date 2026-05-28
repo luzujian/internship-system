@@ -51,9 +51,9 @@
               </el-option>
             </el-select>
           </el-form-item>
-          <el-form-item label="院系">
-            <el-select v-model="filters.department" placeholder="请选择院系" clearable style="width: 140px;">
-              <el-option label="全部院系" value=""></el-option>
+          <el-form-item label="学院">
+            <el-select v-model="filters.department" placeholder="请选择学院" clearable style="width: 140px;">
+              <el-option label="全部学院" value=""></el-option>
               <el-option 
                 v-for="dept in departments" 
                 :key="dept.id" 
@@ -94,20 +94,6 @@
               style="width: 180px;"
               @keyup.enter="applyFilters"
             ></el-input>
-          </el-form-item>
-          <el-form-item label="实习心得">
-            <el-select v-model="filters.hasReport" placeholder="请选择" clearable style="width: 110px;">
-              <el-option label="全部" value=""></el-option>
-              <el-option label="已提交" value="true"></el-option>
-              <el-option label="未提交" value="false"></el-option>
-            </el-select>
-          </el-form-item>
-          <el-form-item label="评分状态">
-            <el-select v-model="filters.isEvaluated" placeholder="请选择" clearable style="width: 110px;">
-              <el-option label="全部" value=""></el-option>
-              <el-option label="已评分" value="true"></el-option>
-              <el-option label="未评分" value="false"></el-option>
-            </el-select>
           </el-form-item>
           <el-form-item class="search-actions">
             <el-button type="primary" @click="applyFilters" class="action-btn primary">
@@ -190,38 +176,18 @@
         <el-table-column type="selection" width="55" align="center"></el-table-column>
         <el-table-column prop="name" label="姓名" width="120" align="center"></el-table-column>
         <el-table-column prop="studentId" label="学号" width="150" align="center"></el-table-column>
-        <el-table-column prop="grade" label="年级" width="100" align="center"></el-table-column>
-        <el-table-column prop="className" label="班级" width="220" align="center"></el-table-column>
-        <el-table-column prop="department" label="院系" width="180" align="center">
-          <template #default="scope">{{ scope.row.department || '-' }}</template>
-        </el-table-column>
-        <el-table-column prop="majorName" label="专业" width="180" align="center">
-          <template #default="scope">{{ scope.row.majorName || '-' }}</template>
-        </el-table-column>
-        <el-table-column prop="company" label="实习单位" width="200" show-overflow-tooltip>
+        <el-table-column prop="company" label="实习单位" min-width="200">
           <template #default="scope">{{ scope.row.company || '-' }}</template>
         </el-table-column>
-        <el-table-column label="实习心得" width="120" align="center">
-          <template #default="scope">
-            <div v-if="scope.row.hasCurrentPeriodReport" class="report-submitted">
-              <el-icon class="check-icon"><Check /></el-icon>
-            </div>
-            <div v-else class="report-not-submitted">
-              <el-icon class="close-icon"><Close /></el-icon>
-            </div>
-          </template>
+        <el-table-column prop="grade" label="年级" width="100" align="center"></el-table-column>
+        <el-table-column prop="department" label="学院" min-width="200" align="center">
+          <template #default="scope">{{ scope.row.department || '-' }}</template>
         </el-table-column>
-        <el-table-column label="评分状态" width="120" align="center">
-          <template #default="scope">
-            <div v-if="scope.row.isEvaluated" class="status-evaluated">
-              <el-icon class="check-icon"><Check /></el-icon>
-            </div>
-            <div v-else class="status-not-evaluated">
-              <el-icon class="close-icon"><Close /></el-icon>
-            </div>
-          </template>
+        <el-table-column prop="majorName" label="专业" min-width="200" align="center">
+          <template #default="scope">{{ scope.row.majorName || '-' }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="180" fixed="right" align="center">
+        <el-table-column prop="className" label="班级" width="220" align="center"></el-table-column>
+<el-table-column label="操作" width="180" fixed="right" align="center">
           <template #default="scope">
             <div class="action-buttons">
               <!-- 未评分标签页：显示评分按钮 -->
@@ -735,7 +701,7 @@ const goToAiScoringConfig = () => {
 // 时间阶段数据
 const periods = ref<PeriodInfo[]>([])
 
-// 院系、专业、班级数据
+// 学院、专业、班级数据
 const departments = ref<any[]>([])
 const majors = ref<any[]>([])
 const classes = ref<any[]>([])
@@ -792,13 +758,23 @@ const actualCurrentPeriodNumber = computed(() => {
   // 使用本地日期字符串避免时区问题，确保日期比较在同一天内正确
   const now = new Date()
   const nowDateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+  const firstPeriod = periods.value[0]
+  const lastPeriod = periods.value[periods.value.length - 1]
+  // 当前日期在第一个阶段开始之前，返回第一个阶段
+  if (nowDateStr < firstPeriod.startDate) {
+    return firstPeriod.period
+  }
+  // 当前日期在最后一个阶段结束之后，返回最后一个阶段
+  if (nowDateStr > lastPeriod.endDate) {
+    return lastPeriod.period
+  }
   for (const period of periods.value) {
     if (nowDateStr >= period.startDate && nowDateStr <= period.endDate) {
       return period.period
     }
   }
-  // 如果当前日期不在任何阶段内，返回最后一个阶段
-  return periods.value[periods.value.length - 1].period
+  // 兜底返回第一个阶段
+  return firstPeriod.period
 })
 
 // 下拉框可选的阶段列表（只显示当前及之前的阶段）
@@ -1127,7 +1103,7 @@ const loadPeriods = async () => {
   }
 }
 
-// 加载院系列表（只显示辅导员管理班级的院系）
+// 加载学院列表（只显示辅导员管理班级的学院）
 const loadDepartments = async () => {
   try {
     const counselorId = getCurrentCounselorId()
@@ -1146,7 +1122,7 @@ const loadDepartments = async () => {
     })
     departments.value = Array.from(uniqueDepartments.values())
   } catch (error) {
-    console.error('加载院系列表失败：', error)
+    console.error('加载学院列表失败：', error)
   }
 }
 
@@ -2071,6 +2047,11 @@ const downloadAIAnalysisReport = () => {
 
 .data-table {
   border-radius: 8px;
+}
+
+.data-table :deep(td) {
+  word-break: break-all;
+  white-space: normal;
 }
 
 .data-table :deep(.el-table__header) th {

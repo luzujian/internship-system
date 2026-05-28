@@ -13,37 +13,21 @@
           <div class="stat-value">{{ statistics.classCount }}</div>
           <div class="stat-label">负责班级</div>
         </div>
-        <div class="stat-item">
+        <div class="stat-item" :class="{ clickable: showInternshipFields }" @click="showInternshipFields && filterByStatus('')">
           <div class="stat-value">{{ statistics.studentCount }}</div>
           <div class="stat-label">学生总数</div>
         </div>
-        <div class="stat-item" v-if="showInternshipFields">
-          <div class="stat-value">{{ statistics.noOfferCount || 0 }}</div>
-          <div class="stat-label">无offer</div>
+        <div class="stat-item clickable" v-if="showInternshipFields" @click="filterByStatus('0')">
+          <div class="stat-value accent-warning">{{ statistics.noOfferCount || 0 }}</div>
+          <div class="stat-label">未实习</div>
         </div>
-        <div class="stat-item" v-if="showInternshipFields">
-          <div class="stat-value">{{ statistics.pendingCount || 0 }}</div>
-          <div class="stat-label">待确认</div>
-        </div>
-        <div class="stat-item" v-if="showInternshipFields">
-          <div class="stat-value">{{ statistics.confirmedCount || 0 }}</div>
-          <div class="stat-label">已确定</div>
-        </div>
-        <div class="stat-item" v-if="showInternshipFields">
-          <div class="stat-value">{{ statistics.interningCount || 0 }}</div>
+        <div class="stat-item clickable" v-if="showInternshipFields" @click="filterByStatus('3')">
+          <div class="stat-value accent-primary">{{ statistics.interningCount || 0 }}</div>
           <div class="stat-label">实习中</div>
         </div>
-        <div class="stat-item" v-if="showInternshipFields">
-          <div class="stat-value">{{ statistics.finishedCount || 0 }}</div>
-          <div class="stat-label">已结束</div>
-        </div>
-        <div class="stat-item" v-if="showInternshipFields">
-          <div class="stat-value">{{ statistics.interruptedCount || 0 }}</div>
-          <div class="stat-label">已中断</div>
-        </div>
-        <div class="stat-item" v-if="showInternshipFields">
-          <div class="stat-value">{{ statistics.delayedCount || 0 }}</div>
-          <div class="stat-label">延期</div>
+        <div class="stat-item clickable" v-if="showInternshipFields" @click="filterByStatus('4')">
+          <div class="stat-value accent-success">{{ statistics.finishedCount || 0 }}</div>
+          <div class="stat-label">已完成</div>
         </div>
       </div>
     </el-card>
@@ -116,8 +100,8 @@
             <el-button type="success" @click="exportSelectedStudentProfiles" class="action-btn success" v-if="showInternshipFields">
               <el-icon><Download /></el-icon>&nbsp;导出已选择
             </el-button>
-            <el-button type="warning" @click="exportBatchData" class="action-btn warning" v-if="showInternshipFields">
-              <el-icon><FolderOpened /></el-icon>&nbsp;批量导出
+            <el-button type="warning" @click="exportAllData" class="action-btn warning" v-if="showInternshipFields">
+              <el-icon><FolderOpened /></el-icon>&nbsp;导出全部
             </el-button>
           </el-form-item>
         </div>
@@ -148,17 +132,17 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="gender" label="性别" align="center" width="80">
-          <template #default="scope">
-            <span>{{ scope.row.gender === 1 ? '男' : '女' }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column prop="grade" label="年级" align="center" width="80" />
-        <el-table-column prop="className" label="班级" min-width="120" show-overflow-tooltip></el-table-column>
-        <el-table-column prop="major" label="专业" min-width="150" show-overflow-tooltip></el-table-column>
         <el-table-column prop="company" label="实习单位" min-width="180" show-overflow-tooltip v-if="showInternshipFields">
           <template #default="scope">
             {{ scope.row.company || '-' }}
+          </template>
+        </el-table-column>
+        <el-table-column prop="grade" label="年级" align="center" width="80" />
+        <el-table-column prop="major" label="专业" min-width="150" show-overflow-tooltip></el-table-column>
+        <el-table-column prop="className" label="班级" min-width="120" show-overflow-tooltip></el-table-column>
+        <el-table-column prop="gender" label="性别" align="center" width="80">
+          <template #default="scope">
+            <span>{{ scope.row.gender === 1 ? '男' : '女' }}</span>
           </template>
         </el-table-column>
         <el-table-column prop="status" label="状态" align="center" width="80" v-if="!showInternshipFields">
@@ -234,6 +218,25 @@
       <template #footer>
         <el-button @click="showReminderDialog = false">取消</el-button>
         <el-button type="primary" @click="sendReminder">发送</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 一键提醒弹窗 -->
+    <el-dialog v-model="showBatchReminderDialog" title="一键提醒" width="500px">
+      <p style="color:#666;margin-bottom:12px;">将向当前筛选条件下的所有学生发送提醒</p>
+      <el-form label-width="100px">
+        <el-form-item label="提醒模板">
+          <el-select v-model="batchReminderForm.template" placeholder="选择提醒模板" @change="handleBatchTemplateChange" class="reminder-select">
+            <el-option v-for="t in reminderTemplates" :key="t.value" :label="t.label" :value="t.value" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="提醒内容">
+          <el-input v-model="batchReminderForm.content" type="textarea" :rows="4" placeholder="请输入提醒内容" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showBatchReminderDialog = false">取消</el-button>
+        <el-button type="primary" @click="sendBatchReminder" :loading="batchReminderSending">发送</el-button>
       </template>
     </el-dialog>
 
@@ -470,20 +473,23 @@ const teacherType = ref<string>('')
 const isCounselor = computed(() => teacherType.value === 'COUNSELOR')
 
 // 根据路由名称显示不同的页面标题
+const scopeName = ref('')
+const scopeType = ref('')
+
 const pageTitle = computed(() => {
   const currentRoute = router.currentRoute.value.name
   if (currentRoute === 'teacherStudentTracking') {
+    if (scopeName.value) return scopeName.value + ' - 学生状态监控'
     return '学生状态监控'
   }
+  if (scopeName.value) return scopeName.value + ' - 学生管理'
   return '学生管理'
 })
 const pageDescription = computed(() => {
   const currentRoute = router.currentRoute.value.name
   if (currentRoute === 'teacherStudentTracking') {
-    // 辅导员身份：显示"监控和管理负责班级学生的实习状态信息"
-    if (isCounselor.value) {
-      return '监控和管理负责班级学生的实习状态信息'
-    }
+    if (isCounselor.value) return '监控和管理负责班级学生的实习状态信息'
+    if (scopeName.value) return '监控和管理' + scopeName.value + '学生的实习状态信息'
     return '监控和管理学生的实习状态信息'
   }
   return '管理您负责班级的学生信息'
@@ -690,7 +696,9 @@ const loadStudents = async () => {
         status: filters.value.status ? getStatusValue(filters.value.status) : undefined,
         companyName: filters.value.company
       })
-      const rawData = response?.rows || []
+      const rawData = response?.list || response?.rows || []
+      scopeName.value = response?.scopeName || ''
+      scopeType.value = response?.scopeType || ''
       students.value = rawData.map((item: any) => ({
         id: item.student?.id || item.id,
         studentId: item.student?.studentUserId || item.studentId,
@@ -846,6 +854,12 @@ const resetFilters = () => {
   loadStudents()
 }
 
+const filterByStatus = (status: string) => {
+  filters.value.status = status
+  currentPage.value = 1
+  loadStudents()
+}
+
 const handleSelectionChange = (selection: StudentUser[]) => {
   selectedStudents.value = selection
 }
@@ -942,7 +956,7 @@ const getStatusTagType = (status: number | string): string => {
   switch (statusNum) {
     case 2: return 'success'  // 已确定实习 - 绿色
     case 1: return 'warning'   // 待确认 - 黄色
-    case 0: return 'info'      // 无offer - 灰色
+    case 0: return 'danger'     // 无offer - 红色
     case 5: return 'warning'    // 延期 - 黄色
     case 3: return 'primary'    // 进行中 - 蓝色
     case 4: return 'success'    // 已完成 - 绿色
@@ -1009,8 +1023,100 @@ const downloadApplicationForm = async (row: any): Promise<void> => {
   }
 }
 
+// 一键提醒状态
+const showBatchReminderDialog = ref(false)
+const batchReminderForm = ref({ content: '', template: '' })
+const batchReminderSending = ref(false)
+
 const oneClickReminder = () => {
-  showFeedbackMessage('一键提醒功能开发中', 'info')
+  batchReminderForm.value = { content: '', template: '' }
+  showBatchReminderDialog.value = true
+}
+
+const handleBatchTemplateChange = (value: string) => {
+  if (value !== '6') {
+    const template = reminderTemplates.find(t => t.value === value)
+    batchReminderForm.value.content = template?.label || ''
+  } else {
+    batchReminderForm.value.content = ''
+  }
+}
+
+const sendBatchReminder = async () => {
+  if (!batchReminderForm.value.content.trim()) {
+    ElMessage.warning('请输入提醒内容')
+    return
+  }
+  batchReminderSending.value = true
+  try {
+    let allStudents: any[] = []
+
+    if (isCounselor.value && counselorId.value > 0) {
+      const response = await getCounselorStudents(
+        counselorId.value,
+        filters.value.search || undefined,
+        filters.value.class ? myClasses.value.find(c => c.name === filters.value.class)?.id : undefined,
+        filters.value.major || undefined,
+        filters.value.grade ? filters.value.grade.replace('级', '') : undefined,
+        filters.value.status ? getStatusValue(filters.value.status) : undefined,
+        filters.value.company || undefined
+      )
+      allStudents = response?.data || []
+    } else {
+      const response = await studentApi.getStudentList({
+        page: 1,
+        pageSize: 99999,
+        name: filters.value.search,
+        grade: filters.value.grade,
+        major: filters.value.major,
+        className: filters.value.class,
+        status: filters.value.status ? getStatusValue(filters.value.status) : undefined,
+        companyName: filters.value.company
+      })
+      allStudents = response?.list || response?.rows || []
+    }
+
+    if (allStudents.length === 0) {
+      ElMessage.warning('没有需要提醒的学生')
+      return
+    }
+
+    const teacherId = counselorId.value
+    let successCount = 0
+    let failCount = 0
+
+    for (const item of allStudents) {
+      try {
+        // 学生ID提取：参考 loadStudents 的映射逻辑
+        const sid = item.student?.id || item.id || item.studentId
+        const studentUserId = item.student?.studentUserId || item.studentId
+        // 优先使用 studentId（对应 student_users 表的 ID）
+        const targetId = studentUserId || sid
+        if (!targetId) {
+          failCount++
+          continue
+        }
+        await request.post('/teacher/reminder/send', null, {
+          params: {
+            studentId: targetId,
+            teacherId: teacherId,
+            content: batchReminderForm.value.content
+          }
+        })
+        successCount++
+      } catch {
+        failCount++
+      }
+    }
+
+    showBatchReminderDialog.value = false
+    ElMessage.success(`已向 ${successCount} 名学生发送提醒${failCount > 0 ? `，${failCount} 名失败` : ''}`)
+  } catch (error) {
+    console.error('批量发送提醒失败:', error)
+    ElMessage.error('批量发送失败')
+  } finally {
+    batchReminderSending.value = false
+  }
 }
 
 const exportSelectedStudentProfiles = async () => {
@@ -1068,13 +1174,45 @@ const exportSelectedStudentProfiles = async () => {
   }
 }
 
-const exportBatchData = () => {
-  exportModalTitle.value = '批量导出数据'
-  exportModalType.value = 'batch'
-  exportScope.value = 'college'
-  exportClass.value = ''
-  exportGrade.value = ''
-  showExportModal.value = true
+const getAuthToken = () => {
+  const currentRole = localStorage.getItem('current_role') || 'ROLE_TEACHER'
+  const rolePrefixes: Record<string, string> = {
+    'ROLE_STUDENT': 'student_', 'ROLE_TEACHER': 'teacher_',
+    'ROLE_TEACHER_COUNSELOR': 'teacher_', 'ROLE_TEACHER_COLLEGE': 'teacher_',
+    'ROLE_TEACHER_DEPARTMENT': 'teacher_', 'ROLE_ADMIN': 'admin_', 'ROLE_COMPANY': 'company_'
+  }
+  const rolePrefix = rolePrefixes[currentRole] || 'teacher_'
+  return localStorage.getItem(`${rolePrefix}accessToken_${currentRole}`) ||
+         localStorage.getItem(`${rolePrefix}accessToken`) ||
+         localStorage.getItem('teacher_accessToken_ROLE_TEACHER')
+}
+
+const exportAllData = async () => {
+  const loadingMsg = ElMessage({ message: '正在导出学生数据...', type: 'info', duration: 0 })
+  try {
+    const url = `/api/teacher/internship-status/export/batch?t=${Date.now()}`
+    const response = await fetch(url, {
+      headers: { 'Authorization': `Bearer ${getAuthToken()}` }
+    })
+    if (!response.ok) throw new Error('导出失败')
+
+    const blob = await response.blob()
+    const downloadUrl = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = downloadUrl
+    link.download = `学生数据_${new Date().getTime()}.xlsx`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    window.URL.revokeObjectURL(downloadUrl)
+
+    ElMessage.success('导出成功')
+  } catch (error) {
+    console.error('导出数据失败:', error)
+    ElMessage.error('导出失败')
+  } finally {
+    loadingMsg.close()
+  }
 }
 
 const confirmExport = async () => {
@@ -1309,11 +1447,35 @@ onMounted(() => {
   padding: 0 6px;
 }
 
+.stat-item.clickable {
+  cursor: pointer;
+  border-radius: 8px;
+  padding: 4px 10px;
+  transition: all 0.2s ease;
+}
+
+.stat-item.clickable:hover {
+  background: #ecf5ff;
+  transform: translateY(-1px);
+}
+
 .stat-value {
   font-size: 18px;
   font-weight: 700;
   color: #409eff;
   line-height: 1;
+}
+
+.stat-value.accent-warning {
+  color: #e6a23c;
+}
+
+.stat-value.accent-primary {
+  color: #409eff;
+}
+
+.stat-value.accent-success {
+  color: #67c23a;
 }
 
 .stat-label {

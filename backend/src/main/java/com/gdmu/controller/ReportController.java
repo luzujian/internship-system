@@ -11,6 +11,7 @@ import com.gdmu.mapper.ReportMapper;
 import com.gdmu.mapper.StudentApplicationMapper;
 import com.gdmu.mapper.StudentInternshipStatusMapper;
 import com.gdmu.mapper.StudentUserMapper;
+import com.gdmu.service.CompanyUserService;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.poi.ss.usermodel.*;
@@ -60,6 +61,9 @@ public class ReportController {
     private StudentInternshipStatusMapper internshipStatusMapper;
 
     @Autowired
+    private CompanyUserService companyUserService;
+
+    @Autowired
     private StudentApplicationMapper studentApplicationMapper;
 
     /**
@@ -98,7 +102,7 @@ public class ReportController {
 
             long internshipStudents = 0;
             try {
-                internshipStudents = internshipStatusMapper.countByStatus(1) + internshipStatusMapper.countByStatus(2) + internshipStatusMapper.countByStatus(3);
+                internshipStudents = internshipStatusMapper.countByStatus(2) + internshipStatusMapper.countByStatus(3) + internshipStatusMapper.countByStatus(4);
             } catch (Exception e) {
                 log.warn("获取实习学生数失败: {}", e.getMessage());
             }
@@ -106,21 +110,12 @@ public class ReportController {
             double internshipRate = totalStudents > 0 ? (double) internshipStudents / totalStudents * 100 : 0;
             currentMetrics.setInternshipRate(Math.round(internshipRate * 10.0) / 10.0);
 
-            int approvalCount = getApprovalCount(currentStartDate, currentEndDate);
+            int approvalCount = getApprovalCount();
             currentMetrics.setApprovalCount(approvalCount);
-
-            int resourceDownloads = 0;
-            try {
-                resourceDownloads = reportMapper.getResourceDownloads(currentStartDate, currentEndDate);
-            } catch (Exception e) {
-                log.warn("获取资源下载量失败: {}", e.getMessage());
-            }
-            currentMetrics.setResourceDownloads(resourceDownloads);
 
             currentMetrics.setCompanyChange(0);
             currentMetrics.setInternshipRateChange(0);
             currentMetrics.setApprovalCountChange(0);
-            currentMetrics.setResourceDownloadsChange(0);
 
             return Result.success(currentMetrics);
         } catch (Exception e) {
@@ -132,8 +127,6 @@ public class ReportController {
             defaultMetrics.setInternshipRateChange(0);
             defaultMetrics.setApprovalCount(0);
             defaultMetrics.setApprovalCountChange(0);
-            defaultMetrics.setResourceDownloads(0);
-            defaultMetrics.setResourceDownloadsChange(0);
             return Result.success(defaultMetrics);
         }
     }
@@ -323,12 +316,10 @@ public class ReportController {
         try { companyCount = companyUserMapper.countApproved(); } catch (Exception e) { log.warn("获取企业数量失败: {}", e.getMessage()); }
         long totalStudents = 0;
         try { totalStudents = studentUserMapper.count() != null ? studentUserMapper.count() : 0; } catch (Exception e) { log.warn("获取学生总数失败: {}", e.getMessage()); }
-        long internshipStudents = 0;
-        try { internshipStudents = internshipStatusMapper.countByStatus(1) + internshipStatusMapper.countByStatus(2) + internshipStatusMapper.countByStatus(3); } catch (Exception e) { log.warn("获取实习学生数失败: {}", e.getMessage()); }
-        double internshipRate = totalStudents > 0 ? (double) internshipStudents / totalStudents * 100 : 0;
-        int approvalCount = getApprovalCount(currentStartDate, currentEndDate);
-        int resourceDownloads = 0;
-        try { resourceDownloads = reportMapper.getResourceDownloads(currentStartDate, currentEndDate); } catch (Exception e) { log.warn("获取资源下载量失败: {}", e.getMessage()); }
+        long internshipStudentsExport = 0;
+        try { internshipStudentsExport = internshipStatusMapper.countByStatus(2) + internshipStatusMapper.countByStatus(3) + internshipStatusMapper.countByStatus(4); } catch (Exception e) { log.warn("获取实习学生数失败: {}", e.getMessage()); }
+        double internshipRate = totalStudents > 0 ? (double) internshipStudentsExport / totalStudents * 100 : 0;
+        int approvalCount = getApprovalCount();
 
         // 获取企业入驻趋势
         int currentYear = Calendar.getInstance().get(Calendar.YEAR);
@@ -391,8 +382,7 @@ public class ReportController {
             String[][] metricsData = {
                 {"企业入驻数量", String.valueOf(companyCount)},
                 {"学生实习率", String.format("%.1f%%", internshipRate)},
-                {"申请审核数量", String.valueOf(approvalCount)},
-                {"资源下载量", String.valueOf(resourceDownloads)}
+                {"申请审核数量", String.valueOf(approvalCount)}
             };
             for (int i = 0; i < metricsData.length; i++) {
                 Row row = metricsSheet.createRow(i + 2);
@@ -792,9 +782,12 @@ public class ReportController {
         return new Date[]{currentStartDate, currentEndDate, previousStartDate, previousEndDate};
     }
 
-    private int getApprovalCount(Date startDate, Date endDate) {
+    private int getApprovalCount() {
         try {
-            return studentApplicationMapper.countByTimeRange(startDate, endDate);
+            Long studentApps = studentApplicationMapper.count();
+            Long companyApps = companyUserService.count();
+            return (studentApps != null ? studentApps.intValue() : 0)
+                 + (companyApps != null ? companyApps.intValue() : 0);
         } catch (Exception e) {
             log.error("获取申请审核数量失败: {}", e.getMessage());
             return 0;

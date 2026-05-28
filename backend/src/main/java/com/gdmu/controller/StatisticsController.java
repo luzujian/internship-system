@@ -415,18 +415,22 @@ public class StatisticsController {
                 statusCount.put(status.getStatus(), statusCount.getOrDefault(status.getStatus(), 0) + 1);
             }
             
-            result.add(MapUtils.of("name", "实习中", "value", statusCount.getOrDefault(1, 0) + statusCount.getOrDefault(2, 0)));
-            result.add(MapUtils.of("name", "已结束", "value", statusCount.getOrDefault(3, 0)));
-            result.add(MapUtils.of("name", "待实习", "value", statusCount.getOrDefault(0, 0)));
-            result.add(MapUtils.of("name", "申请中", "value", statusCount.getOrDefault(4, 0)));
+            result.add(MapUtils.of("name", "待就业", "value", statusCount.getOrDefault(0, 0)));
+            result.add(MapUtils.of("name", "待确认", "value", statusCount.getOrDefault(1, 0)));
+            result.add(MapUtils.of("name", "已确定", "value", statusCount.getOrDefault(2, 0)));
+            result.add(MapUtils.of("name", "实习中", "value", statusCount.getOrDefault(3, 0)));
+            result.add(MapUtils.of("name", "已结束", "value", statusCount.getOrDefault(4, 0)));
             result.add(MapUtils.of("name", "已中断", "value", statusCount.getOrDefault(5, 0)));
+            result.add(MapUtils.of("name", "延期", "value", statusCount.getOrDefault(6, 0)));
         } catch (Exception e) {
             log.error("获取实习状态分布失败: {}", e.getMessage());
+            result.add(MapUtils.of("name", "待就业", "value", 0));
+            result.add(MapUtils.of("name", "待确认", "value", 0));
+            result.add(MapUtils.of("name", "已确定", "value", 0));
             result.add(MapUtils.of("name", "实习中", "value", 0));
             result.add(MapUtils.of("name", "已结束", "value", 0));
-            result.add(MapUtils.of("name", "待实习", "value", 0));
-            result.add(MapUtils.of("name", "申请中", "value", 0));
             result.add(MapUtils.of("name", "已中断", "value", 0));
+            result.add(MapUtils.of("name", "延期", "value", 0));
         }
         return result;
     }

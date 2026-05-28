@@ -172,12 +172,10 @@ export async function refreshAccessToken(currentRole: string): Promise<string | 
       return newAccessToken
     } else {
       logger.error('刷新令牌业务失败')
-      ElMessage.error(ERROR_MESSAGES.TOKEN_REFRESH_FAILED)
       return null
     }
   } catch (error) {
     logger.error('刷新令牌过程中发生错误:', error)
-    ElMessage.error(ERROR_MESSAGES.TOKEN_REFRESH_FAILED)
     return null
   }
 }

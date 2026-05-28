@@ -3,7 +3,6 @@ package com.gdmu.mapper;
 import com.gdmu.entity.dto.ApprovalDetailDTO;
 import com.gdmu.entity.dto.CompanyDetailDTO;
 import com.gdmu.entity.dto.CompanyTrendDTO;
-import com.gdmu.entity.dto.CoreMetricsDTO;
 import com.gdmu.entity.dto.StudentInternshipDetailDTO;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
@@ -17,15 +16,7 @@ import java.util.Map;
  */
 @Mapper
 public interface ReportMapper {
-    
-    /**
-     * 获取核心指标数据
-     * @param startDate 开始日期
-     * @param endDate 结束日期
-     * @return 核心指标DTO
-     */
-    CoreMetricsDTO getCoreMetrics(@Param("startDate") Date startDate, @Param("endDate") Date endDate);
-    
+
     /**
      * 获取企业入驻趋势数据（按季度）
      * @param year 年份

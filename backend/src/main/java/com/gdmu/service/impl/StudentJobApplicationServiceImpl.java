@@ -12,6 +12,7 @@ import com.gdmu.service.InternshipTimeSettingsService;
 import com.gdmu.service.StudentJobApplicationService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
@@ -72,6 +73,7 @@ public class StudentJobApplicationServiceImpl implements StudentJobApplicationSe
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public int create(StudentJobApplication application) {
         // 校验应聘时间范围
         validateApplicationTime();

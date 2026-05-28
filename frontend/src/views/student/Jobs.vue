@@ -96,7 +96,7 @@
                 <div class="filter-group">
                   <div class="filter-label">
                     <el-icon class="label-icon"><OfficeBuilding /></el-icon>
-                    <span>行业</span>
+                    <span>岗位类别</span>
                   </div>
                   <div class="filter-options">
                     <div
@@ -120,7 +120,7 @@
                       v-for="option in internshipBaseOptions"
                       :key="option.value"
                       :class="['filter-option', { active: selectedInternshipBase === option.value }]"
-                      @click="selectedInternshipBase = option.value"
+                      @click="selectedInternshipBase = selectedInternshipBase === option.value ? '' : option.value"
                     >
                       {{ option.label }}
                     </div>
@@ -139,7 +139,7 @@
                       v-for="option in salaryOptions"
                       :key="option.value"
                       :class="['filter-option', { active: selectedSalary === option.value }]"
-                      @click="selectedSalary = option.value"
+                      @click="selectedSalary = selectedSalary === option.value ? '' : option.value"
                     >
                       {{ option.label }}
                     </div>
@@ -239,15 +239,10 @@
                       <el-tag v-else-if="job.remainingQuota === 0" type="info">
                         已招满
                       </el-tag>
-                      <!-- 待审核状态：可以取消 -->
-                      <el-button
-                        v-else-if="job.applicationStatus === 'pending'"
-                        type="warning"
-                        @click.stop="cancelApply(job)"
-                        class="cancel-apply-button"
-                      >
-                        取消申请
-                      </el-button>
+                      <!-- 待审核状态 -->
+                      <el-tag v-else-if="job.applicationStatus === 'pending'" type="warning">
+                        待审核
+                      </el-tag>
                       <!-- 面试通过：显示状态，不显示取消 -->
                       <el-tag v-else-if="job.applicationStatus === 'interview_passed'" type="success">
                         面试通过
@@ -348,7 +343,7 @@
               </div>
               <div class="info-item">
                 <el-icon><OfficeBuilding /></el-icon>
-                <span class="info-label">行业：</span>
+                <span class="info-label">公司行业：</span>
                 <span class="info-value">{{ selectedJob.industryName }}</span>
               </div>
             </div>
@@ -415,16 +410,10 @@
               <el-tag v-else-if="selectedJob.remainingQuota === 0" type="info">
                 已招满
               </el-tag>
-              <!-- 待审核状态：可以取消 -->
-              <el-button
-                v-else-if="selectedJob.applicationStatus === 'pending'"
-                type="warning"
-                size="large"
-                @click="cancelApply(selectedJob)"
-                class="detail-cancel-apply-button"
-              >
-                取消申请
-              </el-button>
+              <!-- 待审核状态 -->
+              <el-tag v-else-if="selectedJob.applicationStatus === 'pending'" type="warning">
+                待审核
+              </el-tag>
               <!-- 面试通过：显示状态，不显示取消 -->
               <el-tag v-else-if="selectedJob.applicationStatus === 'interview_passed'" type="success">
                 面试通过
@@ -489,12 +478,7 @@
                     <el-input v-model="applicationForm.major" placeholder="请输入专业" clearable />
                   </el-form-item>
                   <el-form-item label="年级" prop="grade">
-                    <el-select v-model="applicationForm.grade" placeholder="请选择年级" clearable style="width: 100%">
-                      <el-option label="一年级" value="一年级" />
-                      <el-option label="二年级" value="二年级" />
-                      <el-option label="三年级" value="三年级" />
-                      <el-option label="四年级" value="四年级" />
-                    </el-select>
+                    <el-input v-model="applicationForm.grade" placeholder="请输入年级，如：2024级" clearable />
                   </el-form-item>
                   <el-form-item label="联系电话" prop="phone">
                     <el-input v-model="applicationForm.phone" placeholder="请输入联系电话" clearable />
@@ -596,7 +580,7 @@ import request from '@/utils/request'
 import { useAuthStore } from '@/store/auth'
 import studentJobApplicationService from '@/api/StudentJobApplicationService'
 import positionService from '@/api/PositionService'
-import { initAnnouncementWebSocket, onPositionUpdate, onPositionDelete, offPositionUpdate, offPositionDelete } from '@/utils/websocket'
+import { onPositionUpdate, onPositionDelete, offPositionUpdate, offPositionDelete } from '@/utils/websocket'
 import { getTokenKey } from '@/store/auth/storage'
 import type { PositionUpdateData } from '@/utils/websocket'
 import eventBus from '@/utils/eventBus'
@@ -698,7 +682,7 @@ const applicationRules = {
   studentName: [{ required: true, message: '请输入姓名', trigger: 'blur' }],
   studentNo: [{ required: true, message: '请输入学号', trigger: 'blur' }],
   major: [{ required: true, message: '请输入专业', trigger: 'blur' }],
-  grade: [{ required: true, message: '请选择年级', trigger: 'change' }],
+  grade: [{ required: true, message: '请输入年级', trigger: 'blur' }],
   phone: [{ required: true, message: '请输入联系电话', trigger: 'blur' }]
 }
 
@@ -749,25 +733,7 @@ const confirmedPositionId = ref(null) // 学生已确认的职位ID
 
 const filteredJobs = computed(() => {
   let result = [...jobs.value]
-  
-  // 先应用快捷筛选
-  if (activeQuickFilter.value && activeQuickFilter.value !== 'all') {
-    if (activeQuickFilter.value === 'latest') {
-      // 显示最新职位（最近7天内发布的）
-      const sevenDaysAgo = new Date()
-      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
-      result = result.filter(job => new Date(job.publishTime) >= sevenDaysAgo)
-      result.sort((a, b) => new Date(b.publishTime) - new Date(a.publishTime))
-    } else if (activeQuickFilter.value === 'hot') {
-      // 显示热门职位（收藏数或申请数高的）
-      result.sort((a, b) => {
-        const scoreA = (a.viewCount || 0) + (a.applyCount || 0)
-        const scoreB = (b.viewCount || 0) + (b.applyCount || 0)
-        return scoreB - scoreA
-      })
-    }
-  }
-  
+
   if (searchKeyword.value) {
     const keyword = searchKeyword.value.toLowerCase()
     result = result.filter(job => 
@@ -793,12 +759,18 @@ const filteredJobs = computed(() => {
     )
   }
   
-  if (selectedSalary) {
+  if (selectedSalary.value) {
     result = result.filter(job => {
-      if (!selectedSalary.value) return true
-      const salaryRange = selectedSalary.value
-      const jobSalary = job.salary
-      return jobSalary.includes(salaryRange.split('-')[0])
+      const jobRange = parseSalaryToK(job.salary)
+      if (!jobRange) return false
+      const filterValue = selectedSalary.value
+      if (filterValue === '12000+') {
+        return jobRange.min >= 12
+      }
+      const parts = filterValue.split('-')
+      const filterMin = parseInt(parts[0]) / 1000
+      const filterMax = parseInt(parts[1]) / 1000
+      return jobRange.min <= filterMax && jobRange.max >= filterMin
     })
   }
   
@@ -817,6 +789,18 @@ const filteredJobs = computed(() => {
   
   return result
 })
+
+// 解析薪资字符串为K单位数值范围，如 "3-5K/月" → {min:3, max:5}，"面议" → null
+const parseSalaryToK = (salaryStr) => {
+  if (!salaryStr || salaryStr === '面议') return null
+  const rangeMatch = salaryStr.match(/(\d+)-(\d+)K/)
+  if (rangeMatch) return { min: parseInt(rangeMatch[1]), max: parseInt(rangeMatch[2]) }
+  const minMatch = salaryStr.match(/(\d+)K\/月起/)
+  if (minMatch) return { min: parseInt(minMatch[1]), max: Infinity }
+  const maxMatch = salaryStr.match(/最高(\d+)K/)
+  if (maxMatch) return { min: 0, max: parseInt(maxMatch[1]) }
+  return null
+}
 
 const totalJobs = computed(() => filteredJobs.value.length)
 
@@ -850,10 +834,10 @@ const filterSummary = computed(() => {
   const summaries = []
   if (selectedIndustry.value.length > 0) {
     const industryNames = selectedIndustry.value.map(value => {
-      const industry = industryOptions.find(opt => opt.value === value)
+      const industry = industryOptions.value.find(opt => opt.value === value)
       return industry ? industry.label : value
     })
-    summaries.push(`行业: ${industryNames.join(', ')}`)
+    summaries.push(`岗位类别: ${industryNames.join(', ')}`)
   }
   if (selectedCompany.value.length > 0) {
     const companyNames = selectedCompany.value.map(value => {
@@ -1014,18 +998,31 @@ const submitApplication = async () => {
 
     const response = await studentJobApplicationService.create(applicationData)
     if (response.code === 200) {
+      // 同时更新 jobs 数组中的原始对象和 selectedJob（两者可能不是同一引用）
+      const jobId = currentApplyingJob.value.id
+      const jobInList = jobs.value.find(j => j.id === jobId)
+      if (jobInList) {
+        jobInList.isApplied = true
+        jobInList.applicationStatus = 'pending'
+      }
+      if (selectedJob.value && selectedJob.value.id === jobId) {
+        selectedJob.value.isApplied = true
+        selectedJob.value.applicationStatus = 'pending'
+      }
       currentApplyingJob.value.isApplied = true
       showApplicationDialog.value = false
       ElMessage.success('申请提交成功！')
       // 关闭详情对话框
       showJobDetailDialog.value = false
       // 触发申请成功事件，通知其他页面更新状态
-      eventBus.emit('applicationSubmitted', { positionId: currentApplyingJob.value.id })
+      eventBus.emit('applicationSubmitted', { positionId: jobId })
     } else {
       ElMessage.error(response.message || '申请失败')
     }
   } catch (error) {
     console.error('申请失败:', error)
+    const msg = error?.response?.data?.message || error?.message || '申请失败，请稍后重试'
+    ElMessage.error(msg)
   } finally {
     submitting.value = false
   }
@@ -1137,7 +1134,7 @@ const toggleFavorite = async (job) => {
   }
 }
 
-// 加载行业选项
+// 加载岗位类别选项
 const loadIndustryOptions = async () => {
   try {
     const response = await request.get(`/positions/options/industries`)
@@ -1145,7 +1142,7 @@ const loadIndustryOptions = async () => {
       industryOptions.value = response.data || []
     }
   } catch (error) {
-    console.error('获取行业选项失败:', error)
+    console.error('获取岗位类别选项失败:', error)
   }
 }
 
@@ -2196,24 +2193,20 @@ onUnmounted(() => {
   gap: 12px;
 }
 
-.favorite-icon {
-  font-size: 24px;
-  color: #94a3b8;
+.detail-actions .favorite-icon {
+  font-size: 38px;
+  color: #c0c4cc;
   cursor: pointer;
   transition: all 0.3s ease;
-  padding: 8px;
-  border-radius: 8px;
-  background: #f8fafc;
 }
 
-.favorite-icon:hover {
-  color: #f59e0b;
-  background: #fef3c7;
-  transform: scale(1.1);
+.detail-actions .favorite-icon:hover {
+  color: #f7ba2a;
+  transform: scale(1.15);
 }
 
-.favorite-icon.active {
-  color: #f59e0b;
+.detail-actions .favorite-icon.active {
+  color: #f7ba2a;
 }
 
 .detail-section {

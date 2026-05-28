@@ -659,6 +659,42 @@ public class StudentInternshipReflectionController {
     }
 
     /**
+     * 删除实习心得（只能删除草稿状态的）
+     */
+    @DeleteMapping("/{id}")
+    public Result deleteReflection(@PathVariable Long id) {
+        try {
+            User user = getCurrentUser();
+            if (user == null) {
+                return Result.error("未登录");
+            }
+
+            InternshipReflection reflection = internshipReflectionService.findById(id);
+            if (reflection == null) {
+                return Result.error("实习心得不存在");
+            }
+
+            if (!reflection.getStudentId().equals(user.getId())) {
+                return Result.error("无权操作此心得");
+            }
+
+            // 只允许删除草稿状态
+            if (!"0".equals(reflection.getRemark())) {
+                return Result.error("只能删除草稿状态的心得");
+            }
+
+            reflection.setDeleted(1);
+            reflection.setUpdateTime(new Date());
+            internshipReflectionService.updateById(reflection);
+
+            return Result.success("删除成功");
+        } catch (Exception e) {
+            log.error("删除实习心得失败: {}", e.getMessage(), e);
+            return Result.error("删除失败: " + e.getMessage());
+        }
+    }
+
+    /**
      * 查询实习心得的AI分析状态
      */
     @GetMapping("/ai-status/{id}")

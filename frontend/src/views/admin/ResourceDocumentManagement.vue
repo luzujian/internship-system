@@ -558,7 +558,13 @@ const formatFileSize = (bytes) => {
   return (bytes / Math.pow(k, i)).toFixed(2) + ' ' + sizes[i]
 }
 
-const viewResourceDetail = (resource) => {
+const viewResourceDetail = async (resource) => {
+  try {
+    await resourceDocumentApi.getResourceDocumentById(resource.id)
+    resource.viewCount = (resource.viewCount ?? 0) + 1
+  } catch {
+    // 接口失败时仍可查看详情，只是不更新计数
+  }
   selectedResource.value = resource
   detailDialogVisible.value = true
 }
@@ -628,6 +634,7 @@ const downloadResource = async (resource): Promise<void> => {
     link.click()
     document.body.removeChild(link)
     window.URL.revokeObjectURL(url)
+    resource.downloadCount = (resource.downloadCount ?? 0) + 1
     ElMessage.success('下载成功')
   } catch (error) {
     ElMessage.error('下载失败')

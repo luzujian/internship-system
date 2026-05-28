@@ -186,11 +186,15 @@ public class AnnouncementServiceImpl implements AnnouncementService {
     
     @Override
     public PageResult<Announcement> findPage(Integer page, Integer pageSize, String title, String status, String publisher, String excludePublisherRole) {
-        log.debug("分页查询通知公告，页码: {}, 每页大小: {}, 标题: {}, 状态: {}, 发布人: {}, 排除角色: {}",
-                page, pageSize, title, status, publisher, excludePublisherRole);
+        return findPage(page, pageSize, title, status, publisher, excludePublisherRole, null);
+    }
+
+    public PageResult<Announcement> findPage(Integer page, Integer pageSize, String title, String status, String publisher, String excludePublisherRole, String userId) {
+        log.debug("分页查询通知公告，页码: {}, 每页大小: {}, 标题: {}, 状态: {}, 发布人: {}, 排除角色: {}, 用户ID: {}",
+                page, pageSize, title, status, publisher, excludePublisherRole, userId);
 
         PageHelper.startPage(page, pageSize);
-        List<Announcement> announcements = announcementMapper.list(title, status, publisher, excludePublisherRole);
+        List<Announcement> announcements = announcementMapper.list(title, status, publisher, excludePublisherRole, userId);
 
         PageInfo<Announcement> pageInfo = new PageInfo<>(announcements);
         return PageResult.build(pageInfo.getTotal(), pageInfo.getList(),

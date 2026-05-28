@@ -15,6 +15,7 @@ public class HomeStatsDTO {
     private Integer unreadCount;
     private Integer pendingApprovalCount;
     private Integer companyCount;
+    private Integer pendingReflectionCount;
     private List<InternshipStatusDTO> statusData;
     private List<AnnouncementWithReadStatusDTO> announcements;
 }

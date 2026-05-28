@@ -194,23 +194,23 @@ public class ClassCounselorRelationServiceImpl implements ClassCounselorRelation
                 ? ((Number) dashboardStats.get("offer")).intValue() : 0;
         int noOffer = dashboardStats != null && dashboardStats.get("noOffer") != null
                 ? ((Number) dashboardStats.get("noOffer")).intValue() : 0;
+        int interning = dashboardStats != null && dashboardStats.get("interning") != null
+                ? ((Number) dashboardStats.get("interning")).intValue() : 0;
+        int finished = dashboardStats != null && dashboardStats.get("finished") != null
+                ? ((Number) dashboardStats.get("finished")).intValue() : 0;
+        int interrupted = dashboardStats != null && dashboardStats.get("interrupted") != null
+                ? ((Number) dashboardStats.get("interrupted")).intValue() : 0;
         int delay = dashboardStats != null && dashboardStats.get("delay") != null
                 ? ((Number) dashboardStats.get("delay")).intValue() : 0;
 
         statistics.put("studentCount", totalStudents);
-        // confirmed 包含已确定实习(status=2,3)
         statistics.put("confirmedCount", confirmed);
-        // pendingCount 对应有offer但未确定(status=1)
         statistics.put("pendingCount", offer);
         statistics.put("noOfferCount", noOffer);
-        // 延期
+        statistics.put("interningCount", interning);
+        statistics.put("finishedCount", finished);
+        statistics.put("interruptedCount", interrupted);
         statistics.put("delayedCount", delay);
-        // 实习中
-        statistics.put("interningCount", 0);
-        // 已结束
-        statistics.put("finishedCount", 0);
-        // 已中断
-        statistics.put("interruptedCount", 0);
 
         return statistics;
     }

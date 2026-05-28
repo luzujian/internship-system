@@ -51,6 +51,7 @@ let resetPasswordCompanyId = ref<number | null>(null)
 // 查看详情对话框
 let viewDialogVisible = ref(false)
 let currentCompany = ref<CompanyUser | null>(null)
+let companyTagOptions = ref<string[]>([])
 
 // 新增/编辑对话框
 let formDialogVisible = ref(false)
@@ -659,19 +660,31 @@ const downloadMaterials = (company: CompanyUser): void => {
   })
 }
 
+// 获取企业标签列表
+const fetchCompanyTags = async (): Promise<void> => {
+  try {
+    const response = await companyService.getAdminCompanyTags()
+    if (response && (response as any).code === 200 && (response as any).data) {
+      companyTagOptions.value = (response as any).data
+    }
+  } catch (error: any) {
+    logger.error('获取企业标签列表失败:', error)
+  }
+}
+
 // 页面加载时执行
 onMounted(async () => {
   // 立即显示 loading
   loading.value = true
-  
+
   try {
     // 并行执行标签更新和数据查询，不阻塞 loading 显示
     request.post('/admin/companies/tags/update-all')
       .then(() => logger.log('企业标签已自动更新'))
       .catch((error) => logger.warn('自动更新企业标签失败:', error))
-    
-    // 立即查询数据
-    await queryPage()
+
+    // 立即查询数据 + 获取标签选项
+    await Promise.all([queryPage(), fetchCompanyTags()])
   } catch (error) {
     logger.error('页面加载失败:', error)
   }
@@ -709,9 +722,12 @@ onMounted(async () => {
           </el-form-item>
           <el-form-item label="标签">
             <el-select v-model="searchForm.companyTag" placeholder="请选择标签" clearable multiple style="width: 200px;">
-              <el-option label="学生自主联系" value="学生自主联系"></el-option>
-              <el-option label="接受兜底" value="接受兜底"></el-option>
-              <el-option label="双向选择阶段" value="双向选择阶段"></el-option>
+              <el-option
+                v-for="tag in companyTagOptions"
+                :key="tag"
+                :label="tag"
+                :value="tag"
+              ></el-option>
             </el-select>
           </el-form-item>
           <el-form-item label="状态">

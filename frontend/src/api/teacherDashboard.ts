@@ -6,6 +6,7 @@ export interface DashboardStats {
   offer: number
   noOffer: number
   delay: number
+  scopeName?: string
   gradeData: Array<{
     gradeName: string
     total: number
@@ -24,6 +25,14 @@ export interface DashboardStats {
   }>
   classData: Array<{
     className: string
+    total: number
+    confirmed: number
+    offer: number
+    noOffer: number
+    delay: number
+  }>
+  divisionData?: Array<{
+    divisionName: string
     total: number
     confirmed: number
     offer: number

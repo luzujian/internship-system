@@ -21,6 +21,7 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -648,16 +649,32 @@ public class CompanyUserServiceImpl implements CompanyUserService {
     @Transactional(rollbackFor = Exception.class)
     public int batchDeleteRecallRecords(List<Long> ids) {
         log.debug("批量删除企业撤回记录，IDs: {}", ids);
-        
+
         if (ids == null || ids.isEmpty()) {
             throw new BusinessException("ID列表不能为空");
         }
-        
+
         int count = 0;
         for (Long id : ids) {
             count += companyUserMapper.clearRecallDataById(id);
         }
-        
+
         return count;
+    }
+
+    @Override
+    public List<String> getDistinctTags() {
+        List<String> rawTags = companyUserMapper.getDistinctTags();
+        if (rawTags == null || rawTags.isEmpty()) {
+            return Collections.emptyList();
+        }
+        // company_tag 字段存的是逗号分隔的多标签，需要拆分后去重排序
+        return rawTags.stream()
+                .flatMap(tag -> Arrays.stream(tag.split(",")))
+                .map(String::trim)
+                .filter(StringUtils::isNotBlank)
+                .distinct()
+                .sorted()
+                .collect(Collectors.toList());
     }
 }

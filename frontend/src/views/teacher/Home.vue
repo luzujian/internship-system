@@ -12,7 +12,7 @@
         <div class="card" @click="handleCardClick('dashboard')">
           <div class="card-icon green">📊</div>
           <div class="card-content">
-            <h3>实习状态</h3>
+            <h3>{{ internshipCardTitle }}</h3>
             <p class="card-value">已确定实习单位：{{ backendInternshipRate }}%</p>
             <p class="card-desc">{{ internshipCardDesc }}</p>
           </div>
@@ -25,20 +25,28 @@
             <p class="card-desc">需要及时处理的通知</p>
           </div>
         </div>
-        <div class="card" @click="handleCardClick('approval')" v-if="teacherType !== 'COUNSELOR'">
+        <div class="card" @click="handleCardClick('approval')" v-if="teacherType === 'DEPARTMENT'">
           <div class="card-icon orange">✓</div>
           <div class="card-content">
             <h3>待审核</h3>
             <p class="card-value">待处理: {{ approvalData.pending }}</p>
-            <p class="card-desc">学生提交的申请</p>
+            <p class="card-desc">待处理的审核申请</p>
           </div>
         </div>
-        <div class="card" @click="handleCardClick('reports')">
+        <div class="card" @click="handleCardClick('reports')" v-if="teacherType !== 'COUNSELOR'">
           <div class="card-icon purple">📈</div>
           <div class="card-content">
             <h3>企业数据</h3>
             <p class="card-value">企业入驻: {{ operationData.companies }}</p>
             <p class="card-desc">合作实习单位数量</p>
+          </div>
+        </div>
+        <div class="card" @click="handleCardClick('evaluation')" v-if="teacherType === 'COUNSELOR'">
+          <div class="card-icon purple">📝</div>
+          <div class="card-content">
+            <h3>待批改心得</h3>
+            <p class="card-value">待批改: {{ pendingReflectionCount }} 份</p>
+            <p class="card-desc">学生提交的实习心得报告</p>
           </div>
         </div>
       </div>
@@ -51,28 +59,35 @@
           <el-icon><Bell /></el-icon>
           公告栏
           <el-badge v-if="notificationData.unread > 0" :value="notificationData.unread" class="unread-badge"></el-badge>
+          <span class="board-hint">我的未读消息</span>
         </h3>
         <router-link to="/teacher/announcements" class="view-more-link">查看更多</router-link>
       </div>
         <div class="announcement-list-container">
           <el-scrollbar max-height="400px">
             <div class="announcement-list">
-              <div 
-                v-for="announcement in announcements" 
-                :key="announcement.id"
-                class="announcement-item"
-                :class="{ 'unread': !announcement.isRead }"
-                @click="openAnnouncementDetail(announcement)"
-              >
-                <div class="announcement-time">{{ announcement.time }}</div>
-                <div class="announcement-content">
-                  <h4>{{ announcement.title }}</h4>
-                  <p>
-                    {{ announcement.content.length > 100 ? announcement.content.substring(0, 100) + '...' : announcement.content }}
-                  </p>
-                </div>
-                <div v-if="!announcement.isRead" class="unread-dot"></div>
+              <div v-if="announcements.length === 0" class="empty-notification">
+                <el-icon><Bell /></el-icon>
+                <span>暂无未读公告</span>
               </div>
+              <TransitionGroup name="notif">
+                <div
+                  v-for="announcement in announcements"
+                  :key="announcement.id"
+                  class="announcement-item"
+                  :class="{ 'unread': !announcement.isRead }"
+                  @click="openAnnouncementDetail(announcement)"
+                >
+                  <div class="announcement-time">{{ announcement.time }}</div>
+                  <div class="announcement-content">
+                    <h4>{{ announcement.title }}</h4>
+                    <p>
+                      {{ announcement.content.length > 100 ? announcement.content.substring(0, 100) + '...' : announcement.content }}
+                    </p>
+                  </div>
+                  <div v-if="!announcement.isRead" class="unread-dot"></div>
+                </div>
+              </TransitionGroup>
             </div>
           </el-scrollbar>
         </div>
@@ -139,7 +154,7 @@
     </div>
 
     <!-- 查看公告对话框 -->
-    <el-dialog v-model="viewDialogVisible" title="查看公告" width="800px" class="view-dialog">
+    <el-dialog v-model="viewDialogVisible" title="查看公告" width="800px" class="view-dialog" @closed="handleViewDialogClosed">
       <div v-if="viewData" class="view-content">
         <h3 class="view-title">{{ viewData.title }}</h3>
         <div class="view-meta">
@@ -232,8 +247,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElScrollbar } from 'element-plus'
 import { Bell, Paperclip, Document, Download, ZoomIn } from '@element-plus/icons-vue'
 import {
-  initAnnouncementWebSocket,
-  disconnectAnnouncementWebSocket
+  getAnnouncementWebSocket
 } from '@/utils/websocket'
 import TeacherService from '../../api/teacher'
 import request from '@/utils/request'
@@ -277,6 +291,8 @@ const operationData = ref({
   companies: 0
 })
 
+const pendingReflectionCount = ref(0)
+
 const backendInternshipRate = ref(0)
 
 const startDate = ref('')
@@ -294,6 +310,7 @@ const teacherType = ref<string>('')
 
 const viewDialogVisible = ref(false)
 const viewData = ref<any>(null)
+const pendingDismissId = ref<number | null>(null)
 const filePreviewVisible = ref(false)
 const currentFileUrl = ref('')
 const currentFileName = ref('')
@@ -306,6 +323,13 @@ const statusCardTitle = computed(() => {
   if (teacherType.value === 'DEPARTMENT' && divisionName.value) return `${divisionName.value} - 实习状态占比`
   if (teacherType.value === 'COLLEGE' && departmentName.value) return `${departmentName.value} - 实习状态占比`
   return '应届毕业生实习状态占比'
+})
+
+const internshipCardTitle = computed(() => {
+  if (teacherType.value === 'COUNSELOR') return '负责班级实习状态'
+  if (teacherType.value === 'DEPARTMENT' && divisionName.value) return '本系实习状态'
+  if (teacherType.value === 'COLLEGE' && departmentName.value) return '本院实习状态'
+  return '应届毕业生实习状态'
 })
 
 const internshipCardDesc = computed(() => {
@@ -362,6 +386,7 @@ const loadHomeData = async () => {
     backendInternshipRate.value = response.internshipRate || 0
     approvalData.value.pending = response.pendingApprovalCount || 0
     operationData.value.companies = response.companyCount || 0
+    pendingReflectionCount.value = response.pendingReflectionCount || 0
   } catch (error) {
     console.error('加载首页数据失败:', error)
   }
@@ -369,7 +394,7 @@ const loadHomeData = async () => {
 
 const loadAnnouncements = async () => {
   try {
-    const response = await TeacherService.getNotifications(20)
+    const response = await TeacherService.getNotifications(999)
     if (response && response.data) {
       // 后端已过滤只返回未读公告
       const unreadAnnouncements = response.data.map((a: any) => ({
@@ -381,46 +406,25 @@ const loadAnnouncements = async () => {
         expanded: false
       }))
 
-      // 首页公告栏只显示未读公告（最多5条）
-      const unreadCount = unreadAnnouncements.length
-      notificationData.value.unread = unreadCount
-      announcements.value = unreadAnnouncements.slice(0, 5)
+      // 首页公告栏显示全部未读公告
+      notificationData.value.unread = unreadAnnouncements.length
+      announcements.value = unreadAnnouncements
     }
   } catch (error) {
     console.error('加载公告数据失败:', error)
   }
 }
 
-const handleWebSocketMessage = (data: any) => {
-  console.log('教师端收到WebSocket消息:', data)
-  
-  if (data.type === 'new_announcement') {
-    ElMessage.success({
-      message: `新公告：${data.data?.title || '未知标题'}`,
-      duration: 5000,
-      showClose: true
-    })
-    loadAnnouncements()
-  }
+const handleNewAnnouncement = () => {
+  loadAnnouncements()
 }
 
 const initWebSocket = () => {
-  let token = authStore.token
-  
-  if (!token) {
-    const rolePrefix = 'teacher_'
-    const role = 'ROLE_TEACHER'
-    token = localStorage.getItem(`${rolePrefix}accessToken_${role}`) ||
-            localStorage.getItem(`${rolePrefix}token_${role}`) ||
-            localStorage.getItem('accessToken')
+  const ws = getAnnouncementWebSocket()
+  if (ws && ws.isConnected()) {
+    console.log('WebSocket 已由 Layout 初始化，复用已有连接')
   }
-  
-  if (token) {
-    console.log('初始化 WebSocket 连接，token 存在')
-    initAnnouncementWebSocket(token, handleWebSocketMessage)
-  } else {
-    console.warn('未找到 token，无法初始化 WebSocket')
-  }
+  window.addEventListener('teacher:new-announcement', handleNewAnnouncement)
 }
 
 const handleCardClick = (type: string) => {
@@ -428,7 +432,8 @@ const handleCardClick = (type: string) => {
     dashboard: '/teacher/dashboard',
     announcements: '/teacher/announcements',
     approval: '/teacher/approval',
-    reports: '/teacher/reports'
+    reports: '/teacher/reports',
+    evaluation: '/teacher/evaluation'
   }
   
   const path = routeMap[type]
@@ -450,26 +455,21 @@ const openAnnouncementDetail = async (announcement: AnnouncementWithReadStatus) 
       viewData.value = response.data
       viewDialogVisible.value = true
 
-      // 从列表中移除已读公告（首页只显示未读公告）
-      const index = announcements.value.findIndex(a => a.id === announcement.id)
-      if (index > -1) {
-        announcements.value.splice(index, 1)
-      }
-      notificationData.value.unread = announcements.value.length
+      // 延迟移除：等弹窗关闭后再从列表移除，触发过渡动画
+      pendingDismissId.value = announcement.id
 
-      if (!announcement.isRead) {
-        try {
-          const userId = authStore.user?.id
-          if (userId) {
-            await announcementApi.createAnnouncementReadRecord({
-              announcementId: announcement.id,
-              userId: userId,
-              userRole: 'TEACHER'
-            })
-          }
-        } catch (error) {
-          console.error('标记公告已读失败:', error)
+      // GET /announcements/{id} 后端已自动创建阅读记录，此处补充确保幂等
+      try {
+        const userId = authStore.user?.id
+        if (userId) {
+          await announcementApi.createAnnouncementReadRecord({
+            announcementId: announcement.id,
+            userId: userId,
+            userType: 'TEACHER'
+          })
         }
+      } catch (error) {
+        console.error('标记公告已读失败:', error)
       }
     } else {
       ElMessage.error('获取公告详情失败')
@@ -477,6 +477,17 @@ const openAnnouncementDetail = async (announcement: AnnouncementWithReadStatus) 
   } catch (error) {
     console.error('获取公告详情失败:', error)
     ElMessage.error('获取公告详情失败')
+  }
+}
+
+const handleViewDialogClosed = () => {
+  if (pendingDismissId.value) {
+    const index = announcements.value.findIndex(a => a.id === pendingDismissId.value)
+    if (index > -1) {
+      announcements.value.splice(index, 1)
+    }
+    notificationData.value.unread = announcements.value.length
+    pendingDismissId.value = null
   }
 }
 
@@ -631,8 +642,8 @@ onUnmounted(() => {
   if (updateInterval) {
     clearInterval(updateInterval)
   }
-  disconnectAnnouncementWebSocket()
   window.removeEventListener('storage', handleStorageChange)
+  window.removeEventListener('teacher:new-announcement', handleNewAnnouncement)
 })
 </script>
 
@@ -869,6 +880,43 @@ onUnmounted(() => {
   border-left-color: #faad14;
 }
 
+/* TransitionGroup 公告项过渡动画 */
+.notif-move,
+.notif-enter-active,
+.notif-leave-active {
+  transition: all 0.4s ease;
+}
+
+.notif-enter-from {
+  opacity: 0;
+  transform: translateY(-10px);
+}
+
+.notif-leave-to {
+  opacity: 0;
+  transform: translateY(-10px);
+}
+
+.notif-leave-active {
+  position: absolute;
+}
+
+/* 空状态提示 */
+.empty-notification {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 16px;
+  color: #909399;
+  font-size: 14px;
+  gap: 8px;
+}
+
+.empty-notification .el-icon {
+  font-size: 36px;
+}
+
 .unread-dot {
   position: absolute;
   top: 12px;
@@ -881,6 +929,13 @@ onUnmounted(() => {
 }
 
 .unread-badge {
+  margin-left: 8px;
+}
+
+.board-hint {
+  font-size: 12px;
+  font-weight: 400;
+  color: #909399;
   margin-left: 8px;
 }
 

@@ -697,7 +697,7 @@ const saveProfile = async () => {
     <!-- 顶部栏 -->
     <header class="header">
       <div class="header-left">
-        <el-button type="text" @click="toggleSidebar" class="sidebar-toggle-btn">
+        <el-button link @click="toggleSidebar" class="sidebar-toggle-btn">
           <el-icon>
             <component :is="sidebarCollapsed ? Menu : Fold" />
           </el-icon>
@@ -710,7 +710,7 @@ const saveProfile = async () => {
       <div class="user-actions">
         <!-- 个人中心 -->
         <el-dropdown @command="handleCommand" class="user-dropdown">
-          <el-button type="text" class="user-btn">
+          <el-button link class="user-btn">
             <div class="user-info">
               <el-icon class="user-avatar">
                 <User />

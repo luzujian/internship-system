@@ -10,7 +10,6 @@ export function getUnitChangeStatus() {
 
 // 提交单位变更申请
 export function submitUnitChange(data: {
-  newCompany: string
   reason: string
   materials: Record<string, string>
 }) {
@@ -23,7 +22,6 @@ export function submitUnitChange(data: {
 
 // 再次申请（更新被驳回的申请）
 export function resubmitUnitChange(id: number, data: {
-  newCompany: string
   reason: string
   materials: Record<string, string>
 }) {

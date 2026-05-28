@@ -91,7 +91,9 @@ public interface AnnouncementService {
     PageResult<Announcement> findPage(Integer page, Integer pageSize, String title, String status);
     
     PageResult<Announcement> findPage(Integer page, Integer pageSize, String title, String status, String publisher, String excludePublisherRole);
-    
+
+    PageResult<Announcement> findPage(Integer page, Integer pageSize, String title, String status, String publisher, String excludePublisherRole, String userId);
+
     /**
      * 根据用户类型和用户信息获取公告列表
      * @param userType 用户类型：STUDENT/TEACHER

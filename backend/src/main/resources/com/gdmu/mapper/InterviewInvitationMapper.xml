@@ -15,8 +15,32 @@
         <result column="status" property="status"/>
         <result column="reject_reason" property="rejectReason"/>
         <result column="remark" property="remark"/>
+        <result column="contact_person" property="contactPerson"/>
+        <result column="contact_phone" property="contactPhone"/>
         <result column="create_time" property="createTime"/>
         <result column="update_time" property="updateTime"/>
+        <result column="website" property="website"/>
+        <result column="company_address" property="companyAddress"/>
     </resultMap>
+
+    <select id="findByStudentId" resultMap="BaseResultMap">
+        SELECT ii.*, cu.website,
+               CONCAT(COALESCE(p.province,''), COALESCE(p.city,''), COALESCE(p.district,''), COALESCE(p.detail_address,'')) AS company_address
+        FROM interview_invitation ii
+        LEFT JOIN company_users cu ON ii.company_id = cu.id
+        LEFT JOIN position p ON ii.position_id = p.id
+        WHERE ii.student_id = #{studentId}
+        ORDER BY ii.interview_time DESC
+    </select>
+
+    <select id="findByStudentIdAndStatus" resultMap="BaseResultMap">
+        SELECT ii.*, cu.website,
+               CONCAT(COALESCE(p.province,''), COALESCE(p.city,''), COALESCE(p.district,''), COALESCE(p.detail_address,'')) AS company_address
+        FROM interview_invitation ii
+        LEFT JOIN company_users cu ON ii.company_id = cu.id
+        LEFT JOIN position p ON ii.position_id = p.id
+        WHERE ii.student_id = #{studentId} AND ii.status = #{status}
+        ORDER BY ii.interview_time DESC
+    </select>
 
 </mapper>

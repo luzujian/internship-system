@@ -93,7 +93,7 @@ const quickActions = ref([
     title: '查看申请',
     icon: markRaw(View),
     color: '#67C23A',
-    route: '/company/internship-confirm'
+    route: '/company/application-view'
   },
   {
     title: '编辑企业信息',
@@ -115,6 +115,18 @@ const notifications = ref([])
 
 const unreadCount = computed(() => {
   return notifications.value.filter(n => !n.isRead).length
+})
+
+const sortedNotifications = computed(() => {
+  return [...notifications.value].sort((a, b) => {
+    // 未读优先
+    if (!a.isRead && b.isRead) return -1
+    if (a.isRead && !b.isRead) return 1
+    // 同状态下按时间倒序
+    const timeA = new Date(a.time).getTime()
+    const timeB = new Date(b.time).getTime()
+    return timeB - timeA
+  })
 })
 
 const fetchStats = async () => {
@@ -593,14 +605,14 @@ onUnmounted(() => {
         </div>
         <el-scrollbar height="400px">
           <div class="notification-list">
-            <div v-if="notifications.length === 0" class="empty-state">
+            <div v-if="sortedNotifications.length === 0" class="empty-state">
               <el-icon :size="48" color="#C0C4CC">
                 <Bell />
               </el-icon>
               <p>暂无通知</p>
             </div>
             <div
-              v-for="notification in notifications"
+              v-for="notification in sortedNotifications"
               :key="notification.id"
               class="notification-item"
               :class="{ 'unread': !notification.isRead }"
@@ -722,7 +734,7 @@ onUnmounted(() => {
 .welcome-card {
   background: linear-gradient(135deg, #409EFF 0%, #52c41a 100%);
   color: white;
-  padding: 24px;
+  padding: 16px 40px;
   border-radius: 16px;
   box-shadow: 0 8px 32px rgba(64, 158, 255, 0.3);
   display: flex;
@@ -805,7 +817,7 @@ onUnmounted(() => {
 
 .stat-card {
   background: white;
-  padding: 16px 20px;
+  padding: 12px 20px;
   border-radius: 12px;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
   display: flex;

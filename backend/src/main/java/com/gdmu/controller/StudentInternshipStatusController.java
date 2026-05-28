@@ -432,10 +432,13 @@ public class StudentInternshipStatusController {
     private String getStatusText(Integer status) {
         if (status == null) return "未知";
         switch (status) {
-            case 0: return "未找到实习";
-            case 1: return "有 Offer 未确定";
-            case 2: return "已确定实习";
-            case 3: return "已结束";
+            case 0: return "待就业";
+            case 1: return "待确认";
+            case 2: return "已确定";
+            case 3: return "实习中";
+            case 4: return "已结束";
+            case 5: return "已中断";
+            case 6: return "延期";
             default: return "未知";
         }
     }

@@ -33,10 +33,10 @@
     
     <!-- 根据ID查询通知公告（优化版 - 使用LEFT JOIN替代子查询） -->
     <select id="findById" resultMap="AnnouncementResultMap">
-        SELECT a.*, COALESCE(read_counts.read_count, 0) as read_count
+        SELECT a.*, COALESCE(read_counts.cnt, 0) as read_count
         FROM announcements a
         LEFT JOIN (
-            SELECT announcement_id, COUNT(*) as read_count
+            SELECT announcement_id, COUNT(*) as cnt
             FROM announcement_read_records
             GROUP BY announcement_id
         ) read_counts ON a.id = read_counts.announcement_id
@@ -96,10 +96,10 @@
     <!-- 查询所有通知公告（优化版 - 使用LEFT JOIN替代子查询，消除N+1问题） -->
     <select id="findAll" resultMap="AnnouncementResultMap">
         SELECT a.*,
-            COALESCE(read_counts.read_count, 0) as read_count
+            COALESCE(read_counts.cnt, 0) as read_count
         FROM announcements a
         LEFT JOIN (
-            SELECT announcement_id, COUNT(*) as read_count
+            SELECT announcement_id, COUNT(*) as cnt
             FROM announcement_read_records
             GROUP BY announcement_id
         ) read_counts ON a.id = read_counts.announcement_id
@@ -110,10 +110,10 @@
     
     <!-- 动态条件查询通知公告（根据标题和状态，优化版 - 使用LEFT JOIN替代子查询） -->
     <select id="listByTitleAndStatus" resultMap="AnnouncementResultMap">
-        SELECT a.*, COALESCE(read_counts.read_count, 0) as read_count
+        SELECT a.*, COALESCE(read_counts.cnt, 0) as read_count
         FROM announcements a
         LEFT JOIN (
-            SELECT announcement_id, COUNT(*) as read_count
+            SELECT announcement_id, COUNT(*) as cnt
             FROM announcement_read_records
             GROUP BY announcement_id
         ) read_counts ON a.id = read_counts.announcement_id
@@ -132,10 +132,15 @@
 
     <!-- 动态条件查询通知公告（根据标题、状态和发布者，优化版 - 使用LEFT JOIN替代子查询） -->
     <select id="list" resultMap="AnnouncementResultMap">
-        SELECT a.*, COALESCE(read_counts.read_count, 0) as read_count
+        SELECT a.*, COALESCE(read_counts.cnt, 0) as read_count,
+            CASE WHEN EXISTS(
+                SELECT 1 FROM announcement_read_records r
+                WHERE r.announcement_id = a.id
+                AND r.user_id = #{userId}
+            ) THEN 1 ELSE 0 END as is_read
         FROM announcements a
         LEFT JOIN (
-            SELECT announcement_id, COUNT(*) as read_count
+            SELECT announcement_id, COUNT(*) as cnt
             FROM announcement_read_records
             GROUP BY announcement_id
         ) read_counts ON a.id = read_counts.announcement_id
@@ -154,6 +159,7 @@
             </if>
         </where>
         ORDER BY
+            is_read ASC,
             CASE WHEN a.priority = 'important' THEN 0 ELSE 1 END,
             a.create_time DESC
     </select>
@@ -181,10 +187,10 @@
     
     <!-- 分页查询通知公告（优化版 - 使用LEFT JOIN替代子查询） -->
     <select id="findPage" resultMap="AnnouncementResultMap">
-        SELECT a.*, COALESCE(read_counts.read_count, 0) as read_count
+        SELECT a.*, COALESCE(read_counts.cnt, 0) as read_count
         FROM announcements a
         LEFT JOIN (
-            SELECT announcement_id, COUNT(*) as read_count
+            SELECT announcement_id, COUNT(*) as cnt
             FROM announcement_read_records
             GROUP BY announcement_id
         ) read_counts ON a.id = read_counts.announcement_id

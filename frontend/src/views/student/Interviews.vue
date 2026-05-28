@@ -16,52 +16,54 @@
       </div>
     </div>
 
-    <div class="interviews-list">
-      <div
-        v-for="item in filteredInterviews"
-        :key="item.id"
-        class="interview-card"
-      >
-        <div class="card-header">
-          <div class="card-title">{{ item.jobTitle }}</div>
-          <div :class="['status-tag', item.statusClass]">
-            {{ item.status }}
-          </div>
-        </div>
-        <div class="card-body">
-          <div class="card-info">
-            <div class="info-item">
-              <el-icon><OfficeBuilding /></el-icon>
-              <span>{{ item.company }}</span>
-            </div>
-            <div class="info-item">
-              <el-icon><Clock /></el-icon>
-              <span>{{ item.interviewTime }}</span>
-            </div>
-            <div class="info-item">
-              <el-icon><VideoCamera /></el-icon>
-              <span>{{ item.interviewMethod }}</span>
-            </div>
-            <div class="info-item">
-              <el-icon><Location /></el-icon>
-              <span>{{ item.location }}</span>
+    <div class="list-wrapper">
+      <div v-if="filteredInterviews.length > 0" class="interviews-list">
+        <div
+          v-for="item in filteredInterviews"
+          :key="item.id"
+          class="interview-card"
+        >
+          <div class="card-header">
+            <div class="card-title">{{ item.jobTitle }}</div>
+            <div :class="['status-tag', item.statusClass]">
+              {{ item.status }}
             </div>
           </div>
-          <div class="card-footer">
-            <div class="card-actions">
-              <button class="action-button view" @click="viewDetails(item)">
-                <el-icon><ArrowRight /></el-icon>
-                查看详情
-              </button>
+          <div class="card-body">
+            <div class="card-info">
+              <div class="info-item">
+                <el-icon><OfficeBuilding /></el-icon>
+                <span>{{ item.company }}</span>
+              </div>
+              <div class="info-item">
+                <el-icon><Clock /></el-icon>
+                <span>{{ item.interviewTime }}</span>
+              </div>
+              <div class="info-item">
+                <el-icon><VideoCamera /></el-icon>
+                <span>{{ item.interviewMethod }}</span>
+              </div>
+              <div class="info-item">
+                <el-icon><Location /></el-icon>
+                <span>{{ item.location }}</span>
+              </div>
+            </div>
+            <div class="card-footer">
+              <div class="card-actions">
+                <button class="action-button view" @click="viewDetails(item)">
+                  <el-icon><ArrowRight /></el-icon>
+                  查看详情
+                </button>
+              </div>
             </div>
           </div>
         </div>
       </div>
-    </div>
 
-    <div v-if="filteredInterviews.length === 0" class="empty-state">
-      <el-icon class="empty-icon"><Clock /></el-icon>
-      <div class="empty-text">暂无面试记录</div>
+      <div v-else class="empty-state">
+        <el-icon class="empty-icon"><Clock /></el-icon>
+        <div class="empty-text">暂无面试记录</div>
+      </div>
     </div>
 
     <!-- 面试详情对话框 -->
@@ -144,18 +146,10 @@
 <script setup lang="ts">
 import { ref, computed, inject, watch, onMounted, onUnmounted } from 'vue'
 import { Clock, VideoCamera, Location, OfficeBuilding, ArrowRight } from '@element-plus/icons-vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import request from '@/utils/request'
-import { useAuthStore } from '@/store/auth'
 import emitter from '@/utils/event-bus'
-import { initAnnouncementWebSocket, onInterviewCreate, onInterviewStatusUpdate, offInterviewCreate, offInterviewStatusUpdate } from '@/utils/websocket'
-
-const authStore = useAuthStore()
-
-// 从 auth store 获取学生 ID
-const getStudentId = () => {
-  return authStore.user?.id
-}
+import { onInterviewCreate, onInterviewStatusUpdate, offInterviewCreate, offInterviewStatusUpdate } from '@/utils/websocket'
 
 // 接收父组件提供的对话框状态
 const isDialogOpen = inject('isDialogOpen');
@@ -163,7 +157,6 @@ const isDialogOpen = inject('isDialogOpen');
 const currentFilter = ref('all')
 const showDetailDialog = ref(false)
 const currentInterview = ref(null)
-const showInternshipConfirmationForm = ref(false)
 
 const interviews = ref([])
 
@@ -174,29 +167,19 @@ watch(showDetailDialog, (newVal) => {
   }
 });
 
-// 监听实习确认对话框状态
-watch(showInternshipConfirmationForm, (newVal) => {
-  if (isDialogOpen) {
-    isDialogOpen.value = newVal;
-  }
-});
-
 // 过滤器选项
 const filters = [
   { label: '全部', value: 'all' },
-  { label: '待确认', value: 'pending' },
-  { label: '待面试', value: 'upcoming' },
+  { label: '待面试', value: 'pending' },
   { label: '已完成', value: 'completed' }
 ]
 
 const fetchInterviews = async () => {
   try {
     let status = null
-    // pending=0, upcoming=1, completed 不发送status(获取所有), cancelled 已移除
+    // pending_interview=0, interview_passed=1, interview_failed=2, completed 不发送status(获取全部)
     if (currentFilter.value === 'pending') {
       status = 0
-    } else if (currentFilter.value === 'upcoming') {
-      status = 1
     }
     // completed 和 all 都获取所有数据，前端筛选
 
@@ -263,69 +246,6 @@ const detailDialogTitle = computed(() => {
   return '面试详情'
 })
 
-const confirmInterview = async (item) => {
-  try {
-    ElMessageBox.confirm(
-      `确认参加 "${item.jobTitle}" 的面试？`,
-      '确认面试',
-      {
-        confirmButtonText: '确认参加',
-        cancelButtonText: '取消',
-        type: 'info'
-      }
-    ).then(async () => {
-      try {
-        const response = await request.post(`/student/interviews/${item.id}/confirm`)
-        if (response.code === 200) {
-          item.status = '待面试'
-          item.statusClass = 'upcoming'
-          ElMessage.success('已确认参加面试')
-        } else {
-          ElMessage.error(response.data.message || '确认失败，请稍后重试')
-        }
-      } catch (error) {
-        console.error('确认面试失败:', error)
-        ElMessage.error('网络错误，请稍后重试')
-      }
-    }).catch(() => {
-      ElMessage.info('已取消')
-    })
-  } catch (error) {
-    console.error('确认面试失败:', error)
-  }
-}
-
-const rejectInterview = async (item) => {
-  try {
-    ElMessageBox.prompt('请输入拒绝理由', '拒绝面试', {
-      confirmButtonText: '提交',
-      cancelButtonText: '取消',
-      inputPattern: /.+/,
-      inputErrorMessage: '请输入拒绝理由'
-    }).then(async ({ value }) => {
-      try {
-        const response = await request.post(`/student/interviews/${item.id}/reject`, {
-          reason: value
-        })
-        if (response.code === 200) {
-          item.status = '已取消'
-          item.statusClass = 'cancelled'
-          ElMessage.success('已拒绝面试')
-        } else {
-          ElMessage.error(response.data.message || '拒绝失败，请稍后重试')
-        }
-      } catch (error) {
-        console.error('拒绝面试失败:', error)
-        ElMessage.error('网络错误，请稍后重试')
-      }
-    }).catch(() => {
-      ElMessage.info('已取消')
-    })
-  } catch (error) {
-    console.error('拒绝面试失败:', error)
-  }
-}
-
 const viewDetails = (item) => {
   currentInterview.value = item
   showDetailDialog.value = true
@@ -348,7 +268,8 @@ const handleInterviewCreate = (data) => {
     statusClass: getStatusClass(data.status),
     contactPerson: data.contactPerson || '',
     contactPhone: data.contactPhone || '',
-    website: data.website || ''
+    website: data.website || '',
+    interviewNotice: data.remark || ''
   }
   interviews.value.unshift(newInterview)
   ElMessage.success(`新增面试：${data.positionName}`)
@@ -379,13 +300,7 @@ const handleApplicationStatusUpdate = (data) => {
 onMounted(async () => {
   fetchInterviews()
 
-  // 初始化 WebSocket 连接
-  const token = localStorage.getItem('token')
-  if (token) {
-    initAnnouncementWebSocket(token, () => {})
-  }
-
-  // 注册面试事件监听
+  // 注册面试事件监听（复用在 StudentLayout 中已初始化的 WebSocket）
   onInterviewCreate(handleInterviewCreate)
   onInterviewStatusUpdate(handleInterviewStatusUpdate)
 
@@ -403,10 +318,11 @@ onUnmounted(() => {
 <style scoped>
 .interviews-container {
   width: 100%;
-  min-height: 100%;
-  background: #f1f5f9;
-  overflow-y: auto;
-  overflow-x: hidden;
+  height: calc(100vh - 64px - 40px);
+  background: transparent;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 .page-header {
@@ -483,15 +399,21 @@ onUnmounted(() => {
   border-color: #409EFF;
 }
 
+/* 列表包装器：填充剩余空间并提供滚动 */
+.list-wrapper {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
 /* 面试列表卡片：小卡片网格布局 */
 .interviews-list {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  grid-auto-rows: max-content;
   gap: 20px;
-  /* 移除高度限制，全屏显示内容 */
-  max-height: none;
-  overflow-y: visible;
   padding-right: 4px;
+  align-content: start;
 }
 
 .interview-card {
@@ -510,7 +432,6 @@ onUnmounted(() => {
   position: relative;
   overflow: hidden;
   border: 1px solid rgba(226, 232, 240, 0.6);
-  height: 100%;
 }
 
 .interview-card::before {
@@ -634,33 +555,6 @@ onUnmounted(() => {
     inset 0 1px 0 rgba(255, 255, 255, 0.6);
 }
 
-.status-tag.upcoming {
-  background: linear-gradient(135deg, #e6f7ff 0%, #bae7ff 100%);
-  color: #1890ff;
-  border: 1px solid #91d5ff;
-  box-shadow: 
-    0 2px 8px rgba(24, 144, 255, 0.2),
-    inset 0 1px 0 rgba(255, 255, 255, 0.6);
-}
-
-.status-tag.completed {
-  background: linear-gradient(135deg, #f6ffed 0%, #d9f7be 100%);
-  color: #52c41a;
-  border: 1px solid #b7eb8f;
-  box-shadow: 
-    0 2px 8px rgba(82, 196, 26, 0.2),
-    inset 0 1px 0 rgba(255, 255, 255, 0.6);
-}
-
-.status-tag.cancelled {
-  background: linear-gradient(135deg, #fafafa 0%, #e8e8e8 100%);
-  color: #8c8c8c;
-  border: 1px solid #d9d9d9;
-  box-shadow:
-    0 2px 8px rgba(0, 0, 0, 0.1),
-    inset 0 1px 0 rgba(255, 255, 255, 0.6);
-}
-
 /* 面试通过状态 - 更醒目的样式 */
 .status-tag.interview_passed {
   background: linear-gradient(135deg, #52c41a 0%, #73d13d 100%);
@@ -779,37 +673,6 @@ onUnmounted(() => {
   letter-spacing: 0.3px;
 }
 
-.action-button.confirm {
-  background: linear-gradient(135deg, #52c41a 0%, #73d13d 100%);
-  color: white;
-  box-shadow: 
-    0 4px 12px rgba(82, 196, 26, 0.25),
-    inset 0 1px 0 rgba(255, 255, 255, 0.3);
-}
-
-.action-button.confirm:hover {
-  transform: translateY(-3px) scale(1.05);
-  box-shadow: 
-    0 8px 24px rgba(82, 196, 26, 0.35),
-    inset 0 1px 0 rgba(255, 255, 255, 0.4);
-}
-
-.action-button.reject {
-  background: linear-gradient(135deg, #fff7e6 0%, #ffe7ba 100%);
-  color: #fa8c16;
-  border: 1px solid #ffd591;
-  box-shadow: 
-    0 2px 8px rgba(250, 140, 22, 0.15),
-    inset 0 1px 0 rgba(255, 255, 255, 0.6);
-}
-
-.action-button.reject:hover {
-  transform: translateY(-3px) scale(1.05);
-  box-shadow: 
-    0 6px 20px rgba(250, 140, 22, 0.25),
-    inset 0 1px 0 rgba(255, 255, 255, 0.8);
-}
-
 .action-button.view {
   background: linear-gradient(135deg, #409EFF 0%, #66b1ff 100%);
   color: white;
@@ -830,6 +693,7 @@ onUnmounted(() => {
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  min-height: 100%;
   padding: 80px 24px;
   background: white;
   border-radius: 12px;
@@ -1050,6 +914,7 @@ onUnmounted(() => {
 
 .detail-status {
   display: inline-block !important;
+  width: fit-content !important;
   padding: 6px 14px !important;
   border-radius: 6px !important;
   font-size: 13px !important;
@@ -1063,22 +928,16 @@ onUnmounted(() => {
   border: 1px solid #fdba74 !important;
 }
 
-.detail-status.upcoming {
-  background: #f0f9ff !important;
-  color: #409EFF !important;
-  border: 1px solid #bae6fd !important;
-}
-
-.detail-status.completed {
+.detail-status.interview_passed {
   background: #f0fdf4 !important;
   color: #22c55e !important;
   border: 1px solid #86efac !important;
 }
 
-.detail-status.cancelled {
-  background: #f1f5f9 !important;
-  color: #64748b !important;
-  border: 1px solid #cbd5e1 !important;
+.detail-status.interview_failed {
+  background: #fef2f2 !important;
+  color: #ef4444 !important;
+  border: 1px solid #fca5a5 !important;
 }
 
 .detail-link {
@@ -1138,207 +997,8 @@ onUnmounted(() => {
   }
 }
 
-/* 实习确认部分样式 */
-.internship-confirmation-section {
-  margin-top: 32px;
-  background: white;
-  border-radius: 12px;
-  padding: 24px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
-}
-
-.section-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 20px;
-  padding-bottom: 16px;
-  border-bottom: 1px solid #f1f5f9;
-}
-
-.section-header h3 {
-  font-size: 18px;
-  font-weight: 600;
-  color: #1e293b;
-  margin: 0;
-}
-
-.confirmation-list {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.confirmation-card {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 16px;
-  background: #f8fafc;
-  border-radius: 8px;
-  border: 1px solid #e2e8f0;
-  transition: all 0.3s ease;
-}
-
-.confirmation-card:hover {
-  background: #f0f9ff;
-  border-color: #bae6fd;
-}
-
-.confirmation-info {
-  flex: 1;
-}
-
-.confirmation-info .company-name {
-  font-size: 16px;
-  font-weight: 600;
-  color: #1e293b;
-  margin-bottom: 4px;
-}
-
-.confirmation-info .position-name {
-  font-size: 14px;
-  color: #64748b;
-  margin-bottom: 4px;
-}
-
-.confirmation-info .confirm-date {
-  font-size: 13px;
-  color: #94a3b8;
-}
-
-.status-tag.success {
-  background: #f0fdf4;
-  color: #22c55e;
-  border: 1px solid #86efac;
-}
-
-.status-tag.warning {
-  background: #fff7ed;
-  color: #f97316;
-  border: 1px solid #fdba74;
-}
-
-/* 实习确认表对话框样式 */
-.internship-confirmation-dialog :deep(.el-dialog) {
-  border-radius: 16px !important;
-  overflow: hidden !important;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15) !important;
-  position: fixed !important;
-  left: 50% !important;
-  top: 50% !important;
-  transform: translate(-50%, -50%) !important;
-  margin: 0 !important;
-  right: auto !important;
-  z-index: 9999 !important;
-}
-
-.internship-confirmation-dialog :deep(.el-dialog__header) {
-  background: linear-gradient(135deg, #409EFF 0%, #67C23A 100%);
-  color: white;
-  border-bottom: none;
-}
-
-.internship-confirmation-dialog :deep(.el-dialog__title) {
-  color: white;
-  font-size: 18px;
-  font-weight: 600;
-}
-
-.internship-confirmation-dialog :deep(.el-dialog__headerbtn .el-icon) {
-  color: white;
-}
-
-.internship-confirmation-form {
-  max-height: 70vh;
-  overflow-y: auto;
-  padding-right: 10px;
-}
-
-.internship-confirmation-form :deep(.el-form-item__label) {
-  font-weight: 500;
-  color: #333;
-}
-
-.internship-confirmation-form .file-info {
-  margin-top: 12px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 12px 16px;
-  background: #f8fafc;
-  border-radius: 8px;
-  transition: all 0.3s ease;
-}
-
-.internship-confirmation-form .file-info:hover {
-  background: #f0f9ff;
-}
-
-.internship-confirmation-form .file-icon {
-  color: #409EFF;
-  font-size: 18px;
-}
-
-.commitment-checkbox {
-  margin-bottom: 8px;
-  display: block;
-}
-
-@media screen and (max-width: 768px) {
-  .internship-confirmation-section {
-    padding: 16px;
-  }
-
-  .section-header {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 12px;
-  }
-
-  .confirmation-card {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 12px;
-  }
-
-  .status-tag {
-    align-self: flex-start;
-  }
-}
-
-@media screen and (max-width: 480px) {
-  .section-header h3 {
-    font-size: 16px;
-  }
-}
-
 /* 遮罩样式，确保覆盖左侧菜单栏 */
 .interview-detail-dialog :deep(.el-dialog__wrapper) {
   z-index: 9999 !important;
-}
-
-.internship-confirmation-dialog :deep(.el-dialog__wrapper) {
-  z-index: 9999 !important;
-}
-
-/* 遮罩层覆盖整个页面 */
-:deep(.el-dialog__mask) {
-  position: fixed !important;
-  top: 0 !important;
-  left: 0 !important;
-  width: 100vw !important;
-  height: 100vh !important;
-  z-index: 9998 !important;
-  background: rgba(0, 0, 0, 0.4) !important;
-}
-
-/* 弹窗阴影效果 */
-.interview-detail-dialog :deep(.el-dialog) {
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15) !important;
-}
-
-.internship-confirmation-dialog :deep(.el-dialog) {
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15) !important;
 }
 </style>

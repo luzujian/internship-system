@@ -23,7 +23,7 @@
     <el-container>
       <el-header class="header">
         <div class="header-left">
-          <el-button type="text" @click="toggleSidebar" class="sidebar-toggle-btn">
+          <el-button link @click="toggleSidebar" class="sidebar-toggle-btn">
             <el-icon>
               <component :is="sidebarCollapsed ? Menu : Fold" />
             </el-icon>
@@ -353,6 +353,14 @@ const initWebSocket = () => {
     console.log('[TeacherLayout] 初始化 WebSocket')
     initAnnouncementWebSocket(token, (data) => {
       console.log('[TeacherLayout] 收到 WebSocket 消息, type:', data.type)
+      if (data.type === 'new_announcement') {
+        ElMessage.success({
+          message: `新公告：${data.data?.title || '未知标题'}`,
+          duration: 5000,
+          showClose: true
+        })
+        window.dispatchEvent(new CustomEvent('teacher:new-announcement'))
+      }
     })
   }
 }

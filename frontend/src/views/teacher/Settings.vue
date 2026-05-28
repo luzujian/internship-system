@@ -20,7 +20,7 @@
     </div>
 
     <!-- 下点前时间节点设置 -->
-    <div v-if="activeTab === 'preNode'" class="settings-section card fade-in" style="animation-delay: 0.3s">
+    <div v-show="activeTab === 'preNode'" class="settings-section card fade-in" style="animation-delay: 0.3s">
       <h3>下点前时间节点设置</h3>
       <div class="settings-form">
         <div class="form-group fade-in" :style="{ animationDelay: `${0.3 + index * 0.1}s`, '--item-color': item.color }" v-for="(item, index) in preInternshipNodesItems" :key="item.key">
@@ -30,23 +30,21 @@
             <input :type="item.type" v-model="internshipSettings[item.key]" v-else-if="item.type === 'date'" />
             <span class="form-unit" v-if="item.unit">{{ item.unit }}</span>
           </div>
-          <p class="form-hint" :style="{ color: item.color }">
-            <span class="hint-icon">💡</span> {{ item.hint }}
-          </p>
+          <p class="form-desc">{{ item.desc }}</p>
+          <p class="form-overdue">⏰ {{ item.overdue }}</p>
         </div>
       </div>
 
       <!-- 设置操作按钮 -->
       <div class="settings-actions-card card fade-in" style="animation-delay: 0.6s">
         <div class="settings-actions-content">
-          <button class="reset-btn btn btn-default" @click="resetSettings">重置默认值</button>
-          <button class="save-btn btn btn-primary" @click="saveSettings">保存设置</button>
+          <button type="button" class="save-btn btn btn-primary" @click="saveSettings" id="saveSettingsBtn">保存设置</button>
         </div>
       </div>
     </div>
 
     <!-- 下点后时间节点设置 -->
-    <div v-if="activeTab === 'postNode'" class="settings-section card fade-in" style="animation-delay: 0.3s">
+    <div v-show="activeTab === 'postNode'" class="settings-section card fade-in" style="animation-delay: 0.3s">
       <h3>下点后时间节点设置</h3>
       <div class="settings-form">
         <div class="form-group fade-in" :style="{ animationDelay: `${0.3 + index * 0.1}s`, '--item-color': item.color }" v-for="(item, index) in postInternshipNodesItems" :key="item.key">
@@ -56,17 +54,15 @@
             <input :type="item.type" v-model="internshipSettings[item.key]" v-else-if="item.type === 'date'" />
             <span class="form-unit" v-if="item.unit">{{ item.unit }}</span>
           </div>
-          <p class="form-hint" :style="{ color: item.color }">
-            <span class="hint-icon">💡</span> {{ item.hint }}
-          </p>
+          <p class="form-desc">{{ item.desc }}</p>
+          <p class="form-overdue">⏰ {{ item.overdue }}</p>
         </div>
       </div>
 
       <!-- 设置操作按钮 -->
       <div class="settings-actions-card card fade-in" style="animation-delay: 0.6s">
         <div class="settings-actions-content">
-          <button class="reset-btn btn btn-default" @click="resetSettings">重置默认值</button>
-          <button class="save-btn btn btn-primary" @click="saveSettings">保存设置</button>
+          <button type="button" class="save-btn btn btn-primary" id="saveSettingsBtn">保存设置</button>
         </div>
       </div>
     </div>
@@ -79,7 +75,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { getInternshipNodes, updateInternshipNodes } from '../../api/teacherSettings'
 
@@ -114,28 +110,32 @@ const preInternshipNodesItems = ref([
     key: 'applicationStartTime',
     label: '实习应聘开始时间',
     type: 'date',
-    hint: '学生开始实习应聘的时间',
+    desc: '学生可以开始投递简历和提交实习确认表的最早日期。在此日期之前，学生端的应聘相关操作均不可用。',
+    overdue: '早于此日期：学生无法投递简历、无法提交实习确认表。',
     color: '#1890ff'
   },
   {
     key: 'applicationEndTime',
     label: '实习应聘截止时间',
     type: 'date',
-    hint: '学生结束实习应聘的时间',
+    desc: '学生投递简历的最后期限。注意：此日期过后学生仍可面试、收Offer、提交实习确认表，直到确认截止日期为止。',
+    overdue: '超过此日期：学生无法投递新简历，但已投递的仍可继续面试。',
     color: '#1890ff'
   },
   {
     key: 'companyConfirmationDeadline',
     label: '实习单位确认截止日期',
     type: 'date',
-    hint: '学生确认实习单位的最后期限',
+    desc: '学生拿到Offer后提交实习确认表的最后期限。应设置在应聘截止之后，给学生一段面试收Offer的时间窗口。',
+    overdue: '超过此日期：学生无法提交实习确认表，等于放弃本次实习。',
     color: '#52c41a'
   },
   {
     key: 'delayApplicationDeadline',
     label: '延迟实习申请截止日期',
     type: 'date',
-    hint: '学生申请延迟实习的最后期限',
+    desc: '因考研、考公、出国等原因暂时不参加实习的学生，必须在此日期前提交延迟申请。',
+    overdue: '超过此日期：学生无法提交延迟实习申请，必须正常参加实习。',
     color: '#faad14'
   }
 ])
@@ -146,14 +146,16 @@ const postInternshipNodesItems = ref([
     key: 'startDate',
     label: '实习开始日期',
     type: 'date',
-    hint: '学生开始实习的日期',
+    desc: '实习正式开始的日期。决定了实习心得阶段编号的计算起点（第1期从该日开始），也是学生端实习进度的计算基准。',
+    overdue: '早于此日期：学生无法提交实习心得。',
     color: '#1890ff'
   },
   {
     key: 'endDate',
     label: '实习结束日期',
     type: 'date',
-    hint: '学生实习结束的日期',
+    desc: '实习正式结束的日期。实习心得阶段编号计算的终点，也是学生端实习进度的计算终点。',
+    overdue: '超过此日期：学生无法再提交实习心得，实习相关的所有提交入口关闭。',
     color: '#52c41a'
   },
   {
@@ -161,26 +163,12 @@ const postInternshipNodesItems = ref([
     label: '实习心得提交周期',
     type: 'number',
     unit: '天',
-    hint: '学生提交实习心得的周期',
+    desc: '将实习期按固定天数划分为多个阶段。例如设为7天，则每7天为一期，系统自动生成待提交的心得任务并判断是否需要提醒。范围 1~90 天。',
+    overdue: '周期太短：学生频繁被催交心得。周期太长：学生长时间不交心得，教师无法及时了解实习情况。',
     color: '#722ed1'
-  },
-  {
-    key: 'reportDeadline',
-    label: '实习报告提交截止日期',
-    type: 'date',
-    hint: '学生提交实习报告的最后期限',
-    color: '#faad14'
-  },
-  {
-    key: 'evaluationDeadline',
-    label: '实习评价截止日期',
-    type: 'date',
-    hint: '教师完成实习评价的最后期限',
-    color: '#eb2f96'
   }
 ])
 
-// 下点后时间节点设置项 - 学院教师
 // 实习设置
 const internshipSettings = ref({
   applicationStartTime: '2026-03-01', // 实习应聘开始时间
@@ -189,9 +177,7 @@ const internshipSettings = ref({
   delayApplicationDeadline: '2026-06-30', // 延迟实习申请截止日期
   reportCycle: 7, // 实习心得提交周期（天）
   startDate: '2026-07-01', // 实习开始日期
-  endDate: '2026-12-31', // 实习结束日期
-  reportDeadline: '2027-01-15', // 实习报告提交截止日期
-  evaluationDeadline: '2027-01-31' // 实习评价截止日期
+  endDate: '2026-12-31' // 实习结束日期
 })
 
 
@@ -208,12 +194,43 @@ const showOperationFeedback = (message: string, type: 'success' | 'error' = 'suc
   showFeedback.value = true
   setTimeout(() => {
     showFeedback.value = false
-  }, 3000)
+  }, 5000)
+}
+
+// 日期校验
+const validateDates = (): string | null => {
+  const s = internshipSettings.value
+  // 应聘开始 < 应聘截止
+  if (s.applicationStartTime && s.applicationEndTime && s.applicationStartTime > s.applicationEndTime) {
+    return '实习应聘开始时间不能晚于应聘截止时间'
+  }
+  // 应聘截止 < 确认截止
+  if (s.applicationEndTime && s.companyConfirmationDeadline && s.applicationEndTime > s.companyConfirmationDeadline) {
+    return '实习单位确认截止日期不应早于应聘截止时间'
+  }
+  // 确认截止 < 实习开始
+  if (s.companyConfirmationDeadline && s.startDate && s.companyConfirmationDeadline > s.startDate) {
+    return '实习单位确认截止日期不应晚于实习开始日期'
+  }
+  // 实习开始 < 实习结束
+  if (s.startDate && s.endDate && s.startDate > s.endDate) {
+    return '实习开始日期不能晚于实习结束日期'
+  }
+  // 周期范围
+  if (s.reportCycle != null && (s.reportCycle < 1 || s.reportCycle > 90)) {
+    return '实习心得提交周期应在1-90天之间'
+  }
+  return null
 }
 
 // 保存设置
 const saveSettings = async () => {
   try {
+    const error = validateDates()
+    if (error) {
+      showOperationFeedback(error, 'error')
+      return
+    }
     if (activeTab.value === 'preNode' || activeTab.value === 'postNode') {
       await updateInternshipNodes(internshipSettings.value)
       showOperationFeedback('实习时间节点设置保存成功！')
@@ -221,39 +238,6 @@ const saveSettings = async () => {
   } catch (error: any) {
     console.error('保存设置失败:', error)
     showOperationFeedback(error.message || '保存设置失败', 'error')
-  }
-}
-
-// 重置默认值
-const resetSettings = async () => {
-  const today = new Date()
-  const formatDate = (date: Date) => {
-    const year = date.getFullYear()
-    const month = String(date.getMonth() + 1).padStart(2, '0')
-    const day = String(date.getDate()).padStart(2, '0')
-    return `${year}-${month}-${day}`
-  }
-
-  internshipSettings.value = {
-    applicationStartTime: formatDate(today),
-    applicationEndTime: formatDate(today),
-    companyConfirmationDeadline: formatDate(today),
-    delayApplicationDeadline: formatDate(today),
-    reportCycle: 7,
-    approvalTimeLimit: 3,
-    startDate: formatDate(today),
-    endDate: formatDate(today),
-    reportDeadline: formatDate(today),
-    evaluationDeadline: formatDate(today)
-  }
-
-  try {
-    await updateInternshipNodes(internshipSettings.value)
-    console.log('重置默认设置并保存成功')
-    showOperationFeedback('设置已重置为默认值！')
-  } catch (error: any) {
-    console.error('重置默认设置失败:', error)
-    showOperationFeedback(error.message || '重置默认设置失败', 'error')
   }
 }
 
@@ -273,9 +257,22 @@ const loadSettings = async () => {
   }
 }
 
+// 手动绑定按钮事件
+function bindSaveButtons() {
+  document.querySelectorAll('#saveSettingsBtn').forEach(btn => {
+    btn.onclick = saveSettings
+  })
+}
+
+// 监听 tab 切换，重新绑定保存按钮事件
+watch(activeTab, () => {
+  nextTick(() => bindSaveButtons())
+})
+
 // 页面加载时加载设置
 onMounted(() => {
   loadSettings()
+  nextTick(() => bindSaveButtons())
 })
 </script>
 
@@ -380,20 +377,19 @@ onMounted(() => {
   flex-direction: column;
   gap: 8px;
   padding: 16px;
-  background-color: white;
   border-radius: 12px;
   transition: all 0.3s ease;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
   border: 2px solid transparent;
   border-left: 4px solid var(--item-color, #1890ff);
-  background-color: rgba(var(--item-color-rgb, 24, 144, 255), 0.03);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+  background: color-mix(in srgb, var(--item-color, #1890ff) 6%, transparent);
 }
 
 .form-group:hover {
   transform: translateY(-2px);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
   border-color: var(--item-color, #1890ff);
-  background-color: rgba(var(--item-color-rgb, 24, 144, 255), 0.06);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  background: color-mix(in srgb, var(--item-color, #1890ff) 12%, transparent);
 }
 
 .form-group label {
@@ -422,7 +418,6 @@ onMounted(() => {
   gap: 12px;
   flex: 1;
   padding: 8px;
-  background-color: white;
   border-radius: 8px;
   transition: all 0.3s ease;
 }
@@ -457,30 +452,23 @@ onMounted(() => {
   border-radius: 16px;
 }
 
-.form-hint {
-  font-size: 13px;
-  margin: 0;
-  padding-top: 4px;
+.form-desc {
+  font-size: 12px;
+  color: #666;
+  margin: 4px 0 0 0;
+  padding: 6px 10px;
+  background: #f9f9f9;
+  border-radius: 6px;
+  line-height: 1.6;
+  border-left: 3px solid #d9d9d9;
+}
+
+.form-overdue {
+  font-size: 12px;
+  color: #ff4d4f;
+  margin: 4px 0 0 0;
+  padding: 4px 10px;
   font-weight: 500;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  transition: all 0.3s ease;
-  line-height: 1.5;
-}
-
-.hint-icon {
-  font-size: 16px;
-  animation: pulse 2s infinite;
-}
-
-@keyframes pulse {
-  0%, 100% {
-    transform: scale(1);
-  }
-  50% {
-    transform: scale(1.1);
-  }
 }
 
 /* 响应式调整 */
@@ -567,7 +555,6 @@ onMounted(() => {
   transition: all var(--transition-normal);
 }
 
-.reset-btn,
 .save-btn {
   padding: 10px 18px;
   font-size: 14px;
@@ -577,21 +564,6 @@ onMounted(() => {
   box-shadow: var(--shadow-sm);
   min-width: 120px;
   text-align: center;
-}
-
-.reset-btn {
-  background-color: #f5f5f5;
-  color: #333;
-  border: 1px solid #d9d9d9;
-}
-
-.reset-btn:hover {
-  background-color: #e8e8e8;
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-md);
-}
-
-.save-btn {
   background: var(--color-primary);
   color: white;
   border: none;

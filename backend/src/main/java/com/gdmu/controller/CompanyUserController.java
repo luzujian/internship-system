@@ -64,6 +64,18 @@ public class CompanyUserController {
         return Result.success(pageResult);
     }
 
+    @GetMapping("/tags")
+    @PreAuthorize("hasAuthority('user:company:view')")
+    public Result getCompanyTags() {
+        try {
+            List<String> tags = companyUserService.getDistinctTags();
+            return Result.success(tags);
+        } catch (Exception e) {
+            log.error("获取企业标签列表失败: {}", e.getMessage(), e);
+            return Result.error("获取企业标签列表失败");
+        }
+    }
+
     @GetMapping("/export")
     @PreAuthorize("hasAuthority('user:company:view')")
     public void exportCompanyData(HttpServletResponse response,
@@ -167,7 +179,7 @@ public class CompanyUserController {
         }
     }
 
-    @GetMapping("/{id}")
+    @GetMapping("/{id:\\d+}")
     @PreAuthorize("hasAuthority('user:company:view')")
     public Result getCompanyById(@PathVariable Long id) {
         log.info("根据 ID 获取企业信息：{}", id);

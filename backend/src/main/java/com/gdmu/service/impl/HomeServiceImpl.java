@@ -15,9 +15,11 @@ import com.gdmu.mapper.ClassCounselorRelationMapper;
 import com.gdmu.mapper.CompanyUserMapper;
 import com.gdmu.mapper.DepartmentMapper;
 import com.gdmu.mapper.DivisionMapper;
+import com.gdmu.mapper.InternshipReflectionMapper;
 import com.gdmu.mapper.StudentApplicationMapper;
 import com.gdmu.mapper.StudentInternshipStatusMapper;
 import com.gdmu.mapper.TeacherUserMapper;
+import com.gdmu.service.CompanyUserService;
 import com.gdmu.service.HomeService;
 import com.gdmu.service.InternshipTimeSettingsService;
 import lombok.extern.slf4j.Slf4j;
@@ -69,6 +71,12 @@ public class HomeServiceImpl implements HomeService {
     @Autowired
     private InternshipTimeSettingsService internshipTimeSettingsService;
 
+    @Autowired
+    private InternshipReflectionMapper internshipReflectionMapper;
+
+    @Autowired
+    private CompanyUserService companyUserService;
+
     @Override
     public HomeStatsDTO getHomeStats(Long userId, String userType, String startDate, String endDate) {
         log.info("获取首页统计数据，用户 ID: {}, 用户类型：{}", userId, userType);
@@ -103,6 +111,8 @@ public class HomeServiceImpl implements HomeService {
                         .collect(Collectors.toList());
                     dashboardStats = studentInternshipStatusMapper.getDashboardStatsByClassIds(classIds, startDate, endDate);
                     log.info("辅导员负责班级统计：{} 个班级，{} 名学生", classIds.size(), dashboardStats != null ? dashboardStats.get("totalStudents") : 0);
+                    int pendingReflectionCount = internshipReflectionMapper.countPendingByClassIds(classIds);
+                    homeStats.setPendingReflectionCount(pendingReflectionCount);
                 } else {
                     dashboardStats = studentInternshipStatusMapper.getDashboardStats(startDate, endDate);
                     log.info("辅导员未分配班级，使用全院统计数据");
@@ -170,29 +180,34 @@ public class HomeServiceImpl implements HomeService {
             int totalStudents = dashboardStats != null && dashboardStats.get("totalStudents") != null 
                 ? ((Number) dashboardStats.get("totalStudents")).intValue() 
                 : 0;
-            int confirmed = dashboardStats != null && dashboardStats.get("confirmed") != null 
-                ? ((Number) dashboardStats.get("confirmed")).intValue() 
+            int confirmed = dashboardStats != null && dashboardStats.get("confirmed") != null
+                ? ((Number) dashboardStats.get("confirmed")).intValue()
                 : 0;
-            int offer = dashboardStats != null && dashboardStats.get("offer") != null 
-                ? ((Number) dashboardStats.get("offer")).intValue() 
+            int offer = dashboardStats != null && dashboardStats.get("offer") != null
+                ? ((Number) dashboardStats.get("offer")).intValue()
                 : 0;
-            int noOffer = dashboardStats != null && dashboardStats.get("noOffer") != null 
-                ? ((Number) dashboardStats.get("noOffer")).intValue() 
+            int noOffer = dashboardStats != null && dashboardStats.get("noOffer") != null
+                ? ((Number) dashboardStats.get("noOffer")).intValue()
                 : 0;
-            int delay = dashboardStats != null && dashboardStats.get("delay") != null 
-                ? ((Number) dashboardStats.get("delay")).intValue() 
+            int interning = dashboardStats != null && dashboardStats.get("interning") != null
+                ? ((Number) dashboardStats.get("interning")).intValue()
                 : 0;
-            
-            Double internshipRate = totalStudents > 0 
-                ? Math.round((confirmed * 1000.0) / totalStudents) / 10.0
+            int delay = dashboardStats != null && dashboardStats.get("delay") != null
+                ? ((Number) dashboardStats.get("delay")).intValue()
+                : 0;
+
+            int confirmedAndInterning = confirmed + interning;
+
+            Double internshipRate = totalStudents > 0
+                ? Math.round((confirmedAndInterning * 1000.0) / totalStudents) / 10.0
                 : 0.0;
             homeStats.setInternshipRate(internshipRate);
-            
+
             List<InternshipStatusDTO> statusData = new ArrayList<>();
-            
+
             InternshipStatusDTO confirmedStatus = new InternshipStatusDTO();
             confirmedStatus.setName("已确定实习");
-            confirmedStatus.setValue(confirmed);
+            confirmedStatus.setValue(confirmedAndInterning);
             confirmedStatus.setColor("success");
             statusData.add(confirmedStatus);
             
@@ -219,8 +234,10 @@ public class HomeServiceImpl implements HomeService {
             int unreadCount = 0;
             homeStats.setUnreadCount(unreadCount);
             
-            Integer pendingApprovalCount = studentApplicationMapper.countPendingApproval();
-            homeStats.setPendingApprovalCount(pendingApprovalCount != null ? pendingApprovalCount : 0);
+            int pendingStudentApps = studentApplicationMapper.countPendingApproval();
+            Long pendingCompanyApps = companyUserService.countByAuditStatus(0);
+            homeStats.setPendingApprovalCount((pendingStudentApps > 0 ? pendingStudentApps : 0)
+                    + (pendingCompanyApps != null ? pendingCompanyApps.intValue() : 0));
             
             Integer companyCount = companyUserMapper.countApproved();
             homeStats.setCompanyCount(companyCount != null ? companyCount : 0);

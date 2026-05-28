@@ -20,6 +20,7 @@ export interface HomeStats {
   unreadCount: number
   pendingApprovalCount: number
   companyCount: number
+  pendingReflectionCount: number
   statusData: InternshipStatus[]
   announcements: AnnouncementWithReadStatus[]
 }

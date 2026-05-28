@@ -221,7 +221,7 @@ const initWebSocket = () => {
 
     <header class="header">
       <div class="header-left">
-        <el-button type="text" @click="toggleSidebar" class="sidebar-toggle-btn">
+        <el-button link @click="toggleSidebar" class="sidebar-toggle-btn">
           <el-icon>
             <template v-if="sidebarCollapsed">
               <Menu />
@@ -238,7 +238,7 @@ const initWebSocket = () => {
       </div>
       <div class="user-actions">
         <el-dropdown @command="handleCommand" class="user-dropdown">
-          <el-button type="text" class="user-btn">
+          <el-button link class="user-btn">
             <div class="user-info">
               <el-icon class="user-avatar">
                 <User />
@@ -554,6 +554,15 @@ const initWebSocket = () => {
   background: #f5f7fa;
   max-width: 100%;
   width: 100%;
+  flex: 1;
+  box-sizing: border-box;
+}
+
+/* el-scrollbar__view 默认 display:inline-block 不撑满，改为 flex 列布局 */
+:deep(.el-scrollbar__view) {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
 }
 
 @media screen and (max-width: 768px) {

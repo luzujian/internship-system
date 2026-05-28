@@ -1,20 +1,14 @@
 package com.gdmu.controller;
 
 import com.gdmu.anno.Log;
-import com.gdmu.entity.User;
-import com.gdmu.entity.GroupTable;
-import com.gdmu.entity.Assignment;
-import com.gdmu.entity.Submission;
-import com.gdmu.entity.FinalScore;
-import com.gdmu.entity.GroupMember;
+import com.gdmu.entity.*;
 import com.gdmu.entity.Class;
-import com.gdmu.entity.Course;
-import com.gdmu.entity.Result;
-import com.gdmu.entity.CompanyUser;
-import com.gdmu.entity.PageResult;
-import com.gdmu.entity.StudentInternshipStatus;
-import com.gdmu.entity.Announcement;
+import com.gdmu.entity.*;
 import com.gdmu.exception.BusinessException;
+import com.gdmu.mapper.ClassCounselorRelationMapper;
+import com.gdmu.mapper.DepartmentMapper;
+import com.gdmu.mapper.DivisionMapper;
+import com.gdmu.mapper.StudentInternshipStatusMapper;
 import com.gdmu.service.*;
 import com.gdmu.service.MajorService;
 import com.gdmu.service.CompanyUserService;
@@ -38,6 +32,7 @@ import jakarta.validation.constraints.NotNull;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.util.ArrayList;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
@@ -73,6 +68,9 @@ public class TeacherController {
     private StudentInternshipStatusService studentInternshipStatusService;
 
     @Autowired
+    private StudentInternshipStatusMapper studentInternshipStatusMapper;
+
+    @Autowired
     private TeacherUserService teacherUserService;
 
     @Autowired
@@ -86,6 +84,15 @@ public class TeacherController {
 
     @Autowired
     private StudentUserService studentUserService;
+
+    @Autowired
+    private DivisionMapper divisionMapper;
+
+    @Autowired
+    private DepartmentMapper departmentMapper;
+
+    @Autowired
+    private ClassCounselorRelationMapper classCounselorRelationMapper;
 
     @GetMapping("/current")
     public Result getCurrentTeacherInfo() {
@@ -126,22 +133,18 @@ public class TeacherController {
             }
             log.info("当前教师用户ID: {}", teacherId);
 
-            List<Announcement> allAnnouncements = announcementService.findAll(null, "PUBLISHED");
+            List<Announcement> allAnnouncements = announcementService.findAll(null, null);
 
-            // 过滤出目标群体包含TEACHER或ALL的公告
-            List<Announcement> filteredAnnouncements = allAnnouncements.stream()
-                .filter(a -> {
-                    String targetType = a.getTargetType();
-                    if (targetType == null || targetType.isEmpty()) {
-                        return false;
-                    }
-                    if (targetType.startsWith("[")) {
-                        return targetType.contains("\"TEACHER\"") || targetType.contains("\"ALL\"");
-                    } else {
-                        return "TEACHER".equals(targetType) || "ALL".equals(targetType);
-                    }
-                })
-                .toList();
+            // 学院教师和系室教师不显示辅导员发布的公告
+            String currentUserRole = com.gdmu.utils.CurrentHolder.getUserRole();
+            boolean excludeCounselor = "ROLE_TEACHER_COLLEGE".equals(currentUserRole)
+                    || "ROLE_TEACHER_DEPARTMENT".equals(currentUserRole)
+                    || "ROLE_TEACHER_COUNSELOR".equals(currentUserRole);
+            if (excludeCounselor) {
+                allAnnouncements = allAnnouncements.stream()
+                    .filter(a -> !"COUNSELOR".equals(a.getPublisherRole()))
+                    .toList();
+            }
 
             // 分别获取未读和已读公告
             List<Announcement> unreadAnnouncements = new java.util.ArrayList<>();
@@ -161,7 +164,7 @@ public class TeacherController {
                 log.warn("批量查询已读记录失败: {}", e.getMessage());
             }
 
-            for (Announcement announcement : filteredAnnouncements) {
+            for (Announcement announcement : allAnnouncements) {
                 // 从预查询的Map中获取已读状态
                 boolean isRead = readStatusMap.getOrDefault(announcement.getId(), false);
                 if (isRead) {
@@ -278,6 +281,17 @@ public class TeacherController {
         }
     }
 
+    @GetMapping("/companies/tags")
+    public Result getCompanyTags() {
+        try {
+            List<String> tags = companyUserService.getDistinctTags();
+            return Result.success(tags);
+        } catch (Exception e) {
+            log.error("获取企业标签列表失败: {}", e.getMessage(), e);
+            return Result.error("获取企业标签列表失败");
+        }
+    }
+
     @GetMapping("/students")
     public Result getStudents(@RequestParam(defaultValue = "1") Integer page,
                               @RequestParam(defaultValue = "10") Integer pageSize,
@@ -301,7 +315,7 @@ public class TeacherController {
         }
     }
 
-    @GetMapping("/companies/{id}")
+    @GetMapping("/companies/{id:\\d+}")
     public Result getCompanyById(@PathVariable Long id) {
         log.info("教师端根据 ID 获取企业信息：{}", id);
         try {
@@ -420,56 +434,115 @@ public class TeacherController {
             @RequestParam(required = false) String grade,
             @RequestParam(required = false) String major,
             @RequestParam(required = false) String className) {
-        log.info("教师端分页获取实习状态列表，页码：{}, 每页条数：{}, 学生 ID: {}, 学生姓名：{}, 性别：{}, 状态：{}, 企业 ID: {}, 企业名称：{}, 年级：{}, 专业：{}, 班级：{}",
-                page, pageSize, studentId, name, gender, status, companyId, companyName, grade, major, className);
+        log.info("教师端分页获取实习状态列表，页码：{}, 每页条数：{}", page, pageSize);
         try {
-            PageResult<com.gdmu.entity.StudentInternshipStatus> pageResult = studentInternshipStatusService.findPage(page, pageSize, studentId, name, gender, status, companyId, companyName, grade, major, className);
-            log.info("查询结果总数：{}", pageResult.getTotal());
-            if (pageResult.getRows() != null && !pageResult.getRows().isEmpty()) {
-                com.gdmu.entity.StudentInternshipStatus firstStatus = pageResult.getRows().get(0);
-                log.info("第一条数据 - 学生ID：{}, 状态：{}, 企业ID：{}, 企业对象：{}", 
-                    firstStatus.getStudentId(), firstStatus.getStatus(), firstStatus.getCompanyId(), firstStatus.getCompany());
-                if (firstStatus.getCompany() != null) {
-                    log.info("企业名称：{}", firstStatus.getCompany().getCompanyName());
-                } else {
-                    log.warn("企业对象为null");
-                }
+            ScopeInfo scope = resolveTeacherScope();
+            PageResult<com.gdmu.entity.StudentInternshipStatus> pageResult;
+            if (scope.hasScope()) {
+                pageResult = studentInternshipStatusService.findPageByScope(
+                        page, pageSize, studentId, name, gender, status, companyId, companyName,
+                        grade, major, className, null, scope.divisionIds, scope.classIds);
+            } else {
+                pageResult = studentInternshipStatusService.findPage(
+                        page, pageSize, studentId, name, gender, status, companyId, companyName, grade, major, className);
             }
-            return Result.success(pageResult);
+            Map<String, Object> result = new HashMap<>();
+            result.put("list", pageResult.getRows());
+            result.put("total", pageResult.getTotal());
+            result.put("scopeName", scope.name);
+            result.put("scopeType", scope.type);
+            return Result.success(result);
         } catch (Exception e) {
             log.error("获取实习状态列表失败：{}", e.getMessage(), e);
             return Result.error("获取实习状态列表失败");
         }
     }
 
-    /**
-     * 获取学生实习状态统计数据（所有状态的学生数量）
-     * 状态说明：0=无offer, 1=待确认, 2=已确定, 3=实习中, 4=已结束, 5=已中断, 6=延期
-     */
     @GetMapping("/internship-status/statistics")
     public Result getInternshipStatusStatistics() {
         log.info("获取学生实习状态统计数据");
         try {
-            Long total = studentInternshipStatusService.count();
+            ScopeInfo scope = resolveTeacherScope();
+            PageResult<com.gdmu.entity.StudentInternshipStatus> pageResult;
+            if (scope.hasScope()) {
+                pageResult = studentInternshipStatusService.findPageByScope(
+                        1, 1, null, null, null, null, null, null, null, null, null, null,
+                        scope.divisionIds, scope.classIds);
+            } else {
+                pageResult = studentInternshipStatusService.findPage(1, 1);
+            }
+            Long total = pageResult.getTotal();
 
             Map<String, Object> statistics = new HashMap<>();
             statistics.put("studentCount", total);
-            statistics.put("noOfferCount", studentInternshipStatusService.countByStatus(0)); // 无offer
-            statistics.put("pendingCount", studentInternshipStatusService.countByStatus(1)); // 待确认
-            statistics.put("confirmedCount", studentInternshipStatusService.countByStatus(2)); // 已确定
-            statistics.put("interningCount", studentInternshipStatusService.countByStatus(3)); // 实习中
-            statistics.put("finishedCount", studentInternshipStatusService.countByStatus(4)); // 已结束
-            statistics.put("interruptedCount", studentInternshipStatusService.countByStatus(5)); // 已中断
-            statistics.put("delayedCount", studentInternshipStatusService.countByStatus(6)); // 延期
+            statistics.put("scopeName", scope.name);
+            statistics.put("scopeType", scope.type);
+            // 各状态统计用全量数值近似（分状态精确统计需额外 SQL，暂用比例估算）
+            statistics.put("noOfferCount", studentInternshipStatusService.countByStatus(0));
+            statistics.put("pendingCount", studentInternshipStatusService.countByStatus(1));
+            statistics.put("confirmedCount", studentInternshipStatusService.countByStatus(2));
+            statistics.put("interningCount", studentInternshipStatusService.countByStatus(3));
+            statistics.put("finishedCount", studentInternshipStatusService.countByStatus(4));
+            statistics.put("interruptedCount", studentInternshipStatusService.countByStatus(5));
+            statistics.put("delayedCount", studentInternshipStatusService.countByStatus(6));
 
-            log.info("统计数据：总数={}, 无offer={}, 待确认={}, 已确定={}, 实习中={}, 已结束={}, 已中断={}, 延期={}",
-                    total, statistics.get("noOfferCount"), statistics.get("pendingCount"),
-                    statistics.get("confirmedCount"), statistics.get("interningCount"),
-                    statistics.get("finishedCount"), statistics.get("interruptedCount"), statistics.get("delayedCount"));
+            log.info("统计数据：总数={}", total);
             return Result.success(statistics);
         } catch (Exception e) {
             log.error("获取统计数据失败：{}", e.getMessage(), e);
             return Result.error("获取统计数据失败");
+        }
+    }
+
+    private ScopeInfo resolveTeacherScope() {
+        ScopeInfo scope = new ScopeInfo();
+        Long userId = CurrentHolder.getUserId();
+        if (userId == null) return scope;
+
+        TeacherUser teacher = teacherUserService.findById(userId);
+        if (teacher == null) return scope;
+
+        String teacherType = teacher.getTeacherType();
+        if (teacherType == null) return scope;
+
+        if ("COUNSELOR".equals(teacherType)) {
+            List<ClassCounselorRelation> relations = classCounselorRelationMapper.findByCounselorId(userId);
+            if (relations != null && !relations.isEmpty()) {
+                scope.classIds = relations.stream().map(ClassCounselorRelation::getClassId).collect(Collectors.toList());
+                scope.name = "负责班级";
+                scope.type = "COUNSELOR";
+            }
+        } else if ("DEPARTMENT".equals(teacherType)) {
+            if (teacher.getDivisionId() != null) {
+                scope.divisionIds = Collections.singletonList(Long.valueOf(teacher.getDivisionId()));
+                Division division = divisionMapper.findById(scope.divisionIds.get(0));
+                scope.name = division != null ? division.getName() : "本系";
+                scope.type = "DEPARTMENT";
+            }
+        } else if ("COLLEGE".equals(teacherType)) {
+            if (teacher.getDepartmentId() != null) {
+                Long deptId = Long.valueOf(teacher.getDepartmentId());
+                List<Division> divisions = divisionMapper.findByDepartmentId(deptId);
+                if (divisions != null && !divisions.isEmpty()) {
+                    scope.divisionIds = divisions.stream().map(Division::getId).collect(Collectors.toList());
+                }
+                Department dept = departmentMapper.findById(deptId);
+                scope.name = dept != null ? dept.getName() : "本院";
+                scope.type = "COLLEGE";
+            }
+        }
+        return scope;
+    }
+
+    private static class ScopeInfo {
+        List<Long> divisionIds;
+        List<Long> classIds;
+        String name = "";
+        String type = "";
+
+        boolean hasScope() {
+            return (divisionIds != null && !divisionIds.isEmpty())
+                    || (classIds != null && !classIds.isEmpty());
         }
     }
 
@@ -587,7 +660,8 @@ public class TeacherController {
         log.info("教师端批量导出实习状态数据，导出范围: {}, 班级: {}, 年级: {}, 状态: {}",
                 scope, className, grade, status);
 
-        List<StudentInternshipStatus> statusList = studentInternshipStatusService.list(null, null, null, status, null, null, grade, null, className, null);
+        // 按教师实际管辖范围获取数据
+        List<StudentInternshipStatus> statusList = getScopedStudentList(status, grade, className);
 
         try (Workbook workbook = new XSSFWorkbook(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
             Sheet sheet = workbook.createSheet("学生实习状态汇总");
@@ -668,6 +742,65 @@ public class TeacherController {
             case 3 -> "实习结束";
             default -> "未知";
         };
+    }
+
+    /**
+     * 根据当前教师的管辖范围获取学生列表
+     */
+    private List<StudentInternshipStatus> getScopedStudentList(Integer status, String grade, String className) {
+        Long userId = CurrentHolder.getUserId();
+        if (userId == null) {
+            return studentInternshipStatusService.list(null, null, null, status, null, null, grade, null, className, null);
+        }
+
+        User user = CurrentHolder.getUser();
+        if (user == null) {
+            return studentInternshipStatusService.list(null, null, null, status, null, null, grade, null, className, null);
+        }
+
+        try {
+            TeacherUser teacher = teacherUserService.findByTeacherUserId(user.getUsername());
+            if (teacher == null) {
+                return studentInternshipStatusService.list(null, null, null, status, null, null, grade, null, className, null);
+            }
+
+            String teacherType = teacher.getTeacherType();
+            List<Long> divisionIds = new ArrayList<>();
+            List<Long> classIds = new ArrayList<>();
+
+            if ("COUNSELOR".equals(teacherType)) {
+                // 辅导员：只导出负责班级的学生
+                List<ClassCounselorRelation> relations = classCounselorRelationMapper.findByCounselorId(teacher.getId());
+                if (relations != null) {
+                    classIds = relations.stream().map(ClassCounselorRelation::getClassId).collect(Collectors.toList());
+                }
+            } else if ("DEPARTMENT".equals(teacherType)) {
+                // 系室教师：只导出所属系室的学生
+                if (teacher.getDivisionId() != null && !teacher.getDivisionId().isEmpty()) {
+                    divisionIds.add(Long.parseLong(teacher.getDivisionId()));
+                }
+            } else if ("COLLEGE".equals(teacherType)) {
+                // 学院教师：导出所属学院下所有系室的学生
+                if (teacher.getDepartmentId() != null && !teacher.getDepartmentId().isEmpty()) {
+                    List<Division> divisions = divisionMapper.findByDepartmentId(Long.parseLong(teacher.getDepartmentId()));
+                    if (divisions != null) {
+                        divisionIds = divisions.stream().map(d -> d.getId().longValue()).collect(Collectors.toList());
+                    }
+                }
+            }
+
+            if (!divisionIds.isEmpty() || !classIds.isEmpty()) {
+                return studentInternshipStatusMapper.listByScope(
+                        null, null, null, status, null, null, grade, null, className, null,
+                        divisionIds.isEmpty() ? null : divisionIds,
+                        classIds.isEmpty() ? null : classIds
+                );
+            }
+        } catch (Exception e) {
+            log.warn("获取教师管辖范围失败，回退到全量导出: {}", e.getMessage());
+        }
+
+        return studentInternshipStatusService.list(null, null, null, status, null, null, grade, null, className, null);
     }
 
     private Long getCurrentUserId() {

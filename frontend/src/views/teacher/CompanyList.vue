@@ -26,6 +26,7 @@ let loading = ref(false)
 let pagination = ref<PaginationState>({ currentPage: 1, pageSize: 10, total: 0 })
 let viewDialogVisible = ref(false)
 let currentCompany = ref<CompanyUser | null>(null)
+let companyTagOptions = ref<string[]>([])
 
 const queryPage = async (): Promise<void> => {
   loading.value = true
@@ -118,15 +119,6 @@ const viewCompanyDetail = async (id: string): Promise<void> => {
   }
 }
 
-const formatAuditStatus = (auditStatus: number): string => {
-  switch (auditStatus) {
-    case 0: return '待审核'
-    case 1: return '审核通过'
-    case 2: return '审核拒绝'
-    default: return '未知状态'
-  }
-}
-
 const formatAccountStatus = (status: number): string => {
   switch (status) {
     case 0: return '待审核'
@@ -134,15 +126,6 @@ const formatAccountStatus = (status: number): string => {
     case 2: return '已禁用'
     case 3: return '已拒绝'
     default: return '未知状态'
-  }
-}
-
-const getAuditStatusTagType = (auditStatus: number): string => {
-  switch (auditStatus) {
-    case 0: return 'warning'
-    case 1: return 'success'
-    case 2: return 'danger'
-    default: return 'info'
   }
 }
 
@@ -167,8 +150,19 @@ const getTagType = (tag: string): string => {
   return tagMap[tag.trim()] || 'info'
 }
 
+const fetchCompanyTags = async (): Promise<void> => {
+  try {
+    const response = await companyService.getCompanyTags()
+    if (response && (response as any).code === 200 && (response as any).data) {
+      companyTagOptions.value = (response as any).data
+    }
+  } catch (error: any) {
+    logger.error('获取企业标签列表失败:', error)
+  }
+}
+
 onMounted(async () => {
-  await queryPage()
+  await Promise.all([queryPage(), fetchCompanyTags()])
 })
 </script>
 
@@ -194,12 +188,15 @@ onMounted(async () => {
           </el-form-item>
           <el-form-item label="标签">
             <el-select v-model="searchForm.companyTag" placeholder="请选择标签" clearable multiple style="width: 200px;">
-              <el-option label="学生自主联系" value="学生自主联系"></el-option>
-              <el-option label="接受兜底" value="接受兜底"></el-option>
-              <el-option label="双向选择阶段" value="双向选择阶段"></el-option>
+              <el-option
+                v-for="tag in companyTagOptions"
+                :key="tag"
+                :label="tag"
+                :value="tag"
+              ></el-option>
             </el-select>
           </el-form-item>
-          <el-form-item label="状态">
+          <el-form-item label="账号状态">
             <el-select v-model="searchForm.status" placeholder="请选择状态" clearable style="width: 140px;">
               <el-option label="待审核" :value="0"></el-option>
               <el-option label="正常" :value="1"></el-option>
@@ -230,29 +227,15 @@ onMounted(async () => {
         v-loading="loading"
       >
         <el-table-column type="index" label="序号" width="55" align="center" :index="(index) => (pagination.currentPage - 1) * pagination.pageSize + index + 1" />
-        <el-table-column prop="companyName" label="企业名称" min-width="180" align="center" />
-        <el-table-column prop="auditStatus" label="审核状态" width="120" align="center">
-          <template #default="scope">
-            <el-tag :type="getAuditStatusTagType(scope.row.auditStatus)" size="small" class="status-tag">
-              {{ formatAuditStatus(scope.row.auditStatus) }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column prop="status" label="账号状态" width="120" align="center">
-          <template #default="scope">
-            <el-tag :type="getAccountStatusTagType(scope.row.status)" size="small" class="status-tag">
-              {{ formatAccountStatus(scope.row.status) }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column prop="companyTag" label="标签" width="150" align="center">
+        <el-table-column prop="companyName" label="企业名称" min-width="200" align="center" />
+        <el-table-column prop="companyTag" label="标签" width="200" align="center">
           <template #default="scope">
             <div v-if="scope.row.companyTag" class="tag-container">
-              <el-tag 
-                v-for="(tag, index) in scope.row.companyTag.split(',')" 
-                :key="index" 
-                :type="getTagType(tag)" 
-                size="small" 
+              <el-tag
+                v-for="(tag, index) in scope.row.companyTag.split(',')"
+                :key="index"
+                :type="getTagType(tag)"
+                size="small"
                 class="company-tag"
               >
                 {{ tag }}
@@ -261,10 +244,16 @@ onMounted(async () => {
             <span v-else class="no-tag">-</span>
           </template>
         </el-table-column>
-        <el-table-column prop="contactPerson" label="联系人" width="120" align="center" />
-        <el-table-column prop="contactPhone" label="联系电话" width="150" align="center" />
-        <el-table-column prop="contactEmail" label="联系邮箱" min-width="180" align="center" />
-        <el-table-column prop="address" label="企业地址" min-width="200" align="center" show-overflow-tooltip />
+        <el-table-column prop="status" label="账号状态" width="110" align="center">
+          <template #default="scope">
+            <el-tag :type="getAccountStatusTagType(scope.row.status)" size="small" class="status-tag">
+              {{ formatAccountStatus(scope.row.status) }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="contactPerson" label="联系人" width="100" align="center" />
+        <el-table-column prop="contactPhone" label="联系电话" width="140" align="center" />
+        <el-table-column prop="contactEmail" label="联系邮箱" min-width="170" align="center" />
         <el-table-column prop="createTime" label="创建时间" width="170" align="center" :formatter="formatDate" />
         <el-table-column label="操作" align="center" width="100" fixed="right">
           <template #default="scope">

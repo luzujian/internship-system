@@ -57,6 +57,9 @@ public class StudentHomeController {
     @Autowired
     private InternshipReflectionService internshipReflectionService;
 
+    @Autowired
+    private com.gdmu.service.AnnouncementReadRecordService readRecordService;
+
     private User getCurrentUser() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth == null || !(auth.getPrincipal() instanceof org.springframework.security.core.userdetails.User)) {
@@ -193,6 +196,13 @@ public class StudentHomeController {
             User user = getCurrentUser();
             if (user == null) return Result.error("未登录");
 
+            // 获取学生已读公告ID集合
+            java.util.Set<Long> readIds = readRecordService
+                    .findByUserId(String.valueOf(user.getId()), "STUDENT")
+                    .stream()
+                    .map(com.gdmu.entity.AnnouncementReadRecord::getAnnouncementId)
+                    .collect(Collectors.toSet());
+
             // 获取所有已发布的公告
             List<Announcement> announcements = announcementMapper.findAll();
 
@@ -207,7 +217,7 @@ public class StudentHomeController {
                         notification.put("content", a.getContent());
                         notification.put("notificationTime", a.getPublishTime());
                         notification.put("priority", a.getPriority());
-                        notification.put("isRead", false);
+                        notification.put("isRead", readIds.contains(a.getId()));
                         return notification;
                     })
                     .collect(Collectors.toList());
@@ -225,14 +235,25 @@ public class StudentHomeController {
             User user = getCurrentUser();
             if (user == null) return Result.error("未登录");
 
-            // 获取所有已发布的公告数量作为未读数
+            // 获取学生已读公告ID集合
+            java.util.Set<Long> readIds = readRecordService
+                    .findByUserId(String.valueOf(user.getId()), "STUDENT")
+                    .stream()
+                    .map(com.gdmu.entity.AnnouncementReadRecord::getAnnouncementId)
+                    .collect(Collectors.toSet());
+
+            // 未读数 = 全部已发布公告数 - 已读数
             List<Announcement> announcements = announcementMapper.findAll();
-            long count = announcements.stream()
+            long totalPublished = announcements.stream()
                     .filter(a -> "PUBLISHED".equals(a.getStatus()))
                     .filter(a -> a.getValidTo() == null || a.getValidTo().after(new java.util.Date()))
                     .count();
+            long readCount = announcements.stream()
+                    .filter(a -> "PUBLISHED".equals(a.getStatus()))
+                    .filter(a -> readIds.contains(a.getId()))
+                    .count();
 
-            return Result.success(Map.of("count", count));
+            return Result.success(Map.of("count", totalPublished - readCount));
         } catch (Exception e) {
             log.error("获取未读通知数量失败: {}", e.getMessage(), e);
             return Result.error("获取未读通知数量失败");
@@ -313,12 +334,12 @@ public class StudentHomeController {
 
             // 如果有中断标记
             if (Boolean.TRUE.equals(status.getIsInterrupted())) {
-                return 4; // 已中断
+                return 5; // 已中断
             }
 
             // 如果有延期标记
             if (Boolean.TRUE.equals(status.getIsDelayed())) {
-                return 5; // 延期
+                return 6; // 延期
             }
 
             // 判断是否在实习期间内
@@ -328,14 +349,14 @@ public class StudentHomeController {
                     return 2; // 已确认（等待开始）
                 } else if (now.after(endTime)) {
                     // 已结束
-                    return 3; // 已结束
+                    return 4; // 已结束
                 } else {
                     // 进行中
-                    return 2; // 进行中
+                    return 3; // 实习中
                 }
             } else if (startTime != null && now.after(startTime)) {
                 // 没有结束时间但有开始时间，且已过开始时间，视为进行中
-                return 2;
+                return 3;
             } else {
                 // 已确认但时间未到
                 return 2;

@@ -120,24 +120,37 @@
       :show-close="true"
     >
       <div class="resource-container" v-loading="resourceLoading">
-        <!-- 搜索栏 -->
-        <div class="resource-search-bar">
-          <el-input
-            v-model="resourceSearchQuery"
-            placeholder="搜索资源标题..."
-            clearable
-            @input="handleResourceSearch"
-          >
-            <template #prefix>
-              <el-icon><Search /></el-icon>
-            </template>
-          </el-input>
+        <!-- 工具栏 -->
+        <div class="resource-toolbar">
+          <div class="resource-search-bar">
+            <el-input
+              v-model="resourceSearchQuery"
+              placeholder="搜索资源标题..."
+              clearable
+              @input="handleResourceSearch"
+            >
+              <template #prefix>
+                <el-icon><Search /></el-icon>
+              </template>
+            </el-input>
+            <span class="resource-count" v-if="!resourceLoading">
+              共 {{ filteredResourceList.length }} 个资源
+            </span>
+          </div>
+          <div class="resource-type-filters">
+            <span
+              v-for="ft in resourceFilterTypes"
+              :key="ft.key"
+              :class="['filter-chip', { active: resourceTypeFilter === ft.key }]"
+              @click="resourceTypeFilter = ft.key"
+            >{{ ft.label }}</span>
+          </div>
         </div>
         <div class="resources-grid">
           <div
-            v-for="resource in resourceList"
+            v-for="resource in filteredResourceList"
             :key="resource.id"
-            class="resource-card"
+            :class="['resource-card', 'type-' + (resource.type || 'unknown')]"
             @click="viewResource(resource)"
           >
             <div class="resource-header">
@@ -146,11 +159,19 @@
                   {{ getResourceTypeText(resource.type) }}
                 </el-tag>
               </div>
+              <el-button
+                class="card-download-btn"
+                size="small"
+                text
+                @click.stop="downloadResourceDirectly(resource)"
+              >
+                <el-icon><Download /></el-icon>
+              </el-button>
             </div>
 
             <div class="resource-content">
-              <h3 class="resource-title" v-html="resource.title"></h3>
-              <p class="resource-description" v-html="resource.description"></p>
+              <h3 class="resource-title">{{ resource.title }}</h3>
+              <p class="resource-description">{{ resource.description }}</p>
             </div>
 
             <div class="resource-footer">
@@ -173,8 +194,8 @@
         </div>
 
         <!-- 空状态 -->
-        <div v-if="resourceList.length === 0 && !resourceLoading" class="empty-resources">
-          <el-empty description="暂无资源数据" />
+        <div v-if="filteredResourceList.length === 0 && !resourceLoading" class="empty-resources">
+          <el-empty :description="resourceSearchQuery || resourceTypeFilter ? '未找到匹配的资源' : '暂无资源数据'" />
         </div>
       </div>
     </el-dialog>
@@ -182,75 +203,63 @@
     <!-- 资源详情对话框 -->
     <el-dialog
       v-model="detailDialogVisible"
-      :title="`资源详情 - ${selectedResource?.title || ''}`"
-      width="700px"
+      :title="selectedResource?.title || '资源详情'"
+      width="560px"
       :close-on-click-modal="false"
       class="resource-detail-dialog"
       :append-to-body="true"
     >
-      <div v-if="selectedResource" class="resource-detail">
-        <div class="detail-section">
-          <h4>基本信息</h4>
-          <div class="detail-grid">
-            <div class="detail-item">
-              <label>资源ID：</label>
-              <span>{{ selectedResource.id }}</span>
-            </div>
-            <div class="detail-item">
-              <label>资源名称：</label>
-              <span>{{ selectedResource.title }}</span>
-            </div>
-            <div class="detail-item">
-              <label>资源类型：</label>
-              <el-tag size="small">{{ getResourceTypeText(selectedResource.type) }}</el-tag>
-            </div>
-            <div class="detail-item" v-if="selectedResource.fileSize">
-              <label>文件大小：</label>
-              <span>{{ formatFileSize(selectedResource.fileSize) }}</span>
-            </div>
-            <div class="detail-item">
-              <label>上传人：</label>
-              <span>{{ selectedResource.uploader }}</span>
-            </div>
-            <div class="detail-item">
-              <label>下载次数：</label>
-              <span>{{ selectedResource.downloadCount || 0 }}</span>
-            </div>
-            <div class="detail-item">
-              <label>上传时间：</label>
-              <span>{{ selectedResource.uploadTime || selectedResource.createdTime }}</span>
-            </div>
-          </div>
-        </div>
+      	      <div v-if="selectedResource" class="resource-detail">
+	        <div class="detail-section">
+	          <h4>基本信息</h4>
+	          <div class="detail-grid">
+	            <div class="detail-item">
+	              <label>资源类型：</label>
+	              <el-tag :type="getResourceTypeTag(selectedResource.type)" size="small">{{ getResourceTypeText(selectedResource.type) }}</el-tag>
+	            </div>
+	            <div class="detail-item">
+	              <label>上传人：</label>
+	              <span>{{ selectedResource.uploader }}</span>
+	            </div>
+	            <div class="detail-item" v-if="selectedResource.fileSize">
+	              <label>文件大小：</label>
+	              <span>{{ formatFileSize(selectedResource.fileSize) }}</span>
+	            </div>
+	            <div class="detail-item">
+	              <label>下载次数：</label>
+	              <span>{{ selectedResource.downloadCount || 0 }}</span>
+	            </div>
+	            <div class="detail-item">
+	              <label>上传时间：</label>
+	              <span>{{ selectedResource.uploadTime || selectedResource.createdTime }}</span>
+	            </div>
+	          </div>
+	        </div>
 
-        <div class="detail-section" v-if="selectedResource.description">
-          <h4>描述</h4>
-          <div class="description-content">
-            {{ selectedResource.description }}
-          </div>
-        </div>
+	        <div class="detail-section" v-if="selectedResource.description">
+	          <h4>描述</h4>
+	          <div class="description-content">
+	            {{ selectedResource.description }}
+	          </div>
+	        </div>
 
-        <div class="detail-section">
-          <h4>文件操作</h4>
-          <div class="file-actions">
-            <el-button type="primary" @click="previewResource(selectedResource)" class="action-btn">
-              <el-icon><ZoomIn /></el-icon>
-              预览文件
-            </el-button>
-            <el-button type="success" @click="downloadResource(selectedResource)" class="action-btn">
-              <el-icon><Download /></el-icon>
-              下载文件
-            </el-button>
-          </div>
-        </div>
-      </div>
+	        <div class="detail-section">
+	          <h4>文件操作</h4>
+	          <div class="file-actions">
+	            <el-button type="primary" @click="previewResource(selectedResource)" class="action-btn">
+	              <el-icon><ZoomIn /></el-icon>
+	              预览文件
+	            </el-button>
+	            <el-button type="success" @click="downloadResource(selectedResource)" class="action-btn">
+	              <el-icon><Download /></el-icon>
+	              下载文件
+	            </el-button>
+	          </div>
+	        </div>
+	      </div>
+	    </el-dialog>
 
-      <template #footer>
-        <el-button @click="detailDialogVisible = false" class="cancel-btn">关闭</el-button>
-      </template>
-    </el-dialog>
-
-    <!-- 我的收藏对话框 -->
+	    <!-- 我的收藏对话框 -->
     <el-dialog
       v-model="showFavoritesDialog"
       title="我的收藏"
@@ -1126,7 +1135,6 @@ import {
   DocumentCopy,
   Star,
   StarFilled,
-  Folder,
   Message,
   Lock,
   Iphone,
@@ -1139,8 +1147,6 @@ import {
   Money,
   Clock,
   Calendar,
-  ChatDotRound,
-  ChatDotSquare,
   Upload,
   Paperclip,
   ZoomIn,
@@ -1153,7 +1159,6 @@ import { useAuthStore } from '@/store/auth'
 import request from '@/utils/request'
 import positionService from '@/api/PositionService'
 import studentJobApplicationService from '@/api/StudentJobApplicationService'
-import { resourceApi } from '@/api/resource'
 import { getPublishedResourceDocuments } from '@/api/resourceDocument'
 import { getAnnouncementsForUser, createAnnouncementReadRecord } from '@/api/announcement'
 import FilePreviewDialog from '@/components/FilePreviewDialog.vue'
@@ -1180,8 +1185,9 @@ const showChangePasswordDialog = ref(false)
 const showBindPhoneDialog = ref(false)
 const isPhoneBound = ref(false) // 是否已绑定手机
 const showWeeklyLogsDialog = ref(false)
+const AVATAR_CACHE_KEY = 'student_avatar_url'
 const avatarInput = ref(null)
-const avatarUrl = ref('')
+const avatarUrl = ref(localStorage.getItem(AVATAR_CACHE_KEY) || '')
 const showResumeUploadArea = ref(false)
 const showCertificateUploadArea = ref(false)
 
@@ -1532,116 +1538,6 @@ const markAppliedFavorites = async () => {
   }
 }
 
-// 实习档案数据
-const internshipArchivesList = ref([
-  {
-    id: 1,
-    companyName: '北京协和医院',
-    position: '临床实习生',
-    startDate: '2025-06-01',
-    endDate: '2025-12-31',
-    status: '已完成',
-    supervisor: '张主任',
-    rating: 95,
-    weeklyLogs: [
-      {
-        id: 1,
-        week: 1,
-        dateRange: '2025-06-01 至 2025-06-07',
-        submitDate: '2025-06-07',
-        submitTime: '17:30',
-        workContent: '熟悉医院环境，学习科室规章制度，了解基本工作流程。跟随带教老师进行病房巡视，学习患者基本信息记录方法。',
-        learning: '掌握了医院的基本规章制度，学会了如何与患者进行有效沟通，了解了临床工作的基本流程。',
-        problems: '对部分医学术语理解不够深入，需要加强学习。',
-        nextPlan: '继续熟悉科室工作，学习常见疾病的护理要点，提高专业技能。',
-        status: 'approved',
-        attachmentCount: 2,
-        attachments: [
-          { name: '第一周实习报告.docx', size: '1.2MB' },
-          { name: '科室规章制度学习笔记.pdf', size: '850KB' }
-        ],
-        supervisorFeedback: '学习态度认真，工作积极主动，能够快速适应医院环境。',
-        supervisorRating: 90
-      },
-      {
-        id: 2,
-        week: 2,
-        dateRange: '2025-06-08 至 2025-06-14',
-        submitDate: '2025-06-14',
-        submitTime: '16:45',
-        workContent: '参与患者护理工作，学习基础护理操作技能，协助医生进行查房。负责测量患者生命体征，记录护理日志。',
-        learning: '掌握了生命体征测量的标准操作流程，学会了如何准确记录护理日志，提高了与患者的沟通能力。',
-        problems: '在操作熟练度方面还有待提高，需要多加练习。',
-        nextPlan: '加强基础护理操作练习，学习专科护理知识，提高工作效率。',
-        status: 'approved',
-        attachmentCount: 1,
-        attachments: [
-          { name: '第二周实习总结.docx', size: '980KB' }
-        ],
-        supervisorFeedback: '操作技能有所提升，工作认真负责，能够按时完成任务。',
-        supervisorRating: 95
-      },
-      {
-        id: 3,
-        week: 3,
-        dateRange: '2025-06-15 至 2025-06-21',
-        submitDate: '2025-06-21',
-        submitTime: '18:00',
-        workContent: '独立完成部分护理工作，参与科室病例讨论，学习临床思维方法。协助处理突发情况，提高应急处理能力。',
-        learning: '学会了独立完成基础护理工作，了解了临床病例讨论的重要性，提高了应急处理能力。',
-        problems: '在处理复杂病例时经验不足，需要向带教老师多请教。',
-        nextPlan: '继续学习临床知识，积累更多实践经验，提高综合能力。',
-        status: 'pending',
-        attachmentCount: 3,
-        supervisorFeedback: '',
-        supervisorRating: 0
-      }
-    ]
-  },
-  {
-    id: 2,
-    companyName: '上海瑞金医院',
-    position: '护理实习生',
-    startDate: '2025-03-01',
-    endDate: '2025-08-31',
-    status: '已完成',
-    supervisor: '李护士长',
-    rating: 90,
-    weeklyLogs: [
-      {
-        id: 4,
-        week: 1,
-        dateRange: '2025-03-01 至 2025-03-07',
-        submitDate: '2025-03-07',
-        submitTime: '16:30',
-        workContent: '熟悉医院环境和科室布局，学习护理工作流程。跟随带教老师进行病房巡视，学习基础护理操作。',
-        learning: '了解了医院的基本情况，掌握了护理工作的基本流程，学会了基础护理操作。',
-        problems: '对医院环境还不够熟悉，需要时间适应。',
-        nextPlan: '尽快熟悉医院环境，提高护理操作技能。',
-        status: 'approved',
-        attachmentCount: 1,
-        supervisorFeedback: '适应能力强，学习态度积极，能够认真完成布置的任务。',
-        supervisorRating: 92
-      },
-      {
-        id: 5,
-        week: 2,
-        dateRange: '2025-03-08 至 2025-03-14',
-        submitDate: '2025-03-14',
-        submitTime: '17:15',
-        workContent: '参与患者日常护理工作，学习静脉输液、导尿等操作技能。协助医生进行查房，记录患者病情变化。',
-        learning: '掌握了静脉输液的基本操作，学会了如何观察患者病情变化，提高了护理技能。',
-        problems: '在操作熟练度方面还有待提高。',
-        nextPlan: '加强护理操作练习，提高工作效率。',
-        status: 'approved',
-        attachmentCount: 2,
-        supervisorFeedback: '操作技能进步明显，工作认真负责，能够主动学习。',
-        supervisorRating: 93
-      }
-    ]
-  }
-])
-
 // 简历和证书数据
 const resumeList = ref([])
 const certificateList = ref([])
@@ -1705,7 +1601,11 @@ const viewAnnouncementDetail = async (announcement) => {
       userId: userId,
       userType: 'STUDENT'
     })
-    announcement.isRead = true
+    // 替换数组项触发Vue响应式更新
+  const idx = announcementList.value.findIndex(a => a.id === announcement.id)
+  if (idx !== -1) {
+    announcementList.value[idx] = { ...announcementList.value[idx], isRead: true }
+  }
   } catch (error) {
     console.error('记录阅读状态失败:', error)
   }
@@ -1763,7 +1663,8 @@ const getPublisherRoleText = (role) => {
     ADMIN: '管理员',
     COLLEGE: '学院教师',
     DEPARTMENT: '系室教师',
-    COUNSELOR: '辅导员'
+    COUNSELOR: '辅导员',
+    COMPANY: '企业'
   }
   return map[role] || '-'
 }
@@ -1787,26 +1688,36 @@ const getTargetText = (targetType, targetValue) => {
     ALL: '全体师生',
     STUDENT: '全体学生',
     TEACHER: '全体教师',
+    COMPANY: '全体企业',
     TEACHER_TYPE: '特定教师类别',
     MAJOR: '特定专业学生'
   }
 
-  const typeText = typeMap[targetType] || targetType
+  // 处理 JSON 数组格式，如 ["STUDENT","TEACHER"]
+  let types = []
+  try {
+    const parsed = JSON.parse(targetType)
+    types = Array.isArray(parsed) ? parsed : [targetType]
+  } catch {
+    types = [targetType]
+  }
 
-  if (targetType === 'TEACHER_TYPE' && targetValue) {
+  const typeTexts = types.map(t => typeMap[t] || t)
+
+  if (types.includes('TEACHER_TYPE') && targetValue) {
     const teacherTypeMap = {
       COLLEGE: '学院教师',
       DEPARTMENT: '系室教师',
       COUNSELOR: '辅导员'
     }
-    return `${typeText}（${teacherTypeMap[targetValue] || targetValue}）`
+    return `${typeTexts.join('、')}（${teacherTypeMap[targetValue] || targetValue}）`
   }
 
-  if (targetType === 'MAJOR' && targetValue) {
-    return `${typeText}（${targetValue}）`
+  if (types.includes('MAJOR') && targetValue) {
+    return `${typeTexts.join('、')}（${targetValue}）`
   }
 
-  return typeText
+  return typeTexts.join('、')
 }
 
 // 修改密码表单
@@ -1966,22 +1877,81 @@ const fetchResources = async () => {
   }
 }
 
-// 搜索资源
+// 资源类型筛选
+const resourceFilterTypes = [
+  { key: '', label: '全部' },
+  { key: 'document', label: '文档' },
+  { key: 'video', label: '视频' },
+  { key: 'code', label: '代码' },
+  { key: 'dataset', label: '数据集' },
+]
+const resourceTypeFilter = ref('')
+
+// 搜索 + 类型过滤
 const handleResourceSearch = () => {
-  const query = resourceSearchQuery.value.trim().toLowerCase()
-  if (!query) {
-    resourceList.value = allResourceList.value
-    return
-  }
-  resourceList.value = allResourceList.value.filter(item =>
-    item.title.toLowerCase().includes(query)
-  )
+  applyFilters()
 }
+
+const applyFilters = () => {
+  const query = resourceSearchQuery.value.trim().toLowerCase()
+  let list = allResourceList.value
+  if (resourceTypeFilter.value) {
+    list = list.filter(item => item.type === resourceTypeFilter.value)
+  }
+  if (query) {
+    list = list.filter(item => item.title.toLowerCase().includes(query))
+  }
+  resourceList.value = list
+}
+
+// 类型筛选切换
+const filteredResourceList = computed(() => {
+  const query = resourceSearchQuery.value.trim().toLowerCase()
+  let list = allResourceList.value
+  if (resourceTypeFilter.value) {
+    list = list.filter(item => item.type === resourceTypeFilter.value)
+  }
+  if (query) {
+    list = list.filter(item => item.title.toLowerCase().includes(query))
+  }
+  return list
+})
 
 // 查看资源详情
 const viewResource = (resource) => {
   selectedResource.value = resource
   detailDialogVisible.value = true
+}
+
+// 直接下载资源（不打开详情）
+const downloadResourceDirectly = async (resource) => {
+  if (!resource) return
+  if (!resource.id) {
+    ElMessage.error('资源信息不完整')
+    return
+  }
+  try {
+    const token = authStore.token
+    const response = await fetch(`/api/resource-documents/download/${resource.id}`, {
+      headers: { 'Authorization': token ? `Bearer ${token}` : '' }
+    })
+    if (!response.ok) {
+      ElMessage.error('下载失败，请检查权限')
+      return
+    }
+    const blob = await response.blob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = resource.fileName || resource.title || 'download'
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  } catch (error) {
+    ElMessage.error('下载失败')
+    console.error('下载失败:', error)
+  }
 }
 
 // 格式化文件大小
@@ -2005,7 +1975,7 @@ const previewResource = (resource) => {
     return
   }
   currentFileUrl.value = fileUrl
-  currentFileName.value = resource.title || resource.fileName || '文件预览'
+  currentFileName.value = resource.fileName || resource.title || '文件预览'
   filePreviewVisible.value = true
 }
 
@@ -2017,9 +1987,24 @@ const downloadResource = async (resource) => {
       ElMessage.error('资源信息不完整')
       return
     }
-    // 调用后端下载接口
-    window.open(`/api/resource-documents/download/${resourceId}`, '_blank')
-    ElMessage.success('下载已启动')
+    const token = authStore.token
+    const response = await fetch(`/api/resource-documents/download/${resourceId}`, {
+      headers: { 'Authorization': token ? `Bearer ${token}` : '' }
+    })
+    if (!response.ok) {
+      ElMessage.error('下载失败，请检查权限')
+      return
+    }
+    const blob = await response.blob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = resource.fileName || resource.title || 'download'
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+    ElMessage.success('下载成功')
   } catch (error) {
     ElMessage.error('下载失败')
     console.error('下载失败:', error)
@@ -2041,7 +2026,10 @@ const fetchUserInfo = async () => {
         supervisorTeacher: user.supervisorTeacher || '',
         supervisorPhone: user.supervisorPhone || ''
       }
-      avatarUrl.value = user.avatar || ''
+      if (user.avatar) {
+        avatarUrl.value = user.avatar
+        localStorage.setItem(AVATAR_CACHE_KEY, user.avatar)
+      }
     }
   } catch (error) {
     console.error('获取用户信息失败:', error)
@@ -2164,7 +2152,7 @@ const getOptionDesc = (id) => {
     5: '查看系统消息',
     6: '修改登录密码',
     7: '绑定手机号码',
-    10: '下载简历、日志等模板'
+    10: '查看系统发布的资源文档'
   }
   return descs[id] || ''
 }
@@ -2277,6 +2265,7 @@ const handleAvatarChange = async (event) => {
     })
     if (response.code === 200) {
       avatarUrl.value = response.data.url
+	      localStorage.setItem(AVATAR_CACHE_KEY, response.data.url)
       ElMessage.success('头像上传成功')
     } else {
       ElMessage.error(response.message || '头像上传失败')
@@ -2736,14 +2725,6 @@ const fetchStudentStatus = async () => {
     }
   } catch (error) {
     console.error('获取学生实习状态失败:', error)
-  }
-}
-
-const deleteArchive = (id) => {
-  const index = internshipArchivesList.value.findIndex(item => item.id === id)
-  if (index !== -1) {
-    internshipArchivesList.value.splice(index, 1)
-    ElMessage.success('删除档案成功')
   }
 }
 
@@ -3447,6 +3428,7 @@ onMounted(() => {
   cursor: pointer;
   position: relative;
   border: 1px solid rgba(226, 232, 240, 0.4);
+  overflow: hidden;
 }
 
 .option-card::before {
@@ -3457,8 +3439,6 @@ onMounted(() => {
   width: 100%;
   height: 3px;
   background: linear-gradient(90deg, #409EFF 0%, #67C23A 100%);
-  border-radius: 14px 14px 0 0;
-  transition: height 0.3s ease;
 }
 
 .option-card:hover {
@@ -3466,10 +3446,6 @@ onMounted(() => {
   box-shadow: 0 8px 20px rgba(64, 158, 255, 0.15);
   border-color: #409EFF;
   background: linear-gradient(145deg, #ffffff 0%, #f0f9ff 100%);
-}
-
-.option-card:hover::before {
-  height: 4px;
 }
 
 .card-header {
@@ -4837,15 +4813,63 @@ onMounted(() => {
 }
 
 .resource-search-bar {
-  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
 }
 
 .resource-search-bar .el-input {
   width: 300px;
 }
 
+.resource-count {
+  font-size: 13px;
+  color: #909399;
+  white-space: nowrap;
+}
+
+.resource-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: white;
+  padding-bottom: 16px;
+  margin-bottom: 4px;
+}
+
+.resource-type-filters {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+  flex-wrap: wrap;
+}
+
+.filter-chip {
+  padding: 5px 16px;
+  border-radius: 20px;
+  font-size: 13px;
+  color: #606266;
+  background: #f5f7fa;
+  cursor: pointer;
+  transition: all 0.25s;
+  border: 1px solid transparent;
+}
+
+.filter-chip:hover {
+  color: #409eff;
+  background: #ecf5ff;
+}
+
+.filter-chip.active {
+  color: #fff;
+  background: #409eff;
+  border-color: #409eff;
+}
+
 .resource-container {
   min-height: 400px;
+  display: flex;
+  flex-direction: column;
 }
 
 .resources-grid {
@@ -4853,44 +4877,59 @@ onMounted(() => {
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 20px;
   margin-bottom: 20px;
+  overflow-y: auto;
+  max-height: calc(80vh - 200px);
+  padding: 4px 4px 0 4px;
 }
 
 .resource-card {
   background: white;
-  border: 1px solid #e6f7ff;
-  border-radius: 12px;
+  border: 1px solid #ebeef5;
+  border-radius: 10px;
   padding: 20px;
   cursor: pointer;
-  transition: all 0.3s ease;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  transition: all 0.25s ease;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  position: relative;
 }
 
 .resource-card:hover {
   transform: translateY(-4px);
-  box-shadow: 0 8px 25px rgba(64, 158, 255, 0.15);
-  border-color: #409EFF;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.1);
+  border-color: #c6e2ff;
 }
 
 .resource-header {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  margin-bottom: 16px;
+  margin-bottom: 14px;
 }
 
 .resource-type {
   flex: 1;
 }
 
+.card-download-btn {
+  color: #909399;
+  transition: all 0.2s;
+}
+
+.card-download-btn:hover {
+  color: #409eff;
+  background: #ecf5ff;
+  border-radius: 6px;
+}
+
 .resource-content {
-  margin-bottom: 16px;
+  margin-bottom: 14px;
 }
 
 .resource-title {
   font-size: 16px;
-  font-weight: 600;
-  color: #303133;
-  margin: 0 0 12px 0;
+  font-weight: 700;
+  color: #1e293b;
+  margin: 0 0 8px 0;
   line-height: 1.4;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -4899,25 +4938,25 @@ onMounted(() => {
 }
 
 .resource-description {
-  font-size: 14px;
-  color: #606266;
+  font-size: 13px;
+  color: #909399;
   line-height: 1.5;
   display: -webkit-box;
-  -webkit-line-clamp: 3;
+  -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
   margin: 0;
 }
 
 .resource-footer {
-  border-top: 1px solid #f0f7ff;
-  padding-top: 12px;
+  border-top: 1px solid #f0f0f0;
+  padding-top: 10px;
 }
 
 .resource-meta {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
 }
 
 .resource-meta .meta-item {
@@ -4935,6 +4974,55 @@ onMounted(() => {
 .empty-resources {
   padding: 60px 0;
   text-align: center;
+}
+
+.resource-detail-dialog :deep(.el-dialog__body) {
+  padding: 16px 24px 24px;
+}
+
+.resource-detail-dialog .detail-section h4 {
+  color: #303133;
+  font-weight: 600;
+  margin-bottom: 14px;
+}
+
+.resource-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.rd-meta-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 13px;
+  color: #909399;
+}
+
+.rd-meta-text {
+  color: #606266;
+}
+
+.rd-sep {
+  color: #dcdfe6;
+  margin: 0 -4px;
+}
+
+.rd-desc {
+  background: #f8fafc;
+  border-radius: 8px;
+  padding: 14px 16px;
+  font-size: 14px;
+  color: #475569;
+  line-height: 1.6;
+}
+
+.rd-actions {
+  display: flex;
+  gap: 12px;
+  padding-top: 4px;
 }
 
 

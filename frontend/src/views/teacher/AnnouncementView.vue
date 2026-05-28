@@ -70,43 +70,26 @@
         fit
         class="data-table"
       >
-        <el-table-column type="selection" width="55" align="center"></el-table-column>
-        <el-table-column prop="id" label="ID" width="80" align="center"></el-table-column>
-        <el-table-column prop="title" label="标题" min-width="200" show-overflow-tooltip></el-table-column>
-        <el-table-column prop="priority" label="优先级" width="100" align="center">
-          <template #default="scope">
-            <el-tag v-if="scope.row.priority === 'important'" type="warning" size="small">重要</el-tag>
-            <el-tag v-else type="info" size="small">普通</el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column prop="status" label="状态" width="100" align="center">
+        <el-table-column type="selection" width="50" align="center"></el-table-column>
+        <el-table-column prop="title" label="标题" min-width="280" show-overflow-tooltip></el-table-column>
+        <el-table-column prop="status" label="状态" width="90" align="center">
           <template #default="scope">
             <el-tag :type="getTagType(scope.row)" size="small" class="status-tag">
               {{ getStatusText(scope.row) }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="publisher" label="发布人" width="120" align="center"></el-table-column>
-        <el-table-column label="发布人身份" width="120" align="center">
-          <template #default="scope">
-            <el-tag :type="getPublisherRoleType(scope.row.publisherRole)" size="small" class="publisher-role-tag">
-              {{ getPublisherRoleText(scope.row.publisherRole) }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column label="目标群体" width="150" align="center">
-          <template #default="scope">
-            {{ getTargetText(scope.row.targetType, scope.row.targetValue) }}
-          </template>
-        </el-table-column>
-        <el-table-column prop="publishDate" label="发布日期" width="170" align="center">
+        <el-table-column prop="publisher" label="发布人" width="100" align="center"></el-table-column>
+        <el-table-column prop="publishDate" label="发布日期" width="165" align="center">
           <template #default="scope">{{ formatDate(scope.row.publishDate || scope.row.publishTime) }}</template>
         </el-table-column>
-        <el-table-column prop="expireDate" label="过期日期" width="170" align="center">
-          <template #default="scope">{{ formatDate(scope.row.expireDate || scope.row.validTo) }}</template>
+        <el-table-column label="是否已读" width="80" align="center">
+          <template #default="scope">
+            <el-tag v-if="scope.row.isRead" type="success" size="small">已读</el-tag>
+            <el-tag v-else type="info" size="small">未读</el-tag>
+          </template>
         </el-table-column>
-        <el-table-column prop="readCount" label="阅读量" width="80" align="center"></el-table-column>
-        <el-table-column label="操作" width="240" fixed="right" align="center">
+        <el-table-column label="操作" width="220" fixed="right" align="center">
           <template #default="scope">
             <div class="action-buttons">
               <el-tooltip content="查看" placement="top">
@@ -187,12 +170,6 @@
         </el-form-item>
         <el-form-item label="过期日期" prop="expireDate">
           <el-date-picker v-model="formData.expireDate" type="datetime" placeholder="选择过期日期" style="width: 100%"></el-date-picker>
-        </el-form-item>
-        <el-form-item label="优先级">
-          <el-select v-model="formData.priority" placeholder="请选择优先级">
-            <el-option label="普通" value="normal"></el-option>
-            <el-option label="重要" value="important"></el-option>
-          </el-select>
         </el-form-item>
         <el-form-item label="目标群体">
           <el-select v-model="formData.targetType" placeholder="请选择目标群体" multiple collapse-tags collapse-tags-tooltip @change="handleTargetTypeChange">
@@ -593,7 +570,14 @@ const handleEdit = (row: Announcement): void => {
   dialogVisible.value = true
 }
 
-const handleView = (row: Announcement): void => {
+const handleView = async (row: Announcement): Promise<void> => {
+  try {
+    await announcementApi.getAnnouncementById(row.id)
+    row.readCount = (row.readCount ?? 0) + 1
+    row.isRead = true
+  } catch {
+    // 接口失败时仍可查看详情，只是不更新计数
+  }
   viewData.value = row
   viewDialogVisible.value = true
 }

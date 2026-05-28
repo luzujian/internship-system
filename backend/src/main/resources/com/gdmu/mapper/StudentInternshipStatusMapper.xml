@@ -411,7 +411,7 @@
                 AND su.student_user_id = #{studentUserId}
             </if>
         </where>
-        ORDER BY sis.create_time DESC
+        ORDER BY sis.status ASC, sis.create_time DESC
     </select>
 
     <!-- 动态条件查询学生实习状态（按管辖范围过滤：系室/班级） -->
@@ -490,7 +490,7 @@
                 </foreach>
             </if>
         </where>
-        ORDER BY sis.create_time DESC
+        ORDER BY sis.status ASC, sis.create_time DESC
     </select>
 
     <!-- 动态条件查询学生实习状态（支持状态列表） -->
@@ -560,7 +560,7 @@
                 AND su.student_user_id = #{studentUserId}
             </if>
         </where>
-        ORDER BY sis.create_time DESC
+        ORDER BY sis.status ASC, sis.create_time DESC
     </select>
     
     <!-- 根据ID列表查询学生实习状态 -->
@@ -1164,6 +1164,37 @@
         </where>
         GROUP BY c.id, c.name
         ORDER BY c.name
+    </select>
+
+    <!-- 按系室统计实习状态（按系室 ID 列表过滤） -->
+    <select id="getStatsByDivisionByDivisionIds" resultType="java.util.Map">
+        SELECT
+            d.name AS divisionName,
+            COUNT(DISTINCT CASE WHEN sis.status IS NULL OR sis.status != 4 THEN su.id END) AS total,
+            SUM(CASE WHEN sis.status IN (2, 3) THEN 1 ELSE 0 END) AS confirmed,
+            SUM(CASE WHEN sis.status = 1 THEN 1 ELSE 0 END) AS offer,
+            SUM(CASE WHEN sis.status = 0 THEN 1 ELSE 0 END) AS noOffer,
+            SUM(CASE WHEN sis.status = 6 THEN 1 ELSE 0 END) AS delay
+        FROM student_users su
+        LEFT JOIN student_internship_status sis ON su.id = sis.student_id
+        LEFT JOIN major m ON su.major_id = m.id
+        LEFT JOIN division d ON m.division_id = d.id
+        <where>
+            <if test="divisionIds != null and divisionIds.size() > 0">
+                AND d.id IN
+                <foreach collection="divisionIds" item="divisionId" open="(" separator="," close=")">
+                    #{divisionId}
+                </foreach>
+            </if>
+            <if test="startDate != null and startDate != ''">
+                AND (sis.update_time &gt;= #{startDate} OR sis.update_time IS NULL)
+            </if>
+            <if test="endDate != null and endDate != ''">
+                AND (sis.update_time &lt;= #{endDate} OR sis.update_time IS NULL)
+            </if>
+        </where>
+        GROUP BY d.id, d.name
+        ORDER BY d.name
     </select>
 
     <!-- 将学生实习状态改为已中断（不清空公司信息，保留记录） -->

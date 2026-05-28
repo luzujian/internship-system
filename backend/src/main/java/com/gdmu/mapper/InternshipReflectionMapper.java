@@ -37,4 +37,11 @@ public interface InternshipReflectionMapper {
      * @return 已提交返回true，否则返回false
      */
     boolean existsByStudentIdAndPeriodNumber(@Param("studentId") Long studentId, @Param("periodNumber") Integer periodNumber);
+
+    /**
+     * 统计指定班级中待批改的实习心得数量（status=0表示已提交未批改）
+     * @param classIds 班级ID列表
+     * @return 待批改心得数量
+     */
+    int countPendingByClassIds(@Param("classIds") List<Long> classIds);
 }

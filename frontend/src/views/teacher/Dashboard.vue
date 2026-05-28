@@ -2,7 +2,7 @@
   <div class="dashboard-container">
     <div class="page-header fade-in">
       <div class="header-content">
-        <h2 class="page-title">实习状态看板</h2>
+        <h2 class="page-title">{{ scopeName ? scopeName + ' - 实习状态看板' : '实习状态看板' }}</h2>
         <p class="page-description">实时监控学生的实习状态分布情况</p>
       </div>
       <div class="time-range-selector">
@@ -11,6 +11,7 @@
         <span>至</span>
         <input type="date" v-model="endDate" />
         <button class="btn-primary" @click="applyDateRange">应用</button>
+        <button class="btn-reset" @click="resetDateRange">重置</button>
       </div>
     </div>
 
@@ -60,7 +61,7 @@
     <!-- 总体状态卡片 -->
     <div class="card fade-in" style="animation-delay: 0.6s">
       <div class="card-header">
-        <h3>应届毕业生实习状态</h3>
+        <h3>{{ statusBarTitle }}</h3>
       </div>
       <div class="card-body">
         <div class="status-bar">
@@ -94,10 +95,55 @@
       </div>
     </div>
 
+    <!-- 系维度看板（学院教师专用） -->
+    <div class="dimension-board" v-if="divisionData.length > 0 && isCollegeTeacher">
+      <h3 class="collapsible-header" @click="divisionCollapsed = !divisionCollapsed">
+        系状态
+        <span class="collapse-arrow" :class="{ collapsed: divisionCollapsed }">▼</span>
+      </h3>
+      <div class="board-cards" v-show="!divisionCollapsed">
+        <div v-for="(division, index) in divisionData" :key="division.divisionName" class="board-card fade-in" :style="{ animationDelay: (0.8 + index * 0.1) + 's' }" @click="handleDivisionClick(division.divisionName)">
+          <div class="card-header">
+            <h4>{{ division.divisionName }}</h4>
+            <span class="student-count badge badge-primary">{{ division.total }}人</span>
+          </div>
+          <div class="card-body">
+            <div class="progress-bar">
+              <div class="progress-item success" :style="{ width: `${division.total > 0 ? (division.confirmed / division.total) * 100 : 0}%` }"></div>
+              <div class="progress-item info" :style="{ width: `${division.total > 0 ? (division.offer / division.total) * 100 : 0}%` }"></div>
+              <div class="progress-item danger" :style="{ width: `${division.total > 0 ? (division.noOffer / division.total) * 100 : 0}%` }"></div>
+              <div class="progress-item warning" :style="{ width: `${division.total > 0 ? (division.delay / division.total) * 100 : 0}%` }"></div>
+            </div>
+            <div class="progress-stats">
+              <div class="stat-item">
+                <span class="stat-label">已确定：</span>
+                <span class="stat-value success">{{ division.confirmed }}</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-label">有offer：</span>
+                <span class="stat-value info">{{ division.offer }}</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-label">没offer：</span>
+                <span class="stat-value danger">{{ division.noOffer }}</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-label">延迟：</span>
+                <span class="stat-value warning">{{ division.delay }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- 年级维度看板 -->
-    <div class="dimension-board" v-if="gradeData.length > 0">
-      <h3>年级状态</h3>
-      <div class="board-cards">
+    <div class="dimension-board" v-if="gradeData.length > 0 && !isCounselor && !isCollegeTeacher">
+      <h3 class="collapsible-header" @click="gradeCollapsed = !gradeCollapsed">
+        年级状态
+        <span class="collapse-arrow" :class="{ collapsed: gradeCollapsed }">▼</span>
+      </h3>
+      <div class="board-cards" v-show="!gradeCollapsed">
         <div v-for="(grade, index) in gradeData" :key="grade.gradeName" class="board-card fade-in" :style="{ animationDelay: (0.8 + index * 0.1) + 's' }" @click="handleGradeClick(grade.gradeName)">
           <div class="card-header">
             <h4>{{ grade.gradeName }}</h4>
@@ -134,10 +180,32 @@
     </div>
 
     <!-- 专业维度看板 -->
-    <div class="dimension-board" v-if="majorData.length > 0">
-      <h3>专业状态</h3>
-      <div class="board-cards">
-        <div v-for="(major, index) in majorData" :key="major.majorName" class="board-card fade-in" :style="{ animationDelay: (1.0 + index * 0.1) + 's' }" @click="handleMajorClick(major.majorName)">
+    <div class="dimension-board" v-if="majorData.length > 0 && !isCounselor">
+      <div class="board-title-row">
+        <h3 class="collapsible-header" @click="majorCollapsed = !majorCollapsed">
+          专业状态
+          <span class="collapse-arrow" :class="{ collapsed: majorCollapsed }">▼</span>
+        </h3>
+        <el-select
+          v-model="selectedMajors"
+          multiple
+          collapse-tags
+          collapse-tags-tooltip
+          placeholder="全部专业"
+          class="major-filter-select"
+          @click.stop
+        >
+          <el-option label="全部" value="__all__" />
+          <el-option
+            v-for="m in majorData"
+            :key="m.majorName"
+            :label="m.majorName"
+            :value="m.majorName"
+          />
+        </el-select>
+      </div>
+      <div class="board-cards" v-show="!majorCollapsed">
+        <div v-for="(major, index) in filteredMajorData" :key="major.majorName" class="board-card fade-in" :style="{ animationDelay: (1.0 + index * 0.1) + 's' }" @click="handleMajorClick(major.majorName)">
           <div class="card-header">
             <h4>{{ major.majorName }}</h4>
             <span class="student-count badge badge-info">{{ major.total }}人</span>
@@ -174,12 +242,31 @@
 
     <!-- 班级维度看板（仅辅导员可见） -->
     <div class="dimension-board" v-if="classData.length > 0 && isCounselor">
-      <div class="board-header">
-        <h3>班级状态</h3>
-        <span class="board-hint" v-if="isCounselor">（仅显示我负责的班级，共 {{ classData.length }} 个班级，{{ classData.reduce((sum, cls) => sum + cls.total, 0) }} 名学生）</span>
+      <div class="board-title-row">
+        <h3 class="collapsible-header" @click="classCollapsed = !classCollapsed">
+          班级状态
+          <span class="collapse-arrow" :class="{ collapsed: classCollapsed }">▼</span>
+        </h3>
+        <el-select
+          v-model="selectedClasses"
+          multiple
+          collapse-tags
+          collapse-tags-tooltip
+          placeholder="全部班级"
+          class="major-filter-select"
+          @click.stop
+        >
+          <el-option label="全部" value="__all__" />
+          <el-option
+            v-for="c in classData"
+            :key="c.className"
+            :label="c.className"
+            :value="c.className"
+          />
+        </el-select>
       </div>
-      <div class="board-cards">
-        <div v-for="(cls, index) in classData" :key="cls.className" class="board-card fade-in" :style="{ animationDelay: (1.2 + index * 0.1) + 's' }" @click="handleClassClick(cls.className)">
+      <div class="board-cards" v-show="!classCollapsed">
+        <div v-for="(cls, index) in filteredClassData" :key="cls.className" class="board-card fade-in" :style="{ animationDelay: (1.2 + index * 0.1) + 's' }" @click="handleClassClick(cls.className)">
           <div class="card-header">
             <h4>{{ cls.className }}</h4>
             <span class="student-count badge badge-success">{{ cls.total }}人</span>
@@ -225,8 +312,12 @@ import { getInternshipNodes } from '../../api/teacherSettings'
 import emitter from '../../utils/eventBus'
 
 // 时间范围
+const STORAGE_KEY_START = 'teacher_dashboard_startDate'
+const STORAGE_KEY_END = 'teacher_dashboard_endDate'
 const startDate = ref('')
 const endDate = ref('')
+const defaultStartDate = ref('')
+const defaultEndDate = ref('')
 
 // 路由实例
 const router = useRouter()
@@ -235,6 +326,7 @@ const route = useRoute()
 // 获取教师类型
 const teacherType = localStorage.getItem('teacherType') || ''
 const isCounselor = computed(() => teacherType === 'COUNSELOR')
+const isCollegeTeacher = computed(() => teacherType === 'COLLEGE')
 
 // 获取辅导员 ID
 const counselorId = computed(() => {
@@ -253,6 +345,32 @@ const confirmedCount = ref(0)
 const offerCount = ref(0)
 const noOfferCount = ref(0)
 const delayCount = ref(0)
+const scopeName = ref('')
+const divisionCollapsed = ref(true)
+const gradeCollapsed = ref(true)
+const majorCollapsed = ref(true)
+const classCollapsed = ref(true)
+const selectedClasses = ref<string[]>(['__all__'])
+
+const filteredClassData = computed(() => {
+  if (selectedClasses.value.includes('__all__') || selectedClasses.value.length === 0) {
+    return classData.value
+  }
+  return classData.value.filter(c => selectedClasses.value.includes(c.className))
+})
+const selectedMajors = ref<string[]>(['__all__'])
+
+const filteredMajorData = computed(() => {
+  if (selectedMajors.value.includes('__all__') || selectedMajors.value.length === 0) {
+    return majorData.value
+  }
+  return majorData.value.filter(m => selectedMajors.value.includes(m.majorName))
+})
+
+const statusBarTitle = computed(() => {
+  if (scopeName.value) return scopeName.value + ' - 应届毕业生实习状态'
+  return '应届毕业生实习状态'
+})
 
 // 年级数据
 const gradeData = ref<Array<{
@@ -294,6 +412,16 @@ const myClassData = ref<Array<{
   delay: number
 }>>([])
 
+// 系室数据
+const divisionData = ref<Array<{
+  divisionName: string
+  total: number
+  confirmed: number
+  offer: number
+  noOffer: number
+  delay: number
+}>>([])
+
 // 加载看板数据
 const loadDashboardData = async () => {
   try {
@@ -307,9 +435,11 @@ const loadDashboardData = async () => {
       offerCount.value = response.offer || 0
       noOfferCount.value = response.noOffer || 0
       delayCount.value = response.delay || 0
+      scopeName.value = response.scopeName || ''
       gradeData.value = response.gradeData || []
       majorData.value = response.majorData || []
       classData.value = response.classData || []
+      divisionData.value = response.divisionData || []
       myClassData.value = []
     } else {
       const response = await dashboardApi.getDashboardStats({
@@ -321,9 +451,11 @@ const loadDashboardData = async () => {
       offerCount.value = response.offer || 0
       noOfferCount.value = response.noOffer || 0
       delayCount.value = response.delay || 0
+      scopeName.value = response.scopeName || ''
       gradeData.value = response.gradeData || []
       majorData.value = response.majorData || []
       classData.value = response.classData || []
+      divisionData.value = response.divisionData || []
       myClassData.value = []
     }
   } catch (error) {
@@ -333,10 +465,8 @@ const loadDashboardData = async () => {
 
 // 应用时间范围
 const applyDateRange = () => {
-  // 保存到 localStorage，供首页使用
-  localStorage.setItem('teacher_dashboard_startDate', startDate.value)
-  localStorage.setItem('teacher_dashboard_endDate', endDate.value)
-  // 通知首页刷新数据
+  localStorage.setItem(STORAGE_KEY_START, startDate.value)
+  localStorage.setItem(STORAGE_KEY_END, endDate.value)
   emitter.emit('dashboard-date-range-changed')
   loadDashboardData()
 }
@@ -354,6 +484,11 @@ const handleGradeClick = (gradeName: string) => {
   navigateToStudentTracking({ grade: gradeName })
 }
 
+// 点击系室卡片跳转
+const handleDivisionClick = (divisionName: string) => {
+  navigateToStudentTracking({ division: divisionName })
+}
+
 // 点击专业卡片跳转
 const handleMajorClick = (majorName: string) => {
   navigateToStudentTracking({ major: majorName })
@@ -364,35 +499,55 @@ const handleClassClick = (className: string) => {
   navigateToStudentTracking({ class: className })
 }
 
-// 加载实习时间设置
-const loadInternshipTimeSettings = async () => {
+// 加载默认时间范围（从系统设置）
+const loadDefaultDateRange = async () => {
   try {
     const response = await getInternshipNodes()
     if (response.data) {
       const data = response.data as any
-      // 使用应聘时间段，与首页保持一致
       if (data.applicationStartTime) {
-        startDate.value = data.applicationStartTime
+        defaultStartDate.value = data.applicationStartTime
       }
-      if (data.applicationEndTime) {
-        endDate.value = data.applicationEndTime
+      if (data.endDate) {
+        defaultEndDate.value = data.endDate
+      } else if (data.applicationEndTime) {
+        defaultEndDate.value = data.applicationEndTime
       }
     }
   } catch (error) {
-    console.error('加载实习时间设置失败:', error)
-    // 如果加载失败，使用默认值
-    if (!startDate.value) {
-      startDate.value = '2026-03-01'
-    }
-    if (!endDate.value) {
-      endDate.value = '2026-05-31'
-    }
+    console.error('加载默认时间范围失败:', error)
+    if (!defaultStartDate.value) defaultStartDate.value = '2026-03-01'
+    if (!defaultEndDate.value) defaultEndDate.value = '2026-12-31'
   }
+}
+
+// 初始化时间范围：优先用户上次选择，否则用系统默认
+const initDateRange = () => {
+  const savedStart = localStorage.getItem(STORAGE_KEY_START)
+  const savedEnd = localStorage.getItem(STORAGE_KEY_END)
+
+  if (savedStart && savedEnd) {
+    startDate.value = savedStart
+    endDate.value = savedEnd
+  } else {
+    startDate.value = defaultStartDate.value
+    endDate.value = defaultEndDate.value
+  }
+}
+
+// 重置时间范围为系统默认
+const resetDateRange = () => {
+  localStorage.removeItem(STORAGE_KEY_START)
+  localStorage.removeItem(STORAGE_KEY_END)
+  startDate.value = defaultStartDate.value
+  endDate.value = defaultEndDate.value
+  loadDashboardData()
 }
 
 // 组件挂载时加载数据
 onMounted(async () => {
-  await loadInternshipTimeSettings()
+  await loadDefaultDateRange()
+  initDateRange()
   loadDashboardData()
 })
 
@@ -459,9 +614,33 @@ const calculatePercentage = (value: number, total: number) => {
 }
 
 .time-range-selector button {
-  font-size: 18px;
-  padding: 8px 16px;
-  font-weight: 600;
+  font-size: 13px;
+  padding: 6px 14px;
+  font-weight: 500;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.time-range-selector .btn-primary {
+  background: var(--color-primary, #1890ff);
+  color: white;
+}
+
+.time-range-selector .btn-primary:hover {
+  opacity: 0.85;
+}
+
+.time-range-selector .btn-reset {
+  background: #faad14;
+  color: #fff;
+  border: 1px solid #faad14;
+}
+
+.time-range-selector .btn-reset:hover {
+  background: #e8a200;
+  border-color: #e8a200;
 }
 
 /* 总览统计卡片 */
@@ -758,6 +937,52 @@ const calculatePercentage = (value: number, total: number) => {
   margin: 0;
   padding-bottom: 12px;
   border-bottom: 2px solid #f0f0f0;
+}
+
+.board-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 12px;
+  border-bottom: 2px solid #f0f0f0;
+  margin-bottom: 16px;
+}
+
+.board-title-row h3 {
+  padding-bottom: 0;
+  border-bottom: none;
+  margin: 0;
+}
+
+.major-filter-select {
+  width: 220px;
+  flex-shrink: 0;
+}
+
+.major-filter-select :deep(.el-select-dropdown__list) {
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.collapsible-header {
+  cursor: pointer;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.collapsible-header:hover {
+  color: var(--color-primary, #1890ff);
+}
+
+.collapse-arrow {
+  font-size: 14px;
+  transition: transform 0.3s;
+}
+
+.collapse-arrow.collapsed {
+  transform: rotate(-90deg);
 }
 
 .board-header {

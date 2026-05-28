@@ -98,6 +98,17 @@
         ORDER BY sja.create_time DESC
     </select>
 
+    <!-- 批量统计各职位的申请人数 -->
+    <select id="countByPositionIds" resultType="map">
+        SELECT position_id, COUNT(*) as cnt
+        FROM student_job_application
+        WHERE position_id IN
+        <foreach collection="positionIds" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+        GROUP BY position_id
+    </select>
+
     <!-- 获取学生首页统计数据（聚合查询，单次DB访问代替原来的4次独立查询） -->
     <select id="getStudentHomeStats" resultType="map">
         SELECT

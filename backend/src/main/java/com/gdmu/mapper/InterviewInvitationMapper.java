@@ -20,14 +20,6 @@ public interface InterviewInvitationMapper {
             "WHERE id = #{id}")
     void updateStatus(@Param("id") Long id, @Param("status") String status, @Param("rejectReason") String rejectReason);
 
-    @Results({
-        @Result(property = "interviewMethod", column = "interview_type"),
-        @Result(property = "contactPerson", column = "contact_person"),
-        @Result(property = "contactPhone", column = "contact_phone")
-    })
-    @Select("SELECT ii.*, cu.website FROM interview_invitation ii " +
-            "LEFT JOIN company_users cu ON ii.company_id = cu.id " +
-            "WHERE ii.student_id = #{studentId} ORDER BY ii.interview_time DESC")
     List<InterviewInvitation> findByStudentId(@Param("studentId") Long studentId);
 
     @Results({
@@ -48,13 +40,5 @@ public interface InterviewInvitationMapper {
     @Select("SELECT * FROM interview_invitation WHERE id = #{id}")
     InterviewInvitation findById(@Param("id") Long id);
 
-    @Results({
-        @Result(property = "interviewMethod", column = "interview_type"),
-        @Result(property = "contactPerson", column = "contact_person"),
-        @Result(property = "contactPhone", column = "contact_phone")
-    })
-    @Select("SELECT ii.*, cu.website FROM interview_invitation ii " +
-            "LEFT JOIN company_users cu ON ii.company_id = cu.id " +
-            "WHERE ii.student_id = #{studentId} AND ii.status = #{status} ORDER BY ii.interview_time DESC")
     List<InterviewInvitation> findByStudentIdAndStatus(@Param("studentId") Long studentId, @Param("status") String status);
 }

@@ -200,6 +200,7 @@ public class ApprovalController {
                 return Result.error("企业不存在");
             }
             company.setAuditStatus(1);
+            company.setStatus(1);
             company.setAuditTime(new Date());
             company.setReviewerId(reviewerId);
             int result = companyUserService.update(company);

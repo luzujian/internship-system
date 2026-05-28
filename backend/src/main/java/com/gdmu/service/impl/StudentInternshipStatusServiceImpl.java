@@ -351,6 +351,24 @@ public class StudentInternshipStatusServiceImpl implements StudentInternshipStat
     }
 
     @Override
+    public PageResult<StudentInternshipStatus> findPageByScope(Integer page, Integer pageSize, Long studentId, String name,
+                                                                Integer gender, Integer status, Long companyId, String companyName,
+                                                                String grade, String major, String className, String studentUserId,
+                                                                List<Long> divisionIds, List<Long> classIds) {
+        log.debug("按管辖范围分页查询，页码: {}, 每页: {}, divisionIds: {}, classIds: {}",
+                page, pageSize, divisionIds, classIds);
+
+        PageHelper.startPage(page, pageSize);
+        List<StudentInternshipStatus> statuses = studentInternshipStatusMapper.listByScope(
+                studentId, name, gender, status, companyId, companyName, grade, major, className, studentUserId,
+                divisionIds, classIds);
+
+        PageInfo<StudentInternshipStatus> pageInfo = new PageInfo<>(statuses);
+        return PageResult.build(pageInfo.getTotal(), pageInfo.getList(),
+                pageInfo.getPages(), pageInfo.getPageNum(), pageInfo.getPageSize());
+    }
+
+    @Override
     public PageResult<StudentInternshipStatus> findPageByStatusList(Integer page, Integer pageSize, Long studentId, String name, Integer gender, java.util.List<Integer> statusList, Long companyId, String companyName, String grade, String major, String className, String studentUserId) {
         log.debug("分页查询学生实习状态（支持状态列表），页码: {}, 每页大小: {}, 学生ID: {}, 学生姓名: {}, 性别: {}, 状态列表: {}, 企业ID: {}, 企业名称: {}, 年级: {}, 专业: {}, 班级: {}, 学号: {}",
                 page, pageSize, studentId, name, gender, statusList, companyId, companyName, grade, major, className, studentUserId);

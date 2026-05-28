@@ -65,7 +65,8 @@ public interface AnnouncementMapper {
     List<Announcement> list(@Param("title") String title,
                            @Param("status") String status,
                            @Param("publisher") String publisher,
-                           @Param("excludePublisherRole") String excludePublisherRole);
+                           @Param("excludePublisherRole") String excludePublisherRole,
+                           @Param("userId") String userId);
     
     /**
      * 根据ID列表查询通知公告

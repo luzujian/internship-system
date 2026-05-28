@@ -25,6 +25,31 @@
             </div>
           </div>
         </div>
+        <div class="welcome-right">
+          <div class="path-selector">
+            <div class="path-card" @click="goToJobs">
+              <div class="path-icon path-icon-blue"><el-icon><Search /></el-icon></div>
+              <div class="path-text">
+                <span class="path-title">浏览岗位</span>
+                <span class="path-desc">去职位页查看和投递</span>
+              </div>
+            </div>
+            <div class="path-card" @click="openSelfPracticeDialog">
+              <div class="path-icon path-icon-green"><el-icon><EditPen /></el-icon></div>
+              <div class="path-text">
+                <span class="path-title">自主实习</span>
+                <span class="path-desc">自行联系实习单位</span>
+              </div>
+            </div>
+            <div class="path-card" @click="openDelayDialog">
+              <div class="path-icon path-icon-orange"><el-icon><Timer /></el-icon></div>
+              <div class="path-text">
+                <span class="path-title">考研延迟</span>
+                <span class="path-desc">延迟实习准备考研</span>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -130,21 +155,27 @@
           <span v-if="unreadCount > 0" class="badge new">{{ unreadCount }}</span>
         </div>
         <div class="card-list">
-          <div
-            v-for="item in sortedNotifications"
-            :key="item.id"
-            :class="['list-item', { unread: item.unread }]"
-            @click="handleNotificationClick(item)"
-          >
-            <div class="item-left">
-              <div v-if="item.unread" class="unread-dot"></div>
-              <div class="item-content">
-                <div class="item-title">{{ item.title }}</div>
-                <div class="item-desc">{{ item.desc }}</div>
-              </div>
-            </div>
-            <div class="item-time">{{ item.time }}</div>
+          <div v-if="sortedNotifications.length === 0" class="empty-notification">
+            <el-icon><Message /></el-icon>
+            <span>暂无未读消息</span>
           </div>
+          <TransitionGroup name="notif">
+            <div
+              v-for="item in sortedNotifications"
+              :key="item.id"
+              :class="['list-item', { unread: item.unread }]"
+              @click="handleNotificationClick(item)"
+            >
+              <div class="item-left">
+                <div v-if="item.unread" class="unread-dot"></div>
+                <div class="item-content">
+                  <div class="item-title">{{ item.title }}</div>
+                  <div class="item-desc">{{ item.desc }}</div>
+                </div>
+              </div>
+              <div class="item-time">{{ item.time }}</div>
+            </div>
+          </TransitionGroup>
         </div>
         <div class="card-footer">
           <span class="view-more" @click="goToMessageCenter">查看详情</span>
@@ -163,6 +194,7 @@
       :append-to-body="true"
       :lock-scroll="true"
       modal-class="global-modal"
+      @closed="handleNotificationDialogClosed"
       data-custom-dialog="edit-profile"
     >
       <div v-if="selectedNotification" class="notification-detail">
@@ -186,6 +218,110 @@
         </el-button>
       </template>
     </el-dialog>
+
+    <!-- 自主实习申请弹窗 -->
+    <el-dialog
+      v-model="showSelfPracticeDialog"
+      width="500px"
+      class="onboarding-dialog"
+      append-to-body
+      lock-scroll
+      modal-class="global-modal"
+      :title="''"
+    >
+      <div class="dialog-content">
+        <div class="header-section">
+          <h1 class="header-title">自主实习申请</h1>
+        </div>
+        <div class="onboarding-form">
+          <el-form label-width="85px">
+            <el-form-item label="实习单位" required>
+              <el-input v-model="selfPracticeForm.company" placeholder="请输入实习单位名称" clearable />
+            </el-form-item>
+            <el-form-item label="申请理由" required>
+              <el-input v-model="selfPracticeForm.reason" type="textarea" placeholder="请简要说明自主实习原因" :rows="3" clearable />
+            </el-form-item>
+            <el-form-item label="个人申请书">
+              <el-upload
+                class="onboarding-upload"
+                action="#"
+                :auto-upload="false"
+                :on-change="(file) => handleOnboardingFileChange(file, 'selfPractice', 'applicationLetter')"
+                :file-list="selfPracticeFileList"
+                accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+                :show-file-list="true"
+                drag
+              >
+                <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
+                <div class="el-upload__text">点击或拖拽上传个人申请书</div>
+              </el-upload>
+            </el-form-item>
+            <el-form-item label="实习接收函">
+              <el-upload
+                class="onboarding-upload"
+                action="#"
+                :auto-upload="false"
+                :on-change="(file) => handleOnboardingFileChange(file, 'selfPractice', 'acceptanceLetter')"
+                :file-list="selfPracticeAcceptanceFileList"
+                accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+                :show-file-list="true"
+                drag
+              >
+                <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
+                <div class="el-upload__text">点击或拖拽上传企业实习接收函</div>
+              </el-upload>
+            </el-form-item>
+          </el-form>
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="showSelfPracticeDialog = false">取消</el-button>
+        <el-button type="primary" @click="submitOnboardingApplication('selfPractice')" :loading="onboardingSubmitting">提交申请</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 考研延迟申请弹窗 -->
+    <el-dialog
+      v-model="showDelayDialog"
+      width="500px"
+      class="onboarding-dialog"
+      append-to-body
+      lock-scroll
+      modal-class="global-modal"
+      :title="''"
+    >
+      <div class="dialog-content">
+        <div class="header-section">
+          <h1 class="header-title">考研延迟申请</h1>
+        </div>
+        <div class="onboarding-form">
+          <el-form label-width="85px">
+            <el-form-item label="申请理由" required>
+              <el-input v-model="delayForm.reason" type="textarea" placeholder="请简要说明考研延迟原因" :rows="3" clearable />
+            </el-form-item>
+            <el-form-item label="考研计划">
+              <el-upload
+                class="onboarding-upload"
+                action="#"
+                :auto-upload="false"
+                :on-change="(file) => handleOnboardingFileChange(file, 'delay')"
+                :file-list="delayFileList"
+                accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+                :show-file-list="true"
+                drag
+              >
+                <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
+                <div class="el-upload__text">点击或拖拽上传考研计划</div>
+              </el-upload>
+            </el-form-item>
+          </el-form>
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="showDelayDialog = false">取消</el-button>
+        <el-button type="primary" @click="submitOnboardingApplication('delay')" :loading="onboardingSubmitting">提交申请</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -201,7 +337,11 @@ import {
   ArrowRight,
   Camera,
   Document,
-  Clock
+  Clock,
+  Search,
+  EditPen,
+  Timer,
+  UploadFilled
 } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 
@@ -307,6 +447,7 @@ const fetchDashboardProgress = async () => {
           desc: item.description,
           status: statusInfo.text,
           statusClass: statusInfo.class,
+          eventType: item.eventType,
           timestamp: item.time ? new Date(item.time).getTime() : 0
         }
       })
@@ -388,7 +529,9 @@ const unreadCount = computed(() => {
 })
 
 const sortedNotifications = computed(() => {
-  return [...notificationList.value].sort((a, b) => b.timestamp - a.timestamp)
+  return [...notificationList.value]
+    .filter(item => item.unread)
+    .sort((a, b) => b.timestamp - a.timestamp)
 })
 
 const sortedProgress = computed(() => {
@@ -414,8 +557,15 @@ const handleTodoClick = async (item) => {
   }
 }
 
-const handleProgressClick = () => {
-  router.push('/student/internships')
+const handleProgressClick = (item) => {
+  const routeMap = {
+    interview: '/student/interviews',
+    job_application: '/student/applications',
+    internship_confirmation: '/student/internship-confirmation-form',
+    reflection_submit: '/student/internship-reflection/submit',
+    unit_change_application: '/student/internship-confirmation-form'
+  }
+  router.push(routeMap[item.eventType] || '/student/internships')
 }
 
 const handleNotificationClick = async (item) => {
@@ -423,17 +573,27 @@ const handleNotificationClick = async (item) => {
   showNotificationDialog.value = true
 
   if (item.unread) {
-    // 调用后端标记已读
     try {
       await request.post('/announcement-read-records', {
         announcementId: item.id,
         userId: String(authStore.user?.id || ''),
         userType: 'STUDENT'
       })
-      item.unread = false
+      // 先标记已读但不从列表移除，等弹窗关闭后再移除（触发过渡动画）
+      pendingDismissId.value = item.id
     } catch (e) {
       console.error('标记已读失败:', e)
     }
+  }
+}
+
+const handleNotificationDialogClosed = () => {
+  if (pendingDismissId.value) {
+    const item = notificationList.value.find(n => n.id === pendingDismissId.value)
+    if (item) {
+      item.unread = false
+    }
+    pendingDismissId.value = null
   }
 }
 
@@ -526,7 +686,122 @@ watch(() => route.path, (newPath, oldPath) => {
 
 const showNotificationDialog = ref(false)
 const selectedNotification = ref(null)
+const pendingDismissId = ref(null)
 const hasProfile = ref(false)
+
+// 弹窗和表单状态
+const showSelfPracticeDialog = ref(false)
+const showDelayDialog = ref(false)
+const onboardingSubmitting = ref(false)
+const selfPracticeForm = ref({ company: '', reason: '', applicationLetterUrl: '', acceptanceLetterUrl: '' })
+const delayForm = ref({ reason: '', materialUrl: '' })
+const selfPracticeFileList = ref([])
+const selfPracticeAcceptanceFileList = ref([])
+const delayFileList = ref([])
+
+const goToJobs = () => {
+  router.push('/student/jobs')
+}
+
+const openSelfPracticeDialog = () => {
+  selfPracticeForm.value = { company: '', reason: '', applicationLetterUrl: '', acceptanceLetterUrl: '' }
+  selfPracticeFileList.value = []
+  selfPracticeAcceptanceFileList.value = []
+  showSelfPracticeDialog.value = true
+}
+
+const openDelayDialog = () => {
+  delayForm.value = { reason: '', materialUrl: '' }
+  delayFileList.value = []
+  showDelayDialog.value = true
+}
+
+const handleOnboardingFileChange = async (file, type, subType) => {
+  try {
+    const formData = new FormData()
+    formData.append('file', file.raw)
+    const response = await request.post('/upload/file', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    })
+    if (response.code === 200 && response.data && response.data.url) {
+      if (type === 'selfPractice') {
+        if (subType === 'applicationLetter') {
+          selfPracticeForm.value.applicationLetterUrl = response.data.url
+        } else if (subType === 'acceptanceLetter') {
+          selfPracticeForm.value.acceptanceLetterUrl = response.data.url
+        }
+      } else {
+        delayForm.value.materialUrl = response.data.url
+      }
+      ElMessage.success('文件上传成功')
+    } else {
+      ElMessage.error(response.message || '文件上传失败')
+    }
+  } catch (error) {
+    console.error('文件上传失败:', error)
+    ElMessage.error('文件上传失败')
+  }
+}
+
+const submitOnboardingApplication = async (type) => {
+  if (type === 'selfPractice') {
+    if (!selfPracticeForm.value.company) {
+      ElMessage.error('请填写实习单位')
+      return
+    }
+    if (!selfPracticeForm.value.reason) {
+      ElMessage.error('请填写申请理由')
+      return
+    }
+  } else if (type === 'delay') {
+    if (!delayForm.value.reason) {
+      ElMessage.error('请填写申请理由')
+      return
+    }
+  }
+
+  onboardingSubmitting.value = true
+  try {
+    const user = authStore.user
+    const applicationData = {
+      applicationType: type === 'selfPractice' ? 'selfPractice' : 'delay',
+      studentName: user?.name || '',
+      studentUserId: String(user?.studentId || user?.id || ''),
+      grade: user?.grade || '',
+      className: user?.class || '',
+      phone: user?.phone || '',
+      reason: type === 'selfPractice' ? selfPracticeForm.value.reason : delayForm.value.reason,
+      status: 'pending'
+    }
+
+    if (type === 'selfPractice') {
+      applicationData.company = selfPracticeForm.value.company
+      const materials = {}
+      if (selfPracticeForm.value.applicationLetterUrl) materials['个人申请书'] = selfPracticeForm.value.applicationLetterUrl
+      if (selfPracticeForm.value.acceptanceLetterUrl) materials['实习接收函'] = selfPracticeForm.value.acceptanceLetterUrl
+      applicationData.materials = materials
+    } else if (type === 'delay') {
+      applicationData.materials = delayForm.value.materialUrl ? { delayPlan: delayForm.value.materialUrl } : {}
+    }
+
+    const response = await request.post('/student/applications', applicationData)
+    if (response.code === 200) {
+      ElMessage.success('申请提交成功')
+      if (type === 'selfPractice') {
+        showSelfPracticeDialog.value = false
+      } else {
+        showDelayDialog.value = false
+      }
+    } else {
+      ElMessage.error(response.message || '提交申请失败')
+    }
+  } catch (error) {
+    console.error('提交申请失败:', error)
+    ElMessage.error('提交申请失败')
+  } finally {
+    onboardingSubmitting.value = false
+  }
+}
 
 const fetchProfileStatus = async () => {
   try {
@@ -617,12 +892,95 @@ onMounted(async () => {
 .welcome-content {
   position: relative;
   z-index: 1;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 24px;
 }
 
 .welcome-left {
   display: flex;
   align-items: center;
   gap: 20px;
+  flex: 1;
+  min-width: 0;
+}
+
+/* 右侧路径选择区域 */
+.welcome-right {
+  flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 12px;
+  padding: 12px 16px;
+  backdrop-filter: blur(6px);
+}
+
+.path-selector {
+  display: flex;
+  gap: 10px;
+}
+
+.path-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  background: rgba(255, 255, 255, 0.92);
+  min-width: 140px;
+}
+
+.path-card:hover {
+  background: #fff;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.path-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.path-icon-blue {
+  background: #409eff;
+  color: #fff;
+}
+
+.path-icon-green {
+  background: #67c23a;
+  color: #fff;
+}
+
+.path-icon-orange {
+  background: #e6a23c;
+  color: #fff;
+}
+
+.path-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.path-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #303133;
+  white-space: nowrap;
+}
+
+.path-desc {
+  font-size: 11px;
+  color: #909399;
+  white-space: nowrap;
 }
 
 .avatar-wrapper {
@@ -951,6 +1309,29 @@ onMounted(async () => {
 
 .card-list {
   padding: 0;
+  position: relative;
+}
+
+/* TransitionGroup 通知项过渡动画 */
+.notif-move,
+.notif-enter-active,
+.notif-leave-active {
+  transition: all 0.4s ease;
+}
+
+.notif-enter-from {
+  opacity: 0;
+  transform: translateY(-10px);
+}
+
+.notif-leave-to {
+  opacity: 0;
+  transform: translateY(-10px);
+}
+
+.notif-leave-active {
+  position: absolute;
+  width: 100%;
 }
 
 .list-item {
@@ -1125,6 +1506,21 @@ onMounted(async () => {
   flex-shrink: 0;
 }
 
+.empty-notification {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  color: #c0c4cc;
+  font-size: 14px;
+  gap: 8px;
+}
+
+.empty-notification .el-icon {
+  font-size: 36px;
+}
+
 .list-item.unread {
   background: #f0f9ff;
 }
@@ -1249,5 +1645,77 @@ onMounted(async () => {
   color: #409eff;
   transform: translateY(-2px);
   box-shadow: 0 4px 12px rgba(64, 158, 255, 0.2);
+}
+
+/* 实习方向选择弹窗样式 */
+.onboarding-dialog :deep(.el-dialog) {
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.onboarding-dialog :deep(.el-dialog__header) {
+  padding: 0;
+  border-bottom: none;
+  margin: 0;
+}
+
+.onboarding-dialog :deep(.el-dialog__title) {
+  display: none;
+}
+
+.onboarding-dialog :deep(.el-dialog__body) {
+  padding: 0;
+}
+
+.onboarding-dialog .header-section {
+  background: linear-gradient(90deg, #1e88e5 0%, #4caf50 100%);
+  padding: 18px 20px;
+  margin-bottom: 0;
+}
+
+.onboarding-dialog .header-title {
+  color: white;
+  font-size: 20px;
+  font-weight: 600;
+  text-align: center;
+  margin: 0;
+}
+
+.onboarding-form {
+  padding: 20px 24px;
+}
+
+.onboarding-upload :deep(.el-upload-dragger) {
+  width: 100%;
+  padding: 16px 12px;
+  border: 2px dashed #d1d5db;
+  border-radius: 4px;
+  background: #fafafa;
+}
+
+.onboarding-upload :deep(.el-upload-dragger:hover) {
+  border-color: #1e88e5;
+  background: #f0f9ff;
+}
+
+/* 响应式：小屏时路径选择器换行 */
+@media screen and (max-width: 1200px) {
+  .welcome-content {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .welcome-right {
+    width: 100%;
+  }
+
+  .path-selector {
+    flex-wrap: wrap;
+  }
+
+  .path-card {
+    flex: 1;
+    min-width: 120px;
+  }
 }
 </style>

@@ -63,4 +63,9 @@ public interface CompanyUserService {
     int deleteRecallRecord(Long id);
 
     int batchDeleteRecallRecords(List<Long> ids);
+
+    /**
+     * 获取所有不重复的企业标签
+     */
+    List<String> getDistinctTags();
 }

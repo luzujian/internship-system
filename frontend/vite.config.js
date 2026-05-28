@@ -38,9 +38,9 @@ export default defineConfig({
             return 'vendor'
           }
         },
-        assetFileNames: 'assets/[name].[hash:8][extname]',
-        chunkFileNames: 'assets/[name].[hash:8].js',
-        entryFileNames: 'assets/[name].[hash:8].js'
+        assetFileNames: 'assets/[name].[hash:8]-v2[extname]',
+        chunkFileNames: 'assets/[name].[hash:8]-v2.js',
+        entryFileNames: 'assets/[name].[hash:8]-v2.js'
       }
     },
     minify: 'esbuild',

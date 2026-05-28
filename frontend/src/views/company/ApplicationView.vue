@@ -2,7 +2,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Document, Download } from '@element-plus/icons-vue'
-import { createWorkbook, jsonToSheet, appendSheet, writeWorkbook } from '../../utils/xlsx'
+import { createWorkbook, jsonToSheet, appendSheet, writeWorkbook, writeWorkbookToBuffer } from '../../utils/xlsx'
 import { usePositionStore } from '../../store/position'
 import { useAuthStore } from '@/store/auth'
 import applicationApi from '@/api/InternshipApplicationService'
@@ -177,10 +177,6 @@ const paginatedTableData = computed(() => {
   const end = start + pageSize.value
   return filteredTableData.value.slice(start, end)
 })
-
-const handlePageChange = (page) => {
-  currentPage.value = page
-}
 
 const handlePositionClick = (position) => {
   searchForm.value.position = searchForm.value.position === position ? '' : position
@@ -415,8 +411,12 @@ const handleExport = async () => {
 
     const fileName = `岗位申请名单_${new Date().toLocaleDateString('zh-CN').replace(/\//g, '-')}`
 
-    await writeWorkbook(wb, fileName)
-    ElMessage.success(`成功导出 ${dataToExport.length} 条数据`)
+    if (exportMode.value === 'zip') {
+      await exportWithFiles(wb, fileName, sortedData)
+    } else {
+      await writeWorkbook(wb, fileName)
+      ElMessage.success(`成功导出 ${dataToExport.length} 条数据`)
+    }
   } catch (error) {
     console.error('导出失败:', error)
     ElMessage.error('导出失败，请稍后重试')
@@ -435,9 +435,10 @@ const exportWithFiles = async (workbook, baseFileName, data) => {
 
     for (const item of data) {
       try {
-        const archives = await studentArchiveService.getArchivesByStudentId(item.studentDbId)
-        
-        if (archives && archives.length > 0) {
+        const response = await studentArchiveService.getStudentArchives(item.studentId)
+        const archives = response?.data || response
+
+        if (archives && Array.isArray(archives) && archives.length > 0) {
           const studentFolder = zip.folder(`${item.studentName}_${item.studentId}`)
           
           for (const archive of archives) {
@@ -594,13 +595,13 @@ const handleDownloadFile = async (archiveId, fileName) => {
         :header-cell-style="{ padding: '8px 4px', fontSize: '13px' }"
         :cell-style="{ padding: '6px 4px', fontSize: '12px' }"
       >
-        <el-table-column prop="positionName" label="应聘岗位" width="140" />
+        <el-table-column prop="positionName" label="应聘岗位" min-width="150" />
         <el-table-column prop="studentName" label="学生姓名" width="90" />
-        <el-table-column prop="studentNo" label="学号" width="110" />
-        <el-table-column prop="major" label="专业" width="140" />
-        <el-table-column prop="phone" label="联系电话" width="120" />
-        <el-table-column prop="applyDate" label="申请日期" width="100" />
-        <el-table-column prop="status" label="申请状态" width="90">
+        <el-table-column prop="studentNo" label="学号" width="120" />
+        <el-table-column prop="major" label="专业" min-width="150" />
+        <el-table-column prop="phone" label="联系电话" width="130" />
+        <el-table-column prop="applyDate" label="申请日期" width="110" />
+        <el-table-column prop="status" label="申请状态" width="120">
           <template #default="{ row }">
             <el-tag v-if="row.status === 'pending'" type="warning" size="small">待审核</el-tag>
             <el-tag v-else-if="row.status === 'approved'" type="success" size="small">已同意</el-tag>
@@ -658,21 +659,21 @@ const handleDownloadFile = async (archiveId, fileName) => {
           </template>
         </el-table-column>
       </el-table>
+
+      <div class="pagination">
+        <el-pagination
+          v-model:current-page="currentPage"
+          v-model:page-size="pageSize"
+          background
+          layout="total, sizes, prev, pager, next, jumper"
+          :total="filteredTableData.length"
+          :page-sizes="[10, 20, 50, 100]"
+        />
+      </div>
     </div>
 
     <div v-if="paginatedTableData.length === 0" class="empty-state">
       暂无数据
-    </div>
-
-    <div class="pagination">
-      <el-pagination
-        v-model:current-page="currentPage"
-        background
-        layout="total, prev, pager, next, jumper"
-        :total="filteredTableData.length"
-        :page-size="pageSize"
-        @current-change="handlePageChange"
-      />
     </div>
 
     <el-dialog
@@ -702,6 +703,8 @@ const handleDownloadFile = async (archiveId, fileName) => {
               <el-tag v-if="currentStudent.status === 'pending'" type="warning">待审核</el-tag>
               <el-tag v-else-if="currentStudent.status === 'approved'" type="success">已通过</el-tag>
               <el-tag v-else-if="currentStudent.status === 'rejected'" type="danger">已拒绝</el-tag>
+              <el-tag v-else-if="currentStudent.status === 'interview_passed'" type="success">面试通过</el-tag>
+              <el-tag v-else-if="currentStudent.status === 'interview_failed'" type="danger">面试没通过</el-tag>
               <el-tag v-else-if="currentStudent.status === 'withdrawn'" type="info">已撤回</el-tag>
               <el-tag v-else-if="currentStudent.status === 'defaulted'" type="info">已失效</el-tag>
               <el-tag v-else type="info">未知状态</el-tag>
@@ -754,15 +757,15 @@ const handleDownloadFile = async (archiveId, fileName) => {
 .page-header {
   background: linear-gradient(135deg, #409EFF 0%, #52c41a 100%);
   color: white;
-  padding: 16px 24px;
-  border-radius: 8px;
-  box-shadow: 0 2px 12px rgba(64, 158, 255, 0.3);
-  margin-bottom: 16px;
+  padding: 24px 40px;
+  border-radius: 12px;
+  box-shadow: 0 4px 20px rgba(64, 158, 255, 0.3);
+  margin-bottom: 24px;
 }
 
 .page-header h2 {
-  margin: 0 0 4px 0;
-  font-size: 22px;
+  margin: 0 0 8px 0;
+  font-size: 28px;
   font-weight: bold;
   letter-spacing: 1px;
   color: white;
@@ -770,7 +773,7 @@ const handleDownloadFile = async (archiveId, fileName) => {
 
 .page-header p {
   margin: 0;
-  font-size: 13px;
+  font-size: 14px;
   opacity: 0.95;
 }
 

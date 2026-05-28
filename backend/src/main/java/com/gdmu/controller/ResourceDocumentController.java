@@ -4,7 +4,9 @@ import com.gdmu.anno.Log;
 import com.gdmu.entity.PageResult;
 import com.gdmu.entity.Result;
 import com.gdmu.entity.ResourceDocument;
+import com.gdmu.entity.ResourceViewRecord;
 import com.gdmu.entity.User;
+import com.gdmu.mapper.ResourceViewRecordMapper;
 import com.gdmu.service.ResourceDocumentService;
 import com.gdmu.service.UserService;
 import com.gdmu.utils.AliyunOSSOperator;
@@ -41,6 +43,9 @@ public class ResourceDocumentController {
     private AliyunOSSOperator aliyunOSSOperator;
 
     @Autowired
+    private ResourceViewRecordMapper resourceViewRecordMapper;
+
+    @Autowired
     private JwtUtils jwtUtils;
     
     @Autowired
@@ -67,7 +72,7 @@ public class ResourceDocumentController {
     ));
 
     @GetMapping
-    @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_TEACHER', 'ROLE_STUDENT')")
+    @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_TEACHER', 'ROLE_TEACHER_COLLEGE', 'ROLE_TEACHER_DEPARTMENT', 'ROLE_TEACHER_COUNSELOR', 'ROLE_STUDENT')")
     public Result getAllResourceDocuments() {
         log.info("获取所有资源文档列表");
         try {
@@ -83,7 +88,7 @@ public class ResourceDocumentController {
      * 获取已发布的资源文档（学生端专用）
      */
     @GetMapping("/published")
-    @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_TEACHER', 'ROLE_STUDENT')")
+    @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_TEACHER', 'ROLE_TEACHER_COLLEGE', 'ROLE_TEACHER_DEPARTMENT', 'ROLE_TEACHER_COUNSELOR', 'ROLE_STUDENT')")
     public Result getPublishedResourceDocuments() {
         log.info("获取已发布的资源文档列表");
         try {
@@ -96,7 +101,7 @@ public class ResourceDocumentController {
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_TEACHER', 'ROLE_STUDENT')")
+    @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_TEACHER', 'ROLE_TEACHER_COLLEGE', 'ROLE_TEACHER_DEPARTMENT', 'ROLE_TEACHER_COUNSELOR', 'ROLE_STUDENT')")
     public Result getResourceDocumentById(@PathVariable Long id) {
         log.info("根据 ID 获取资源文档：{}", id);
         try {
@@ -104,7 +109,11 @@ public class ResourceDocumentController {
             if (resourceDocument == null) {
                 return Result.error("资源文档不存在");
             }
-            resourceDocumentService.incrementViewCount(id);
+            // 同一用户只计一次查看
+            if (!hasResourceActionRecord(id, "view")) {
+                resourceDocumentService.incrementViewCount(id);
+                saveResourceActionRecord(id, "view");
+            }
             return Result.success(resourceDocument);
         } catch (Exception e) {
             log.error("获取资源文档详情失败：{}", e.getMessage(), e);
@@ -270,7 +279,7 @@ public class ResourceDocumentController {
     }
 
     @GetMapping("/download/{id}")
-    @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_TEACHER', 'ROLE_STUDENT')")
+    @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_TEACHER', 'ROLE_TEACHER_COLLEGE', 'ROLE_TEACHER_DEPARTMENT', 'ROLE_TEACHER_COUNSELOR', 'ROLE_STUDENT')")
     public ResponseEntity<InputStreamResource> downloadResourceDocument(@PathVariable Long id) {
         log.info("下载资源文档：ID={}", id);
         try {
@@ -286,7 +295,11 @@ public class ResourceDocumentController {
             // 从 OSS 下载文件
             byte[] fileContent = aliyunOSSOperator.downloadFile(resourceDocument.getFileUrl());
 
-            resourceDocumentService.incrementDownloadCount(id);
+            // 同一用户只计一次下载
+            if (!hasResourceActionRecord(id, "download")) {
+                resourceDocumentService.incrementDownloadCount(id);
+                saveResourceActionRecord(id, "download");
+            }
 
             String encodedFilename = URLEncoder.encode(resourceDocument.getFileName(), StandardCharsets.UTF_8.toString())
                     .replaceAll("\\+", "%20");
@@ -306,7 +319,7 @@ public class ResourceDocumentController {
     }
 
     @GetMapping("/search")
-    @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_TEACHER', 'ROLE_STUDENT')")
+    @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_TEACHER', 'ROLE_TEACHER_COLLEGE', 'ROLE_TEACHER_DEPARTMENT', 'ROLE_TEACHER_COUNSELOR', 'ROLE_STUDENT')")
     public Result searchResourceDocuments(
             @RequestParam(required = false) String title,
             @RequestParam(required = false) String status,
@@ -564,5 +577,39 @@ public class ResourceDocumentController {
             log.error("获取当前用户ID失败：{}", e.getMessage(), e);
         }
         return null;
+    }
+
+    private boolean hasResourceActionRecord(Long resourceId, String actionType) {
+        try {
+            Long userId = com.gdmu.utils.CurrentHolder.getUserId();
+            if (userId == null) return false;
+            String userRole = com.gdmu.utils.CurrentHolder.getUserRole();
+            String userType = userRole != null && userRole.startsWith("ROLE_STUDENT") ? "STUDENT" :
+                              userRole != null && userRole.startsWith("ROLE_TEACHER") ? "TEACHER" :
+                              userRole != null && userRole.startsWith("ROLE_ADMIN") ? "ADMIN" : "OTHER";
+            return resourceViewRecordMapper.countByResourceAndUser(resourceId, String.valueOf(userId), userType, actionType) > 0;
+        } catch (Exception e) {
+            log.warn("检查资源操作记录失败：{}", e.getMessage());
+            return false;
+        }
+    }
+
+    private void saveResourceActionRecord(Long resourceId, String actionType) {
+        try {
+            Long userId = com.gdmu.utils.CurrentHolder.getUserId();
+            if (userId == null) return;
+            String userRole = com.gdmu.utils.CurrentHolder.getUserRole();
+            String userType = userRole != null && userRole.startsWith("ROLE_STUDENT") ? "STUDENT" :
+                              userRole != null && userRole.startsWith("ROLE_TEACHER") ? "TEACHER" :
+                              userRole != null && userRole.startsWith("ROLE_ADMIN") ? "ADMIN" : "OTHER";
+            ResourceViewRecord record = new ResourceViewRecord();
+            record.setResourceId(resourceId);
+            record.setUserId(String.valueOf(userId));
+            record.setUserType(userType);
+            record.setActionType(actionType);
+            resourceViewRecordMapper.insert(record);
+        } catch (Exception e) {
+            log.warn("保存资源操作记录失败：{}", e.getMessage());
+        }
     }
 }

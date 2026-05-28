@@ -372,10 +372,6 @@ const handleReset = () => {
   ElMessage.info('已重置搜索条件')
 }
 
-const handlePageChange = (page) => {
-  currentPage.value = page
-}
-
 const handlePublish = () => {
   dialogTitle.value = '发布岗位'
   dialogType.value = 'create'
@@ -798,7 +794,7 @@ const handleGenerateDescription = async () => {
             <span v-else>{{ row.positionName }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="department" label="所属部门" width="100" />
+        <el-table-column prop="department" label="所属部门" min-width="100" />
         <el-table-column label="工作地点" min-width="180">
           <template #default="{ row }">
             <div style="white-space: normal; word-break: break-all; line-height: 1.5;">
@@ -842,7 +838,7 @@ const handleGenerateDescription = async () => {
             <el-tag type="info" size="small">{{ row.viewCount || 0 }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="200" align="center">
+        <el-table-column label="操作" width="200" align="center" fixed="right">
           <template #default="{ row }">
             <div class="action-buttons">
               <el-button 
@@ -886,12 +882,12 @@ const handleGenerateDescription = async () => {
 
       <div class="pagination">
         <el-pagination
+          v-model:current-page="currentPage"
+          v-model:page-size="pageSize"
           background
-          layout="total, prev, pager, next, jumper"
+          layout="total, sizes, prev, pager, next, jumper"
           :total="filteredTableData.length"
-          :page-size="pageSize"
-          :current-page="currentPage"
-          @current-change="handlePageChange"
+          :page-sizes="[10, 20, 50, 100]"
         />
       </div>
     </div>

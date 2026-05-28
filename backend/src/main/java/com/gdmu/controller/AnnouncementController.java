@@ -79,25 +79,28 @@ public class AnnouncementController {
                 return Result.error("公告不存在");
             }
             
-            // 记录阅读状态（非管理员用户）
+            // 记录阅读状态（非管理员用户，同一用户只记录一次）
             try {
                 Long userId = com.gdmu.utils.CurrentHolder.getUserId();
                 if (userId != null) {
                     String userRole = com.gdmu.utils.CurrentHolder.getUserRole();
                     String userType = convertRoleToType(userRole);
-                    log.info("记录阅读状态 - 用户ID: {}, 用户角色: {}, 用户类型: {}", userId, userRole, userType);
                     if (!"ADMIN".equals(userType)) {
-                        // 创建阅读记录
-                        com.gdmu.entity.AnnouncementReadRecord readRecord = new com.gdmu.entity.AnnouncementReadRecord();
-                        readRecord.setAnnouncementId(id);
-                        readRecord.setUserId(String.valueOf(userId));
-                        readRecord.setUserType(userType);
-                        readRecord.setReadTime(new java.util.Date());
-                        announcementReadRecordService.insert(readRecord);
-                        log.info("阅读记录插入成功 - 公告ID: {}, 用户ID: {}, 用户类型: {}", id, userId, userType);
-                        
-                        // 更新公告阅读次数
-                        announcementService.incrementReadCount(id);
+                        // 检查是否已有阅读记录
+                        com.gdmu.entity.AnnouncementReadRecord existingRecord = announcementReadRecordService
+                                .findByAnnouncementAndUser(id, String.valueOf(userId), userType);
+                        if (existingRecord == null) {
+                            com.gdmu.entity.AnnouncementReadRecord readRecord = new com.gdmu.entity.AnnouncementReadRecord();
+                            readRecord.setAnnouncementId(id);
+                            readRecord.setUserId(String.valueOf(userId));
+                            readRecord.setUserType(userType);
+                            readRecord.setReadTime(new java.util.Date());
+                            announcementReadRecordService.insert(readRecord);
+                            announcementService.incrementReadCount(id);
+                            log.info("阅读记录创建成功 - 公告ID: {}, 用户ID: {}", id, userId);
+                        } else {
+                            log.info("用户已阅读过，跳过 - 公告ID: {}, 用户ID: {}", id, userId);
+                        }
                     }
                 }
             } catch (Exception e) {
@@ -139,7 +142,9 @@ public class AnnouncementController {
                 actualExcludeRole = "COUNSELOR";
             }
 
-            return Result.success(announcementService.findPage(page, pageSize, title, status, publisher, actualExcludeRole));
+            Long currentUserId = com.gdmu.utils.CurrentHolder.getUserId();
+            String userId = currentUserId != null ? String.valueOf(currentUserId) : null;
+            return Result.success(announcementService.findPage(page, pageSize, title, status, publisher, actualExcludeRole, userId));
         } catch (Exception e) {
             log.error("分页查询公告失败：{}", e.getMessage(), e);
             return Result.error("分页查询公告失败：" + e.getMessage());

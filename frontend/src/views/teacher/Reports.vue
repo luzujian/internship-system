@@ -2,11 +2,8 @@
   <div class="reports-container">
     <div class="page-header fade-in">
       <div class="title-wrapper">
-        <h2>统计报表</h2>
+        <h2>统计报表<el-tag type="info" size="small" style="margin-left: 10px; vertical-align: middle;">全校</el-tag></h2>
         <p class="page-subtitle">本学期实习数据总览</p>
-      </div>
-      <div class="time-range-selector">
-        <span class="current-semester">当前学期：{{ startDate }} 至 {{ endDate }}</span>
       </div>
     </div>
 
@@ -14,16 +11,21 @@
     <div class="charts-section">
       <div class="chart-container card fade-in" style="animation-delay: 0.5s">
         <h3>企业入驻趋势 <span class="chart-subtitle">(2026年季度)</span></h3>
-        <div class="chart-placeholder">
-          <div class="chart-bar-container">
-            <div v-for="(data, index) in companyTrend" :key="index" class="chart-bar">
-              <div class="bar-wrapper">
-                <div class="bar" :style="{ '--height': `${Math.min((data.value / maxCompanyValue) * 100, 90)}` }">
-                  <div class="bar-value">{{ data.value }}</div>
-                </div>
+        <div class="trend-chart">
+          <div class="chart-y-axis">
+            <span v-for="tick in yAxisTicks" :key="tick" class="y-tick" :style="{ bottom: (tick / maxYAxis * 100) + '%' }">{{ tick }}</span>
+          </div>
+          <div class="chart-body">
+            <div v-for="tick in yAxisTicks" :key="tick" class="grid-line" :style="{ bottom: (tick / maxYAxis) * 100 + '%' }"></div>
+            <div v-for="(data, index) in companyTrend" :key="index" class="bar-group">
+              <div class="bar-top-label">{{ data.value }}</div>
+              <div class="bar-pillar" :style="{ height: maxCompanyValue > 0 ? (data.value / maxYAxis * 100) + '%' : '0%' }">
+                <div v-if="data.value > 0" class="bar-fill"></div>
               </div>
-              <div class="bar-label">{{ data.label }}</div>
             </div>
+          </div>
+          <div class="chart-x-labels">
+            <span v-for="data in companyTrend" :key="data.label" class="x-label">{{ data.label }}</span>
           </div>
         </div>
       </div>
@@ -51,13 +53,6 @@
             <div class="metric-content">
               <h4>申请审核数量</h4>
               <p class="metric-value">{{ metrics.approvalCount }}</p>
-            </div>
-          </div>
-          <div class="metric-card">
-            <div class="metric-icon warning">📈</div>
-            <div class="metric-content">
-              <h4>资源下载量</h4>
-              <p class="metric-value">{{ metrics.resourceDownloads }}</p>
             </div>
           </div>
         </div>
@@ -485,7 +480,22 @@ watch(() => route.state?.fromHome, (fromHome) => {
 
 // 计算企业趋势最大值
 const maxCompanyValue = computed(() => {
-  return Math.max(...companyTrend.value.map(item => item.value))
+  return Math.max(...companyTrend.value.map(item => item.value), 1)
+})
+
+const maxYAxis = computed(() => {
+  const max = maxCompanyValue.value
+  if (max <= 5) return 5
+  return Math.ceil(max / 10) * 10
+})
+
+const yAxisTicks = computed(() => {
+  const max = maxYAxis.value
+  const ticks = []
+  for (let i = 0; i <= 4; i++) {
+    ticks.push(Math.round(max * (1 - i / 4)))
+  }
+  return ticks
 })
 
 // 分页计算属性
@@ -768,12 +778,14 @@ const getTagClass = (tag: string) => {
   display: flex;
   align-items: center;
   gap: 12px;
+  flex-shrink: 0;
 }
 
 .metrics-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 8px;
+  margin: auto 0;
 }
 
 .metric-card {
@@ -818,10 +830,6 @@ const getTagClass = (tag: string) => {
 
 .metric-card:nth-child(3)::before {
   background-color: var(--color-info);
-}
-
-.metric-card:nth-child(4)::before {
-  background-color: var(--color-warning);
 }
 
 .metric-icon {
@@ -924,167 +932,63 @@ const getTagClass = (tag: string) => {
   height: 100%;
 }
 
-/* 图表容器简化样式 */
+/* 图表容器 */
 .chart-container {
   background: white;
-  border: 1px solid #e0e0e0;
-  box-shadow: var(--shadow-sm);
+  border: 1px solid #e8ecf1;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.04);
   width: 100%;
 }
 
 .chart-container h3 {
   font-size: 18px;
   font-weight: 600;
-  color: var(--color-primary);
-  margin: 0 0 12px 0;
+  color: #1a1a2e;
+  margin: 0 0 16px 0;
   display: flex;
   align-items: center;
   gap: 12px;
 }
 
 .chart-subtitle {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
-  opacity: 0.8;
-  color: #666;
+  color: #8c8c9a;
 }
 
-.chart-placeholder {
-  height: 100%;
+/* 趋势图新样式 */
+.trend-chart {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  flex: 1;
-}
-
-/* 柱状图 */
-.chart-bar-container {
-  display: flex;
-  align-items: flex-end;
-  gap: 16px;
-  width: 100%;
-  padding: 5px 30px 25px 30px;
-  background-color: #f8f9ff;
-  border-radius: 12px;
-  border: 1px solid #e0e0e0;
-  box-shadow: none;
-  justify-content: center;
-  align-items: center;
-  margin: 0 auto;
-  max-width: 100%;
-  min-height: 180px;
-}
-
-.chart-bar {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
+  flex-wrap: wrap;
+  height: 240px;
   position: relative;
-  min-height: 120px;
-  max-width: 60px;
+  margin-bottom: 28px;
 }
 
-.bar-wrapper {
-  flex: 1;
-  width: 100%;
-  display: flex;
-  align-items: flex-end;
-  position: relative;
-  background-color: transparent;
-  border-radius: 12px 12px 0 0;
-  padding: 15px 0;
-  overflow: hidden;
-}
-
-.bar-wrapper::before {
-  content: '';
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: #e0e0e0;
-}
-
-.bar {
-  width: 80%;
-  margin: 0 auto;
-  background: #1890ff;
-  border-radius: 4px 4px 0 0;
-  position: relative;
-  animation: barGrow 1.5s ease forwards;
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
-  padding-top: 12px;
-  box-shadow: none !important;
-  transition: none !important;
-}
-
-.bar-value {
-  color: white;
-  font-size: 16px;
-  font-weight: 600;
-  z-index: 1;
-  white-space: nowrap;
-}
-
-@keyframes barGrow {
-  from {
-    height: 0;
-  }
-  to {
-    height: calc(var(--height, 0) * 1%);
-  }
-}
-
-.bar:hover {
-  background: #1890ff;
-  transition: none;
-}
-
-.bar-label {
-  font-size: 16px;
-  color: #333;
-  margin-top: 8px;
-  font-weight: 600;
-  text-align: center;
-  padding: 6px 12px;
-  background-color: transparent;
-  border-radius: 0;
-  min-width: auto;
-  box-shadow: none;
-  white-space: nowrap;
-}
-
-/* 折线图 */
-.chart-line-container {
-  width: 100%;
+.chart-y-axis {
+  width: 44px;
   height: 100%;
   position: relative;
-  padding: 40px 60px 120px 60px;
-  background-color: white;
-  border-radius: 12px;
-  border: 1px solid #e0e0e0;
-  box-shadow: none;
-  overflow: visible;
+  flex-shrink: 0;
 }
 
-.chart-line-container::before {
-  content: none;
-}
-
-.chart-grid {
+.y-tick {
   position: absolute;
-  top: 40px;
-  left: 60px;
-  right: 60px;
-  bottom: 80px;
-  pointer-events: none;
-  z-index: 1;
+  right: 8px;
+  font-size: 12px;
+  color: #999;
+  transform: translateY(50%);
+  line-height: 1;
+}
+
+.chart-body {
+  flex: 1;
+  height: 100%;
+  display: flex;
+  justify-content: space-around;
+  align-items: flex-end;
+  padding: 0 4px 0 4px;
+  position: relative;
 }
 
 .grid-line {
@@ -1092,176 +996,74 @@ const getTagClass = (tag: string) => {
   left: 0;
   right: 0;
   height: 1px;
-  background-color: #e0e0e0;
+  background: #f0f0f5;
+  pointer-events: none;
+}
+
+.bar-group {
+  flex: 1;
+  max-width: 100px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
   z-index: 1;
 }
 
-.grid-line::before {
-  content: none;
-}
-
-.grid-label {
-  position: absolute;
-  left: -45px;
-  transform: translateY(-50%);
-  font-size: 12px;
-  color: #666;
-  font-weight: 500;
-  z-index: 2;
-  white-space: nowrap;
-}
-
-.chart-line {
-  width: 100%;
-  height: 100%;
-  position: relative;
-  z-index: 2;
-}
-
-.chart-labels {
+.chart-x-labels {
+  width: calc(100% - 44px);
+  margin-left: 44px;
   display: flex;
-  justify-content: space-between;
-  position: absolute;
-  bottom: 40px;
-  left: 60px;
-  right: 60px;
-  flex-wrap: nowrap;
-  z-index: 2;
+  justify-content: space-around;
+  height: 24px;
+  flex-shrink: 0;
 }
 
-.chart-label {
-  font-size: 14px;
-  color: #333;
-  font-weight: 600;
-  white-space: nowrap;
+.x-label {
   flex: 1;
+  max-width: 100px;
+  font-size: 13px;
+  color: #555;
+  font-weight: 500;
   text-align: center;
-  padding: 4px 8px;
-  min-width: 60px;
 }
 
-.chart-label:hover {
-  transform: none;
-  box-shadow: none;
+.bar-top-label {
+  font-size: 16px;
+  font-weight: 700;
+  color: #1890ff;
+  margin-bottom: 6px;
 }
 
-/* 确保SVG容器有足够空间 */
-.chart-line svg {
-  width: 100%;
+.bar-pillar {
+  width: 48px;
+  border-radius: 6px 6px 0 0;
+  background: transparent;
+  position: relative;
+  overflow: hidden;
+  transition: height 1s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.bar-fill {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
   height: 100%;
-  overflow: visible;
-  z-index: 3;
-  position: relative;
+  border-radius: 6px 6px 0 0;
+  background: linear-gradient(180deg, #40a9ff 0%, #1890ff 100%);
 }
 
-/* 图表动画 */
-.chart-line svg polyline {
-  stroke-dasharray: 2000;
-  stroke-dashoffset: 2000;
-  animation: lineDraw 2s cubic-bezier(0.4, 0, 0.2, 1) forwards;
-  z-index: 4;
-  position: relative;
+.bar-group:hover .bar-pillar {
+  background: #d6eefc;
 }
 
-@keyframes lineDraw {
-  to {
-    stroke-dashoffset: 0;
-  }
+.bar-group:hover .bar-fill {
+  background: linear-gradient(180deg, #69c0ff 0%, #40a9ff 100%);
 }
 
-.chart-line svg polygon {
-  opacity: 0;
-  animation: areaFadeIn 1.5s cubic-bezier(0.4, 0, 0.2, 1) forwards 0.5s;
-  z-index: 3;
-}
 
-@keyframes areaFadeIn {
-  to {
-    opacity: 0.7;
-  }
-}
-
-.chart-line svg circle {
-  animation: pointAppear 0.8s cubic-bezier(0.4, 0, 0.2, 1) forwards;
-  animation-delay: calc(var(--index) * 0.3s + 0.5s);
-  opacity: 0;
-  transition: none !important;
-  z-index: 5;
-  cursor: pointer;
-  box-shadow: none !important;
-}
-
-.chart-line svg circle:hover {
-  transform: none;
-  box-shadow: none !important;
-}
-
-@keyframes pointAppear {
-  0% {
-    opacity: 0;
-    transform: scale(0);
-  }
-  50% {
-    transform: scale(1.2);
-  }
-  100% {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
-
-.chart-line svg text {
-  animation: textAppear 0.8s cubic-bezier(0.4, 0, 0.2, 1) forwards;
-  animation-delay: calc(var(--index) * 0.3s + 1s);
-  opacity: 0;
-  z-index: 6;
-  pointer-events: none;
-  transition: none !important;
-}
-
-.chart-line svg text:hover {
-  transform: none;
-  transition: none !important;
-}
-
-@keyframes textAppear {
-  0% {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  100% {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-/* 数据点标签样式 */
-.data-label {
-  font-size: 14px !important;
-  font-weight: 600 !important;
-  fill: #333 !important;
-  background-color: transparent !important;
-  padding: 0 !important;
-  border-radius: 0 !important;
-  box-shadow: none !important;
-  pointer-events: all !important;
-  transition: all 0.3s ease !important;
-  text-shadow: none !important;
-}
-
-.data-label:hover {
-  transform: none !important;
-  box-shadow: none !important;
-}
-
-/* 确保折线图容器有足够空间 */
-.chart-line {
-  width: 100%;
-  height: 100%;
-  position: relative;
-  z-index: 2;
-  min-height: 350px;
-}
 
 /* 调整详细数据表格文本，防止重叠 */
 .details-table th,
@@ -1599,18 +1401,17 @@ const getTagClass = (tag: string) => {
     height: auto;
   }
 
-  .chart-placeholder {
-    min-height: 150px;
+  .trend-chart {
+    height: 180px;
   }
 
-  .chart-bar-container {
-    gap: 12px;
-    padding: 15px 10px;
-    min-height: 150px;
+  .bar-pillar {
+    width: 36px;
   }
 
-  .chart-bar {
-    min-height: 100px;
+  .chart-x-labels {
+    width: calc(100% - 40px);
+    margin-left: 40px;
   }
 
   .details-tabs {

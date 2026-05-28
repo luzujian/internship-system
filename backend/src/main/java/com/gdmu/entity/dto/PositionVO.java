@@ -71,7 +71,7 @@ public class PositionVO {
     // 浏览次数 -> viewCount
     private Integer viewCount = 0;
 
-    // 申请人数 -> applyCount (从position.recruitedCount获取)
+    // 申请人数 -> applyCount (从student_job_application表统计获得)
     private Integer applyCount;
 
     // 部门

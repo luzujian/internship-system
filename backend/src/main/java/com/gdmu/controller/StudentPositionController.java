@@ -121,6 +121,28 @@ public class StudentPositionController {
         }
     }
 
+    /**
+     * 批量查询各职位的真实申请人数
+     */
+    private Map<Long, Integer> getPositionApplyCounts(List<Long> positionIds) {
+        if (positionIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        try {
+            List<Map<String, Object>> rows = studentJobApplicationMapper.countByPositionIds(positionIds);
+            Map<Long, Integer> result = new HashMap<>();
+            for (Map<String, Object> row : rows) {
+                Long positionId = ((Number) row.get("position_id")).longValue();
+                Integer cnt = ((Number) row.get("cnt")).intValue();
+                result.put(positionId, cnt);
+            }
+            return result;
+        } catch (Exception e) {
+            log.error("批量查询申请人数失败: {}", e.getMessage());
+            return Collections.emptyMap();
+        }
+    }
+
     @GetMapping("/all")
     public Result getAll() {
         try {
@@ -157,12 +179,15 @@ public class StudentPositionController {
                 positionCacheService.cachePositions(voList);
             }
 
-            // 补充学生个性化数据（申请状态、收藏状态）
+            // 补充学生个性化数据（申请状态、收藏状态、真实申请人数）
             Set<Long> appliedPositionIds = getStudentAppliedPositionIds();
             Set<Long> favoritePositionIds = getStudentFavoritePositionIds();
+            List<Long> allPositionIds = voList.stream().map(PositionVO::getId).collect(Collectors.toList());
+            Map<Long, Integer> applyCountMap = getPositionApplyCounts(allPositionIds);
             for (PositionVO vo : voList) {
                 vo.setIsApplied(appliedPositionIds.contains(vo.getId()));
                 vo.setIsFavorite(favoritePositionIds.contains(vo.getId()));
+                vo.setApplyCount(applyCountMap.getOrDefault(vo.getId(), 0));
             }
 
             return Result.success(voList);
@@ -206,18 +231,21 @@ public class StudentPositionController {
                 positionCacheService.cachePositions(allPositions);
             }
 
-            // 从缓存数据中筛选最新10条
+            // 从缓存数据中筛选最新10条（按发布时间倒序）
             List<PositionVO> latest = allPositions.stream()
-                    .sorted(Comparator.comparing(p -> p.getCreateTime() == null ? 0L : -p.getCreateTime().getTime()))
+                    .sorted(Comparator.comparing(p -> p.getPublishTime() == null ? 0L : -p.getPublishTime().getTime()))
                     .limit(10)
                     .collect(Collectors.toList());
 
-            // 补充学生个性化数据
+            // 补充学生个性化数据（申请状态、收藏状态、真实申请人数）
             Set<Long> appliedPositionIds = getStudentAppliedPositionIds();
             Set<Long> favoritePositionIds = getStudentFavoritePositionIds();
+            List<Long> latestPositionIds = latest.stream().map(PositionVO::getId).collect(Collectors.toList());
+            Map<Long, Integer> applyCountMap = getPositionApplyCounts(latestPositionIds);
             for (PositionVO vo : latest) {
                 vo.setIsApplied(appliedPositionIds.contains(vo.getId()));
                 vo.setIsFavorite(favoritePositionIds.contains(vo.getId()));
+                vo.setApplyCount(applyCountMap.getOrDefault(vo.getId(), 0));
             }
 
             return Result.success(latest);
@@ -261,18 +289,21 @@ public class StudentPositionController {
                 positionCacheService.cachePositions(allPositions);
             }
 
-            // 从缓存数据中筛选热门10条（按申请人数）
+            // 从缓存数据中筛选热门10条（按浏览次数倒序）
             List<PositionVO> hot = allPositions.stream()
-                    .sorted(Comparator.comparingInt(p -> -(p.getApplyCount() == null ? 0 : p.getApplyCount())))
+                    .sorted(Comparator.comparingInt(p -> -(p.getViewCount() == null ? 0 : p.getViewCount())))
                     .limit(10)
                     .collect(Collectors.toList());
 
-            // 补充学生个性化数据
+            // 补充学生个性化数据（申请状态、收藏状态、真实申请人数）
             Set<Long> appliedPositionIds = getStudentAppliedPositionIds();
             Set<Long> favoritePositionIds = getStudentFavoritePositionIds();
+            List<Long> hotPositionIds = hot.stream().map(PositionVO::getId).collect(Collectors.toList());
+            Map<Long, Integer> applyCountMap = getPositionApplyCounts(hotPositionIds);
             for (PositionVO vo : hot) {
                 vo.setIsApplied(appliedPositionIds.contains(vo.getId()));
                 vo.setIsFavorite(favoritePositionIds.contains(vo.getId()));
+                vo.setApplyCount(applyCountMap.getOrDefault(vo.getId(), 0));
             }
 
             return Result.success(hot);
@@ -311,6 +342,9 @@ public class StudentPositionController {
             PositionVO vo = convertToVO(position, company);
             vo.setIsApplied(appliedPositionIds.contains(position.getId()));
             vo.setIsFavorite(favoritePositionIds.contains(position.getId()));
+            // 填充真实申请人数
+            Map<Long, Integer> applyCountMap = getPositionApplyCounts(Collections.singletonList(position.getId()));
+            vo.setApplyCount(applyCountMap.getOrDefault(position.getId(), 0));
             return Result.success(vo);
         } catch (Exception e) {
             log.error("获取职位详情失败: {}", e.getMessage(), e);
@@ -372,6 +406,8 @@ public class StudentPositionController {
                     .collect(Collectors.toMap(PositionFavorite::getPositionId, PositionFavorite::getCreateTime));
             // 获取已申请职位ID
             Set<Long> appliedPositionIds = getStudentAppliedPositionIds();
+            // 批量获取真实申请人数
+            Map<Long, Integer> applyCountMap = getPositionApplyCounts(positionIds);
 
             // 批量查询所有公司信息，避免N+1问题
             Set<Long> companyIds = positions.stream()
@@ -410,7 +446,7 @@ public class StudentPositionController {
                     item.put("contactEmail", vo.getContactEmail());
                     item.put("publishTime", vo.getPublishTime());
                     item.put("viewCount", vo.getViewCount());
-                    item.put("applyCount", vo.getApplyCount());
+                    item.put("applyCount", applyCountMap.getOrDefault(fav.getPositionId(), 0));
                     item.put("collectTime", collectTimeMap.get(position.getId()));
                     item.put("isFavorite", true);
                     result.add(item);
@@ -599,8 +635,8 @@ public class StudentPositionController {
         // viewCount - 真实浏览次数
         vo.setViewCount(position.getViewCount() != null ? position.getViewCount() : 0);
 
-        // applyCount <- recruitedCount
-        vo.setApplyCount(position.getRecruitedCount() != null ? position.getRecruitedCount() : 0);
+        // applyCount - 暂时设为0，后续从申请表批量统计填充
+        vo.setApplyCount(0);
 
         // plannedRecruit
         vo.setPlannedRecruit(position.getPlannedRecruit());
@@ -646,7 +682,7 @@ public class StudentPositionController {
             }
 
             if (company.getIndustry() != null) {
-                vo.setIndustryName(convertIndustryToChinese(company.getIndustry()));
+                vo.setIndustryName(company.getIndustry());
             }
 
             vo.setScale(company.getScale());
@@ -738,8 +774,8 @@ public class StudentPositionController {
         // viewCount - 真实浏览次数
         vo.setViewCount(position.getViewCount() != null ? position.getViewCount() : 0);
 
-        // applyCount <- recruitedCount
-        vo.setApplyCount(position.getRecruitedCount() != null ? position.getRecruitedCount() : 0);
+        // applyCount - 暂时设为0，后续从申请表批量统计填充
+        vo.setApplyCount(0);
 
         // plannedRecruit
         vo.setPlannedRecruit(position.getPlannedRecruit());
@@ -787,7 +823,7 @@ public class StudentPositionController {
                 }
 
                 if (company.getIndustry() != null) {
-                    vo.setIndustryName(convertIndustryToChinese(company.getIndustry()));
+                    vo.setIndustryName(company.getIndustry());
                 }
 
                 vo.setScale(company.getScale());
@@ -817,52 +853,4 @@ public class StudentPositionController {
         return vo;
     }
 
-    /**
-     * 将英文行业名称转换为中文
-     */
-    private String convertIndustryToChinese(String industry) {
-        if (industry == null) {
-            return null;
-        }
-        switch (industry.toLowerCase()) {
-            case "internet":
-                return "互联网";
-            case "finance":
-            case "financial":
-                return "金融";
-            case "manufacturing":
-                return "制造业";
-            case "education":
-                return "教育";
-            case "healthcare":
-            case "medical":
-            case "health":
-                return "医疗健康";
-            case "retail":
-                return "零售";
-            case "media":
-                return "传媒";
-            case "telecom":
-            case "telecommunication":
-                return "通信";
-            case "real_estate":
-            case "property":
-                return "房地产";
-            case "logistics":
-            case "supply_chain":
-                return "物流";
-            case "energy":
-                return "能源";
-            case "construction":
-                return "建筑";
-            case "government":
-                return "政府";
-            case "nonprofit":
-            case "ngo":
-                return "非营利组织";
-            case "other":
-            default:
-                return "其他";
-        }
-    }
 }

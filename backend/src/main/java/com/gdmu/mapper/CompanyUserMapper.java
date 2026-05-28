@@ -108,4 +108,9 @@ public interface CompanyUserMapper {
      * 根据公司名称查找公司
      */
     CompanyUser findByCompanyName(@Param("companyName") String companyName);
+
+    /**
+     * 获取所有不重复的企业标签
+     */
+    List<String> getDistinctTags();
 }

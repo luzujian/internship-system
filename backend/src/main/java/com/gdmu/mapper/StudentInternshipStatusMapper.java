@@ -262,6 +262,8 @@ public interface StudentInternshipStatusMapper {
 
     List<Map<String, Object>> getStatsByClassByDivisionIds(@Param("divisionIds") List<Long> divisionIds, @Param("startDate") String startDate, @Param("endDate") String endDate);
 
+    List<Map<String, Object>> getStatsByDivisionByDivisionIds(@Param("divisionIds") List<Long> divisionIds, @Param("startDate") String startDate, @Param("endDate") String endDate);
+
     /**
      * 将学生实习状态改为已中断（不清空公司信息，保留记录）
      * @param studentId 学生ID

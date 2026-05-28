@@ -368,24 +368,6 @@
         </div>
       </div>
     </div>
-    <!-- 操作反馈提示 -->
-    <div v-if="showFeedback" class="modal-overlay" @click.self="showFeedback = false">
-      <div class="modal-content feedback-modal">
-        <div class="modal-header">
-          <h3>{{ feedbackTitle }}</h3>
-          <button class="close-btn" @click="showFeedback = false">×</button>
-        </div>
-        <div class="modal-body">
-          <div class="feedback-content">
-            <div class="feedback-icon" :class="feedbackType">{{ feedbackIcon }}</div>
-            <div class="feedback-message">{{ feedbackMessage }}</div>
-          </div>
-        </div>
-        <div class="modal-footer">
-          <button class="btn btn-primary btn-sm" @click="showFeedback = false">确定</button>
-        </div>
-      </div>
-    </div>
   </div>
 </template>
 
@@ -435,41 +417,13 @@ const showRejectModal = ref(false)
 const showCompanyQualificationModal = ref(false)
 const showApplicationDetailModal = ref(false)
 const showMaterialPreviewModal = ref(false)
-const showFeedback = ref(false)
 const currentApplication = ref<any>(null)
 const rejectReason = ref('')
 const previewUrl = ref('')
 const previewFileName = ref('')
 
-const feedbackTitle = ref('操作提示')
-const feedbackMessage = ref('')
-const feedbackType = ref('success')
-const feedbackIcon = ref('✅')
-
-const showOperationFeedback = (message: string, type: 'success' | 'error' | 'info' = 'success') => {
-  feedbackMessage.value = message
-  feedbackType.value = type
-  
-  switch (type) {
-    case 'success':
-      feedbackIcon.value = '✅'
-      feedbackTitle.value = '操作成功'
-      break
-    case 'error':
-      feedbackIcon.value = '❌'
-      feedbackTitle.value = '操作失败'
-      break
-    case 'info':
-      feedbackIcon.value = 'ℹ️'
-      feedbackTitle.value = '提示信息'
-      break
-  }
-  
-  showFeedback.value = true
-}
-
 const materialItems = ref({
-  selfPractice: ['企业介绍', '实习计划', '安全协议'],
+  selfPractice: ['个人申请书', '实习接收函'],
   unitChange: ['个人申请书'],
   delay: ['考研计划', '学习计划', '延迟申请书']
 })
@@ -525,7 +479,7 @@ const fetchApplications = async () => {
     }))
   } catch (error) {
     console.error('[Approval] 获取申请列表失败:', error)
-    showOperationFeedback('获取申请列表失败', 'error')
+    ElMessage.error('获取申请列表失败')
   } finally {
     loading.value = false
   }
@@ -657,7 +611,7 @@ const viewApplication = async (application: any) => {
     }
     showApplicationDetailModal.value = true
   } catch (error) {
-    showOperationFeedback('获取申请详情失败', 'error')
+    ElMessage.error('获取申请详情失败')
   }
 }
 
@@ -674,14 +628,14 @@ const approveApplication = async (application: any) => {
       response = await approvalApi.approveStudentApplication(application.id, reviewerId)
     }
     
-    showOperationFeedback('申请已成功通过', 'success')
+    ElMessage.success('申请已成功通过')
     fetchApplications()
     fetchStats()
     
     showApplicationDetailModal.value = false
     showCompanyQualificationModal.value = false
   } catch (error: any) {
-    showOperationFeedback(error.response?.data?.message || '批准申请失败', 'error')
+    ElMessage.error(error.response?.data?.message || '批准申请失败')
   }
 }
 
@@ -703,7 +657,7 @@ const viewCompanyQualification = async (application: any) => {
     currentApplication.value = { ...response, type: 'companyQualification' }
     showCompanyQualificationModal.value = true
   } catch (error) {
-    showOperationFeedback('获取企业资质详情失败', 'error')
+    ElMessage.error('获取企业资质详情失败')
   }
 }
 
@@ -739,11 +693,11 @@ const confirmReject = async () => {
     }
     
     showRejectModal.value = false
-    showOperationFeedback('申请已成功驳回', 'success')
+    ElMessage.success('申请已成功驳回')
     fetchApplications()
     fetchStats()
   } catch (error: any) {
-    showOperationFeedback(error.response?.data?.message || '驳回申请失败', 'error')
+    ElMessage.error(error.response?.data?.message || '驳回申请失败')
   }
 }
 

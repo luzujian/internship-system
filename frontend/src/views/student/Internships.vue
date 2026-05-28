@@ -21,23 +21,11 @@
           </div>
         </div>
         <div class="overview-right" v-if="hasInternshipRecord">
-          <div class="duration-info">
-            <el-icon class="duration-icon"><Clock /></el-icon>
-            <span class="duration-text">{{ currentInternship.startDate }} {{ currentInternship.endDate }}</span>
-            <span class="current-period" v-if="currentPeriod">第{{ currentPeriod }}期</span>
-          </div>
-          <div class="progress-section">
-            <div class="progress-bar">
-              <div class="progress-fill" :style="{ width: currentInternship.progress + '%' }"></div>
-            </div>
-            <span class="progress-text">{{ currentInternship.progress }}%</span>
-          </div>
-          <el-tooltip :content="submitReason || '提交实习心得'" placement="top" :disabled="canSubmit">
-            <button class="submit-log-button" :class="{ disabled: !canSubmit }" @click.stop="submitLog" :disabled="!canSubmit" style="position: relative; z-index: 10;">
-              <el-icon class="button-icon"><Edit /></el-icon>
-              提交实习心得
-            </button>
-          </el-tooltip>
+          <span class="current-period" v-if="currentPeriod">第{{ currentPeriod }}期</span>
+          <button class="submit-log-button" :class="{ disabled: !canSubmit }" @click.stop="submitLog" :disabled="!canSubmit" :title="!canSubmit ? submitReason : ''">
+            <el-icon class="button-icon"><Edit /></el-icon>
+            提交实习心得
+          </button>
         </div>
       </div>
     </div>
@@ -83,7 +71,7 @@
             </div>
           </div>
           <div class="log-actions">
-            <template v-if="log.statusClass === 'draft' && log.remark !== '0'">
+            <template v-if="log.statusClass === 'draft'">
               <button class="action-button edit" @click="editLog(log)">
                 <el-icon><Edit /></el-icon>
                 编辑
@@ -138,7 +126,7 @@
             </div>
           </div>
           <div class="log-actions">
-            <template v-if="log.statusClass === 'draft' && log.remark !== '0'">
+            <template v-if="log.statusClass === 'draft'">
               <button class="action-button edit" @click="editLog(log)">
                 <el-icon><Edit /></el-icon>
                 编辑
@@ -171,7 +159,7 @@
             <div class="log-title">{{ archive.title || archive.company || '已完成心得' }}</div>
             <div class="log-header-right">
               <div class="status-tag reviewed">已批阅</div>
-              <button class="action-button view" @click="viewArchive(archive)">
+              <button class="action-button view" @click="viewLog(archive)">
                 <el-icon><View /></el-icon>
                 查看详情
               </button>
@@ -356,9 +344,9 @@
           <div class="detail-section">
             <div class="section-header">
               <el-icon class="section-icon"><Document /></el-icon>
-              <span class="section-label">工作内容</span>
+              <span class="section-label">实习心得</span>
             </div>
-            <div class="notice-list">
+            <div class="notice-list reflection-content">
               <div class="notice-item">
                 {{ currentLog.description }}
               </div>
@@ -390,17 +378,17 @@
           </div>
 
           <div v-if="currentLog.scoringDetails || currentLog.review" class="detail-section">
-            <div class="section-header">
-              <span class="section-label">评语</span>
-              <el-tag v-if="currentLog.scoringDetails" :type="getRatingType(currentLog.scoringDetails.rating)" size="small" class="rating-tag">
-                {{ currentLog.scoringDetails.rating }}
-              </el-tag>
-            </div>
             <div v-if="currentLog.scoringDetails" class="scoring-summary">
               <div class="scoring-info">
                 <div class="scoring-label">总分</div>
                 <div class="scoring-value">{{ currentLog.scoringDetails.totalScore }}分</div>
               </div>
+            </div>
+            <div class="section-header">
+              <span class="section-label">评语</span>
+              <el-tag v-if="currentLog.scoringDetails" :type="getRatingType(currentLog.scoringDetails.rating)" size="small" class="rating-tag">
+                {{ currentLog.scoringDetails.rating }}
+              </el-tag>
             </div>
             <div v-if="currentLog.review" class="notice-list">
               <div class="notice-item review-item">
@@ -416,211 +404,6 @@
       </div>
     </el-dialog>
 
-    <!-- 实习档案对话框 - 统一为面试管理对话框样式 -->
-    <el-dialog
-      v-model="showArchiveDialog"
-      title="实习档案"
-      width="650px"
-      class="detail-dialog"
-      :append-to-body="true"
-      :lock-scroll="true"
-      modal-class="global-modal"
-    >
-      <div v-if="currentArchive" class="detail-content">
-        <div class="detail-header">
-          <div class="detail-info">
-            <div class="detail-title">
-              <el-icon class="detail-company-icon"><OfficeBuilding /></el-icon>
-              <span>{{ currentArchive.company }}</span>
-            </div>
-            <div class="detail-position">{{ currentArchive.position }}</div>
-          </div>
-          <div class="archive-badge">
-            <el-icon class="badge-icon"><DocumentChecked /></el-icon>
-            已完成
-          </div>
-        </div>
-
-        <div class="detail-sections">
-          <div class="detail-section">
-            <div class="section-header">
-              <el-icon class="section-icon"><Calendar /></el-icon>
-              <span class="section-label">基本信息</span>
-            </div>
-            <div class="info-grid">
-              <div class="info-card">
-                <div class="info-card-icon">
-                  <el-icon><OfficeBuilding /></el-icon>
-                </div>
-                <div class="info-card-content">
-                  <div class="info-card-label">实习公司</div>
-                  <div class="info-card-value">{{ currentArchive.company }}</div>
-                </div>
-              </div>
-              <div class="info-card">
-                <div class="info-card-icon">
-                  <el-icon><User /></el-icon>
-                </div>
-                <div class="info-card-content">
-                  <div class="info-card-label">实习岗位</div>
-                  <div class="info-card-value">{{ currentArchive.position }}</div>
-                </div>
-              </div>
-              <div class="info-card">
-                <div class="info-card-icon">
-                  <el-icon><Calendar /></el-icon>
-                </div>
-                <div class="info-card-content">
-                  <div class="info-card-label">实习时间</div>
-                  <div class="info-card-value">{{ currentArchive.startDate }} 至 {{ currentArchive.endDate }}</div>
-                </div>
-              </div>
-              <div class="info-card">
-                <div class="info-card-icon">
-                  <el-icon><Clock /></el-icon>
-                </div>
-                <div class="info-card-content">
-                  <div class="info-card-label">实习时长</div>
-                  <div class="info-card-value">{{ currentArchive.duration }}</div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div class="detail-section">
-            <div class="section-header">
-              <el-icon class="section-icon"><TrendCharts /></el-icon>
-              <span class="section-label">实习评价</span>
-            </div>
-            <div class="evaluation-grid">
-              <div class="evaluation-item">
-                <div class="evaluation-label">工作态度</div>
-                <el-rate v-model="currentArchive.attitude" disabled />
-              </div>
-              <div class="evaluation-item">
-                <div class="evaluation-label">工作能力</div>
-                <el-rate v-model="currentArchive.ability" disabled />
-              </div>
-              <div class="evaluation-item">
-                <div class="evaluation-label">团队协作</div>
-                <el-rate v-model="currentArchive.teamwork" disabled />
-              </div>
-              <div class="evaluation-item">
-                <div class="evaluation-label">创新能力</div>
-                <el-rate v-model="currentArchive.innovation" disabled />
-              </div>
-            </div>
-          </div>
-
-          <div class="detail-section">
-            <div class="section-header">
-              <el-icon class="section-icon"><Star /></el-icon>
-              <span class="section-label">评分详情</span>
-              <el-tag v-if="currentArchive.scoringDetails" :type="getRatingType(currentArchive.scoringDetails.rating)" size="small" class="rating-tag">
-                {{ currentArchive.scoringDetails.rating }}
-              </el-tag>
-            </div>
-            <div v-if="currentArchive.scoringDetails" class="scoring-grid">
-              <div class="scoring-item">
-                <div class="scoring-info">
-                  <div class="scoring-label">实习态度 (20%)</div>
-                  <div class="scoring-value">{{ currentArchive.scoringDetails.internshipAttitude }}分</div>
-                </div>
-                <div class="scoring-bar-container">
-                  <div class="scoring-bar" :style="{ width: currentArchive.scoringDetails.internshipAttitude + '%' }"></div>
-                </div>
-              </div>
-              <div class="scoring-item">
-                <div class="scoring-info">
-                  <div class="scoring-label">实习表现 (40%)</div>
-                  <div class="scoring-value">{{ currentArchive.scoringDetails.internshipPerformance }}分</div>
-                </div>
-                <div class="scoring-bar-container">
-                  <div class="scoring-bar" :style="{ width: currentArchive.scoringDetails.internshipPerformance + '%' }"></div>
-                </div>
-              </div>
-              <div class="scoring-item">
-                <div class="scoring-info">
-                  <div class="scoring-label">实习心得 (40%)</div>
-                  <div class="scoring-value">{{ currentArchive.scoringDetails.internshipReflection }}分</div>
-                </div>
-                <div class="scoring-bar-container">
-                  <div class="scoring-bar" :style="{ width: currentArchive.scoringDetails.internshipReflection + '%' }"></div>
-                </div>
-              </div>
-              <div class="scoring-item total">
-                <div class="scoring-info">
-                  <div class="scoring-label total">总分</div>
-                  <div class="scoring-value total">{{ currentArchive.scoringDetails.totalScore }}分</div>
-                </div>
-                <div class="scoring-bar-container">
-                  <div class="scoring-bar total" :style="{ width: currentArchive.scoringDetails.totalScore + '%' }"></div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div class="detail-section">
-            <div class="section-header">
-              <el-icon class="section-icon"><ChatDotRound /></el-icon>
-              <span class="section-label">导师评语</span>
-            </div>
-            <div class="notice-list">
-              <div class="notice-item review-item">
-                <el-icon class="notice-icon"><CircleCheck /></el-icon>
-                <span>{{ currentArchive.review }}</span>
-              </div>
-            </div>
-          </div>
-
-          <div class="detail-section">
-            <div class="section-header">
-              <el-icon class="section-icon"><Document /></el-icon>
-              <span class="section-label">实习总结</span>
-            </div>
-            <div class="notice-list">
-              <div class="notice-item">
-                {{ currentArchive.summary }}
-              </div>
-            </div>
-          </div>
-
-          <div class="detail-section">
-            <div class="section-header">
-              <el-icon class="section-icon"><FolderOpened /></el-icon>
-              <span class="section-label">工作日志</span>
-            </div>
-            <div class="logs-summary">
-              <div class="log-stat">
-                <div class="stat-number">{{ currentArchive.logCount }}</div>
-                <div class="stat-label">提交日志</div>
-              </div>
-              <div class="log-stat">
-                <div class="stat-number">{{ currentArchive.weekCount }}</div>
-                <div class="stat-label">实习周数</div>
-              </div>
-              <div class="log-stat">
-                <div class="stat-number">{{ currentArchive.reviewedCount }}</div>
-                <div class="stat-label">已批阅</div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div class="dialog-actions">
-          <el-button @click="showArchiveDialog = false" class="cancel-button">关闭</el-button>
-          <el-button
-            v-if="currentArchive && currentArchive.certificateClass === 'available'"
-            type="primary"
-            @click="downloadCertificate(currentArchive)"
-            class="submit-button"
-          >
-            <el-icon><Download /></el-icon>
-            下载实习证明
-          </el-button>
-        </div>
-      </div>
-    </el-dialog>
   </div>
 </template>
 
@@ -628,7 +411,6 @@
 import { ref, onMounted, onUnmounted, nextTick } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import {
-  Clock,
   Edit,
   Delete,
   View,
@@ -637,22 +419,14 @@ import {
   DocumentChecked,
   Document,
   FolderOpened,
-  Plus,
-  Download,
   UploadFilled,
   OfficeBuilding,
   EditPen,
   Warning,
   Promotion,
-  Paperclip,
-  Close,
   Check,
-  DocumentCopy,
-  User,
-  TrendCharts,
   CircleCheck,
   Star,
-  Briefcase,
   RefreshLeft
 } from '@element-plus/icons-vue'
 import { useRouter } from 'vue-router'
@@ -669,13 +443,11 @@ const getStudentId = () => {
 
 const router = useRouter()
 const activeTab = ref('all')
-const progressColor = '#67C23A'
+
 const showLogDialog = ref(false)
 const showViewDialog = ref(false)
-const showArchiveDialog = ref(false)
 const isEditMode = ref(false)
 const currentLog = ref(null)
-const currentArchive = ref(null)
 const reflectionActiveTab = ref('text')
 const selectedFile = ref<File | null>(null)
 const submitting = ref(false)
@@ -770,39 +542,7 @@ const fetchInternshipRecord = async () => {
   }
 }
 
-const fetchLogs = async () => {
-  try {
-    // 如果有recordId则按recordId获取，否则获取该学生的所有周志
-    const params = currentRecordId.value ? { recordId: currentRecordId.value } : {}
-    const response = await request.get(`/student/weekly-log/list`, { params })
-
-    if (response.code === 200 && response.data) {
-      const logList = Array.isArray(response.data) ? response.data : []
-      logs.value = logList.map(item => ({
-        id: item.id,
-        date: item.startDate || item.weekDate || '',
-        title: item.weekNumber ? `第${item.weekNumber}周工作总结` : '工作总结',
-        description: item.workContent || '',
-        status: item.status === 'draft' ? '草稿' : item.status === 'submitted' ? '已提交' : '已批阅',
-        statusClass: item.status === 'draft' ? 'draft' : item.status === 'submitted' ? 'submitted' : 'reviewed',
-        review: item.teacherFeedback || '',
-        problems: item.problems || '',
-        plan: item.nextPlan || '',
-        files: [],
-        submitTime: item.submitTime || '',
-        fileCount: 0,
-        scoringDetails: item.score ? {
-          totalScore: item.score || 0,
-          rating: item.score >= 90 ? '优秀' : item.score >= 80 ? '良好' : item.score >= 60 ? '及格' : '不及格'
-        } : null
-      }))
-    }
-  } catch (error) {
-    console.error('获取周日志列表失败:', error)
-  }
-}
-
-// 获取实习心得列表（补充周志列表的数据）
+// 获取实习心得列表
 const fetchReflections = async () => {
   try {
     const response = await request.get('/student/internship-reflection/list')
@@ -912,22 +652,28 @@ const editLog = (log) => {
   showLogDialog.value = true;
 };
 
-const deleteLog = (log) => {
-  ElMessageBox.confirm(`确认删除日志"${log.title}"？`, "删除确认", {
-    confirmButtonText: "确认删除",
-    cancelButtonText: "取消",
-    type: "warning",
-  })
-    .then(() => {
-      const index = logs.value.findIndex((item) => item.id === log.id);
-      if (index > -1) {
-        logs.value.splice(index, 1);
-        ElMessage.success("删除成功");
-      }
-    })
-    .catch(() => {
-      ElMessage.info("已取消删除");
+const deleteLog = async (log: any) => {
+  try {
+    await ElMessageBox.confirm(`确认删除"${log.title}"？`, "删除确认", {
+      confirmButtonText: "确认删除",
+      cancelButtonText: "取消",
+      type: "warning",
     });
+
+    await request.delete(`/student/internship-reflection/${log.id}`);
+    ElMessage.success("删除成功");
+
+    // 从 logs 和 allLogs 中移除
+    const removeIndex = (arr: any[]) => {
+      const idx = arr.findIndex((item) => item.id === log.id);
+      if (idx > -1) arr.splice(idx, 1);
+    };
+    removeIndex(logs.value);
+    removeIndex(allLogs.value);
+  } catch (error: any) {
+    if (error === 'cancel' || error?.message === 'cancel') return;
+    ElMessage.error(error?.message || '删除失败');
+  }
 };
 
 const viewLog = (log) => {
@@ -936,36 +682,6 @@ const viewLog = (log) => {
   // 评语和评分已在fetchReflections时通过InternshipEvaluation获取并设置到log.review中
   // 无需再次请求API，避免StudentReflectionEvaluation表无数据导致覆盖
 };
-
-const saveLogAsDraft = async () => {
-  if (!logForm.value.title) {
-    ElMessage.warning("请输入日志标题");
-    return;
-  }
-
-  try {
-    const logData = {
-      weekNumber: logs.value.length + 1,
-      weekDate: formatDate(logForm.value.date),
-      workContent: logForm.value.content,
-      problems: logForm.value.problems,
-      nextWeekPlan: logForm.value.plan,
-      status: 0
-    }
-
-    const response = await request.post(`/student/weekly-log/save`, logData)
-    if (response.code === 200) {
-      ElMessage.success("保存草稿成功");
-      await fetchLogs()
-      showLogDialog.value = false
-    } else {
-      ElMessage.error(response.data.message || '保存失败，请稍后重试')
-    }
-  } catch (error) {
-    console.error('保存日志失败:', error)
-    ElMessage.error('网络错误，请稍后重试')
-  }
-}
 
 // 处理文件选择 - el-upload的on-change回调
 const handleFileChange = (uploadFile: any, uploadFileList: any[]) => {
@@ -1083,20 +799,6 @@ const formatDate = (date) => {
   return `${year}-${month}-${day}`;
 };
 
-const viewArchive = (archive) => {
-  // 如果archive有title字段，说明是实习心得，使用viewLog对话框显示
-  if (archive.title) {
-    viewLog(archive)
-  } else {
-    currentArchive.value = archive
-    showArchiveDialog.value = true
-  }
-}
-
-const downloadCertificate = (archive) => {
-  ElMessage.success(`下载证明：${archive.company}`);
-};
-
 const getRatingType = (rating) => {
   switch (rating) {
     case '优秀':
@@ -1172,7 +874,6 @@ onUnmounted(() => {
   width: 100%;
   min-height: auto;
   background: #f1f5f9;
-  overflow-y: auto;
 }
 
 /* 页面标题区域 - 统一为蓝绿色渐变背景 */
@@ -1226,6 +927,8 @@ onUnmounted(() => {
   padding: 24px;
   margin-bottom: 24px;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+  max-height: calc(100vh - 380px);
+  overflow-y: auto;
 }
 
 /* 概览内容样式 */
@@ -1287,34 +990,6 @@ onUnmounted(() => {
   flex-wrap: wrap;
 }
 
-.duration-info {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
-  color: #64748b;
-  flex-wrap: nowrap;
-}
-
-.duration-icon {
-  font-size: 14px;
-  color: #94a3b8;
-}
-
-.duration-text {
-  color: #64748b;
-}
-
-.current-time {
-  color: #409EFF;
-  font-size: 13px;
-  font-weight: 500;
-  padding: 2px 8px;
-  background: #f0f7ff;
-  border-radius: 4px;
-  margin-left: 8px;
-}
-
 .current-period {
   color: #67C23A;
   font-size: 13px;
@@ -1324,34 +999,6 @@ onUnmounted(() => {
   border-radius: 4px;
   margin-left: 6px;
   border: 1px solid #b7eb8f;
-}
-
-.progress-section {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.progress-bar {
-  width: 120px;
-  height: 6px;
-  background: #f1f5f9;
-  border-radius: 3px;
-  overflow: hidden;
-}
-
-.progress-fill {
-  height: 100%;
-  background: linear-gradient(90deg, #67c23a 0%, #409eff 100%);
-  border-radius: 3px;
-  transition: width 0.3s ease;
-}
-
-.progress-text {
-  font-size: 13px;
-  font-weight: 600;
-  color: #409eff;
-  min-width: 40px;
 }
 
 .submit-log-button {
@@ -1439,9 +1086,6 @@ onUnmounted(() => {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 16px;
-  max-height: calc(100vh - 560px);
-  overflow-y: auto;
-  padding-right: 4px;
 }
 
 .logs-list .section-header,
@@ -1475,7 +1119,7 @@ onUnmounted(() => {
 .archive-card {
   background: linear-gradient(145deg, #ffffff 0%, #f8fafc 100%);
   border-radius: 12px;
-  padding: 16px;
+  padding: 20px 16px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
   transition: all 0.3s ease;
   display: flex;
@@ -1484,6 +1128,9 @@ onUnmounted(() => {
   position: relative;
   border: 1px solid rgba(226, 232, 240, 0.3);
   flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+  aspect-ratio: 1 / 1;
 }
 
 .log-card::before,
@@ -1611,14 +1258,16 @@ onUnmounted(() => {
 .archive-content {
   font-size: 14px;
   color: #606266;
-  line-height: 1.6;
+  line-height: 1.7;
   margin-bottom: 12px;
-  padding: 12px;
+  padding: 10px 12px;
   background: #fafafa;
   border-radius: 6px;
   border: 1px solid #f0f0f0;
-  max-height: 120px;
+  max-height: 330px;
   overflow-y: auto;
+  overflow-x: hidden;
+  word-break: break-all;
 }
 
 .log-info-grid,
@@ -1632,6 +1281,7 @@ onUnmounted(() => {
   background: none;
   border-radius: 0;
   border: none;
+  margin-top: auto;
   margin-bottom: 12px;
 }
 
@@ -2509,8 +2159,11 @@ onUnmounted(() => {
 }
 
 .notice-item.review-item {
-  background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);
-  color: #166534;
+}
+
+.reflection-content {
+  max-height: 260px;
+  overflow-y: auto;
 }
 
 .notice-icon {
@@ -2755,10 +2408,6 @@ onUnmounted(() => {
     gap: 12px;
   }
 
-  .progress-section {
-    justify-content: center;
-  }
-
   .submit-log-button {
     justify-content: center;
   }
@@ -2781,7 +2430,7 @@ onUnmounted(() => {
   .overview-card,
   .tabs-section,
   .content-section {
-    padding: 16px;
+    padding: 28px 16px;
   }
 
   .log-card,

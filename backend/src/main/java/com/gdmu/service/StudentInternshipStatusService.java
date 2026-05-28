@@ -158,4 +158,9 @@ public interface StudentInternshipStatusService {
     int submitRecallApplicationWithRecord(Long id, String recallReason, Long applicantId, String applicantRole);
 
     int clearRecallData();
+
+    PageResult<StudentInternshipStatus> findPageByScope(Integer page, Integer pageSize, Long studentId, String name,
+                                                         Integer gender, Integer status, Long companyId, String companyName,
+                                                         String grade, String major, String className, String studentUserId,
+                                                         List<Long> divisionIds, List<Long> classIds);
 }

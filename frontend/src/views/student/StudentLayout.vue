@@ -123,8 +123,6 @@ const logout = async () => {
 
 const sidebarCollapsed = ref(false)
 const isDialogOpen = ref(false)
-const isMobile = ref(false)
-const showMobileSidebar = ref(false)
 
 // 获取用户名
 const userName = computed(() => {
@@ -135,6 +133,24 @@ const userName = computed(() => {
 const studentId = computed(() => {
   return authStore.user?.studentId || authStore.user?.id || ''
 })
+
+// 顶部栏实习状态
+const headerStatus = ref('')
+const headerStatusClass = ref('')
+const fetchHeaderStatus = async () => {
+  try {
+    const response = await request.get('/student/home/internship-status')
+    if (response?.code === 200 && response.data) {
+      const data = response.data
+      if (data.hasRecord && data.currentStatus !== undefined) {
+        const map = { 0: '待就业', 1: '待确认', 2: '已确定', 3: '实习中', 4: '已结束', 5: '已中断', 6: '延期' }
+        const clsMap = { 0: '', 1: 'offer', 2: 'confirmed', 3: 'in-progress', 4: 'ended', 5: 'interrupted', 6: 'delayed' }
+        headerStatus.value = map[data.currentStatus] ?? ''
+        headerStatusClass.value = clsMap[data.currentStatus] ?? ''
+      }
+    }
+  } catch (e) { /* 静默失败 */ }
+}
 
 // 提醒相关
 const hasUnconfirmedReminder = ref(false)
@@ -183,21 +199,9 @@ const activeMenu = computed(() => {
   return path
 })
 
-// 检测是否为移动设备
-const checkMobile = () => {
-  isMobile.value = window.innerWidth < 768
-  if (isMobile.value) {
-    sidebarCollapsed.value = true
-  }
-}
-
 // 切换侧边栏
 const toggleSidebar = () => {
-  if (isMobile.value) {
-    showMobileSidebar.value = !showMobileSidebar.value
-  } else {
-    sidebarCollapsed.value = !sidebarCollapsed.value
-  }
+  sidebarCollapsed.value = !sidebarCollapsed.value
 }
 
 // 处理菜单选择
@@ -226,9 +230,8 @@ const handleCommand = async (command) => {
 
 // 生命周期钩子
 onMounted(() => {
-  checkMobile()
-  window.addEventListener('resize', checkMobile)
   checkPendingReminders()
+  fetchHeaderStatus()
 
   // 初始化 WebSocket 连接
   initStudentWebSocket()
@@ -298,7 +301,6 @@ watch(() => authStore.user?.isReadOnly, (newVal, oldVal) => {
 })
 
 onUnmounted(() => {
-  window.removeEventListener('resize', checkMobile)
   disconnectAnnouncementWebSocket()
 })
 </script>
@@ -364,6 +366,9 @@ onUnmounted(() => {
           <div class="logo-subtitle">学生端</div>
         </div>
       </div>
+      <div v-if="headerStatus" class="header-status">
+        <span :class="['header-status-badge', headerStatusClass]">{{ headerStatus }}</span>
+      </div>
       <div class="user-actions">
         <el-dropdown @command="handleCommand" class="user-dropdown">
           <el-button link class="user-btn">
@@ -403,7 +408,6 @@ onUnmounted(() => {
       :class="['sidebar', {
         'sidebar-collapsed': sidebarCollapsed,
         'sidebar-disabled': isDialogOpen,
-        'sidebar-mobile': isMobile && showMobileSidebar,
         'has-read-only': isReadOnlyMode
       }]"
     >
@@ -486,7 +490,7 @@ onUnmounted(() => {
 
     <!-- 主体区域 -->
     <div :class="['main-wrapper', { 'has-read-only': isReadOnlyMode }]">
-      <el-scrollbar style="flex: 1;">
+      <el-scrollbar style="flex: 1; height: 100%;">
         <el-main :class="{ 'main-content-disabled': isDialogOpen, 'sidebar-collapsed-main': sidebarCollapsed }">
           <router-view></router-view>
         </el-main>
@@ -599,6 +603,38 @@ html, body {
   flex-shrink: 0;
 }
 
+.header-status {
+  flex: 1;
+  display: flex;
+  justify-content: flex-end;
+  margin-right: 20px;
+}
+
+.header-status-badge {
+  padding: 4px 14px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.2);
+  color: white;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.header-status-badge.in-progress,
+.header-status-badge.confirmed {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.header-status-badge.offer {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.header-status-badge.ended,
+.header-status-badge.interrupted {
+  background: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.7);
+}
+
 .user-dropdown {
   cursor: pointer;
 }
@@ -688,7 +724,7 @@ html, body {
   top: 64px;
   left: 0;
   bottom: 0;
-  z-index: 100;
+  z-index: 1;
   box-shadow: 2px 0 8px rgba(0, 0, 0, 0.05);
   display: flex;
   flex-direction: column;
@@ -697,11 +733,6 @@ html, body {
 
 .sidebar-collapsed {
   transform: translateX(-100%);
-}
-
-.sidebar-mobile {
-  z-index: 999;
-  box-shadow: 4px 0 12px rgba(0, 0, 0, 0.1);
 }
 
 .sidebar-disabled {
@@ -787,6 +818,17 @@ html, body {
   box-shadow: 0 2px 8px rgba(103, 194, 58, 0.3);
 }
 
+/* 确保 el-scrollbar 内容区域撑满 */
+.main-wrapper :deep(.el-scrollbar__wrap) {
+  display: flex;
+  flex-direction: column;
+}
+.main-wrapper :deep(.el-scrollbar__view) {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
 /* 主内容区域样式 */
 .el-main {
   flex: 1;
@@ -804,84 +846,6 @@ html, body {
 /* 侧边栏折叠时的主内容区域样式 */
 .el-main.sidebar-collapsed-main {
   margin-left: 0;
-}
-
-/* 响应式设计 */
-@media screen and (max-width: 1024px) {
-  .header {
-    padding: 0 16px;
-  }
-
-  .sidebar {
-    width: 220px;
-    min-width: 220px;
-    max-width: 220px;
-  }
-
-  .el-main {
-    margin-left: 220px;
-    padding: 20px;
-  }
-
-  .el-main.sidebar-collapsed-main {
-    margin-left: 0;
-  }
-}
-
-@media screen and (max-width: 768px) {
-  .header {
-    padding: 0 12px;
-  }
-
-  .logo-text {
-    font-size: 16px;
-  }
-
-  .logo-subtitle {
-    font-size: 10px;
-  }
-
-  .user-name {
-    font-size: 12px;
-  }
-
-  .sidebar {
-    position: absolute;
-    z-index: 9999;
-    height: calc(100vh - 64px);
-  }
-
-  .sidebar-mobile {
-    transform: translateX(0);
-  }
-
-  .main-wrapper {
-    position: relative;
-  }
-
-  .el-main {
-    margin-left: 0 !important;
-    padding: 16px !important;
-  }
-
-  .el-main.sidebar-collapsed-main {
-    margin-left: 0 !important;
-  }
-}
-
-@media screen and (max-width: 480px) {
-  .header {
-    padding: 0 8px;
-  }
-
-  .logo-text {
-    font-size: 14px;
-  }
-
-  .el-menu-item {
-    padding: 12px 16px !important;
-    margin: 4px 8px !important;
-  }
 }
 
 /* 提醒弹窗样式 */

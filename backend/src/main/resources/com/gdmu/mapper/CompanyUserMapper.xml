@@ -528,4 +528,10 @@
         WHERE company_name = #{companyName}
         LIMIT 1
     </select>
+
+    <!-- 获取所有不重复的企业标签 -->
+    <select id="getDistinctTags" resultType="java.lang.String">
+        SELECT DISTINCT company_tag FROM company_users
+        WHERE company_tag IS NOT NULL AND company_tag != ''
+    </select>
 </mapper>

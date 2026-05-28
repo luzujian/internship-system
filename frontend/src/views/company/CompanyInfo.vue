@@ -1097,7 +1097,7 @@ watch(companyId, (newVal) => {
 .page-header {
   background: linear-gradient(135deg, #409EFF 0%, #52c41a 100%);
   color: white;
-  padding: 24px 32px;
+  padding: 24px 40px;
   border-radius: 12px;
   box-shadow: 0 4px 20px rgba(64, 158, 255, 0.3);
   margin-bottom: 24px;

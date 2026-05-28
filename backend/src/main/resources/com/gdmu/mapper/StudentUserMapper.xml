@@ -25,6 +25,7 @@
         <result property="school" column="school" />
         <result property="department" column="department" />
         <result property="email" column="email" />
+        <result property="avatar" column="avatar" />
     </resultMap>
 
     <!-- 根据学号查询学生用户 -->
@@ -37,8 +38,8 @@
     
     <!-- 插入学生用户 -->
     <insert id="insert" parameterType="com.gdmu.entity.StudentUser" useGeneratedKeys="true" keyProperty="id">
-        insert into student_users (username, student_user_id, name, create_time, update_time, major_id, grade, class_id, password, phone, school, department, email)
-        values (#{username}, #{studentId}, #{name}, #{createTime}, #{updateTime}, #{majorId}, #{grade}, #{classId}, #{password}, #{phone}, #{school}, #{department}, #{email})
+        insert into student_users (username, student_user_id, name, create_time, update_time, major_id, grade, class_id, password, phone, school, department, email, avatar)
+        values (#{username}, #{studentId}, #{name}, #{createTime}, #{updateTime}, #{majorId}, #{grade}, #{classId}, #{password}, #{phone}, #{school}, #{department}, #{email}, #{avatar})
     </insert>
     
     <!-- 根据ID查询学生用户 -->
@@ -91,6 +92,9 @@
             </if>
             <if test="classes != null and classes != ''">
                 classes = #{classes},
+            </if>
+            <if test="avatar != null">
+                avatar = #{avatar},
             </if>
             <if test="updateTime != null">
                 update_time = #{updateTime}
@@ -199,10 +203,10 @@
     
     <!-- 批量插入学生用户 -->
     <insert id="batchInsert" parameterType="java.util.List">
-        INSERT INTO student_users (username, student_user_id, name, gender, password, create_time, update_time, major_id, grade, class_id, phone, school, department, email)
+        INSERT INTO student_users (username, student_user_id, name, gender, password, create_time, update_time, major_id, grade, class_id, phone, school, department, email, avatar)
         VALUES
         <foreach collection="studentUsers" item="studentUser" separator=",">
-            (#{studentUser.username}, #{studentUser.studentId}, #{studentUser.name}, #{studentUser.gender}, #{studentUser.password}, #{studentUser.createTime}, #{studentUser.updateTime}, #{studentUser.majorId}, #{studentUser.grade}, #{studentUser.classId}, #{studentUser.phone}, #{studentUser.school}, #{studentUser.department}, #{studentUser.email})
+            (#{studentUser.username}, #{studentUser.studentId}, #{studentUser.name}, #{studentUser.gender}, #{studentUser.password}, #{studentUser.createTime}, #{studentUser.updateTime}, #{studentUser.majorId}, #{studentUser.grade}, #{studentUser.classId}, #{studentUser.phone}, #{studentUser.school}, #{studentUser.department}, #{studentUser.email}, #{studentUser.avatar})
         </foreach>
     </insert>
     
@@ -360,6 +364,6 @@
                 AND cu.company_name LIKE CONCAT('%', #{companyName}, '%')
             </if>
         </where>
-        ORDER BY su.class_id ASC, su.student_user_id ASC
+        ORDER BY sis.status ASC, su.class_id ASC, su.student_user_id ASC
     </select>
 </mapper>

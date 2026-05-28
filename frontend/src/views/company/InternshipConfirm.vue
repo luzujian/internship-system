@@ -169,10 +169,6 @@ const paginatedTableData = computed(() => {
   return filteredTableData.value.slice(start, end)
 })
 
-const handlePageChange = (page) => {
-  currentPage.value = page
-}
-
 const handleSearch = () => {
   ElMessage.success('筛选已应用')
 }
@@ -451,7 +447,7 @@ const handleExport = async () => {
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="280" align="center">
+        <el-table-column label="操作" width="280" align="center" fixed="right">
           <template #default="{ row }">
             <el-button 
               v-if="row.companyConfirmStatus === 0"
@@ -483,11 +479,11 @@ const handleExport = async () => {
       <div class="pagination">
         <el-pagination
           v-model:current-page="currentPage"
+          v-model:page-size="pageSize"
           background
-          layout="total, prev, pager, next, jumper"
+          layout="total, sizes, prev, pager, next, jumper"
           :total="filteredTableData.length"
-          :page-size="pageSize"
-          @current-change="handlePageChange"
+          :page-sizes="[10, 20, 50, 100]"
         />
       </div>
     </div>

@@ -21,4 +21,11 @@ public interface StudentJobApplicationMapper {
      * @return 包含 applied, interviewInvites, confirmedRecords, submittedReflections 的Map
      */
     Map<String, Object> getStudentHomeStats(@Param("studentId") Long studentId);
+
+    /**
+     * 批量统计各职位的申请人数
+     * @param positionIds 职位ID列表
+     * @return 每行包含 position_id 和 cnt
+     */
+    List<Map<String, Object>> countByPositionIds(@Param("positionIds") List<Long> positionIds);
 }

@@ -20,6 +20,7 @@ public class InterviewInvitation {
     private String contactPerson;
     private String contactPhone;
     private String website;
+    private String companyAddress;
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
 }

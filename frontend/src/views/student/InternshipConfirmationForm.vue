@@ -157,27 +157,26 @@
     </div>
 
     <!-- 确认记录列表 -->
-    <el-card class="history-card" shadow="never">
-      <template #header>
-        <div class="card-header">
-          <div class="header-left">
-            <el-icon class="header-icon"><Document /></el-icon>
-            <span>确认记录</span>
-          </div>
-          <el-tag type="info" size="small">共 {{ historyList.length }} 条</el-tag>
+    <div class="history-section">
+      <div class="history-header">
+        <div class="header-left">
+          <el-icon class="header-icon"><Document /></el-icon>
+          <span>确认记录</span>
         </div>
-      </template>
-
-      <!-- 拒绝原因提示 -->
-      <div v-if="rejectionReason" class="rejection-alert">
-        <el-alert type="warning" :closable="false" show-icon>
-          <template #title>
-            <span>企业撤回原因：{{ rejectionReason }}</span>
-          </template>
-        </el-alert>
+        <el-tag type="info" size="small">共 {{ historyList.length }} 条</el-tag>
       </div>
 
-      <div v-if="historyList.length > 0" class="history-list">
+      <div class="history-body">
+        <!-- 拒绝原因提示 -->
+        <div v-if="rejectionReason" class="rejection-alert">
+          <el-alert type="warning" :closable="false" show-icon>
+            <template #title>
+              <span>企业撤回原因：{{ rejectionReason }}</span>
+            </template>
+          </el-alert>
+        </div>
+
+        <div v-if="historyList.length > 0" class="history-list">
         <div v-for="item in historyList" :key="item.id" class="history-item">
           <div class="history-main">
             <div class="history-company">{{ item.companyName || '未指定' }}</div>
@@ -235,11 +234,12 @@
           </div>
         </div>
       </div>
-      <div v-else class="empty-history">
-        <el-icon class="empty-icon"><Document /></el-icon>
-        <div class="empty-text">暂无确认记录</div>
+        <div v-else class="empty-history">
+          <el-icon class="empty-icon"><Document /></el-icon>
+          <div class="empty-text">暂无确认记录</div>
+        </div>
       </div>
-    </el-card>
+    </div>
 
     <!-- 成功提示对话框 -->
     <el-dialog
@@ -468,6 +468,7 @@
           <div class="upload-items">
             <div class="upload-item">
               <label>个人申请书<span class="required">*</span></label>
+              <p class="upload-hint">手写或打印一份说明，内容包括：姓名、学号、当前实习单位、申请变更的原因，签字后拍照或扫描上传</p>
               <el-upload
                 :action="uploadUrl"
                 :headers="uploadHeaders"
@@ -478,6 +479,7 @@
               >
                 <el-button type="primary" plain>上传个人申请书</el-button>
               </el-upload>
+              <span class="upload-format-hint">支持 jpg、png、pdf 格式</span>
               <div v-if="unitChangeForm.materials?.['个人申请书']" class="uploaded-file">
                 <img :src="unitChangeForm.materials['个人申请书']" class="preview-image" @click="previewImage(unitChangeForm.materials['个人申请书'])" />
               </div>
@@ -502,7 +504,6 @@ import {
   OfficeBuilding,
   Clock,
   ChatDotRound,
-  DocumentChecked,
   Document,
   InfoFilled,
   CircleCheckFilled,
@@ -536,7 +537,6 @@ const viewingRecord = ref<any>(null)
 
 // 编辑被拒绝的记录模式
 const editingRejectedRecord = ref(false)
-const rejectedRecordData = ref<any>(null)
 
 // 撤回相关状态
 const recallDialogVisible = ref(false)
@@ -572,12 +572,9 @@ const unitChangeForm = ref({
   major: '',
   className: '',
   oldCompany: '',
-  newCompany: '',
   reason: '',
   materials: {
-    '家庭证明': '',
-    '新单位接收证明': '',
-    '调动申请书': ''
+    '个人申请书': ''
   },
   rejectReason: ''
 })
@@ -639,7 +636,7 @@ const fetchApprovedInterviews = async () => {
         positionName: item.positionName,
         companyId: item.companyId,
         companyPhone: item.contactPhone || '',
-        companyAddress: item.interviewLocation || ''
+        companyAddress: item.companyAddress || ''
       }))
     }
   } catch (error) {
@@ -842,14 +839,9 @@ const fetchPendingConfirmation = async () => {
       }
 
       // 如果已有待确认或已确认的记录，不允许再次填写
-      // 如果是已撤回（recallStatus=2），则允许重新填写
       if (confirmationStatus === 0 || confirmationStatus === 1) {
-        const isWithdrawn = historyList.value.length > 0 && historyList.value[0].recallStatus === 2
-        if (!isWithdrawn) {
-          hasPendingConfirmation.value = false
-          return
-        }
-        // 已撤回，继续显示表单（允许重新填写）
+        hasPendingConfirmation.value = false
+        return
       }
 
       // 只有状态为 0（无offer）、5（已中断）或 status=2（已拒绝）时才允许填写
@@ -931,8 +923,9 @@ const fetchUnitChangeStatus = async () => {
 const canApplyUnitChange = (item) => {
   // 已中断状态不允许申请单位变更
   if (item.internshipStatus === 5) return false
-  // 必须是已确认状态(status=1待确认 或 status=2已确定)且在应聘时间段内
-  if (item.status !== 1 && item.status !== 2) return false
+  // 必须是已确认状态且实习状态为已确定或实习中
+  if (item.status !== 1) return false
+  if (item.internshipStatus !== 2 && item.internshipStatus !== 3) return false
   // 需要在应聘时间段内
   if (applicationPeriod.value.applicationStartTime && applicationPeriod.value.applicationEndTime) {
     if (!isWithinApplicationPeriod(applicationPeriod.value.applicationStartTime, applicationPeriod.value.applicationEndTime)) {
@@ -946,7 +939,7 @@ const canApplyUnitChange = (item) => {
 const openUnitChangeDialog = (isReapply = false) => {
   // 填充学生信息
   const user = authStore.user
-  const historyRecord = historyList.value.find(item => item.status === 1 || item.status === 2)
+  const historyRecord = historyList.value.find(item => item.status === 1)
 
   unitChangeForm.value = {
     studentName: user?.name || '',
@@ -956,12 +949,9 @@ const openUnitChangeDialog = (isReapply = false) => {
     major: user?.major || '',
     className: user?.class || '',
     oldCompany: historyRecord?.companyName || '',
-    newCompany: '',
     reason: '',
     materials: {
-      '家庭证明': '',
-      '新单位接收证明': '',
-      '调动申请书': ''
+      '个人申请书': ''
     },
     rejectReason: ''
   }
@@ -969,7 +959,6 @@ const openUnitChangeDialog = (isReapply = false) => {
   // 如果是再次申请，回显数据
   if (isReapply && unitChangeStatus.value.application) {
     const app = unitChangeStatus.value.application
-    unitChangeForm.value.newCompany = app.newCompany || ''
     unitChangeForm.value.reason = app.reason || ''
     if (app.materials) {
       unitChangeForm.value.materials = app.materials
@@ -1109,8 +1098,11 @@ const closeViewing = () => {
 
 // 编辑被拒绝的记录（可修改后重新提交）
 const editRejectedRecord = (record: any) => {
-  rejectedRecordData.value = { ...record }
   rejectionReason.value = record.rejectionReason || ''
+
+  // 设置下拉框选中值
+  selectedCompanyId.value = record.companyId || null
+  selectedPositionId.value = record.positionId || null
 
   // 将被拒绝记录的数据填充到表单中
   confirmationData.studentName = record.studentName || ''
@@ -1132,14 +1124,6 @@ const editRejectedRecord = (record: any) => {
 
   editingRejectedRecord.value = true
   hasPendingConfirmation.value = true
-}
-
-// 关闭编辑被拒绝记录模式
-const closeEditingRejected = () => {
-  editingRejectedRecord.value = false
-  rejectedRecordData.value = null
-  rejectionReason.value = ''
-  hasPendingConfirmation.value = false
 }
 
 // 提交确认
@@ -1392,10 +1376,6 @@ onUnmounted(() => {
   width: 100%;
 }
 
-.info-value.highlight {
-  color: #409eff;
-}
-
 .info-value.date {
   color: #1e293b;
 }
@@ -1451,36 +1431,56 @@ onUnmounted(() => {
   background: linear-gradient(135deg, #337ECC 0%, #5DAF34 100%);
 }
 
-/* 历史记录卡片 */
-.history-card {
+/* 历史记录区域 */
+.history-section {
+  background: white;
   border-radius: 12px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+  overflow: hidden;
 }
 
-.history-card :deep(.el-card__header) {
+.history-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
   background: linear-gradient(135deg, #fafbfc 0%, #f5f7fa 100%);
-  border-bottom: none;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.history-header .header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 500;
+  color: #1e293b;
+}
+
+.history-body {
   padding: 16px 20px;
 }
 
 .history-list {
   display: flex;
   flex-direction: column;
-  gap: 12px;
 }
 
 .history-item {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 16px;
-  background: #f8fafc;
-  border-radius: 8px;
-  transition: all 0.3s ease;
+  padding: 14px 0;
+  border-bottom: 1px solid #f1f5f9;
+  transition: background 0.2s ease;
+}
+
+.history-item:last-child {
+  border-bottom: none;
 }
 
 .history-item:hover {
-  background: #f0f9ff;
-  transform: translateY(-2px);
+  background: #fafbfc;
 }
 
 .history-main {
@@ -1798,6 +1798,22 @@ onUnmounted(() => {
   font-size: 14px;
   font-weight: 500;
   color: #333;
+}
+
+.upload-hint {
+  font-size: 13px;
+  color: #909399;
+  line-height: 1.6;
+  margin: 0;
+  padding: 8px 12px;
+  background: #f4f4f5;
+  border-radius: 6px;
+  border-left: 3px solid #409eff;
+}
+
+.upload-format-hint {
+  font-size: 12px;
+  color: #c0c4cc;
 }
 
 .required {

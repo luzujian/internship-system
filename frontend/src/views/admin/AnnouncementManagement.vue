@@ -21,13 +21,12 @@
             v-model="searchForm.title"
             placeholder="请输入公告标题"
             clearable
-            style="width: 400px;"
             @keyup.enter="handleSearch"
           ></el-input>
         </div>
         <div class="search-item status-item">
           <label class="search-label">状态</label>
-          <el-select v-model="searchForm.status" placeholder="请选择状态" clearable style="width: 160px;">
+          <el-select v-model="searchForm.status" placeholder="请选择状态" clearable>
             <el-option label="全部" value=""></el-option>
             <el-option label="草稿" value="DRAFT"></el-option>
             <el-option label="已发布" value="PUBLISHED"></el-option>
@@ -65,13 +64,7 @@
       >
         <el-table-column type="selection" width="55" align="center"></el-table-column>
         <el-table-column prop="title" label="标题" min-width="200" show-overflow-tooltip></el-table-column>
-        <el-table-column prop="priority" label="优先级" width="100" align="center">
-          <template #default="scope">
-            <el-tag v-if="scope.row.priority === 'important'" type="warning" size="small">重要</el-tag>
-            <el-tag v-else type="info" size="small">普通</el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column prop="status" label="状态" width="100" align="center">
+<el-table-column prop="status" label="状态" width="100" align="center">
           <template #default="scope">
             <el-tag :type="getTagType(scope.row)" size="small" class="status-tag">
               {{ getStatusText(scope.row) }}
@@ -96,6 +89,12 @@
         </el-table-column>
         <el-table-column prop="expireDate" label="过期日期" width="170" align="center">
           <template #default="scope">{{ formatDate(scope.row.expireDate || scope.row.validTo) }}</template>
+        </el-table-column>
+        <el-table-column label="是否已读" width="90" align="center">
+          <template #default="scope">
+            <el-tag v-if="scope.row.isRead" type="success" size="small">已读</el-tag>
+            <el-tag v-else type="info" size="small">未读</el-tag>
+          </template>
         </el-table-column>
         <el-table-column prop="readCount" label="阅读量" width="80" align="center"></el-table-column>
         <el-table-column label="操作" width="240" fixed="right" align="center">
@@ -201,12 +200,6 @@
             clearable
           >
             <el-option v-for="user in userList" :key="user.id" :label="user.name" :value="user.name"></el-option>
-          </el-select>
-        </el-form-item>
-        <el-form-item label="优先级">
-          <el-select v-model="formData.priority" placeholder="请选择优先级">
-            <el-option label="普通" value="normal"></el-option>
-            <el-option label="重要" value="important"></el-option>
           </el-select>
         </el-form-item>
         <el-form-item label="目标群体">
@@ -354,7 +347,7 @@
           </div>
         </div>
         <div class="import-tip">
-          提示：请确保Excel文件包含标题、内容、发布人、发布人身份、状态、优先级、目标群体、目标值等必要字段
+          提示：请确保Excel文件包含标题、内容、发布人、发布人身份、状态、目标群体、目标值等必要字段
         </div>
       </div>
       <template #footer>
@@ -1514,6 +1507,16 @@ const downloadTemplate = async (): Promise<void> => {
   margin: 0 !important;
 }
 
+/* 搜索项靠左 */
+.search-row > .search-item {
+  flex-shrink: 0;
+}
+
+/* 发布公告、批量删除、刷新列表按钮靠右 */
+.search-row > .action-btn.primary {
+  margin-left: auto !important;
+}
+
 .search-item {
   display: flex;
   align-items: center;
@@ -1521,7 +1524,7 @@ const downloadTemplate = async (): Promise<void> => {
 }
 
 .search-item.status-item {
-  transform: translateX(-20%);
+  /* transform: translateX(-20%); */
 }
 
 .search-label {
@@ -1536,10 +1539,15 @@ const downloadTemplate = async (): Promise<void> => {
 
 .search-item .el-input,
 .search-item .el-select {
-  width: auto;
+  width: 280px;
   display: flex;
   vertical-align: middle;
   height: 32px;
+}
+
+/* 状态下拉框内部包装器宽度 */
+.search-item :deep(.el-select .el-select__wrapper) {
+  width: 280px;
 }
 
 .search-item .el-input__wrapper,

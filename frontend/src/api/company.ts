@@ -208,6 +208,20 @@ const companyService = {
    */
   updateCompanyStatus: (id: number, status: number) => {
     return request.put(`/admin/companies/${id}/status`, { status: String(status) })
+  },
+
+  /**
+   * 获取企业标签列表（教师端）
+   */
+  getCompanyTags: () => {
+    return request.get<string[]>('/teacher/companies/tags')
+  },
+
+  /**
+   * 获取企业标签列表（管理员端）
+   */
+  getAdminCompanyTags: () => {
+    return request.get<string[]>('/admin/companies/tags')
   }
 }
 
