@@ -258,17 +258,9 @@ public class InternshipApplicationController {
                 studentInternshipStatusService.insert(internshipStatus);
                 log.info("创建实习状态记录成功，学生ID: {}", application.getStudentId());
 
-                // 更新岗位的 recruited_count 和 remaining_quota
+                // 数据库侧重新计算 recruited_count 和 remaining_quota（原子操作）
                 if (application.getPositionId() != null) {
-                    Position position = positionMapper.findById(application.getPositionId());
-                    if (position != null) {
-                        int currentRecruited = position.getRecruitedCount() != null ? position.getRecruitedCount() : 0;
-                        int currentPlanned = position.getPlannedRecruit() != null ? position.getPlannedRecruit() : 0;
-                        position.setRecruitedCount(currentRecruited + 1);
-                        position.setRemainingQuota(Math.max(0, currentPlanned - currentRecruited - 1));
-                        positionService.update(position);
-                        log.info("更新岗位已招人数: {}, 剩余名额: {}", position.getRecruitedCount(), position.getRemainingQuota());
-                    }
+                    positionService.updateRecruitedCount(application.getPositionId());
                 }
             }
 

@@ -4,6 +4,7 @@ import com.gdmu.entity.PositionFavorite;
 import com.gdmu.mapper.PositionFavoriteMapper;
 import com.gdmu.service.PositionFavoriteService;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -28,7 +29,11 @@ public class PositionFavoriteServiceImpl implements PositionFavoriteService {
         favorite.setPositionId(positionId);
         favorite.setStudentId(studentId);
         favorite.setCreateTime(new Date());
-        favoriteMapper.insert(favorite);
+        try {
+            favoriteMapper.insert(favorite);
+        } catch (DuplicateKeyException e) {
+            // 并发场景下已存在记录，视为成功（幂等）
+        }
     }
 
     @Override

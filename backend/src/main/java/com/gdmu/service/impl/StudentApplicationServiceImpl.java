@@ -217,7 +217,8 @@ public class StudentApplicationServiceImpl implements StudentApplicationService 
             throw new BusinessException("申请ID无效");
         }
 
-        StudentApplication application = studentApplicationMapper.findById(id);
+        // SELECT ... FOR UPDATE 防止并发审批
+        StudentApplication application = studentApplicationMapper.findByIdForUpdate(id);
         if (application == null) {
             throw new BusinessException("申请不存在");
         }
@@ -234,6 +235,9 @@ public class StudentApplicationServiceImpl implements StudentApplicationService 
         application.setReviewTime(new Date());
 
         int result = studentApplicationMapper.update(application);
+        if (result == 0) {
+            throw new BusinessException("该申请已被其他审核人处理，请刷新页面");
+        }
 
         // 如果是单位变更申请，需要处理学生实习状态
         if ("unitChange".equals(application.getApplicationType())) {
@@ -322,7 +326,8 @@ public class StudentApplicationServiceImpl implements StudentApplicationService 
             throw new BusinessException("驳回理由不能为空");
         }
         
-        StudentApplication application = studentApplicationMapper.findById(id);
+        // SELECT ... FOR UPDATE 防止并发审批
+        StudentApplication application = studentApplicationMapper.findByIdForUpdate(id);
         if (application == null) {
             throw new BusinessException("申请不存在");
         }
@@ -338,8 +343,11 @@ public class StudentApplicationServiceImpl implements StudentApplicationService 
         application.setReviewerId(reviewerId);
         application.setReviewTime(new Date());
         application.setRejectReason(rejectReason);
-        
+
         int result = studentApplicationMapper.update(application);
+        if (result == 0) {
+            throw new BusinessException("该申请已被其他审核人处理，请刷新页面");
+        }
         log.info("学生申请驳回成功，ID: {}", id);
         return result;
     }

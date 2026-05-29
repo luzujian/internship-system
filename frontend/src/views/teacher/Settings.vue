@@ -200,26 +200,39 @@ const showOperationFeedback = (message: string, type: 'success' | 'error' = 'suc
 // 日期校验
 const validateDates = (): string | null => {
   const s = internshipSettings.value
-  // 应聘开始 < 应聘截止
-  if (s.applicationStartTime && s.applicationEndTime && s.applicationStartTime > s.applicationEndTime) {
-    return '实习应聘开始时间不能晚于应聘截止时间'
+
+  // 基础格式校验：确保日期不为空
+  if (!s.applicationStartTime) return '请设置应聘开始时间'
+  if (!s.applicationEndTime) return '请设置应聘截止时间'
+  if (!s.startDate) return '请设置实习开始日期'
+  if (!s.endDate) return '请设置实习结束日期'
+
+  // 日期顺序校验
+  // 1. 应聘开始 < 应聘截止
+  if (s.applicationStartTime > s.applicationEndTime) {
+    return `应聘开始时间（${s.applicationStartTime}）不能晚于应聘截止时间（${s.applicationEndTime}）`
   }
-  // 应聘截止 < 确认截止
-  if (s.applicationEndTime && s.companyConfirmationDeadline && s.applicationEndTime > s.companyConfirmationDeadline) {
-    return '实习单位确认截止日期不应早于应聘截止时间'
+
+  // 2. 应聘截止 < 确认截止（如果设置了确认截止）
+  if (s.companyConfirmationDeadline && s.applicationEndTime > s.companyConfirmationDeadline) {
+    return `应聘截止时间（${s.applicationEndTime}）不能晚于单位确认截止日期（${s.companyConfirmationDeadline}）`
   }
-  // 确认截止 < 实习开始
-  if (s.companyConfirmationDeadline && s.startDate && s.companyConfirmationDeadline > s.startDate) {
-    return '实习单位确认截止日期不应晚于实习开始日期'
+
+  // 3. 确认截止 < 实习开始（如果设置了确认截止）
+  if (s.companyConfirmationDeadline && s.companyConfirmationDeadline > s.startDate) {
+    return `单位确认截止日期（${s.companyConfirmationDeadline}）不能晚于实习开始日期（${s.startDate}）`
   }
-  // 实习开始 < 实习结束
-  if (s.startDate && s.endDate && s.startDate > s.endDate) {
-    return '实习开始日期不能晚于实习结束日期'
+
+  // 4. 实习开始 < 实习结束
+  if (s.startDate > s.endDate) {
+    return `实习开始日期（${s.startDate}）不能晚于实习结束日期（${s.endDate}）`
   }
-  // 周期范围
-  if (s.reportCycle != null && (s.reportCycle < 1 || s.reportCycle > 90)) {
-    return '实习心得提交周期应在1-90天之间'
+
+  // 4. 延迟申请截止应在实习结束前（如果设置了）
+  if (s.delayApplicationDeadline && s.delayApplicationDeadline > s.endDate) {
+    return `延迟实习申请截止日期（${s.delayApplicationDeadline}）不能晚于实习结束日期（${s.endDate}）`
   }
+
   return null
 }
 

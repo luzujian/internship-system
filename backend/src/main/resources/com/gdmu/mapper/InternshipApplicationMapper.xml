@@ -91,7 +91,8 @@
     </select>
     
     <update id="updateStatus">
-        update internship_application set status = #{status}, update_time = NOW() where id = #{id}
+        UPDATE internship_application SET status = #{status}, update_time = NOW()
+        WHERE id = #{id} AND status IN ('pending', 'interview')
     </update>
     
     <update id="updateViewed">

@@ -109,6 +109,12 @@
         GROUP BY position_id
     </select>
 
+    <!-- 统计学生对同一岗位的申请次数 -->
+    <select id="countByStudentAndPosition" resultType="int">
+        SELECT COUNT(*) FROM student_job_application
+        WHERE student_id = #{studentId} AND position_id = #{positionId}
+    </select>
+
     <!-- 获取学生首页统计数据（聚合查询，单次DB访问代替原来的4次独立查询） -->
     <select id="getStudentHomeStats" resultType="map">
         SELECT

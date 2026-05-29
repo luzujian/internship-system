@@ -1,7 +1,11 @@
 package com.gdmu.service.impl;
 
 import com.gdmu.exception.BusinessException;
+import com.gdmu.mapper.CounselorCategoryWeightMapper;
+import com.gdmu.mapper.CounselorScoringRuleMapper;
 import com.gdmu.mapper.TeacherUserMapper;
+import com.gdmu.entity.CounselorCategoryWeight;
+import com.gdmu.entity.CounselorScoringRule;
 import com.gdmu.entity.PageResult;
 import com.gdmu.entity.Department;
 import com.gdmu.entity.TeacherUser;
@@ -34,6 +38,12 @@ public class TeacherUserServiceImpl implements TeacherUserService {
 
     @Autowired
     private DepartmentService departmentService;
+
+    @Autowired
+    private CounselorScoringRuleMapper counselorScoringRuleMapper;
+
+    @Autowired
+    private CounselorCategoryWeightMapper counselorCategoryWeightMapper;
 
     @Override
     public TeacherUser findByTeacherUserId(String teacherUserId) {
@@ -87,6 +97,11 @@ public class TeacherUserServiceImpl implements TeacherUserService {
         teacherUser.setRole(role);
         
         int result = teacherUserMapper.insert(teacherUser);
+        log.info("教师INSERT完成，ID: {}, 教师编号: {}", teacherUser.getId(), teacherUser.getTeacherUserId());
+
+        // 为新教师初始化默认评分规则
+        initDefaultScoringRules(teacherUser.getId());
+
         log.info("教师用户注册成功，教师编号: {}, 类型: {}, 角色: {}", teacherUser.getTeacherUserId(), teacherUser.getTeacherType(), role);
         return result;
     }
@@ -473,5 +488,79 @@ public class TeacherUserServiceImpl implements TeacherUserService {
             throw new BusinessException("教师类型不能为空");
         }
         return teacherUserMapper.findByTeacherType(teacherType);
+    }
+
+    /**
+     * 为新教师初始化默认评分规则（3个维度 × 5个等级 = 15条规则）
+     * 维度：实习态度(40%)、专业能力(35%)、学习成长(25%)
+     */
+    private void initDefaultScoringRules(Long counselorId) {
+        log.info("开始初始化默认评分规则，教师ID: {}", counselorId);
+        if (counselorId == null) {
+            log.warn("教师ID为空，跳过评分规则初始化");
+            return;
+        }
+        // 维度定义：code, name, weight
+        record Dim(String code, String name, int weight) {}
+        List<Dim> dimensions = List.of(
+            new Dim("attitude", "实习态度", 40),
+            new Dim("professional", "专业能力", 35),
+            new Dim("growth", "学习成长", 25)
+        );
+
+        // 等级定义：name, min, max
+        record Level(String name, int min, int max) {}
+        List<Level> levels = List.of(
+            new Level("优秀", 90, 100),
+            new Level("良好", 80, 89),
+            new Level("中等", 70, 79),
+            new Level("及格", 60, 69),
+            new Level("不及格", 0, 59)
+        );
+
+        // 构建评分规则
+        List<CounselorScoringRule> rules = new ArrayList<>();
+        for (Dim dim : dimensions) {
+            for (int i = 0; i < levels.size(); i++) {
+                Level lv = levels.get(i);
+                CounselorScoringRule rule = new CounselorScoringRule();
+                rule.setCounselorId(counselorId);
+                rule.setRuleName(lv.name());
+                rule.setRuleCode(dim.code() + "_" + lv.name());
+                rule.setCategory(dim.code());
+                rule.setWeight(20);
+                rule.setMinScore(lv.min());
+                rule.setMaxScore(lv.max());
+                rule.setSortOrder(i);
+                rule.setStatus(1);
+                rule.setDeleted(0);
+                rule.setCreateTime(new Date());
+                rule.setUpdateTime(new Date());
+                rules.add(rule);
+            }
+        }
+
+        // 构建维度权重
+        List<CounselorCategoryWeight> weights = new ArrayList<>();
+        for (Dim dim : dimensions) {
+            CounselorCategoryWeight w = new CounselorCategoryWeight();
+            w.setCounselorId(counselorId);
+            w.setCategoryCode(dim.code());
+            w.setCategoryName(dim.name());
+            w.setWeight(dim.weight());
+            w.setStatus(1);
+            w.setDeleted(0);
+            w.setCreateTime(new Date());
+            w.setUpdateTime(new Date());
+            weights.add(w);
+        }
+
+        try {
+            counselorScoringRuleMapper.batchInsert(rules);
+            counselorCategoryWeightMapper.batchInsert(weights);
+            log.info("已为教师 {} 初始化默认评分规则，共 {} 条规则，{} 个维度", counselorId, rules.size(), dimensions.size());
+        } catch (Exception e) {
+            log.warn("初始化默认评分规则失败，教师ID: {}，原因: {}", counselorId, e.getMessage());
+        }
     }
 }

@@ -28,4 +28,12 @@ public interface StudentJobApplicationMapper {
      * @return 每行包含 position_id 和 cnt
      */
     List<Map<String, Object>> countByPositionIds(@Param("positionIds") List<Long> positionIds);
+
+    /**
+     * 统计学生对同一岗位的申请次数（防重复申请）
+     * @param studentId 学生ID
+     * @param positionId 岗位ID
+     * @return 申请次数
+     */
+    int countByStudentAndPosition(@Param("studentId") Long studentId, @Param("positionId") Long positionId);
 }
