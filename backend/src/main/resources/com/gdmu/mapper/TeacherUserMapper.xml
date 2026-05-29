@@ -7,7 +7,7 @@
     <!-- 根据教师编号查询教师用户 - 已重命名为findByTeacherUserId -->
     
     <!-- 插入教师用户 -->
-    <insert id="insert" parameterType="com.gdmu.entity.TeacherUser">
+    <insert id="insert" parameterType="com.gdmu.entity.TeacherUser" useGeneratedKeys="true" keyProperty="id">
         insert into teacher_users (username, password, name, gender, create_time, update_time, teacher_user_id, department_id, division_id, teacher_type, phone)
         values (#{username}, #{password}, #{name}, #{gender}, #{createTime}, #{updateTime}, #{teacherUserId}, #{departmentId}, #{divisionId}, #{teacherType}, #{phone})
     </insert>

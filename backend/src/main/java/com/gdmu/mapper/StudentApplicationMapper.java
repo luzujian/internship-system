@@ -25,6 +25,13 @@ public interface StudentApplicationMapper {
      * @return 学生申请
      */
     StudentApplication findById(Long id);
+
+    /**
+     * 根据ID查询学生申请并加行锁（FOR UPDATE，防止并发审批）
+     * @param id 申请ID
+     * @return 学生申请
+     */
+    StudentApplication findByIdForUpdate(Long id);
     
     /**
      * 根据学生ID查询申请列表

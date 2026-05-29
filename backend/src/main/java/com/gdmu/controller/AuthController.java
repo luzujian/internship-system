@@ -41,11 +41,12 @@ import org.springframework.web.bind.annotation.*;
 
 import jakarta.servlet.http.HttpServletRequest;
 
+import com.gdmu.service.LoginAttemptService;
+
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 import lombok.extern.slf4j.Slf4j;
@@ -99,26 +100,8 @@ public class AuthController {
     @Autowired
     private SmsService smsService;
 
-    private static final Map<String, LoginAttemptInfo> LOGIN_ATTEMPT_CACHE = new ConcurrentHashMap<>();
-    
-    private static class LoginAttemptInfo {
-        private int attemptCount;
-        private long lockUntil;
-        
-        public LoginAttemptInfo() {
-            this.attemptCount = 0;
-            this.lockUntil = 0;
-        }
-        
-        public boolean isLocked() {
-            return System.currentTimeMillis() < lockUntil;
-        }
-        
-        public long getRemainingLockTime() {
-            long remaining = lockUntil - System.currentTimeMillis();
-            return remaining > 0 ? remaining / 1000 : 0;
-        }
-    }
+    @Autowired
+    private LoginAttemptService loginAttemptService;
 
     /**
      * 获取密码修改规则（公开接口）
@@ -136,58 +119,45 @@ public class AuthController {
     public Result login(@RequestBody Map<String, Object> loginRequest, HttpServletRequest request) {
         String username = (String) loginRequest.get("username");
         String password = (String) loginRequest.get("password");
-        
-        log.info("用户登录请求: username={}", username);
-        
+
+        log.debug("用户登录请求: username={}", username);
+
         if (username == null || username.isEmpty()) {
             return Result.error("用户名不能为空");
         }
-        
         if (password == null || password.isEmpty()) {
             return Result.error("密码不能为空");
         }
-        
-        String cacheKey = username;
-        LoginAttemptInfo attemptInfo = LOGIN_ATTEMPT_CACHE.get(cacheKey);
-        
-        if (attemptInfo == null) {
-            attemptInfo = new LoginAttemptInfo();
-            LOGIN_ATTEMPT_CACHE.put(cacheKey, attemptInfo);
-        }
-        
-        if (attemptInfo.isLocked()) {
-            long remainingTime = attemptInfo.getRemainingLockTime();
+
+        // 快速检查是否已被锁定（无锁，仅读取）
+        if (loginAttemptService.isLocked(username)) {
+            long remainingTime = loginAttemptService.getRemainingLockTime(username);
             log.warn("用户账号已被锁定: username={}, 剩余锁定时间={}秒", username, remainingTime);
             return Result.error("账号已被锁定，请" + remainingTime + "秒后再试");
         }
-        
+
         try {
             Map<String, Object> result = new HashMap<>();
-            
+
             TeacherUser teacher = teacherUserService.findByTeacherUserId(username);
             if (teacher != null) {
                 result = handleTeacherLogin(username, password, request);
             } else {
                 result = handleOtherUserLogin(username, password, request);
             }
-            
-            LOGIN_ATTEMPT_CACHE.remove(cacheKey);
+
+            // 登录成功：清除失败计数（原子操作）
+            loginAttemptService.clearFailures(username);
             log.info("用户登录成功，清除登录失败记录: username={}", username);
-            
+
             return Result.success(result);
         } catch (AuthenticationException e) {
             log.error("用户登录失败: {}, 错误信息: {}", username, e.getMessage());
-            
-            attemptInfo.attemptCount++;
-            
-            int maxAttempts = SystemSettingsConfig.getMaxLoginAttempts();
-            int lockTime = SystemSettingsConfig.getLockTime();
-            
-            if (attemptInfo.attemptCount >= maxAttempts) {
-                attemptInfo.lockUntil = System.currentTimeMillis() + (lockTime * 60 * 1000L);
-                log.warn("用户账号已被锁定: username={}, 锁定时间={}分钟", username, lockTime);
-            }
-            
+
+            // 原子递增失败计数（Redis INCR 或 synchronized 递增，仅保护计数器）
+            int currentCount = loginAttemptService.recordFailure(username);
+
+            // 记录登录失败日志
             try {
                 LoginLog loginLog = new LoginLog();
                 loginLog.setUserId(username);
@@ -197,23 +167,23 @@ public class AuthController {
                 loginLog.setIpAddress(request.getRemoteAddr());
                 loginLog.setDeviceInfo(request.getHeader("User-Agent"));
                 loginLog.setLoginStatus("FAILURE");
-                
                 loginLogMapper.insert(loginLog);
-                log.info("用户登录失败日志记录成功: {}", loginLog);
             } catch (Exception ex) {
                 log.error("记录用户登录失败日志失败: {}", ex.getMessage());
             }
-            
+
             String errorMessage = e.getMessage();
             if (errorMessage != null && errorMessage.contains("账号已被禁用")) {
                 return Result.error("您的账号已被禁用，请联系管理员");
             }
-            
-            if (attemptInfo.isLocked()) {
+
+            if (currentCount < 0 || loginAttemptService.isLocked(username)) {
+                int lockTime = SystemSettingsConfig.getLockTime();
                 return Result.error("登录失败次数过多，账号已被锁定" + lockTime + "分钟");
             }
-            
-            int remainingAttempts = maxAttempts - attemptInfo.attemptCount;
+
+            int maxAttempts = SystemSettingsConfig.getMaxLoginAttempts();
+            int remainingAttempts = maxAttempts - currentCount;
             return Result.error("用户名或密码错误，剩余尝试次数: " + remainingAttempts);
         } catch (Exception e) {
             log.error("登录过程中发生异常: {}", e.getMessage(), e);

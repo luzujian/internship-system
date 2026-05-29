@@ -207,7 +207,7 @@ public class TokenFilter extends OncePerRequestFilter implements ApplicationCont
 
     private boolean isUserDisabled(String username, String role) {
         try {
-            log.info("检查用户状态：username={}, role={}", username, role);
+            log.debug("检查用户状态：username={}, role={}", username, role);
             if (role != null && role.startsWith("ROLE_TEACHER")) {
                 TeacherUser teacherUser = getTeacherUserFromCacheOrDB(username);
                 boolean disabled = teacherUser != null && teacherUser.getStatus() != null && teacherUser.getStatus() == 0;
@@ -320,7 +320,7 @@ public class TokenFilter extends OncePerRequestFilter implements ApplicationCont
                             authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
                             SecurityContextHolder.getContext().setAuthentication(authentication);
 
-                            log.info("Security 上下文已设置，用户：{}, 角色：{}, 权限列表：{}",
+                            log.debug("Security 上下文已设置，用户：{}, 角色：{}, 权限列表：{}",
                                     username, role, userDetails.getAuthorities());
                         } catch (Exception e) {
                             log.error("加载用户信息失败：{}", e.getMessage());

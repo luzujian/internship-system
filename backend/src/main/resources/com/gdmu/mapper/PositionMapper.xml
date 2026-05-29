@@ -63,6 +63,11 @@
         select * from position where id = #{id}
     </select>
 
+    <!-- 根据 ID 查询岗位信息并加行锁（FOR UPDATE，防止并发超发） -->
+    <select id="findByIdForUpdate" resultMap="PositionResultMap">
+        select * from position where id = #{id} FOR UPDATE
+    </select>
+
     <!-- 更新岗位信息 -->
     <update id="update" parameterType="com.gdmu.entity.Position">
         update position

@@ -170,7 +170,7 @@ public class CompanyController {
             }
 
             company.setUpdateTime(new java.util.Date());
-            int result = companyUserService.update(company);
+            int result = companyUserService.updateProfile(company);
             if (result > 0) {
                 return Result.success("个人信息更新成功");
             }
@@ -738,6 +738,11 @@ public class CompanyController {
 
             String newStatus = statusData.get("status");
 
+            // 非 pending 状态不允许重复操作（面试结果由面试流程单独处理）
+            if (!"pending".equals(application.getStatus()) && !"interview".equals(application.getStatus())) {
+                return Result.error("该申请已处理，请勿重复操作");
+            }
+
             // 如果是面试通过或面试没通过，需要同时更新面试邀请状态和学生求职申请状态
             if ("interview_passed".equals(newStatus) || "interview_failed".equals(newStatus)) {
                 // 更新面试邀请状态
@@ -861,6 +866,12 @@ public class CompanyController {
             }
 
             String newStatus = statusData.get("status");
+
+            // 非 pending/interview 状态不允许重复操作
+            if (!"pending".equals(application.getStatus()) && !"interview".equals(application.getStatus())) {
+                return Result.error("该申请已处理，请勿重复操作");
+            }
+
             boolean result = internshipApplicationService.updateStatus(id, newStatus);
 
             if (!result) {
@@ -907,14 +918,9 @@ public class CompanyController {
                     log.info("创建实习状态记录成功，学生ID: {}", application.getStudentId());
                 }
 
-                // 更新岗位的 recruited_count 和 remaining_quota
+                // 数据库侧重新计算 recruited_count 和 remaining_quota（原子操作）
                 if (position != null) {
-                    int currentRecruited = position.getRecruitedCount() != null ? position.getRecruitedCount() : 0;
-                    int currentPlanned = position.getPlannedRecruit() != null ? position.getPlannedRecruit() : 0;
-                    position.setRecruitedCount(currentRecruited + 1);
-                    position.setRemainingQuota(Math.max(0, currentPlanned - currentRecruited - 1));
-                    positionService.update(position);
-                    log.info("更新岗位已招人数: {}, 剩余名额: {}", position.getRecruitedCount(), position.getRemainingQuota());
+                    positionService.updateRecruitedCount(position.getId());
                 }
             }
 

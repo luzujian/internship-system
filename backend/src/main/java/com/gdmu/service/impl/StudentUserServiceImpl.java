@@ -162,12 +162,19 @@ public class StudentUserServiceImpl implements StudentUserService {
             throw new BusinessException("用户不存在");
         }
 
-        // 如果提供了新密码，则进行加密
-        if (StringUtils.isNotBlank(studentUser.getPassword())) {
-            studentUser.setPassword(passwordEncoder.encode(studentUser.getPassword()));
+        // 密码处理：null/空 表示不修改密码，完全保留原值
+        String newPassword = studentUser.getPassword();
+        String existingPassword = existingUser.getPassword();
+        if (StringUtils.isBlank(newPassword)) {
+            // 没有提供新密码，不更新 password 字段（设 null 让 Mapper 跳过）
+            studentUser.setPassword(null);
+        } else if (!passwordEncoder.matches(newPassword, existingPassword)
+                && !newPassword.equals(existingPassword)) {
+            // 密码确实改变了，才编码
+            studentUser.setPassword(passwordEncoder.encode(newPassword));
         } else {
-            // 否则保持原密码
-            studentUser.setPassword(existingUser.getPassword());
+            // 密码未变，保留原值
+            studentUser.setPassword(existingPassword);
         }
 
         studentUser.setUpdateTime(new Date());
@@ -175,6 +182,17 @@ public class StudentUserServiceImpl implements StudentUserService {
         int result = studentUserMapper.update(studentUser);
         log.info("学生用户信息更新成功，用户ID: {}", studentUser.getId());
         return result;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public int updateProfile(StudentUser studentUser) {
+        // 此方法仅更新个人信息，明确不碰密码字段
+        studentUser.setPassword(null);
+        studentUser.setRole(null);
+        studentUser.setUsername(null);
+        studentUser.setUpdateTime(new Date());
+        return studentUserMapper.update(studentUser);
     }
 
     @Override

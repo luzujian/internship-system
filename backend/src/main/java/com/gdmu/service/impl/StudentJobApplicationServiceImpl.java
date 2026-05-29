@@ -3,12 +3,15 @@ package com.gdmu.service.impl;
 import com.gdmu.entity.CompanyUser;
 import com.gdmu.entity.InternshipApplicationEntity;
 import com.gdmu.entity.InternshipTimeSettings;
+import com.gdmu.entity.Position;
 import com.gdmu.entity.StudentJobApplication;
 import com.gdmu.exception.BusinessException;
 import com.gdmu.mapper.CompanyUserMapper;
 import com.gdmu.mapper.InternshipApplicationMapper;
+import com.gdmu.mapper.PositionMapper;
 import com.gdmu.mapper.StudentJobApplicationMapper;
 import com.gdmu.service.InternshipTimeSettingsService;
+import com.gdmu.service.PositionService;
 import com.gdmu.service.StudentJobApplicationService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -24,6 +27,12 @@ public class StudentJobApplicationServiceImpl implements StudentJobApplicationSe
 
     @Autowired
     private StudentJobApplicationMapper mapper;
+
+    @Autowired
+    private PositionMapper positionMapper;
+
+    @Autowired
+    private PositionService positionService;
 
     @Autowired
     private InternshipApplicationMapper internshipApplicationMapper;
@@ -92,6 +101,29 @@ public class StudentJobApplicationServiceImpl implements StudentJobApplicationSe
         if (application.getApplyDate() == null) {
             application.setApplyDate(new Date());
         }
+
+        // 校验岗位名额 (SELECT ... FOR UPDATE 防止并发超发)
+        if (application.getPositionId() != null) {
+            Position position = positionMapper.findByIdForUpdate(application.getPositionId());
+            if (position == null) {
+                throw new BusinessException("岗位不存在");
+            }
+            if (position.getRemainingQuota() == null || position.getRemainingQuota() <= 0) {
+                throw new BusinessException("该岗位已无名额");
+            }
+
+            // 检查重复申请
+            int existingCount = mapper.countByStudentAndPosition(application.getStudentId(), application.getPositionId());
+            if (existingCount > 0) {
+                throw new BusinessException("您已申请过该岗位");
+            }
+
+            // 扣减名额
+            position.setRemainingQuota(position.getRemainingQuota() - 1);
+            position.setRecruitedCount((position.getRecruitedCount() == null ? 0 : position.getRecruitedCount()) + 1);
+            positionService.update(position);
+        }
+
         int result = mapper.insert(application);
 
         // 同时创建 internship_application 记录，以便企业端可以查看
@@ -133,7 +165,19 @@ public class StudentJobApplicationServiceImpl implements StudentJobApplicationSe
         if (!existing.getStudentId().equals(studentId)) {
             throw new BusinessException("无权删除此申请");
         }
-        return mapper.deleteById(id);
+        int result = mapper.deleteById(id);
+
+        // 回退岗位名额（仅 pending 状态需要回退）
+        if (result > 0 && existing.getPositionId() != null && "pending".equals(existing.getStatus())) {
+            Position position = positionMapper.findByIdForUpdate(existing.getPositionId());
+            if (position != null) {
+                position.setRemainingQuota((position.getRemainingQuota() == null ? 0 : position.getRemainingQuota()) + 1);
+                position.setRecruitedCount(Math.max(0, (position.getRecruitedCount() == null ? 0 : position.getRecruitedCount()) - 1));
+                positionService.update(position);
+            }
+        }
+
+        return result;
     }
 
     @Override

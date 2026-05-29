@@ -37,6 +37,11 @@
     <select id="findById" resultMap="StudentApplicationResultMap">
         select * from student_application where id = #{id}
     </select>
+
+    <!-- 根据ID查询学生申请并加行锁（FOR UPDATE，防止并发审批） -->
+    <select id="findByIdForUpdate" resultMap="StudentApplicationResultMap">
+        select * from student_application where id = #{id} FOR UPDATE
+    </select>
     
     <!-- 根据学生ID查询申请列表 -->
     <select id="findByStudentId" resultMap="StudentApplicationResultMap">

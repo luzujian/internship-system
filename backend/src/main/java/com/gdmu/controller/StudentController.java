@@ -338,7 +338,7 @@ public class StudentController {
             if (body.containsKey("phone")) studentUser.setPhone((String) body.get("phone"));
             if (body.containsKey("email")) studentUser.setEmail((String) body.get("email"));
             if (body.containsKey("avatar")) studentUser.setAvatar((String) body.get("avatar"));
-            studentUserService.update(studentUser);
+            studentUserService.updateProfile(studentUser);
             return Result.success("更新成功");
         } catch (Exception e) {
             log.error("更新个人信息失败: {}", e.getMessage(), e);

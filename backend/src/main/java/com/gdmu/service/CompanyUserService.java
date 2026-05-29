@@ -15,7 +15,8 @@ public interface CompanyUserService {
     CompanyUser findByUsername(String username);
     
     int update(CompanyUser companyUser);
-    
+    int updateProfile(CompanyUser companyUser); // 仅更新资料，不碰密码
+
     int delete(Long id);
     
     List<CompanyUser> findAll();
@@ -68,4 +69,21 @@ public interface CompanyUserService {
      * 获取所有不重复的企业标签
      */
     List<String> getDistinctTags();
+
+    /**
+     * 批准企业注册申请（带事务，防并发重复审批）
+     * @param companyId 企业ID
+     * @param reviewerId 审核人ID
+     * @return 更新记录数
+     */
+    int approveQualification(Long companyId, Long reviewerId);
+
+    /**
+     * 驳回企业注册申请（带事务，防并发重复审批）
+     * @param companyId 企业ID
+     * @param reviewerId 审核人ID
+     * @param reason 驳回原因
+     * @return 更新记录数
+     */
+    int rejectQualification(Long companyId, Long reviewerId, String reason);
 }

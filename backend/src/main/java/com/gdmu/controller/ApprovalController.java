@@ -195,15 +195,7 @@ public class ApprovalController {
     public Result approveCompanyQualification(@PathVariable Long id, @RequestParam @NotNull Long reviewerId) {
         log.info("批准企业注册申请: id={}, reviewerId={}", id, reviewerId);
         try {
-            CompanyUser company = companyUserService.findById(id);
-            if (company == null) {
-                return Result.error("企业不存在");
-            }
-            company.setAuditStatus(1);
-            company.setStatus(1);
-            company.setAuditTime(new Date());
-            company.setReviewerId(reviewerId);
-            int result = companyUserService.update(company);
+            int result = companyUserService.approveQualification(id, reviewerId);
             if (result > 0) {
                 return Result.success("企业注册申请已通过");
             }
@@ -225,15 +217,7 @@ public class ApprovalController {
             @RequestParam @NotNull String rejectReason) {
         log.info("驳回企业注册申请: id={}, reviewerId={}, reason={}", id, reviewerId, rejectReason);
         try {
-            CompanyUser company = companyUserService.findById(id);
-            if (company == null) {
-                return Result.error("企业不存在");
-            }
-            company.setAuditStatus(2);
-            company.setAuditTime(new Date());
-            company.setReviewerId(reviewerId);
-            company.setAuditRemark(rejectReason);
-            int result = companyUserService.update(company);
+            int result = companyUserService.rejectQualification(id, reviewerId, rejectReason);
             if (result > 0) {
                 return Result.success("企业注册申请已驳回");
             }

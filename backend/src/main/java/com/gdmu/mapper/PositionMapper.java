@@ -25,7 +25,14 @@ public interface PositionMapper {
      * @return 岗位信息
      */
     Position findById(Long id);
-    
+
+    /**
+     * 根据ID查询岗位信息并加行锁（FOR UPDATE，防止并发超发）
+     * @param id 岗位ID
+     * @return 岗位信息
+     */
+    Position findByIdForUpdate(Long id);
+
     /**
      * 更新岗位信息
      * @param position 岗位信息

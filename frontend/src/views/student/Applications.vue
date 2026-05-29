@@ -11,17 +11,49 @@
     </div>
 
 
-<!-- 申请类型筛选标签 -->
-    <div class="type-filter-section">
-      <div class="type-filter-label">申请类型：</div>
-      <div class="type-filter-tabs">
-        <div
-          v-for="type in applicationTypes"
-          :key="type.value"
-          :class="['type-filter-tab', { active: selectedType === type.value }]"
-          @click="selectedType = type.value"
-        >
-          {{ type.label }}
+<!-- 折叠筛选区域 -->
+    <div class="filter-collapse-section">
+      <!-- 折叠头部：显示摘要和展开按钮 -->
+      <div class="filter-collapse-header" @click="toggleFilterCollapse">
+        <div class="filter-summary">
+          <el-icon class="filter-icon"><Filter /></el-icon>
+          <span class="filter-summary-text">{{ filterSummaryText }}</span>
+        </div>
+        <div class="filter-collapse-action">
+          <span class="filter-collapse-text">{{ filterCollapsed ? '展开筛选' : '收起筛选' }}</span>
+          <el-icon :class="['filter-collapse-arrow', { collapsed: filterCollapsed }]">
+            <ArrowUp />
+          </el-icon>
+        </div>
+      </div>
+
+      <!-- 折叠内容 -->
+      <div :class="['filter-collapse-content', { collapsed: filterCollapsed }]">
+        <!-- 申请类型筛选标签 -->
+        <div class="type-filter-section">
+          <div class="type-filter-label">申请类型：</div>
+          <div class="type-filter-tabs">
+            <div
+              v-for="type in applicationTypes"
+              :key="type.value"
+              :class="['type-filter-tab', { active: selectedType === type.value }]"
+              @click="selectedType = type.value"
+            >
+              {{ type.label }}
+            </div>
+          </div>
+        </div>
+
+        <!-- 状态筛选标签 -->
+        <div class="filter-section">
+          <div
+            v-for="filter in filters"
+            :key="filter.value"
+            :class="['filter-tab', { active: selectedFilter === filter.value }]"
+            @click="selectedFilter = filter.value"
+          >
+            {{ filter.label }}
+          </div>
         </div>
       </div>
     </div>
@@ -37,18 +69,6 @@
           <span class="tips-link" @click="goToInterview">面试管理</span>
           <span class="tips-text">页面查看</span>
         </div>
-      </div>
-    </div>
-
-    <!-- 状态筛选标签：模仿统计栏样式 -->
-    <div class="filter-section">
-      <div
-        v-for="filter in filters"
-        :key="filter.value"
-        :class="['filter-tab', { active: selectedFilter === filter.value }]"
-        @click="selectedFilter = filter.value"
-      >
-        {{ filter.label }}
       </div>
     </div>
 
@@ -431,6 +451,8 @@ import {
   Download,
   Medal,
   Loading,
+  Filter,
+  ArrowUp,
 } from "@element-plus/icons-vue";
 
 import request from '@/utils/request';
@@ -452,6 +474,31 @@ const showDetailDialog = ref(false);
 const selectedFilter = ref("all");
 const selectedType = ref("all");
 const currentApplication = ref(null);
+const filterCollapsed = ref(true); // 默认折叠
+
+// 切换筛选区域折叠状态
+const toggleFilterCollapse = () => {
+  filterCollapsed.value = !filterCollapsed.value;
+};
+
+// 筛选条件摘要文本
+const filterSummaryText = computed(() => {
+  const typeFilter = applicationTypes.find((t) => t.value === selectedType.value);
+  const statusFilter = filters.find((f) => f.value === selectedFilter.value);
+
+  const typeText = typeFilter ? typeFilter.label : '全部';
+  const statusText = statusFilter ? statusFilter.label : '全部';
+
+  if (selectedType.value === 'all' && selectedFilter.value === 'all') {
+    return '全部申请';
+  }
+
+  const parts = [];
+  if (selectedType.value !== 'all') parts.push(typeText);
+  if (selectedFilter.value !== 'all') parts.push(statusText);
+
+  return parts.join(' · ');
+});
 
 // 申请详情中的简历和证书数据（带缓存）
 const applicationMaterials = ref({
@@ -879,6 +926,80 @@ const fetchSystemInternshipTime = async () => {
 
 
 
+/* 折叠筛选区域样式 */
+.filter-collapse-section {
+  background: white;
+  border-radius: 12px;
+  margin-bottom: 12px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+  overflow: hidden;
+}
+
+.filter-collapse-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 24px;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.filter-collapse-header:hover {
+  background-color: #f8fafc;
+}
+
+.filter-summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.filter-icon {
+  font-size: 18px;
+  color: #409eff;
+}
+
+.filter-summary-text {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.filter-collapse-action {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.filter-collapse-text {
+  font-size: 13px;
+  color: #94a3b8;
+}
+
+.filter-collapse-arrow {
+  font-size: 16px;
+  color: #94a3b8;
+  transition: transform 0.3s ease;
+}
+
+.filter-collapse-arrow.collapsed {
+  transform: rotate(180deg);
+}
+
+.filter-collapse-content {
+  max-height: 200px;
+  overflow: hidden;
+  transition: max-height 0.3s ease, opacity 0.3s ease, padding 0.3s ease;
+  opacity: 1;
+  padding: 0 24px 16px;
+}
+
+.filter-collapse-content.collapsed {
+  max-height: 0;
+  opacity: 0;
+  padding: 0 24px;
+}
+
 /* 提示信息区域样式 */
 .tips-section {
   display: flex;
@@ -959,15 +1080,11 @@ const fetchSystemInternshipTime = async () => {
 
 /* 申请类型筛选标签 */
 .type-filter-section {
-  background: white;
-  border-radius: 12px;
-  padding: 16px 24px;
-  margin-bottom: 12px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
   display: flex;
   align-items: center;
   gap: 16px;
   flex-wrap: wrap;
+  margin-bottom: 12px;
 }
 
 .type-filter-label {
@@ -1009,11 +1126,6 @@ const fetchSystemInternshipTime = async () => {
 
 /* 筛选标签：模仿统计栏样式 */
 .filter-section {
-  background: white;
-  border-radius: 12px;
-  padding: 16px 24px;
-  margin-bottom: 24px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
@@ -1858,6 +1970,24 @@ const fetchSystemInternshipTime = async () => {
   .card-actions {
     width: 100%;
     justify-content: flex-end;
+  }
+
+  .filter-collapse-header {
+    padding: 12px 16px;
+  }
+
+  .filter-collapse-content {
+    padding: 0 16px 12px;
+  }
+
+  .filter-collapse-content.collapsed {
+    padding: 0 16px;
+  }
+
+  .type-filter-section {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
   }
 
   .filter-section {
