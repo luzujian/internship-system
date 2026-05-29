@@ -5,6 +5,7 @@ import com.gdmu.mapper.*;
 import com.gdmu.utils.MapUtils;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -12,6 +13,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.*;
+import java.util.concurrent.TimeUnit;
 
 /**
  * 数据看板控制器
@@ -41,6 +43,9 @@ public class DashboardController {
 
     @Autowired
     private StudentInternshipStatusMapper internshipStatusMapper;
+
+    @Autowired(required = false)
+    private RedisTemplate<String, Object> redisTemplate;
 
     /**
      * 获取系统统计数据（核心看板数据）
@@ -94,50 +99,37 @@ public class DashboardController {
     @GetMapping("/internship-stats")
     public Result getInternshipDashboardStats(@RequestParam(required = false) String startDate,
                                                @RequestParam(required = false) String endDate) {
+        // Redis 缓存，30 秒 TTL，防止高并发下重复聚合查询
+        String cacheKey = "dashboard:istats:" + (startDate != null ? startDate : "_") +
+            ":" + (endDate != null ? endDate : "_");
+        if (redisTemplate != null) {
+            try {
+                Object cached = redisTemplate.opsForValue().get(cacheKey);
+                if (cached instanceof Map) return Result.success(cached);
+            } catch (Exception ignored) {}
+        }
         try {
-            log.debug("开始获取实习状态看板统计数据，时间范围：{} - {}", startDate, endDate);
             Map<String, Object> result = new HashMap<>();
-
             Map<String, Object> dashboardStats = internshipStatusMapper.getDashboardStats(startDate, endDate);
-            if (dashboardStats == null) {
-                log.warn("看板统计数据为空，使用默认值");
-                dashboardStats = new HashMap<>();
-                dashboardStats.put("totalStudents", 0);
-                dashboardStats.put("confirmed", 0);
-                dashboardStats.put("offer", 0);
-                dashboardStats.put("noOffer", 0);
-                dashboardStats.put("delay", 0);
+            if (dashboardStats == null) { dashboardStats = new HashMap<>(); }
+            result.put("totalStudents", dashboardStats.getOrDefault("totalStudents", 0));
+            result.put("confirmed", dashboardStats.getOrDefault("confirmed", 0));
+            result.put("offer", dashboardStats.getOrDefault("offer", 0));
+            result.put("noOffer", dashboardStats.getOrDefault("noOffer", 0));
+            result.put("delay", dashboardStats.getOrDefault("delay", 0));
+            result.put("gradeData", internshipStatusMapper.getStatsByGrade(startDate, endDate));
+            result.put("majorData", internshipStatusMapper.getStatsByMajor(startDate, endDate));
+            result.put("classData", internshipStatusMapper.getStatsByClass(startDate, endDate));
+            if (redisTemplate != null) {
+                try { redisTemplate.opsForValue().set(cacheKey, result, 30, TimeUnit.SECONDS); } catch (Exception ignored) {}
             }
-
-            result.put("totalStudents", dashboardStats.get("totalStudents"));
-            result.put("confirmed", dashboardStats.get("confirmed"));
-            result.put("offer", dashboardStats.get("offer"));
-            result.put("noOffer", dashboardStats.get("noOffer"));
-            result.put("delay", dashboardStats.get("delay"));
-
-            List<Map<String, Object>> gradeData = internshipStatusMapper.getStatsByGrade(startDate, endDate);
-            result.put("gradeData", gradeData != null ? gradeData : new ArrayList<>());
-
-            List<Map<String, Object>> majorData = internshipStatusMapper.getStatsByMajor(startDate, endDate);
-            result.put("majorData", majorData != null ? majorData : new ArrayList<>());
-
-            List<Map<String, Object>> classData = internshipStatusMapper.getStatsByClass(startDate, endDate);
-            result.put("classData", classData != null ? classData : new ArrayList<>());
-
-            log.debug("实习状态看板统计数据获取成功");
             return Result.success(result);
         } catch (Exception e) {
             log.error("获取实习状态看板统计数据失败", e);
-            Map<String, Object> errorResult = new HashMap<>();
-            errorResult.put("totalStudents", 0);
-            errorResult.put("confirmed", 0);
-            errorResult.put("offer", 0);
-            errorResult.put("noOffer", 0);
-            errorResult.put("delay", 0);
-            errorResult.put("gradeData", new ArrayList<>());
-            errorResult.put("majorData", new ArrayList<>());
-            errorResult.put("classData", new ArrayList<>());
-            return Result.success(errorResult);
+            return Result.success(Map.of(
+                "totalStudents", 0, "confirmed", 0, "offer", 0, "noOffer", 0, "delay", 0,
+                "gradeData", List.of(), "majorData", List.of(), "classData", List.of()
+            ));
         }
     }
 }

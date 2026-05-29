@@ -100,12 +100,18 @@ public class CompanyUserServiceImpl implements CompanyUserService {
             }
         }
 
-        // 如果提供了新密码，则进行加密
-        if (StringUtils.isNotBlank(companyUser.getPassword())) {
-            // 加密后设置到 existingCompany
-            existingCompany.setPassword(passwordEncoder.encode(companyUser.getPassword()));
+        // 密码处理：null/空 表示不修改密码，完全保留原值
+        String newPassword = companyUser.getPassword();
+        String existingPassword = existingCompany.getPassword();
+        if (StringUtils.isBlank(newPassword)) {
+            // 没有提供新密码，不更新 password 字段（设 null 让 Mapper 跳过）
+            existingCompany.setPassword(null);
+        } else if (!passwordEncoder.matches(newPassword, existingPassword)
+                && !newPassword.equals(existingPassword)) {
+            // 密码确实改变了，才编码
+            existingCompany.setPassword(passwordEncoder.encode(newPassword));
         }
-        // 如果没有提供密码，则保持原密码（不需要任何操作）
+        // 如果密码未变，保留原值（existingCompany 已有原密码）
 
         // 如果提供了状态字段，则更新状态
         if (companyUser.getStatus() != null) {
@@ -195,7 +201,20 @@ public class CompanyUserServiceImpl implements CompanyUserService {
         log.info("企业信息更新成功，企业名称: {}", companyUser.getCompanyName());
         return result;
     }
-    
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public int updateProfile(CompanyUser companyUser) {
+        // 此方法仅更新企业资料，明确不碰密码
+        CompanyUser existing = companyUserMapper.findById(companyUser.getId());
+        if (existing == null) throw new BusinessException("企业不存在");
+        companyUser.setPassword(null);
+        companyUser.setUsername(null);
+        companyUser.setRole(null);
+        companyUser.setUpdateTime(new Date());
+        return companyUserMapper.update(companyUser);
+    }
+
     @Override
     @Transactional(rollbackFor = Exception.class)
     public int delete(Long id) {
@@ -676,5 +695,39 @@ public class CompanyUserServiceImpl implements CompanyUserService {
                 .distinct()
                 .sorted()
                 .collect(Collectors.toList());
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public int approveQualification(Long companyId, Long reviewerId) {
+        CompanyUser company = companyUserMapper.findById(companyId);
+        if (company == null) {
+            throw new BusinessException("企业不存在");
+        }
+        if (company.getAuditStatus() != null && company.getAuditStatus() != 0) {
+            throw new BusinessException("该企业已审核，无法重复操作");
+        }
+        company.setAuditStatus(1);
+        company.setStatus(1);
+        company.setAuditTime(new Date());
+        company.setReviewerId(reviewerId);
+        return companyUserMapper.update(company);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public int rejectQualification(Long companyId, Long reviewerId, String reason) {
+        CompanyUser company = companyUserMapper.findById(companyId);
+        if (company == null) {
+            throw new BusinessException("企业不存在");
+        }
+        if (company.getAuditStatus() != null && company.getAuditStatus() != 0) {
+            throw new BusinessException("该企业已审核，无法重复操作");
+        }
+        company.setAuditStatus(2);
+        company.setAuditTime(new Date());
+        company.setReviewerId(reviewerId);
+        company.setAuditRemark(reason);
+        return companyUserMapper.update(company);
     }
 }

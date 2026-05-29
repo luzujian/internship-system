@@ -113,7 +113,7 @@ public class ProblemFeedbackController {
     }
 
     @PostMapping
-    @PreAuthorize("hasAnyRole('ROLE_STUDENT', 'ROLE_TEACHER', 'ROLE_COMPANY')")
+    @PreAuthorize("hasAnyRole('ROLE_STUDENT', 'ROLE_TEACHER', 'ROLE_TEACHER_COLLEGE', 'ROLE_TEACHER_DEPARTMENT', 'ROLE_TEACHER_COUNSELOR', 'ROLE_COMPANY')")
     @Log(operationType = "ADD", module = "PROBLEM_FEEDBACK", description = "提交问题反馈")
     public Result addFeedback(@RequestBody ProblemFeedback feedback) {
         log.info("新增问题反馈: {}", feedback.getTitle());
@@ -213,7 +213,7 @@ public class ProblemFeedbackController {
     }
 
     @GetMapping("/my-feedback")
-    @PreAuthorize("hasAnyRole('ROLE_STUDENT', 'ROLE_TEACHER', 'ROLE_COMPANY')")
+    @PreAuthorize("hasAnyRole('ROLE_STUDENT', 'ROLE_TEACHER', 'ROLE_TEACHER_COLLEGE', 'ROLE_TEACHER_DEPARTMENT', 'ROLE_TEACHER_COUNSELOR', 'ROLE_COMPANY')")
     public Result getMyFeedback(
             @RequestParam String userType,
             @RequestParam Long userId) {

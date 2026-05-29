@@ -73,6 +73,14 @@ public class SecurityConfig {
                         .requestMatchers("/api/ai/chat", "/api/ai/chat/stream").permitAll()
                         // 允许获取启用AI模型的公开接口无需认证
                         .requestMatchers("/api/admin/ai-model/public/**").permitAll()
+                        // 允许健康检查接口无需认证
+                        .requestMatchers("/api/health/**").permitAll()
+                        // 允许公开岗位类别接口无需认证
+                        .requestMatchers("/api/admin/position-categories/public/**").permitAll()
+                        // 允许短信验证码接口无需认证
+                        .requestMatchers("/sms/**").permitAll()
+                        // 允许文件下载接口无需认证
+                        .requestMatchers("/api/download/**").permitAll()
                         // 允许学生查询 Agent 接口无需认证
                         .requestMatchers("/api/ai/student/query", "/api/ai/student/query/stream", "/api/ai/student/info").permitAll()
                         // 允许资源查询 Agent 接口无需认证

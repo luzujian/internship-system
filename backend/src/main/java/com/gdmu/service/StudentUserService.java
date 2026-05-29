@@ -13,6 +13,7 @@ public interface StudentUserService {
     StudentUser findById(Long id);
     List<StudentUser> findByIds(List<Long> ids);
     int update(StudentUser studentUser);
+    int updateProfile(StudentUser studentUser); // 仅更新个人信息，不碰密码
     Long count();
     PageResult<StudentUser> findPage(Integer page, Integer pageSize);
     PageResult<StudentUser> findPage(Integer page, Integer pageSize, String keyword);

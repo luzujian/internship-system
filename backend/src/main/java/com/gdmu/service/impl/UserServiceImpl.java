@@ -141,13 +141,22 @@ public class UserServiceImpl implements UserService, UserDetailsService {
 
     @Override
     public User findByUsername(String username) {
-        log.info("根据用户名查找用户: {}", username);
+        log.debug("根据用户名查找用户: {}", username);
         if (StringUtils.isBlank(username)) {
             throw new BusinessException("用户名不能为空");
         }
 
+        // 优先查 Redis 缓存（命中则跳过 4 张表查询）
+        if (userCacheService != null) {
+            User cached = userCacheService.getUser(username);
+            if (cached != null) {
+                log.debug("从 Redis 缓存命中用户: {}", username);
+                return cached;
+            }
+        }
+
         var adminUser = adminUserService.findByUsername(username);
-        log.info("查询admin用户结果: adminUser={}", adminUser);
+        log.debug("查询admin用户结果: adminUser={}", adminUser);
         if (adminUser != null) {
             User adminBaseUser = new User();
             adminBaseUser.setId(adminUser.getId());
@@ -158,6 +167,7 @@ public class UserServiceImpl implements UserService, UserDetailsService {
             adminBaseUser.setCreateTime(adminUser.getCreateTime());
             adminBaseUser.setUpdateTime(adminUser.getUpdateTime());
             log.info("返回admin用户: {}", adminBaseUser);
+            if (userCacheService != null) userCacheService.cacheUser(username, adminBaseUser);
             return adminBaseUser;
         }
 
@@ -171,6 +181,7 @@ public class UserServiceImpl implements UserService, UserDetailsService {
             teacherBaseUser.setName(teacherUser.getName());
             teacherBaseUser.setCreateTime(teacherUser.getCreateTime());
             teacherBaseUser.setUpdateTime(teacherUser.getUpdateTime());
+            if (userCacheService != null) userCacheService.cacheUser(username, teacherBaseUser);
             return teacherBaseUser;
         }
 
@@ -184,6 +195,7 @@ public class UserServiceImpl implements UserService, UserDetailsService {
             studentBaseUser.setName(studentUser.getName());
             studentBaseUser.setCreateTime(studentUser.getCreateTime());
             studentBaseUser.setUpdateTime(studentUser.getUpdateTime());
+            if (userCacheService != null) userCacheService.cacheUser(username, studentBaseUser);
             return studentBaseUser;
         }
 
@@ -197,6 +209,7 @@ public class UserServiceImpl implements UserService, UserDetailsService {
             companyBaseUser.setName(company.getCompanyName());
             companyBaseUser.setCreateTime(company.getCreateTime());
             companyBaseUser.setUpdateTime(company.getUpdateTime());
+            if (userCacheService != null) userCacheService.cacheUser(username, companyBaseUser);
             return companyBaseUser;
         }
 
