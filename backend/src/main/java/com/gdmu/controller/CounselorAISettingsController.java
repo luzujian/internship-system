@@ -29,6 +29,7 @@ public class CounselorAISettingsController {
     public Result getSettings(@PathVariable Long counselorId) {
         log.info("查询辅导员AI评分设置，辅导员ID: {}", counselorId);
         try {
+            counselorAISettingsService.ensureDefaultRulesExist(counselorId);
             CounselorAISettings settings = counselorAISettingsService.findByCounselorId(counselorId);
             List<CounselorScoringRule> rules = counselorAISettingsService.getScoringRules(counselorId);
             List<CounselorCategoryWeight> weights = counselorAISettingsService.getCategoryWeights(counselorId);
@@ -117,6 +118,7 @@ public class CounselorAISettingsController {
     public Result getScoringRules(@PathVariable Long counselorId) {
         log.info("查询辅导员评分规则，辅导员ID: {}", counselorId);
         try {
+            counselorAISettingsService.ensureDefaultRulesExist(counselorId);
             List<CounselorScoringRule> rules = counselorAISettingsService.getScoringRules(counselorId);
             return Result.success(rules);
         } catch (Exception e) {

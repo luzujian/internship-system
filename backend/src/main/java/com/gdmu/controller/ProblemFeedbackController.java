@@ -5,6 +5,7 @@ import com.gdmu.entity.PageResult;
 import com.gdmu.entity.ProblemFeedback;
 import com.gdmu.entity.Result;
 import com.gdmu.mapper.ProblemFeedbackMapper;
+import com.gdmu.utils.CurrentHolder;
 import com.gdmu.vo.ProblemFeedbackVO;
 import com.github.pagehelper.PageHelper;
 import com.github.pagehelper.PageInfo;
@@ -15,6 +16,7 @@ import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.web.bind.annotation.*;
 
@@ -64,12 +66,17 @@ public class ProblemFeedbackController {
                 return Result.error("问题反馈不存在");
             }
             
+            // 安全校验：非管理员只能查看自己的反馈
             if (isAdmin(authentication)) {
                 return Result.success(feedback);
-            } else {
-                ProblemFeedbackVO feedbackVO = convertToVO(feedback);
-                return Result.success(feedbackVO);
             }
+            Long currentUserId = CurrentHolder.getUserId();
+            if (currentUserId != null && !currentUserId.equals(feedback.getUserId())) {
+                log.warn("用户尝试查看他人的问题反馈: currentUserId={}, feedbackUserId={}", currentUserId, feedback.getUserId());
+                return Result.error("无权查看他人的问题反馈");
+            }
+            ProblemFeedbackVO feedbackVO = convertToVO(feedback);
+            return Result.success(feedbackVO);
         } catch (Exception e) {
             log.error("获取问题反馈详情失败: {}", e.getMessage(), e);
             return Result.error("获取问题反馈详情失败: " + e.getMessage());
@@ -171,6 +178,18 @@ public class ProblemFeedbackController {
     public Result updateFeedback(@PathVariable Long id, @RequestBody ProblemFeedback feedback) {
         log.info("更新问题反馈: ID={}", id);
         try {
+            // 安全校验：非管理员只能更新自己的反馈
+            Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+            if (!isAdmin(authentication)) {
+                ProblemFeedback existing = problemFeedbackMapper.findById(id);
+                if (existing == null) {
+                    return Result.error("问题反馈不存在");
+                }
+                Long currentUserId = CurrentHolder.getUserId();
+                if (currentUserId == null || !currentUserId.equals(existing.getUserId())) {
+                    return Result.error("无权修改他人的问题反馈");
+                }
+            }
             feedback.setId(id);
             int result = problemFeedbackMapper.update(feedback);
             return Result.success("更新问题反馈成功", result);

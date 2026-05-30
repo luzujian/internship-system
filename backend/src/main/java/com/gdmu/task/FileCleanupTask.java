@@ -36,7 +36,7 @@ public class FileCleanupTask {
         "tmp"
     );
     
-    @Scheduled(cron = "0 0 2 * * ?")
+    @Scheduled(cron = "0 15 * * * ?")
     public void cleanExpiredFiles() {
         log.info("开始清理过期文件");
         

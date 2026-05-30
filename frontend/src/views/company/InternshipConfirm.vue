@@ -424,7 +424,6 @@ const handleExport = async () => {
       <el-table
         :data="paginatedTableData"
         border
-        stripe
         style="width: 100%"
       >
         <el-table-column prop="positionName" label="应聘岗位" min-width="100" />

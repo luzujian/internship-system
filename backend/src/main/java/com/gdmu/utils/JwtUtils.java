@@ -32,7 +32,7 @@ import java.util.Objects;
 public class JwtUtils {
 
     // 从配置文件读取密钥和过期时间
-    @Value("${jwt.secret: aXRoZWltYQ==}")
+    @Value("${jwt.secret}")
     private String secretKeyString;
 
     @Value("${jwt.expiration:43200000}")
@@ -56,6 +56,14 @@ public class JwtUtils {
      */
     @PostConstruct
     public void init() {
+        // 安全检查：拒绝已知的默认密钥和空密钥
+        if (secretKeyString == null || secretKeyString.isBlank()) {
+            throw new IllegalStateException("JWT密钥未配置，请设置 JWT_SECRET 环境变量");
+        }
+        if ("defaultSecretChangeInProduction_ReplaceThisWithRandomSecret1234567890==".equals(secretKeyString.trim())
+                || "aXRoZWltYQ==".equals(secretKeyString.trim())) {
+            throw new IllegalStateException("禁止使用默认JWT密钥，请设置安全的 JWT_SECRET 环境变量");
+        }
         // 确保密钥长度至少为 32 字节（256 位）
         byte[] keyBytes = secretKeyString.getBytes();
         if (keyBytes.length < 32) {

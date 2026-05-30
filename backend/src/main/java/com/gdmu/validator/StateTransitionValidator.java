@@ -31,8 +31,8 @@ public class StateTransitionValidator {
         Map.entry(2, List.of(3, 5, 6)),
         // 3-实习中 → 4-已结束(完成) 或 5-已中断
         Map.entry(3, List.of(4, 5)),
-        // 4-已结束 → (终态，不可流转)
-        Map.entry(4, List.of()),
+        // 4-已结束 → 0-未找到 (学期重置/新一轮应聘，仅限系统定时任务)
+        Map.entry(4, List.of(0)),
         // 5-已中断 → 2-已确定(恢复实习) 或 4-已结束(终止) 或 1-待确认(重新申请offer)
         Map.entry(5, List.of(2, 4, 1)),
         // 6-延期 → 2-已确定(确认延期后开始) 或 3-实习中(边延期边实习) 或 4-已结束

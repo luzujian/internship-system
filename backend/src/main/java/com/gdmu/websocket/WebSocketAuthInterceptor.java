@@ -32,11 +32,17 @@ public class WebSocketAuthInterceptor implements HandshakeInterceptor {
         if (request instanceof ServletServerHttpRequest servletRequest) {
             HttpServletRequest httpRequest = servletRequest.getServletRequest();
             
-            String token = httpRequest.getParameter("token");
+            // 优先从 Authorization Header 获取 Token（更安全）
+            String token = null;
+            String authHeader = httpRequest.getHeader("Authorization");
+            if (authHeader != null && authHeader.startsWith("Bearer ")) {
+                token = authHeader.substring(7);
+            }
+            // URL 参数作为降级方案（兼容当前前端 WebSocket 实现）
             if (token == null || token.isEmpty()) {
-                String authHeader = httpRequest.getHeader("Authorization");
-                if (authHeader != null && authHeader.startsWith("Bearer ")) {
-                    token = authHeader.substring(7);
+                token = httpRequest.getParameter("token");
+                if (token != null && !token.isEmpty()) {
+                    log.warn("WebSocket token通过URL参数传递，建议前端改用Header方式");
                 }
             }
             

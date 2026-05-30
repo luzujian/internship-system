@@ -45,6 +45,9 @@ public class TeacherUserServiceImpl implements TeacherUserService {
     @Autowired
     private CounselorCategoryWeightMapper counselorCategoryWeightMapper;
 
+    @Autowired
+    private com.gdmu.mapper.CounselorAISettingsMapper counselorAISettingsMapper;
+
     @Override
     public TeacherUser findByTeacherUserId(String teacherUserId) {
         log.debug("查找教师用户，教师编号: {}", teacherUserId);
@@ -99,8 +102,18 @@ public class TeacherUserServiceImpl implements TeacherUserService {
         int result = teacherUserMapper.insert(teacherUser);
         log.info("教师INSERT完成，ID: {}, 教师编号: {}", teacherUser.getId(), teacherUser.getTeacherUserId());
 
-        // 为新教师初始化默认评分规则
-        initDefaultScoringRules(teacherUser.getId());
+        // 仅辅导员初始化默认评分规则 + AI 开启
+        if ("COUNSELOR".equals(teacherUser.getTeacherType())) {
+            initDefaultScoringRules(teacherUser.getId());
+            if (counselorAISettingsMapper.findByCounselorId(teacherUser.getId()) == null) {
+                com.gdmu.entity.CounselorAISettings aiSettings = new com.gdmu.entity.CounselorAISettings();
+                aiSettings.setCounselorId(teacherUser.getId());
+                aiSettings.setEnableAiScoring(1);
+                aiSettings.setCreateTime(new Date());
+                aiSettings.setUpdateTime(new Date());
+                counselorAISettingsMapper.insert(aiSettings);
+            }
+        }
 
         log.info("教师用户注册成功，教师编号: {}, 类型: {}, 角色: {}", teacherUser.getTeacherUserId(), teacherUser.getTeacherType(), role);
         return result;
@@ -384,7 +397,22 @@ public class TeacherUserServiceImpl implements TeacherUserService {
                 
                 int batchResult = teacherUserMapper.batchInsert(batchList);
                 successCount += batchResult;
-                
+
+                // 为导入的辅导员初始化默认评分规则 + AI 开启
+                for (TeacherUser tu : batchList) {
+                    if ("COUNSELOR".equals(tu.getTeacherType())) {
+                        initDefaultScoringRules(tu.getId());
+                        if (counselorAISettingsMapper.findByCounselorId(tu.getId()) == null) {
+                            com.gdmu.entity.CounselorAISettings aiSettings = new com.gdmu.entity.CounselorAISettings();
+                            aiSettings.setCounselorId(tu.getId());
+                            aiSettings.setEnableAiScoring(1);
+                            aiSettings.setCreateTime(new Date());
+                            aiSettings.setUpdateTime(new Date());
+                            counselorAISettingsMapper.insert(aiSettings);
+                        }
+                    }
+                }
+
                 log.info("导入批次 {} 成功，导入数量: {}", i + 1, batchResult);
             }
         }
@@ -503,19 +531,19 @@ public class TeacherUserServiceImpl implements TeacherUserService {
         // 维度定义：code, name, weight
         record Dim(String code, String name, int weight) {}
         List<Dim> dimensions = List.of(
-            new Dim("attitude", "实习态度", 40),
-            new Dim("professional", "专业能力", 35),
-            new Dim("growth", "学习成长", 25)
+            new Dim("实习态度", "实习态度", 40),
+            new Dim("专业能力", "专业能力", 35),
+            new Dim("学习成长", "学习成长", 25)
         );
 
-        // 等级定义：name, min, max
-        record Level(String name, int min, int max) {}
+        // 等级定义：name, min, max, desc
+        record Level(String name, int min, int max, String desc) {}
         List<Level> levels = List.of(
-            new Level("优秀", 90, 100),
-            new Level("良好", 80, 89),
-            new Level("中等", 70, 79),
-            new Level("及格", 60, 69),
-            new Level("不及格", 0, 59)
+            new Level("优秀", 90, 100, "表现卓越，远超预期"),
+            new Level("良好", 80, 89, "表现良好，达到要求"),
+            new Level("中等", 70, 79, "表现一般，基本完成"),
+            new Level("及格", 60, 69, "勉强达标，存在不足"),
+            new Level("不及格", 0, 59, "未达标，需要改进")
         );
 
         // 构建评分规则
@@ -531,6 +559,7 @@ public class TeacherUserServiceImpl implements TeacherUserService {
                 rule.setWeight(20);
                 rule.setMinScore(lv.min());
                 rule.setMaxScore(lv.max());
+                rule.setDescription(dim.name() + lv.name() + "：" + lv.desc());
                 rule.setSortOrder(i);
                 rule.setStatus(1);
                 rule.setDeleted(0);
@@ -558,6 +587,9 @@ public class TeacherUserServiceImpl implements TeacherUserService {
         try {
             counselorScoringRuleMapper.batchInsert(rules);
             counselorCategoryWeightMapper.batchInsert(weights);
+
+            // AI 评分开关由 CounselorAISettingsService.ensureDefaultRulesExist 统一处理
+
             log.info("已为教师 {} 初始化默认评分规则，共 {} 条规则，{} 个维度", counselorId, rules.size(), dimensions.size());
         } catch (Exception e) {
             log.warn("初始化默认评分规则失败，教师ID: {}，原因: {}", counselorId, e.getMessage());

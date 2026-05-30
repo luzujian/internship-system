@@ -6,6 +6,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 
+import java.security.SecureRandom;
 import java.util.concurrent.TimeUnit;
 
 @Slf4j
@@ -38,9 +39,13 @@ public class SmsService {
 
         try {
             if (smsConfig.getDebug()) {
-                // 调试模式：模拟发送，不调用真实API
+                // 调试模式：模拟发送，验证码存 Redis，不写入日志
                 String code = generateVerifyCode();
-                log.info("短信验证码（调试模式）: 手机号={}, 验证码={}", phone, code);
+                if (redisTemplate != null) {
+                    String redisKey = "sms:code:" + phone;
+                    redisTemplate.opsForValue().set(redisKey, code, 5, TimeUnit.MINUTES);
+                }
+                log.info("短信验证码（调试模式）已生成: 手机号={}, 验证码=******", phone);
                 return true;
             }
 
@@ -143,12 +148,13 @@ public class SmsService {
         return true;
     }
 
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
+
     /**
-     * 生成6位数字验证码
+     * 生成6位数字验证码（使用密码学安全的 SecureRandom）
      */
     private String generateVerifyCode() {
-        int code = (int) ((Math.random() * 9 + 1) * 100000);
-        return String.valueOf(code);
+        return String.format("%06d", SECURE_RANDOM.nextInt(900000) + 100000);
     }
 
     /**

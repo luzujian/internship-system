@@ -23,6 +23,7 @@ import com.gdmu.service.PermissionService;
 import com.gdmu.service.SmsService;
 import com.gdmu.service.AdminPermissionService;
 import com.gdmu.service.TeacherPermissionService;
+import com.gdmu.utils.IpUtils;
 import com.gdmu.utils.JwtUtils;
 import com.gdmu.utils.PasswordValidator;
 import com.gdmu.config.SystemSettingsConfig;
@@ -164,7 +165,7 @@ public class AuthController {
                 loginLog.setUserType("UNKNOWN");
                 loginLog.setUserName(username);
                 loginLog.setLoginTime(new Date());
-                loginLog.setIpAddress(request.getRemoteAddr());
+                loginLog.setIpAddress(IpUtils.getClientIp(request));
                 loginLog.setDeviceInfo(request.getHeader("User-Agent"));
                 loginLog.setLoginStatus("FAILURE");
                 loginLogMapper.insert(loginLog);
@@ -250,7 +251,7 @@ public class AuthController {
             loginLog.setUserType(role);
             loginLog.setUserName(teacher.getTeacherUserId());
             loginLog.setLoginTime(new Date());
-            loginLog.setIpAddress(request.getRemoteAddr());
+            loginLog.setIpAddress(IpUtils.getClientIp(request));
             loginLog.setDeviceInfo(request.getHeader("User-Agent"));
             loginLog.setLoginStatus("SUCCESS");
             
@@ -339,31 +340,11 @@ public class AuthController {
         }
         claims.put("name", displayName);
 
-        // 为学生用户添加额外的 claims
+        // 为学生用户添加必要的标识信息（PII字段不放入JWT，通过API获取）
         if ("ROLE_STUDENT".equals(loginUser.getRole())) {
             StudentUser studentUser = studentUserService.findByStudentId(username);
             if (studentUser != null) {
-                // 获取班级名称
-                String className = null;
-                if (studentUser.getClassId() != null) {
-                    try {
-                        var classEntity = classService.findById(studentUser.getClassId());
-                        if (classEntity != null) {
-                            className = classEntity.getName();
-                        }
-                    } catch (Exception e) {
-                        log.warn("获取班级名称失败: {}", e.getMessage());
-                    }
-                }
                 claims.put("studentId", studentUser.getStudentId());
-                claims.put("school", studentUser.getSchool());
-                claims.put("department", studentUser.getDepartment());
-                claims.put("major", studentUser.getMajor());
-                claims.put("className", className);
-                claims.put("gender", studentUser.getGender());
-                claims.put("phone", studentUser.getPhone());
-                claims.put("email", studentUser.getEmail());
-                claims.put("grade", studentUser.getGrade());
             }
         }
         
@@ -450,7 +431,7 @@ public class AuthController {
             loginLog.setUserType(loginUser.getRole());
             loginLog.setUserName(loginUser.getUsername());
             loginLog.setLoginTime(new Date());
-            loginLog.setIpAddress(request.getRemoteAddr());
+            loginLog.setIpAddress(IpUtils.getClientIp(request));
             loginLog.setDeviceInfo(request.getHeader("User-Agent"));
             loginLog.setLoginStatus("SUCCESS");
             
@@ -467,7 +448,7 @@ public class AuthController {
                 operateLog.setOperatorName(loginUser.getUsername());
                 operateLog.setOperatorUsername(loginUser.getUsername());
                 operateLog.setOperatorRole("ADMIN");
-                operateLog.setIpAddress(request.getRemoteAddr());
+                operateLog.setIpAddress(IpUtils.getClientIp(request));
                 operateLog.setOperationType("LOGIN");
                 operateLog.setModule("USER_MANAGEMENT");
                 operateLog.setDescription("管理员登录系统: " + loginUser.getUsername());
@@ -1241,7 +1222,7 @@ public class AuthController {
             loginLog.setUserType(userType);
             loginLog.setUserName(userName);
             loginLog.setLoginTime(new Date());
-            loginLog.setIpAddress(request.getRemoteAddr());
+            loginLog.setIpAddress(IpUtils.getClientIp(request));
             loginLog.setDeviceInfo(request.getHeader("User-Agent"));
             loginLog.setLoginStatus(status);
             

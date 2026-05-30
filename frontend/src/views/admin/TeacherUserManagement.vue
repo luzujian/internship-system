@@ -5,7 +5,7 @@ import { onMounted, ref, nextTick, computed } from 'vue'
 import DepartmentService from '../../api/department'
 import DivisionService from '../../api/division'
 import MajorService from '../../api/major'
-import TeacherUserService from '../../api/TeacherUserService'
+import TeacherUserService, { batchDeleteApi } from '../../api/TeacherUserService'
 import { useSystemSettingsStore } from '../../store/systemSettings'
 import { useAuthStore } from '../../store/auth'
 
@@ -1273,6 +1273,13 @@ onMounted(async () => {
               <el-radio :label="2">女</el-radio>
             </el-radio-group>
           </el-form-item>
+          <el-form-item label="身份" prop="teacherType">
+            <el-select v-model="addTeacher.teacherType" placeholder="请选择身份">
+              <el-option label="学院教师" value="COLLEGE" />
+              <el-option label="系室教师" value="DEPARTMENT" />
+              <el-option label="辅导员" value="COUNSELOR" />
+            </el-select>
+          </el-form-item>
           <el-form-item label="学院" prop="departmentId">
             <el-select v-model="addTeacher.departmentId" placeholder="请选择学院" filterable>
               <el-option v-for="department in departments" :key="department.value" :label="department.name"
@@ -1282,13 +1289,6 @@ onMounted(async () => {
           <el-form-item label="系" prop="divisionId" v-if="addTeacher.teacherType === 'DEPARTMENT'">
             <el-select v-model="addTeacher.divisionId" placeholder="请选择系" filterable clearable>
               <el-option v-for="div in getFilteredDivisions" :key="div.id" :label="div.name" :value="String(div.id)" />
-            </el-select>
-          </el-form-item>
-          <el-form-item label="身份" prop="teacherType">
-            <el-select v-model="addTeacher.teacherType" placeholder="请选择身份">
-              <el-option label="学院教师" value="COLLEGE" />
-              <el-option label="系室教师" value="DEPARTMENT" />
-              <el-option label="辅导员" value="COUNSELOR" />
             </el-select>
           </el-form-item>
           <el-form-item label="手机号" prop="phone">

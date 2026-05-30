@@ -9,6 +9,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.InputStreamResource;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -361,6 +362,13 @@ public class FileUploadController {
                 return ResponseEntity.notFound().build();
             }
 
+            // 路径穿越防护：拒绝包含 ../ 或编码后的路径穿越字符
+            if (path.contains("..") || path.contains("./") || path.contains(".\\")
+                    || path.contains("%2e%2e") || path.contains("%2E%2E")) {
+                log.warn("检测到路径穿越攻击企图：{}", path);
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+            }
+
             // 从 OSS 下载文件
             byte[] fileContent = aliyunOSSOperator.downloadFile(path);
 
@@ -397,6 +405,13 @@ public class FileUploadController {
 
             if (path == null || path.isEmpty()) {
                 return ResponseEntity.notFound().build();
+            }
+
+            // 路径穿越防护
+            if (path.contains("..") || path.contains("./") || path.contains(".\\")
+                    || path.contains("%2e%2e") || path.contains("%2E%2E")) {
+                log.warn("检测到路径穿越攻击企图(preview)：{}", path);
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
             }
 
             // 去掉 /api/upload/preview/ 前缀，获取实际的 OSS 路径

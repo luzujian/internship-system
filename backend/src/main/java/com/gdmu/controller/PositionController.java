@@ -96,6 +96,18 @@ public class PositionController {
     public Result addPosition(@RequestBody @Validated Position position) {
         log.info("新增岗位: {}", position.getPositionName());
         try {
+            // 安全校验：非管理员只能为自己公司创建岗位
+            Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+            boolean isAdmin = authentication != null && authentication.getAuthorities().stream()
+                .anyMatch(auth -> auth.getAuthority().equals("ROLE_ADMIN"));
+            if (!isAdmin) {
+                Long currentCompanyId = CurrentHolder.getUserId();
+                if (currentCompanyId == null) {
+                    return Result.error("未获取到企业身份信息");
+                }
+                // 强制设置为当前企业ID，防止为其他公司创建岗位
+                position.setCompanyId(currentCompanyId);
+            }
             // 计算剩余缺口
             position.setRemainingQuota(position.getPlannedRecruit() - position.getRecruitedCount());
             positionService.insert(position);
@@ -120,6 +132,21 @@ public class PositionController {
     public Result updatePosition(@PathVariable Long id, @RequestBody Position position) {
         log.info("更新岗位，ID: {}", id);
         try {
+            // 安全校验：非管理员只能更新自己公司的岗位
+            Position existingPosition = positionService.findById(id);
+            if (existingPosition == null) {
+                return Result.error("岗位不存在");
+            }
+            Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+            boolean isAdmin = authentication != null && authentication.getAuthorities().stream()
+                .anyMatch(auth -> auth.getAuthority().equals("ROLE_ADMIN"));
+            if (!isAdmin) {
+                Long currentCompanyId = CurrentHolder.getUserId();
+                if (currentCompanyId == null || !currentCompanyId.equals(existingPosition.getCompanyId())) {
+                    log.warn("企业用户尝试修改其他企业的岗位: companyId={}, positionId={}", currentCompanyId, id);
+                    return Result.error("无权修改其他企业的岗位");
+                }
+            }
             position.setId(id);
             // 重新计算剩余缺口
             if (position.getPlannedRecruit() != null) {
@@ -148,6 +175,21 @@ public class PositionController {
     public Result deletePosition(@PathVariable Long id) {
         log.info("删除岗位，ID: {}", id);
         try {
+            // 安全校验：非管理员只能删除自己公司的岗位
+            Position existingPosition = positionService.findById(id);
+            if (existingPosition == null) {
+                return Result.error("岗位不存在");
+            }
+            Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+            boolean isAdmin = authentication != null && authentication.getAuthorities().stream()
+                .anyMatch(auth -> auth.getAuthority().equals("ROLE_ADMIN"));
+            if (!isAdmin) {
+                Long currentCompanyId = CurrentHolder.getUserId();
+                if (currentCompanyId == null || !currentCompanyId.equals(existingPosition.getCompanyId())) {
+                    log.warn("企业用户尝试删除其他企业的岗位: companyId={}, positionId={}", currentCompanyId, id);
+                    return Result.error("无权删除其他企业的岗位");
+                }
+            }
             positionService.delete(id);
             // 清除职位列表缓存
             positionCacheService.clearPositionsCache();
@@ -253,6 +295,20 @@ public class PositionController {
     public Result pausePosition(@PathVariable Long id) {
         log.info("暂停岗位招聘，岗位 ID: {}", id);
         try {
+            // 安全校验：非管理员只能暂停自己公司的岗位
+            Position existingPosition = positionService.findById(id);
+            if (existingPosition == null) {
+                return Result.error("岗位不存在");
+            }
+            Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+            boolean isAdmin = authentication != null && authentication.getAuthorities().stream()
+                .anyMatch(auth -> auth.getAuthority().equals("ROLE_ADMIN"));
+            if (!isAdmin) {
+                Long currentCompanyId = CurrentHolder.getUserId();
+                if (currentCompanyId == null || !currentCompanyId.equals(existingPosition.getCompanyId())) {
+                    return Result.error("无权操作其他企业的岗位");
+                }
+            }
             positionService.pausePosition(id);
             // 清除职位列表缓存
             positionCacheService.clearPositionsCache();
@@ -274,6 +330,20 @@ public class PositionController {
     public Result resumePosition(@PathVariable Long id) {
         log.info("恢复岗位招聘，岗位 ID: {}", id);
         try {
+            // 安全校验：非管理员只能恢复自己公司的岗位
+            Position existingPosition = positionService.findById(id);
+            if (existingPosition == null) {
+                return Result.error("岗位不存在");
+            }
+            Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+            boolean isAdmin = authentication != null && authentication.getAuthorities().stream()
+                .anyMatch(auth -> auth.getAuthority().equals("ROLE_ADMIN"));
+            if (!isAdmin) {
+                Long currentCompanyId = CurrentHolder.getUserId();
+                if (currentCompanyId == null || !currentCompanyId.equals(existingPosition.getCompanyId())) {
+                    return Result.error("无权操作其他企业的岗位");
+                }
+            }
             positionService.resumePosition(id);
             // 清除职位列表缓存
             positionCacheService.clearPositionsCache();

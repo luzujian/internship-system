@@ -22,10 +22,10 @@
         </div>
         <div class="overview-right" v-if="hasInternshipRecord">
           <span class="current-period" v-if="currentPeriod">第{{ currentPeriod }}期</span>
-          <button class="submit-log-button" :class="{ disabled: !canSubmit }" @click.stop="submitLog" :disabled="!canSubmit" :title="!canSubmit ? submitReason : ''">
+          <el-button type="primary" class="submit-log-button" :disabled="!canSubmit" @click="submitLog" :title="!canSubmit ? submitReason : ''">
             <el-icon class="button-icon"><Edit /></el-icon>
-            提交实习心得
-          </button>
+            <span>提交实习心得</span>
+          </el-button>
         </div>
       </div>
     </div>
@@ -919,7 +919,14 @@ onUnmounted(() => {
 }
 
 /* 卡片通用样式 - 统一为面试管理卡片样式 */
-.overview-card,
+.overview-card {
+  background: white;
+  border-radius: 12px;
+  padding: 24px;
+  margin-bottom: 24px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+}
+
 .tabs-section,
 .content-section {
   background: white;
@@ -1002,53 +1009,24 @@ onUnmounted(() => {
 }
 
 .submit-log-button {
-  background: #409EFF;
-  color: white;
-  border: none;
-  padding: 10px 20px;
-  border-radius: 8px;
+  padding: 10px 20px !important;
+  border-radius: 8px !important;
   font-size: 14px;
   font-weight: 500;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  transition: all 0.3s ease;
-  width: auto;
   min-width: 140px;
-  box-sizing: border-box;
-}
-
-.submit-log-button:hover {
-  background: #337ecc;
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(64, 158, 255, 0.3);
-}
-
-.submit-log-button.disabled {
-  background: #c0c4cc;
-  cursor: not-allowed;
-  opacity: 0.7;
-}
-
-.submit-log-button.disabled:hover {
-  background: #c0c4cc;
-  transform: none;
-  box-shadow: none;
+  height: auto !important;
+  position: relative;
+  z-index: 10;
 }
 
 .submit-log-button.confirm-button {
-  background: #67C23A;
-}
-
-.submit-log-button.confirm-button:hover {
-  background: #5daf34;
-  box-shadow: 0 4px 12px rgba(103, 194, 58, 0.3);
+  --el-button-bg-color: #67C23A;
+  --el-button-border-color: #67C23A;
 }
 
 .button-icon {
   font-size: 14px;
+  pointer-events: none;
 }
 
 /* 标签页样式 - 统一为面试管理筛选标签样式 */

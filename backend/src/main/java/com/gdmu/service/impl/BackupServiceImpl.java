@@ -84,6 +84,12 @@ public class BackupServiceImpl implements BackupService {
     @Value("${backup.storage.type:OSS}")
     private String storageType;
 
+    /**
+     * 是否为 MariaDB 版 mysqldump（影响 SSL 参数选择）
+     * null 表示尚未检测
+     */
+    private Boolean isMariaDB = null;
+
     @Value("${backup.storage.oss.enabled:true}")
     private Boolean ossEnabled;
 
@@ -866,6 +872,29 @@ public class BackupServiceImpl implements BackupService {
         }
     }
 
+    /**
+     * 检测 mysqldump 是否为 MariaDB 版本，用于选择兼容的 SSL 参数
+     * MySQL: --ssl-mode=DISABLED
+     * MariaDB: --ssl=0
+     */
+    private boolean isMariaDBMysqldump() {
+        if (isMariaDB != null) {
+            return isMariaDB;
+        }
+        try {
+            Process process = Runtime.getRuntime().exec(new String[]{"mysqldump", "--version"});
+            BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
+            String line = reader.readLine();
+            process.waitFor();
+            isMariaDB = line != null && line.toLowerCase().contains("mariadb");
+            log.info("mysqldump 类型检测: {}", isMariaDB ? "MariaDB" : "MySQL");
+        } catch (Exception e) {
+            log.warn("无法检测 mysqldump 类型，默认按 MySQL 处理: {}", e.getMessage());
+            isMariaDB = false;
+        }
+        return isMariaDB;
+    }
+
     private File createTempConfigFile() throws Exception {
         File tempFile = File.createTempFile("mysql-config-", ".cnf");
         tempFile.deleteOnExit();
@@ -881,8 +910,6 @@ public class BackupServiceImpl implements BackupService {
             writer.write("password=" + datasourcePassword + "\n");
             writer.write("host=" + host + "\n");
             writer.write("port=" + port + "\n");
-            writer.write("ssl = 0\n");
-            writer.write("default-auth = mysql_native_password\n");
         }
         
         tempFile.setReadable(true, true);
@@ -908,74 +935,79 @@ public class BackupServiceImpl implements BackupService {
     private void executeMysqlDump(String dbName, String outputPath) throws Exception {
         log.info("准备执行mysqldump命令，数据库: {}, 输出文件: {}", dbName, outputPath);
 
-        String host = extractDatabaseHost();
-        String port = extractDatabasePort();
-
-        String[] command = {
-            "mysqldump",
-            "-h" + host,
-            "-P" + port,
-            "-u" + datasourceUsername,
-            "-p" + datasourcePassword,
-            "--default-auth=mysql_native_password",
-            "--skip-ssl",
-            dbName,
-            "--result-file=" + outputPath,
-            "--default-character-set=utf8mb4",
-            "--single-transaction",
-            "--quick",
-            "--lock-tables=false",
-            "--routines",
-            "--triggers",
-            "--events",
-            "--add-drop-table",
-            "--complete-insert",
-            "--extended-insert",
-            "--set-charset"
-        };
-
-        log.info("执行mysqldump命令: mysqldump -h{} -P{} -u{} -p*** {} --result-file={} ...", host, port, datasourceUsername, dbName, outputPath);
-
-        Process process = Runtime.getRuntime().exec(command);
-        
-        BufferedReader reader = new BufferedReader(new InputStreamReader(process.getErrorStream()));
-        String line;
-        StringBuilder error = new StringBuilder();
-        while ((line = reader.readLine()) != null) {
-            error.append(line).append("\n");
-            log.debug("mysqldump错误输出: {}", line);
-        }
-        
-        int exitCode = process.waitFor();
-        log.info("mysqldump命令执行完成，退出码: {}", exitCode);
-        
+        String sslFlag = isMariaDBMysqldump() ? "--ssl=0" : "--ssl-mode=DISABLED";
+        // 使用临时配置文件传递密码，避免密码暴露在进程命令行
+        File configFile = createTempConfigFile();
         try {
-            List<String> backedUpTables = extractTableListFromBackupFile(outputPath);
-            log.info("备份文件 {} 中共包含 {} 个表", outputPath, backedUpTables.size());
-        } catch (Exception e) {
-            log.warn("统计备份表数量失败: {}", e.getMessage());
-        }
+            String[] command = {
+                "mysqldump",
+                "--defaults-file=" + configFile.getAbsolutePath(),
+                sslFlag,
+                "--default-character-set=utf8mb4",
+                "--single-transaction",
+                "--quick",
+                "--lock-tables=false",
+                "--routines",
+                "--triggers",
+                "--events",
+                "--add-drop-table",
+                "--complete-insert",
+                "--extended-insert",
+                "--set-charset",
+                dbName,
+                "--result-file=" + outputPath
+            };
 
-        if (exitCode != 0) {
-            String errorMsg = error.toString();
-            log.error("mysqldump执行失败，退出码: {}, 错误信息: {}", exitCode, errorMsg);
-            throw new RuntimeException("mysqldump执行失败，退出码: " + exitCode + ", 错误信息: " + errorMsg);
-        }
+            log.info("执行mysqldump命令(通过defaults-file): {} --result-file={}", dbName, outputPath);
 
-        File outputFile = new File(outputPath);
-        if (!outputFile.exists() || outputFile.length() == 0) {
-            throw new RuntimeException("备份文件创建失败或文件为空");
+            Process process = Runtime.getRuntime().exec(command);
+
+            BufferedReader reader = new BufferedReader(new InputStreamReader(process.getErrorStream()));
+            String line;
+            StringBuilder error = new StringBuilder();
+            while ((line = reader.readLine()) != null) {
+                error.append(line).append("\n");
+                log.debug("mysqldump错误输出: {}", line);
+            }
+
+            int exitCode = process.waitFor();
+            log.info("mysqldump命令执行完成，退出码: {}", exitCode);
+
+            try {
+                List<String> backedUpTables = extractTableListFromBackupFile(outputPath);
+                log.info("备份文件 {} 中共包含 {} 个表", outputPath, backedUpTables.size());
+            } catch (Exception e) {
+                log.warn("统计备份表数量失败: {}", e.getMessage());
+            }
+
+            if (exitCode != 0) {
+                String errorMsg = error.toString();
+                log.error("mysqldump执行失败，退出码: {}, 错误信息: {}", exitCode, errorMsg);
+                throw new RuntimeException("mysqldump执行失败，退出码: " + exitCode + ", 错误信息: " + errorMsg);
+            }
+
+            File outputFile = new File(outputPath);
+            if (!outputFile.exists() || outputFile.length() == 0) {
+                throw new RuntimeException("备份文件创建失败或文件为空");
+            }
+        } finally {
+            // 立即删除临时配置文件，防止密码泄露
+            if (configFile != null && configFile.exists()) {
+                configFile.delete();
+            }
         }
     }
 
     private void executeMysqlRestore(String dbName, String inputPath) throws Exception {
         log.info("准备执行mysql恢复命令，数据库: {}, 备份文件: {}", dbName, inputPath);
-        
+
+        String sslFlag = isMariaDBMysqldump() ? "--ssl=0" : "--ssl-mode=DISABLED";
         File configFile = createTempConfigFile();
-        
+
         String[] command = {
             "mysql",
             "--defaults-file=" + configFile.getAbsolutePath(),
+            sslFlag,
             dbName,
             "--force",
             "--verbose"

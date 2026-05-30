@@ -5,6 +5,7 @@ import com.gdmu.entity.*;
 import com.gdmu.entity.Result;
 import com.gdmu.service.*;
 import com.gdmu.utils.AliyunOSSOperator;
+import com.gdmu.utils.CurrentHolder;
 import com.gdmu.utils.PasswordValidator;
 import com.gdmu.exception.BusinessException;
 import lombok.extern.slf4j.Slf4j;
@@ -82,6 +83,12 @@ public class StudentController {
     public Result getStudentInfo(@RequestParam @NotNull(message = "学生 ID 不能为空") Long studentId) {
         log.info("获取学生信息：{}", studentId);
         try {
+            // 安全校验：学生只能查看自己的信息
+            Long currentUserId = CurrentHolder.getUserId();
+            if (currentUserId == null || !currentUserId.equals(studentId)) {
+                log.warn("学生尝试查看其他学生信息: currentUserId={}, requestedStudentId={}", currentUserId, studentId);
+                return Result.error("只能查看自己的信息");
+            }
             User student = userService.findById(studentId);
             if (student == null) {
                 return Result.error("学生不存在");

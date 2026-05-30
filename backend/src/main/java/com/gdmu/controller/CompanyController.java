@@ -738,8 +738,10 @@ public class CompanyController {
 
             String newStatus = statusData.get("status");
 
-            // 非 pending 状态不允许重复操作（面试结果由面试流程单独处理）
-            if (!"pending".equals(application.getStatus()) && !"interview".equals(application.getStatus())) {
+            // 非 pending/approved/interview 状态不允许重复操作
+            String currentStatus = application.getStatus();
+            if (!"pending".equals(currentStatus) && !"approved".equals(currentStatus)
+                && !"interview".equals(currentStatus)) {
                 return Result.error("该申请已处理，请勿重复操作");
             }
 
@@ -749,13 +751,13 @@ public class CompanyController {
                 InterviewInvitation invitation = interviewInvitationService.findByStudentAndPosition(
                     application.getStudentId(), application.getPositionId());
                 if (invitation != null) {
-                    interviewInvitationService.updateStatus(invitation.getId(), newStatus, null);
-                    log.info("更新面试邀请状态成功，invitationId: {}, status: {}", invitation.getId(), newStatus);
-
-                    // 同时更新学生求职申请的状态
+                    // 先更新申请状态(轻量操作, 不会失败)
                     application.setStatus(newStatus);
                     studentJobApplicationService.update(application);
-                    log.info("更新学生求职申请状态成功，applicationId: {}, status: {}", id, newStatus);
+
+                    // 再更新邀请状态
+                    interviewInvitationService.updateStatus(invitation.getId(), newStatus, null);
+                    log.info("更新面试邀请状态成功，invitationId: {}, status: {}", invitation.getId(), newStatus);
 
                     // 更新面试进展记录状态
                     String progressStatus = "interview_passed".equals(newStatus) ? "success" : "failed";
@@ -867,8 +869,10 @@ public class CompanyController {
 
             String newStatus = statusData.get("status");
 
-            // 非 pending/interview 状态不允许重复操作
-            if (!"pending".equals(application.getStatus()) && !"interview".equals(application.getStatus())) {
+            // 非 pending/approved/interview 状态不允许重复操作
+            String curStatus2 = application.getStatus();
+            if (!"pending".equals(curStatus2) && !"approved".equals(curStatus2)
+                && !"interview".equals(curStatus2)) {
                 return Result.error("该申请已处理，请勿重复操作");
             }
 

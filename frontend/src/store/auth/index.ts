@@ -632,16 +632,8 @@ export const useAuthStore = defineStore('auth', {
             teacherType: decoded.teacherType || localStorage.getItem('teacherType') || undefined,
             isReadOnly: decoded.isReadOnly || restoreResult.isReadOnly || false,
             originalAdminUsername: decoded.originalAdminUsername || restoreResult.originalAdminUsername || null,
-            // 学生用户字段（从 JWT token 中解析）
+            // 学生用户字段（不再从JWT解析，由API获取）
             studentId: decoded.studentId,
-            school: decoded.school,
-            department: decoded.department,
-            major: decoded.major,
-            class: decoded.className,
-            gender: decoded.gender,
-            phone: decoded.phone,
-            email: decoded.email,
-            grade: decoded.grade
           }
         } else if (restoreResult.userId) {
           this.user = {

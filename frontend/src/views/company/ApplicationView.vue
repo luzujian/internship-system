@@ -590,7 +590,6 @@ const handleDownloadFile = async (archiveId, fileName) => {
       <el-table
         :data="paginatedTableData"
         border
-        stripe
         style="width: 100%"
         :header-cell-style="{ padding: '8px 4px', fontSize: '13px' }"
         :cell-style="{ padding: '6px 4px', fontSize: '12px' }"

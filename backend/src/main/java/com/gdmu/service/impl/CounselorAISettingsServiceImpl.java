@@ -294,6 +294,68 @@ public class CounselorAISettingsServiceImpl implements CounselorAISettingsServic
         return counselorCategoryWeightMapper.getTotalWeightByCounselorId(counselorId);
     }
     
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void ensureDefaultRulesExist(Long counselorId) {
+        // 规则和 AI 设置独立初始化，互不依赖
+        List<CounselorScoringRule> existing = getScoringRules(counselorId);
+        if (existing == null || existing.isEmpty()) {
+            log.info("辅导员 {} 无评分规则，自动初始化3个默认维度", counselorId);
+            initDefaultRulesAndWeights(counselorId);
+        }
+        // AI 设置独立检查，无论规则是否存在
+        if (counselorAISettingsMapper.findByCounselorId(counselorId) == null) {
+            CounselorAISettings settings = new CounselorAISettings();
+            settings.setCounselorId(counselorId);
+            settings.setEnableAiScoring(1);
+            settings.setCreateTime(new Date());
+            settings.setUpdateTime(new Date());
+            counselorAISettingsMapper.insert(settings);
+            log.info("辅导员 {} AI评分已默认开启", counselorId);
+        }
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    private void initDefaultRulesAndWeights(Long counselorId) {
+        String[][] dims = {{"实习态度", "40"}, {"专业能力", "35"}, {"学习成长", "25"}};
+        String[][] levels = {
+            {"优秀","90","100","表现卓越，远超预期，可作为榜样"},
+            {"良好","80","89","表现良好，达到要求并有一定亮点"},
+            {"中等","70","79","表现一般，基本完成要求"},
+            {"及格","60","69","勉强达标，存在明显不足"},
+            {"不及格","0","59","未达标，需要大幅改进"}
+        };
+        // 维度描述
+        java.util.Map<String, String> dimDescriptions = new java.util.HashMap<>();
+        dimDescriptions.put("实习态度", "评估学生在实习过程中的工作态度、积极性和责任心");
+        dimDescriptions.put("专业能力", "评估学生在实习中展现的专业技能和知识应用能力");
+        dimDescriptions.put("学习成长", "评估学生在实习期间的学习进步和个人成长");
+        List<CounselorScoringRule> rules = new ArrayList<>();
+        List<CounselorCategoryWeight> weights = new ArrayList<>();
+        Date now = new Date();
+        for (int di = 0; di < dims.length; di++) {
+            String[] dim = dims[di];
+            for (int li = 0; li < levels.length; li++) {
+                String[] lv = levels[li];
+                CounselorScoringRule r = new CounselorScoringRule();
+                r.setCounselorId(counselorId); r.setRuleName(lv[0]);
+                r.setRuleCode(dim[0] + "_" + lv[0]); r.setCategory(dim[0]);
+                r.setMinScore(Integer.parseInt(lv[1])); r.setMaxScore(Integer.parseInt(lv[2]));
+                r.setDescription(dim[0] + lv[0] + "：" + lv[3]);
+                r.setSortOrder(li); r.setStatus(1); r.setDeleted(0);
+                r.setCreateTime(now); r.setUpdateTime(now);
+                rules.add(r);
+            }
+            CounselorCategoryWeight w = new CounselorCategoryWeight();
+            w.setCounselorId(counselorId); w.setCategoryCode(dim[0]); w.setCategoryName(dim[0]);
+            w.setWeight(Integer.parseInt(dim[1])); w.setStatus(1); w.setDeleted(0);
+            w.setCreateTime(now); w.setUpdateTime(now);
+            weights.add(w);
+        }
+        counselorScoringRuleMapper.batchInsert(rules);
+        counselorCategoryWeightMapper.batchInsert(weights);
+    }
+
     private String getCategoryDisplayName(String categoryCode) {
         java.util.Map<String, String> categoryMap = new java.util.HashMap<>();
         categoryMap.put("internship_performance", "实习表现");

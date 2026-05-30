@@ -69,8 +69,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/majors", "/api/majors/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/admin/classes", "/api/admin/classes/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/admin/departments", "/api/admin/departments/**").permitAll()
-                        // 允许 AI 聊天接口无需认证
-                        .requestMatchers("/api/ai/chat", "/api/ai/chat/stream").permitAll()
+                        // AI 聊天接口需要认证（仅在已登录布局中使用）
+                        .requestMatchers("/api/ai/chat", "/api/ai/chat/stream").authenticated()
                         // 允许获取启用AI模型的公开接口无需认证
                         .requestMatchers("/api/admin/ai-model/public/**").permitAll()
                         // 允许健康检查接口无需认证
@@ -79,8 +79,8 @@ public class SecurityConfig {
                         .requestMatchers("/api/admin/position-categories/public/**").permitAll()
                         // 允许短信验证码接口无需认证
                         .requestMatchers("/sms/**").permitAll()
-                        // 允许文件下载接口无需认证
-                        .requestMatchers("/api/download/**").permitAll()
+                        // 文件下载需要认证
+                        .requestMatchers("/api/download/**").authenticated()
                         // 允许学生查询 Agent 接口无需认证
                         .requestMatchers("/api/ai/student/query", "/api/ai/student/query/stream", "/api/ai/student/info").permitAll()
                         // 允许资源查询 Agent 接口无需认证

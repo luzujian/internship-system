@@ -36,6 +36,9 @@ public class InternshipStatusScheduler implements ApplicationRunner {
     @Autowired
     private InternshipTimeSettingsService timeSettingsService;
 
+    @Autowired
+    private com.gdmu.validator.StateTransitionValidator stateTransitionValidator;
+
     /**
      * 应用启动时执行一次检查
      * 检查是否有学生的实习开始时间已到但状态还是"已确定"的
@@ -133,6 +136,8 @@ public class InternshipStatusScheduler implements ApplicationRunner {
 
             for (StudentInternshipStatus status : finishedStatuses) {
                 try {
+                    // 使用状态机校验状态流转合法性
+                    stateTransitionValidator.validate(status.getStatus(), 0);
                     // 将状态从"已结束"(4)变更为"无offer"(0)
                     status.setStatus(0);
                     status.setUpdateTime(now);

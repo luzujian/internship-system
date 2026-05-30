@@ -181,4 +181,23 @@ DeepSeek API 通过 `spring.ai.deepseek` 配置，支持 DeepSeek Chat 模型。
 - 直接 scp 传输二进制文件（不转 base64）
 - 服务器端文件替换
 - Docker 容器重启
+
+## 🔍 E2E 回归测试
+
+修改系统后必须运行以下测试确保业务闭环无回归问题：
+
+```bash
+cd frontend
+
+# 主要测试 — 覆盖完整业务流（17个用例）
+# 包含浏览器操作 + API验证：所有7种实习状态、主流程、中断/延期/自主实习分支
+npx playwright test tests/internship-full-workflow.spec.ts
+
+# 纯浏览器测试 — 验证前端UI可正常加载和导航（19个用例）
+npx playwright test tests/internship-browser-e2e.spec.ts
+```
+
+**运行要求**：后端 8080 + 前端 5173 必须已启动，admin/123456 账号存在。
+
+**测试自动创建和清理数据**，每次使用唯一时间戳避免冲突。
 - 部署结果验证

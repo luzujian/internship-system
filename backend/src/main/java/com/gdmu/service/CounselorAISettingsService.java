@@ -30,6 +30,9 @@ public interface CounselorAISettingsService {
     int deleteScoringRulesByCategory(Long counselorId, String category);
     
     int batchCreateWithAIDescription(Long counselorId, String categoryName);
+
+    /** 如果辅导员没有评分规则，自动初始化默认3维度 */
+    void ensureDefaultRulesExist(Long counselorId);
     
     List<CounselorCategoryWeight> getCategoryWeights(Long counselorId);
     

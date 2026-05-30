@@ -20,8 +20,11 @@ import com.gdmu.mapper.StudentUserMapper;
 import com.gdmu.mapper.PositionMapper;
 import com.gdmu.mapper.CompanyUserMapper;
 import com.gdmu.mapper.MajorMapper;
+import com.gdmu.utils.CurrentHolder;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
@@ -77,6 +80,17 @@ public class InternshipApplicationController {
     public Result getApplications(@PathVariable Long companyId) {
         log.info("根据公司ID获取申请列表，公司ID: {}", companyId);
         try {
+            // 安全校验：非管理员只能查看自己公司的申请
+            Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+            boolean isAdmin = authentication != null && authentication.getAuthorities().stream()
+                .anyMatch(auth -> auth.getAuthority().equals("ROLE_ADMIN"));
+            if (!isAdmin) {
+                Long currentCompanyId = CurrentHolder.getUserId();
+                if (currentCompanyId == null || !currentCompanyId.equals(companyId)) {
+                    log.warn("用户尝试查看其他企业的申请: currentCompanyId={}, requestedCompanyId={}", currentCompanyId, companyId);
+                    return Result.error("无权查看该企业的申请数据");
+                }
+            }
             List<InternshipApplicationEntity> applications = internshipApplicationService.findByCompanyId(companyId);
             return Result.success(applications);
         } catch (Exception e) {
@@ -174,6 +188,21 @@ public class InternshipApplicationController {
             InternshipApplicationEntity application = internshipApplicationService.findById(id);
             if (application == null) {
                 return Result.error("申请不存在");
+            }
+
+            // 安全校验：非管理员只能操作自己公司的申请
+            Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+            boolean isAdmin = authentication != null && authentication.getAuthorities().stream()
+                .anyMatch(auth -> auth.getAuthority().equals("ROLE_ADMIN"));
+            if (!isAdmin) {
+                String userRole = CurrentHolder.getUserRole();
+                Long currentCompanyId = CurrentHolder.getUserId();
+                if (!"ROLE_COMPANY".equals(userRole) || currentCompanyId == null
+                    || !currentCompanyId.equals(application.getCompanyId())) {
+                    log.warn("越权操作申请: role={}, userId={}, appCompanyId={}",
+                        userRole, currentCompanyId, application.getCompanyId());
+                    return Result.error("无权操作其他企业的申请");
+                }
             }
 
             String newStatus = statusRequest.getStatus();

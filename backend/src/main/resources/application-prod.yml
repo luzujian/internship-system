@@ -18,7 +18,7 @@ spring:
     url: jdbc:mysql://${DB_HOST:10.244.49.236}:${DB_PORT:3306}/${DB_NAME:internship}?useSSL=true&serverTimezone=Asia/Shanghai&characterEncoding=utf8&useUnicode=true
     driver-class-name: com.mysql.cj.jdbc.Driver
     username: ${DB_USERNAME:root}
-    password: ${DB_PASSWORD:1234}
+    password: ${DB_PASSWORD:}
     hikari:
       maximum-pool-size: 20
       minimum-idle: 10
@@ -155,7 +155,7 @@ logging:
     console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
 
 jwt:
-  secret: ${JWT_SECRET:defaultSecretChangeInProduction_ReplaceThisWithRandomSecret1234567890==}
+  secret: ${JWT_SECRET:}
   expiration: ${JWT_EXPIRATION:86400000}
   refresh-expiration: ${JWT_REFRESH_EXPIRATION:604800000}
   enabled: true

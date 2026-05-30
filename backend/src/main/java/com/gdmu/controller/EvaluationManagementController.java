@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Date;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -58,6 +59,9 @@ public class EvaluationManagementController {
     
     @Autowired
     private CounselorAISettingsService counselorAISettingsService;
+
+    @Autowired
+    private TeacherUserService teacherUserService;
 
     @Autowired
     private StudentReflectionAIAnalysisService studentReflectionAIAnalysisService;
@@ -246,7 +250,7 @@ public class EvaluationManagementController {
         Long currentUserId = CurrentHolder.getUserId();
         String currentUserRole = CurrentHolder.getUserRole();
         log.info("获取评分管理学生列表，当前登录用户 ID: {}, 角色：{}", currentUserId, currentUserRole);
-        
+
         List<Long> counselorClassIds = null;
         if (currentUserId != null) {
             List<com.gdmu.entity.Class> counselorClasses = classCounselorRelationService.findClassesByCounselorId(currentUserId);
@@ -254,9 +258,16 @@ public class EvaluationManagementController {
                 counselorClassIds = counselorClasses.stream()
                         .map(com.gdmu.entity.Class::getId)
                         .collect(Collectors.toList());
-                log.info("用户 {} 是辅导员，管理的班级 ID 列表：{}, 班级数量：{}", currentUserId, counselorClassIds, counselorClassIds.size());
+                log.info("辅导员 {} 管理的班级 ID：{}, 数量：{}", currentUserId, counselorClassIds, counselorClassIds.size());
             } else {
-                log.info("用户 {} 没有关联的班级，将返回所有学生（可能是管理员或其他教师角色）", currentUserId);
+                // 检查该用户是否是辅导员（有班级关系的才是辅导员）
+                // 无班级的辅导员不返回任何学生；管理员和系室教师返回全部
+                TeacherUser teacher = teacherUserService.findById(currentUserId);
+                if (teacher != null && "COUNSELOR".equals(teacher.getTeacherType())) {
+                    log.info("辅导员 {} 没有关联的班级，返回空列表", currentUserId);
+                    return Result.success(Collections.emptyList());
+                }
+                log.info("用户 {} 是管理员或其他角色，返回所有学生", currentUserId);
             }
         } else {
             log.warn("当前登录用户 ID 为空");
@@ -931,21 +942,48 @@ public class EvaluationManagementController {
     @GetMapping("/statistics")
     public Result getEvaluationStatistics() {
         log.info("获取评分统计信息");
-        
+
+        Set<Long> counselorClassIdSet = null;
+        Long currentUserId = CurrentHolder.getUserId();
+        String currentUserRole = CurrentHolder.getUserRole();
+        if (currentUserId != null) {
+            TeacherUser teacher = teacherUserService.findById(currentUserId);
+            if (teacher != null && "COUNSELOR".equals(teacher.getTeacherType())) {
+                List<com.gdmu.entity.Class> counselorClasses = classCounselorRelationService.findClassesByCounselorId(currentUserId);
+                if (counselorClasses == null || counselorClasses.isEmpty()) {
+                    return Result.success(Map.of("total", 0, "excellent", 0, "good", 0, "medium", 0, "pass", 0, "fail", 0));
+                }
+                counselorClassIdSet = counselorClasses.stream()
+                    .map(com.gdmu.entity.Class::getId).collect(Collectors.toSet());
+            }
+        }
+
         List<InternshipEvaluation> allEvaluations = internshipEvaluationService.findAll();
-        
-        Map<String, Long> gradeStats = allEvaluations.stream()
+        Map<String, Long> gradeStats;
+        if (counselorClassIdSet != null) {
+            gradeStats = new HashMap<>();
+            for (InternshipEvaluation e : allEvaluations) {
+                if (e.getStudentId() == null) continue;
+                StudentUser student = studentUserService.findById(e.getStudentId());
+                if (student != null && student.getClassId() != null && counselorClassIdSet.contains(student.getClassId())) {
+                    String grade = e.getGrade() != null ? e.getGrade() : "未评级";
+                    gradeStats.merge(grade, 1L, Long::sum);
+                }
+            }
+        } else {
+            gradeStats = allEvaluations.stream()
                 .collect(Collectors.groupingBy(InternshipEvaluation::getGrade, Collectors.counting()));
-        
+        }
+
+        long total = gradeStats.values().stream().mapToLong(Long::longValue).sum();
         Map<String, Object> statistics = Map.of(
-                "total", allEvaluations.size(),
+                "total", total,
                 "excellent", gradeStats.getOrDefault("优秀", 0L),
                 "good", gradeStats.getOrDefault("良好", 0L),
                 "medium", gradeStats.getOrDefault("中等", 0L),
                 "pass", gradeStats.getOrDefault("及格", 0L),
                 "fail", gradeStats.getOrDefault("不及格", 0L)
         );
-        
         return Result.success(statistics);
     }
     

@@ -838,7 +838,7 @@ const handleGenerateDescription = async () => {
             <el-tag type="info" size="small">{{ row.viewCount || 0 }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="200" align="center" fixed="right">
+        <el-table-column label="操作" width="220" align="center" fixed="right">
           <template #default="{ row }">
             <div class="action-buttons">
               <el-button 
@@ -1223,28 +1223,15 @@ const handleGenerateDescription = async () => {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
-/* 禁用表格列宽拖动，内容自动换行 */
-.table-card :deep(.el-table) {
-  --el-table-header-cell-resizable-border: none;
+:deep(.el-table) {
+  border-radius: 8px;
+  overflow: hidden;
 }
 
-.table-card :deep(.el-table__cell) {
-  word-wrap: break-word;
-  word-break: break-all;
-  white-space: normal !important;
-}
-
-.table-card :deep(.el-table .cell) {
-  word-wrap: break-word;
-  word-break: break-all;
-  white-space: normal !important;
-  line-height: 1.4;
-}
-
-/* 隐藏列调整线 */
-.table-card :deep(.el-table__cell.is-hidden > *),
-.table-card :deep(.el-table__resizable-wrapper) {
-  display: none !important;
+:deep(.el-table th) {
+  background: #f5f7fa;
+  font-weight: 600;
+  color: #333;
 }
 
 .empty-state {

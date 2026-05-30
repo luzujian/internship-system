@@ -134,11 +134,20 @@ public class ExcelUtils {
                 cellValue = String.valueOf(cell.getBooleanCellValue());
                 break;
             case FORMULA:
-                // 公式类型
+                // 公式类型 — 仅使用缓存值，不执行公式计算
                 try {
-                    cellValue = cell.getStringCellValue();
+                    CellType cachedType = cell.getCachedFormulaResultType();
+                    if (cachedType == CellType.STRING) {
+                        cellValue = cell.getStringCellValue();
+                    } else if (cachedType == CellType.NUMERIC) {
+                        cellValue = new DecimalFormat("0.##########").format(cell.getNumericCellValue());
+                    } else if (cachedType == CellType.BOOLEAN) {
+                        cellValue = String.valueOf(cell.getBooleanCellValue());
+                    } else {
+                        cellValue = "";
+                    }
                 } catch (Exception e) {
-                    cellValue = String.valueOf(cell.getNumericCellValue());
+                    cellValue = "";
                 }
                 break;
             default:
