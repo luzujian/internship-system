@@ -1,2 +1,2 @@
 org.springframework.context.ApplicationContextInitializer=\
-  com.gdmu.config.EnvLoader
+  com.internship.config.EnvLoader

@@ -80,7 +80,7 @@ k6 run load-tests/idempotency-test.js
 ```
 internship-system/
 ├── backend/
-│   ├── src/main/java/com/gdmu/
+│   ├── src/main/java/com/internship/
 │   │   ├── controller/     # 60+ 个 Controller，处理 REST API
 │   │   ├── service/        # 业务逻辑层
 │   │   ├── mapper/        # MyBatis Mapper 接口

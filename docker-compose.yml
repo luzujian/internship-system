@@ -37,7 +37,7 @@ services:
     working_dir: /app
     networks:
       - internship-network
-      - gdmu_mysql-net
+      - external-mysql-net
     command: >
       sh -c "java -Xms512m -Xmx2g
       --add-opens=java.base/java.nio=ALL-UNNAMED
@@ -82,7 +82,7 @@ services:
 networks:
   internship-network:
     driver: bridge
-  gdmu_mysql-net:
+  external-mysql-net:
     external: true
 
 volumes:

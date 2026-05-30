@@ -102,9 +102,9 @@ WHERE id = 3;
 ## 相关文件
 
 - `frontend/src/views/company/CompanyInfo.vue` - 前端企业信息管理页面
-- `backend/src/main/resources/com/gdmu/mapper/CompanyUserMapper.xml` - MyBatis Mapper 配置
-- `backend/src/main/java/com/gdmu/service/impl/CompanyUserServiceImpl.java` - Service 层实现
-- `backend/src/main/java/com/gdmu/controller/CompanyController.java` - Controller 层
+- `backend/src/main/resources/com/internship/mapper/CompanyUserMapper.xml` - MyBatis Mapper 配置
+- `backend/src/main/java/com/internship/service/impl/CompanyUserServiceImpl.java` - Service 层实现
+- `backend/src/main/java/com/internship/controller/CompanyController.java` - Controller 层
 
 ## 修改清单
 

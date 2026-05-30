@@ -1,0 +1,73 @@
+package com.internship.service.impl;
+
+import com.internship.entity.PositionFavorite;
+import com.internship.mapper.PositionFavoriteMapper;
+import com.internship.service.PositionFavoriteService;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DuplicateKeyException;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.Collections;
+import java.util.Date;
+import java.util.List;
+
+@Service
+public class PositionFavoriteServiceImpl implements PositionFavoriteService {
+
+    @Autowired
+    private PositionFavoriteMapper favoriteMapper;
+
+    @Override
+    @Transactional
+    public void addFavorite(Long positionId, Long studentId) {
+        // 检查是否已收藏
+        if (favoriteMapper.countByPositionIdAndStudentId(positionId, studentId) > 0) {
+            return; // 已收藏，直接返回
+        }
+        PositionFavorite favorite = new PositionFavorite();
+        favorite.setPositionId(positionId);
+        favorite.setStudentId(studentId);
+        favorite.setCreateTime(new Date());
+        try {
+            favoriteMapper.insert(favorite);
+        } catch (DuplicateKeyException e) {
+            // 并发场景下已存在记录，视为成功（幂等）
+        }
+    }
+
+    @Override
+    @Transactional
+    public void removeFavorite(Long positionId, Long studentId) {
+        favoriteMapper.deleteByPositionIdAndStudentId(positionId, studentId);
+    }
+
+    @Override
+    public boolean isFavorite(Long positionId, Long studentId) {
+        return favoriteMapper.countByPositionIdAndStudentId(positionId, studentId) > 0;
+    }
+
+    @Override
+    public List<Long> getStudentFavoritePositionIds(Long studentId) {
+        if (studentId == null) {
+            return Collections.emptyList();
+        }
+        return favoriteMapper.findFavoritePositionIdsByStudentId(studentId);
+    }
+
+    @Override
+    public List<Long> getStudentFavoritePositionIds(Long studentId, List<Long> positionIds) {
+        if (studentId == null || positionIds == null || positionIds.isEmpty()) {
+            return Collections.emptyList();
+        }
+        return favoriteMapper.findFavoritePositionIds(studentId, positionIds);
+    }
+
+    @Override
+    public List<PositionFavorite> getStudentFavoriteDetails(Long studentId) {
+        if (studentId == null) {
+            return Collections.emptyList();
+        }
+        return favoriteMapper.findFavoriteDetailsByStudentId(studentId);
+    }
+}

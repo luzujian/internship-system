@@ -11,3 +11,4 @@ frontend/dist_temp/
 .vscode/
 *.iml
 load-tests/results-*.txt
+next-ai-drawio/
