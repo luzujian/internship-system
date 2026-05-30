@@ -38,11 +38,17 @@ public class WebSocketAuthInterceptor implements HandshakeInterceptor {
             if (authHeader != null && authHeader.startsWith("Bearer ")) {
                 token = authHeader.substring(7);
             }
-            // URL 参数作为降级方案（兼容当前前端 WebSocket 实现）
+            // Cookie 作为降级方案（兼容前端 WebSocket 实现）
             if (token == null || token.isEmpty()) {
-                token = httpRequest.getParameter("token");
-                if (token != null && !token.isEmpty()) {
-                    log.warn("WebSocket token通过URL参数传递，建议前端改用Header方式");
+                // 从请求的 Cookie 中读取 ws_token
+                jakarta.servlet.http.Cookie[] cookies = httpRequest.getCookies();
+                if (cookies != null) {
+                    for (jakarta.servlet.http.Cookie cookie : cookies) {
+                        if ("ws_token".equals(cookie.getName())) {
+                            token = cookie.getValue();
+                            break;
+                        }
+                    }
                 }
             }
             

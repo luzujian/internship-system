@@ -14,6 +14,7 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.http.HttpMethod;
 import com.gdmu.filter.TokenFilter;
+import jakarta.servlet.DispatcherType;
 
 @Configuration
 @EnableWebSecurity
@@ -44,6 +45,8 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
+                // 跳过 ASYNC 调度（SSE 等），避免响应已提交后的重复安全检查
+                .securityMatcher(request -> request.getDispatcherType() != DispatcherType.ASYNC)
                 .csrf(csrf -> csrf.disable())
                 .exceptionHandling(exception -> exception
                         .authenticationEntryPoint(jwtAuthenticationEntryPoint)
@@ -73,6 +76,8 @@ public class SecurityConfig {
                         .requestMatchers("/api/ai/chat", "/api/ai/chat/stream").authenticated()
                         // 允许获取启用AI模型的公开接口无需认证
                         .requestMatchers("/api/admin/ai-model/public/**").permitAll()
+                        // 允许错误页面访问（防止异常处理时的连环报错）
+                        .requestMatchers("/error").permitAll()
                         // 允许健康检查接口无需认证
                         .requestMatchers("/api/health/**").permitAll()
                         // 允许公开岗位类别接口无需认证

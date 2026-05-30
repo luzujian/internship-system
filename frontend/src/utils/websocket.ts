@@ -150,9 +150,11 @@ class WebSocketClient {
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
       // 开发环境直连后端端口，避免 Vite WS 代理转发问题
       const host = import.meta.env.DEV ? 'localhost:8080' : window.location.host
-      const fullUrl = `${protocol}//${host}${this.options.url}?token=${encodeURIComponent(this.options.token)}`
+      const fullUrl = `${protocol}//${host}${this.options.url}`
       
-      logger.log('[WebSocket] 正在连接:', `${protocol}//${host}${this.options.url}?token=***`)
+      // 通过 Cookie 传递 Token，避免出现在 URL 和服务器日志中
+      document.cookie = `ws_token=${encodeURIComponent(this.options.token)}; path=/; SameSite=Lax`
+      logger.log('[WebSocket] 正在连接:', fullUrl)
 
       this.ws = new WebSocket(fullUrl)
 
