@@ -306,9 +306,11 @@ import { ElMessage, ElRadioGroup, ElRadioButton, ElScrollbar, ElSelect, ElOption
 import request from '../utils/request'
 import eventBus from '../utils/eventBus'
 import { onCompanyTodoUpdate, offCompanyTodoUpdate } from '../utils/websocket'
+import { useAuthStore } from '../store/auth'
 
 const router = useRouter()
 const route = useRoute()
+const authStore = useAuthStore()
 
 // Props定义 - 根据角色显示不同标题
 const props = defineProps({
@@ -1260,7 +1262,7 @@ const handleInput = () => {
 // 发送流式消息 - 与AIChat.vue保持一致
 const sendStreamingMessage = (message, aiMessageIndex) => {
   return new Promise((resolve, reject) => {
-    const token = localStorage.getItem('token')
+    const token = authStore.token
     let timeoutId = null
 
     // 设置超时
