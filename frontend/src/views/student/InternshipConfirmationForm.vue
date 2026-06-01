@@ -579,11 +579,8 @@ const unitChangeForm = ref({
   rejectReason: ''
 })
 
-// 应聘时间段状态
-const applicationPeriod = ref({
-  applicationStartTime: '',
-  applicationEndTime: ''
-})
+// 应聘时间段状态（null = 加载中，避免按钮闪现）
+const applicationPeriod = ref(null)
 
 // 上传配置
 const uploadUrl = '/api/upload'
@@ -926,7 +923,8 @@ const canApplyUnitChange = (item) => {
   // 必须是已确认状态且实习状态为已确定或实习中
   if (item.status !== 1) return false
   if (item.internshipStatus !== 2 && item.internshipStatus !== 3) return false
-  // 需要在应聘时间段内
+  // 需要在应聘时间段内（null 表示尚未加载，暂不显示按钮避免闪现）
+  if (!applicationPeriod.value) return false
   if (applicationPeriod.value.applicationStartTime && applicationPeriod.value.applicationEndTime) {
     if (!isWithinApplicationPeriod(applicationPeriod.value.applicationStartTime, applicationPeriod.value.applicationEndTime)) {
       return false
