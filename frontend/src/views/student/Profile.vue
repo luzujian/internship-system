@@ -2040,7 +2040,7 @@ const fetchUserInfo = async () => {
 // 获取实习状态
 const fetchInternshipStatus = async () => {
   try {
-    const response = await request.get(`/student/internship-status`)
+    const response = await request.get(`/student/home/internship-status`)
     if (response.code === 200 && response.data) {
       internshipStatus.value.status = response.data.status
       internshipStatus.value.positionId = response.data.positionId || null
