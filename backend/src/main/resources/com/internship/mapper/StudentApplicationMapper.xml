@@ -122,12 +122,14 @@
             <if test="status != null and status != ''">
                 and status = #{status}
             </if>
-            <if test="studentName != null and studentName != ''">
-                and student_name like concat('%',#{studentName},'%')
-            </if>
-            <if test="studentUserId != null and studentUserId != ''">
-                and student_user_id like concat('%',#{studentUserId},'%')
-            </if>
+            <trim prefix="and (" suffix=")" prefixOverrides="or">
+                <if test="studentName != null and studentName != ''">
+                    or student_name like concat('%',#{studentName},'%')
+                </if>
+                <if test="studentUserId != null and studentUserId != ''">
+                    or student_user_id like concat('%',#{studentUserId},'%')
+                </if>
+            </trim>
         </where>
         order by apply_time desc
     </select>
