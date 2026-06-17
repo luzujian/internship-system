@@ -133,12 +133,24 @@ internship-system/
 
 ```bash
 # 环境变量方式（推荐）
-DB_HOST=10.244.49.236
+DB_HOST=8.148.216.84
 DB_PORT=3306
 DB_NAME=internship
 DB_USERNAME=root
 DB_PASSWORD=1234
 ```
+
+## MCP 服务器配置
+
+**重要：MCP 服务器（SSH、MySQL 等）的实际生效配置在 `C:\Users\24096\.claude.json`，不在 `settings.json`。**
+
+查看当前 MCP 连接状态用 `/status` 命令，确认 `Config location` 指向哪个文件。需要修改 MCP 服务器连接信息时，直接编辑 `~/.claude.json` 中的 `mcpServers` 字段。
+
+### 当前配置
+- **SSH（ssh-mcp）**：`8.148.216.84:22` / root
+- **MySQL（mysql）**：`8.148.216.84:3306` / root / internship
+
+> `C:\Users\24096\.claude\settings.json` 和项目 `.claude/settings.local.json` 中的 MCP 配置仅作参考，不一定是实际生效的。
 
 ## AI 配置
 

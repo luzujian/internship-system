@@ -42,7 +42,7 @@ k6 run load-tests/idempotency-test.js
 ### 5. 自定义参数
 ```bash
 # 指定目标服务器
-k6 run --env BASE_URL=http://10.244.49.236:8080 load-tests/full-load-test.js
+k6 run --env BASE_URL=http://8.148.216.84:8080 load-tests/full-load-test.js
 
 # 指定测试账号
 k6 run --env STUDENT_USER=xxx --env STUDENT_PASS=yyy load-tests/full-load-test.js

@@ -1448,12 +1448,12 @@ result = await DepartmentService.addDepartment(formData)
 result = await DepartmentService.updateDepartment(formData)
 }
 
-if (result && result.status === 200 && (result.data.code === 200 || result.data?.code === 200)) {
+if (result && result.code === 200) {
 ElMessage.success('操作成功')
 dialogFormVisible.value = false
 await queryDepartments()
 } else {
-ElMessage.error('操作失败: ' + (result?.data?.msg || result?.msg || '未知错误'))
+ElMessage.error('操作失败: ' + (result?.msg || '未知错误'))
 }
 } catch (error) {
 logger.error('保存院系信息失败:', error)

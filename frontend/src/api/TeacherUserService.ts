@@ -9,6 +9,8 @@ export interface TeacherUser {
   name: string
   gender?: number
   departmentId?: number
+  divisionId?: string
+  phone?: string
   teacherType?: number
   status?: number
   createTime?: string
@@ -116,6 +118,7 @@ const TeacherUserService = {
         teacherUserId: teacherData.teacherUserId,
         gender: teacherData.gender,
         departmentId: teacherData.departmentId,
+        divisionId: teacherData.divisionId,
         teacherType: teacherData.teacherType,
         phone: teacherData.phone
         // 不包含密码字段，后端会保持原密码
