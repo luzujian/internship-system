@@ -1304,15 +1304,11 @@ onMounted(async () => {
         <el-table-column type="index" label="序号" width="55" align="center" :index="(index) => (pagination.currentPage - 1) * pagination.pageSize + index + 1" />
         <el-table-column prop="studentId" label="学号" width="120" align="center" />
         <el-table-column prop="name" label="姓名" width="100" align="center" />
-        <el-table-column prop="gender" label="性别" width="80" align="center">
-          <template #default="scope">
-            <span>{{ scope.row.gender === 1 ? '男' : scope.row.gender === 2 ? '女' : '-' }}</span>
-          </template>
-        </el-table-column>
+
         <el-table-column prop="grade" label="年级" width="80" align="center" />
         <el-table-column prop="majorId" label="专业" width="160" align="center" :formatter="formatMajorName" />
         <el-table-column prop="department" label="学院" width="140" align="center" :formatter="formatDepartmentName" />
-        <el-table-column prop="classId" label="班级" width="100" align="center" :formatter="formatClassName" />
+        <el-table-column prop="className" label="班级" width="120" align="center" />
         <el-table-column prop="phone" label="手机号" width="130" align="center" />
         <el-table-column prop="status" label="状态" width="100" align="center">
           <template #default="scope">
@@ -1513,7 +1509,7 @@ onMounted(async () => {
           </div>
         </div>
         <div class="import-tip">
-          提示：请确保Excel文件包含学号、姓名、性别、年级、专业名称、班级名称等必要字段
+          提示：请确保Excel文件包含学号、姓名、年级、专业名称、班级名称等必要字段
         </div>
       </div>
       <template #footer>

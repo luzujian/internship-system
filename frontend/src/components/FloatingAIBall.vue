@@ -1,4 +1,5 @@
 <template>
+  <template v-if="aiEnabled">
   <!-- AI悬浮球 -->
   <div
     class="floating-ai-ball"
@@ -297,6 +298,7 @@
       </svg>
     </div>
   </div>
+  </template>
 </template>
 
 <script setup>
@@ -384,6 +386,9 @@ const availableModels = ref([
   { modelCode: 'deepseek-v4-pro', modelName: 'DeepSeek-V4-Pro' }
 ])
 let abortController = null // 请求中断控制器
+
+// AI 功能是否启用配置
+const aiEnabled = ref(true)
 
 // 企业端气泡相关状态
 const showCompanyBubble = ref(false)
@@ -1497,7 +1502,21 @@ const fetchAvailableModels = async () => {
 }
 
 // 组件挂载时加载历史数据
-onMounted(() => {
+onMounted(async () => {
+  // 先检查是否启用AI功能
+  try {
+    const configRes = await request.get('/home/ai-config')
+    if (configRes.code === 200) {
+      aiEnabled.value = configRes.data
+    }
+  } catch (error) {
+    console.error('获取AI悬浮球配置失败:', error)
+  }
+
+  if (!aiEnabled.value) {
+    return // 如果禁用了，直接返回，不执行后续的动画和气泡逻辑
+  }
+
   try {
     const savedBallPosition = localStorage.getItem(getStorageKey('internshipAIBallPosition'))
     if (savedBallPosition) {

@@ -200,7 +200,7 @@ const handleReset = () => {
 
 const handleApprove = async (row) => {
   try {
-    await ElMessageBox.confirm('同意该学生的申请，代表该学生面试通过，是否继续？', '确认同意', {
+    await ElMessageBox.confirm('同意该学生的申请，代表该学生获得面试资格，系统将自动发送面试邀请，是否继续？', '确认同意', {
       confirmButtonText: '确定同意',
       cancelButtonText: '取消',
       type: 'success'
@@ -223,7 +223,7 @@ const handleApprove = async (row) => {
 
 const handleReject = async (row) => {
   try {
-    await ElMessageBox.confirm('拒绝该学生的申请，代表该学生面试未通过，是否继续？', '确认拒绝', {
+    await ElMessageBox.confirm('拒绝该学生的申请，代表该学生未获得面试资格，是否继续？', '确认拒绝', {
       confirmButtonText: '确定拒绝',
       cancelButtonText: '取消',
       type: 'warning'
@@ -587,6 +587,13 @@ const handleDownloadFile = async (archiveId, fileName) => {
     </div>
 
     <div class="table-card">
+      <el-alert
+        title="提示：同意申请后，方可对该学生进行面试结果（通过 / 没通过）的操作"
+        type="info"
+        :closable="false"
+        show-icon
+        style="margin-bottom: 12px;"
+      />
       <el-table
         :data="paginatedTableData"
         border

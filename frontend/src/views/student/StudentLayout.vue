@@ -228,10 +228,75 @@ const handleCommand = async (command) => {
   }
 }
 
+// 学生菜单配置
+const defaultStudentMenus = [
+  { path: '/student/home', name: '首页', icon: 'HomeFilled', visible: true },
+  { path: '/student/jobs', name: '职位浏览', icon: 'Briefcase', visible: true },
+  { path: '/student/applications', name: '我的申请', icon: 'Document', visible: true },
+  { path: '/student/interviews', name: '面试管理', icon: 'ChatDotRound', visible: true },
+  { path: '/student/internship-confirmation-form', name: '实习确认表', icon: 'DocumentChecked', visible: true },
+  { path: '/student/internships', name: '实习心得', icon: 'Document', visible: true },
+  { path: '/student/profile', name: '个人中心', icon: 'User', visible: true }
+]
+const studentMenus = ref([...defaultStudentMenus])
+
+const visibleStudentMenus = computed(() => {
+  return studentMenus.value.filter(m => m.visible !== false)
+})
+
+const getMenuIcon = (iconName: string) => {
+  const iconMap: Record<string, any> = {
+    'HomeFilled': HomeFilled,
+    'Briefcase': Briefcase,
+    'Document': Document,
+    'ChatDotRound': ChatDotRound,
+    'DocumentChecked': DocumentChecked,
+    'User': User
+  }
+  return iconMap[iconName] || Document
+}
+
+const fetchStudentMenus = async () => {
+  try {
+    const response = await request.get('/student/home/menu-config')
+    if (response && response.code === 200 && response.data) {
+      let configMenus = []
+      try {
+        configMenus = JSON.parse(response.data)
+      } catch (e) {
+        console.error('解析学生菜单配置失败:', e)
+      }
+      
+      if (Array.isArray(configMenus) && configMenus.length > 0) {
+        const configMap = new Map(configMenus.map(m => [m.path, m]))
+        const mergedMenus = []
+        
+        for (const configMenu of configMenus) {
+          const defaultMenu = defaultStudentMenus.find(m => m.path === configMenu.path)
+          if (defaultMenu) {
+            mergedMenus.push({ ...defaultMenu, visible: configMenu.visible !== false })
+          }
+        }
+        
+        for (const defaultMenu of defaultStudentMenus) {
+          if (!configMap.has(defaultMenu.path)) {
+            mergedMenus.push({ ...defaultMenu, visible: true })
+          }
+        }
+        
+        studentMenus.value = mergedMenus
+      }
+    }
+  } catch (error) {
+    console.error('获取学生菜单配置失败:', error)
+  }
+}
+
 // 生命周期钩子
 onMounted(() => {
   checkPendingReminders()
   fetchHeaderStatus()
+  fetchStudentMenus()
 
   // 初始化 WebSocket 连接
   initStudentWebSocket()
@@ -423,66 +488,16 @@ onUnmounted(() => {
         :collapse="sidebarCollapsed"
         :collapse-transition="true"
       >
-        <el-menu-item index="/student/home">
+        <el-menu-item 
+          v-for="menu in visibleStudentMenus" 
+          :key="menu.path" 
+          :index="menu.path"
+        >
           <el-icon>
-            <HomeFilled />
+            <component :is="getMenuIcon(menu.icon)" />
           </el-icon>
           <template #title>
-            <span>首页</span>
-          </template>
-        </el-menu-item>
-
-        <el-menu-item index="/student/jobs">
-          <el-icon>
-            <Briefcase />
-          </el-icon>
-          <template #title>
-            <span>职位浏览</span>
-          </template>
-        </el-menu-item>
-
-        <el-menu-item index="/student/applications">
-          <el-icon>
-            <Document />
-          </el-icon>
-          <template #title>
-            <span>我的申请</span>
-          </template>
-        </el-menu-item>
-
-        <el-menu-item index="/student/interviews">
-          <el-icon>
-            <ChatDotRound />
-          </el-icon>
-          <template #title>
-            <span>面试管理</span>
-          </template>
-        </el-menu-item>
-
-        <el-menu-item index="/student/internship-confirmation-form">
-          <el-icon>
-            <DocumentChecked />
-          </el-icon>
-          <template #title>
-            <span>实习确认表</span>
-          </template>
-        </el-menu-item>
-
-        <el-menu-item index="/student/internships">
-          <el-icon>
-            <Document />
-          </el-icon>
-          <template #title>
-            <span>实习心得</span>
-          </template>
-        </el-menu-item>
-
-        <el-menu-item index="/student/profile">
-          <el-icon>
-            <User />
-          </el-icon>
-          <template #title>
-            <span>个人中心</span>
+            <span>{{ menu.name }}</span>
           </template>
         </el-menu-item>
       </el-menu>

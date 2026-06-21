@@ -12,6 +12,7 @@ import com.internship.service.InternshipReflectionService;
 import com.internship.service.InterviewInvitationService;
 import com.internship.service.InternshipConfirmationRecordService;
 import com.internship.service.StudentInternshipStatusService;
+import com.internship.service.SystemConfigService;
 import com.internship.service.UserService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -60,6 +61,9 @@ public class StudentHomeController {
     @Autowired
     private com.internship.service.AnnouncementReadRecordService readRecordService;
 
+    @Autowired
+    private SystemConfigService systemConfigService;
+
     private User getCurrentUser() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth == null || !(auth.getPrincipal() instanceof org.springframework.security.core.userdetails.User)) {
@@ -86,6 +90,20 @@ public class StudentHomeController {
                 return user.getId();
             }
             throw new IllegalArgumentException("无效的学生ID: " + studentId);
+        }
+    }
+
+    @GetMapping("/menu-config")
+    public Result getStudentMenuConfig() {
+        try {
+            com.internship.entity.SystemConfig config = systemConfigService.findByConfigKey("STUDENT_MENU_CONFIG");
+            if (config != null) {
+                return Result.success(config.getConfigValue());
+            }
+            return Result.success("[]");
+        } catch (Exception e) {
+            log.error("获取学生菜单配置失败: {}", e.getMessage(), e);
+            return Result.error("获取菜单配置失败");
         }
     }
 

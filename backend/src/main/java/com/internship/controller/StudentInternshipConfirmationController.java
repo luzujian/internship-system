@@ -409,13 +409,18 @@ public class StudentInternshipConfirmationController {
             status.setPositionName(record.getPositionName());
             status.setCompanyAddress(record.getCompanyAddress());
             status.setCompanyPhone(record.getCompanyPhone());
-            // 更新实习时间（LocalDateTime转换为Date）
-            if (record.getInternshipStartTime() != null) {
-                status.setInternshipStartTime(Date.from(record.getInternshipStartTime().atZone(java.time.ZoneId.systemDefault()).toInstant()));
+            // 从教师设置读取实习结束时间作为初始上界（实习开始时间留到企业确认时由系统自动计算）
+            InternshipTimeSettings settings = internshipTimeSettingsService.findLatest();
+            if (settings != null && settings.getEndDate() != null && !settings.getEndDate().isEmpty()) {
+                try {
+                    java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("yyyy-MM-dd");
+                    status.setInternshipEndTime(sdf.parse(settings.getEndDate()));
+                    log.info("从教师设置读取实习结束时间上界: studentId={}, endDate={}", studentId, settings.getEndDate());
+                } catch (Exception e) {
+                    log.warn("解析教师设置的结束日期失败: {}", e.getMessage());
+                }
             }
-            if (record.getInternshipEndTime() != null) {
-                status.setInternshipEndTime(Date.from(record.getInternshipEndTime().atZone(java.time.ZoneId.systemDefault()).toInstant()));
-            }
+            // internshipStartTime 不在此处设置，留到企业确认时由系统根据岗位日期和确认时刻自动计算
             status.setInternshipDuration(record.getInternshipDuration());
             // 设置企业确认状态为待确认(0)
             status.setCompanyConfirmStatus(0);

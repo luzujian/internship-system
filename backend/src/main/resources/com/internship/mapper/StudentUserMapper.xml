@@ -105,14 +105,15 @@
     
     <!-- 查询所有学生用户 -->
     <select id="findAll" resultMap="StudentUserResultMap">
-        SELECT su.*, m.name AS major
+        SELECT su.*, m.name AS major, d.name AS department
         FROM student_users su
         LEFT JOIN major m ON su.major_id = m.id
+        LEFT JOIN department d ON m.department_id = d.id
     </select>
 
     <!-- 动态条件查询 -->
     <select id="list" resultMap="StudentUserResultMap">
-        select s.*, c.name className from student_users s left join class c on s.class_id = c.id
+        select s.*, c.name className, d.name department from student_users s left join class c on s.class_id = c.id left join major m on s.major_id = m.id left join department d on m.department_id = d.id
         <where>
             <if test="studentId != null and studentId != '' or name != null and name != ''">
                 <trim prefix="(" suffix=")" prefixOverrides="or">
@@ -145,7 +146,7 @@
     
     <!-- 动态条件查询（包含状态参数） -->
     <select id="listWithStatus" resultMap="StudentUserResultMap">
-        select s.*, c.name className from student_users s left join class c on s.class_id = c.id
+        select s.*, c.name className, d.name department from student_users s left join class c on s.class_id = c.id left join major m on s.major_id = m.id left join department d on m.department_id = d.id
         <where>
             <if test="studentId != null and studentId != '' or name != null and name != ''">
                 <trim prefix="(" suffix=")" prefixOverrides="or">

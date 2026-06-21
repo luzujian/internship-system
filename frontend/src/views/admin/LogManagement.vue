@@ -252,7 +252,6 @@ const getModuleName = (module: string): string => {
     'AI_MODEL': 'AI模型管理',
     'WITHDRAWAL_RECORD_MANAGEMENT': '撤回申请记录管理',
     'CHAT_MANAGEMENT': '聊天管理',
-    'INTERNSHIP_REFLECTION': '实习心得管理',
     'SYSTEM_CONFIG': '系统配置',
     'STUDENT_REFLECTION_AI_ANALYSIS': '学生心得AI分析',
     'STUDENT_REFLECTION_EVALUATION': '学生心得评分',

@@ -125,6 +125,73 @@
             </el-card>
           </div>
         </el-tab-pane>
+
+        <el-tab-pane label="学生端菜单配置" name="studentMenu">
+          <div class="permission-tree-container">
+            <el-card shadow="never" class="tree-card">
+              <div class="teacher-permission-header">
+                <h3 class="assignment-title">配置学生端菜单</h3>
+                <p class="assignment-description">勾选菜单项启用，拖拽菜单项调整显示顺序</p>
+                <div style="margin-top: 10px;">
+                  <el-button type="primary" @click="saveStudentMenus" :loading="studentSaving">保存配置</el-button>
+                  <el-button @click="resetStudentMenus">恢复默认</el-button>
+                </div>
+              </div>
+              <div class="menu-list-draggable" style="margin-top: 20px;">
+                <div 
+                  v-for="(menu, index) in studentMenus" 
+                  :key="menu.path" 
+                  class="menu-item-draggable"
+                  :class="{ 'selected': menu.visible, 'dragging': draggedStudentIndex === index }"
+                  draggable="true"
+                  @dragstart="handleStudentDragStart(index, $event)"
+                  @dragover.prevent="handleStudentDragOver(index, $event)"
+                  @drop="handleStudentDrop(index, $event)"
+                  @dragend="handleStudentDragEnd"
+                >
+                  <div class="menu-drag-handle">
+                    <el-icon class="drag-icon"><Rank /></el-icon>
+                  </div>
+                  <el-checkbox 
+                    v-model="menu.visible"
+                  >
+                    <div class="menu-info">
+                      <el-icon class="menu-icon"><component :is="getMenuIcon(menu.icon)" /></el-icon>
+                      <span class="menu-name">{{ menu.name }}</span>
+                      <el-tag size="small" type="info" class="menu-path">{{ menu.path }}</el-tag>
+                    </div>
+                  </el-checkbox>
+                </div>
+              </div>
+            </el-card>
+          </div>
+        </el-tab-pane>
+
+        <el-tab-pane label="通用权限管理" name="generalPermission">
+          <div class="permission-tree-container">
+            <el-card shadow="never" class="tree-card">
+              <div class="teacher-permission-header">
+                <h3 class="assignment-title">通用系统功能管控</h3>
+                <p class="assignment-description">配置系统全局功能的开启与关闭状态</p>
+              </div>
+              <div style="margin-top: 20px;">
+                <el-form label-width="200px">
+                  <el-form-item label="AI 悬浮球功能" style="margin-bottom: 20px;">
+                    <el-switch 
+                      v-model="aiAssistantEnabled" 
+                      active-text="启用" 
+                      inactive-text="关闭"
+                      @change="saveAiConfig"
+                    ></el-switch>
+                    <div style="margin-left: 20px; color: #909399; font-size: 13px;">
+                      关闭后，悬浮球以及悬浮球旁边的气泡框均会被隐藏
+                    </div>
+                  </el-form-item>
+                </el-form>
+              </div>
+            </el-card>
+          </div>
+        </el-tab-pane>
       </el-tabs>
     </el-card>
 
@@ -249,6 +316,23 @@ const teacherPermissionCounts = ref<Record<number, number>>({})
 const draggedIndex = ref<number | null>(null)
 const menuSortOrder = ref<number[]>([])
 
+// 学生菜单配置
+const defaultStudentMenus = [
+  { path: '/student/home', name: '首页', icon: 'HomeFilled', visible: true },
+  { path: '/student/jobs', name: '职位浏览', icon: 'Briefcase', visible: true },
+  { path: '/student/applications', name: '我的申请', icon: 'Document', visible: true },
+  { path: '/student/interviews', name: '面试管理', icon: 'ChatDotRound', visible: true },
+  { path: '/student/internship-confirmation-form', name: '实习确认表', icon: 'DocumentChecked', visible: true },
+  { path: '/student/internships', name: '实习心得', icon: 'Document', visible: true },
+  { path: '/student/profile', name: '个人中心', icon: 'User', visible: true }
+]
+const studentMenus = ref([...defaultStudentMenus])
+const studentSaving = ref(false)
+const draggedStudentIndex = ref<number | null>(null)
+
+// 通用配置
+const aiAssistantEnabled = ref(true)
+
 // 权限管理模块的权限ID和模块节点ID（系统管理-权限管理），admin角色不可取消这些权限
 const PERMISSION_MANAGE_LOCKED_IDS = [114, 115, 116, 117, 'sub_系统管理_权限管理']
 
@@ -302,6 +386,35 @@ const handleDrop = (targetIndex: number, event: DragEvent) => {
 
 const handleDragEnd = () => {
   draggedIndex.value = null
+}
+
+const handleStudentDragStart = (index: number, event: DragEvent) => {
+  draggedStudentIndex.value = index
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = 'move'
+  }
+}
+
+const handleStudentDragOver = (index: number, event: DragEvent) => {
+  event.preventDefault()
+  if (event.dataTransfer) {
+    event.dataTransfer.dropEffect = 'move'
+  }
+}
+
+const handleStudentDrop = (targetIndex: number, event: DragEvent) => {
+  event.preventDefault()
+  if (draggedStudentIndex.value === null || draggedStudentIndex.value === targetIndex) return
+  
+  const draggedMenu = studentMenus.value[draggedStudentIndex.value]
+  studentMenus.value.splice(draggedStudentIndex.value, 1)
+  studentMenus.value.splice(targetIndex, 0, draggedMenu)
+  
+  draggedStudentIndex.value = null
+}
+
+const handleStudentDragEnd = () => {
+  draggedStudentIndex.value = null
 }
 
 const handleMenuCheck = (menuId: number, checked: boolean) => {
@@ -666,11 +779,168 @@ const saveTeacherPermissions = async () => {
   }
 }
 
+const fetchStudentMenus = async () => {
+  try {
+    const response = await request.get('/admin/system-config/key/STUDENT_MENU_CONFIG')
+    if (response.code === 200 && response.data && response.data.configValue) {
+      let configMenus = []
+      try {
+        configMenus = JSON.parse(response.data.configValue)
+      } catch (e) {
+        logger.error('解析学生菜单配置失败:', e)
+      }
+      
+      if (Array.isArray(configMenus) && configMenus.length > 0) {
+        // 合并配置与默认菜单（保留新的默认菜单项）
+        const configMap = new Map(configMenus.map(m => [m.path, m]))
+        const mergedMenus = []
+        
+        // 1. 添加配置中已有的菜单（保留配置的顺序）
+        for (const configMenu of configMenus) {
+          const defaultMenu = defaultStudentMenus.find(m => m.path === configMenu.path)
+          if (defaultMenu) {
+            mergedMenus.push({ ...defaultMenu, visible: configMenu.visible !== false })
+          }
+        }
+        
+        // 2. 添加默认菜单中有但配置中没有的菜单（新增菜单）
+        for (const defaultMenu of defaultStudentMenus) {
+          if (!configMap.has(defaultMenu.path)) {
+            mergedMenus.push({ ...defaultMenu, visible: true })
+          }
+        }
+        
+        studentMenus.value = mergedMenus
+      }
+    }
+  } catch (error) {
+    logger.error('获取学生菜单配置失败:', error)
+  }
+}
+
+const saveStudentMenus = async () => {
+  studentSaving.value = true
+  try {
+    const configValue = JSON.stringify(studentMenus.value.map(m => ({
+      path: m.path,
+      visible: m.visible
+    })))
+    
+    // 先检查是否存在该配置
+    let exists = false
+    try {
+      const checkRes = await request.get('/admin/system-config/key/STUDENT_MENU_CONFIG')
+      if (checkRes.code === 200 && checkRes.data) {
+        exists = true
+      }
+    } catch (e) {
+      exists = false
+    }
+    
+    const requestData = {
+      configKey: 'STUDENT_MENU_CONFIG',
+      configValue: configValue,
+      configType: 'JSON',
+      configName: '学生端菜单配置',
+      description: '灵活管控学生端菜单栏的显示内容和顺序',
+      status: 1
+    }
+    
+    let response
+    if (exists) {
+      response = await request.put('/admin/system-config/key/STUDENT_MENU_CONFIG', requestData)
+    } else {
+      response = await request.post('/admin/system-config', requestData)
+    }
+    
+    if (response.code === 200) {
+      ElMessage.success('学生菜单配置保存成功，学生端下次登录/刷新时生效')
+    } else {
+      ElMessage.error(response.message || '学生菜单配置保存失败')
+    }
+  } catch (error) {
+    logger.error('保存学生菜单配置失败:', error)
+    ElMessage.error('学生菜单配置保存失败')
+  } finally {
+    studentSaving.value = false
+  }
+}
+
+const resetStudentMenus = () => {
+  ElMessageBox.confirm('确定要恢复默认的学生菜单配置吗？这将会覆盖当前的所有设置。', '提示', {
+    confirmButtonText: '确定',
+    cancelButtonText: '取消',
+    type: 'warning'
+  }).then(() => {
+    studentMenus.value = JSON.parse(JSON.stringify(defaultStudentMenus))
+  }).catch(() => {})
+}
+
+const fetchAiConfig = async () => {
+  try {
+    const response = await request.get('/admin/system-config/key/AI_ASSISTANT_ENABLED')
+    if (response.code === 200 && response.data) {
+      aiAssistantEnabled.value = response.data.configValue === 'true'
+    } else {
+      aiAssistantEnabled.value = true // 默认为true
+    }
+  } catch (error) {
+    logger.error('获取AI悬浮球配置失败:', error)
+    aiAssistantEnabled.value = true
+  }
+}
+
+const saveAiConfig = async (val: boolean) => {
+  try {
+    const configValue = val ? 'true' : 'false'
+    
+    // 检查是否存在
+    let exists = false
+    try {
+      const checkRes = await request.get('/admin/system-config/key/AI_ASSISTANT_ENABLED')
+      if (checkRes.code === 200 && checkRes.data) {
+        exists = true
+      }
+    } catch (e) {
+      exists = false
+    }
+    
+    const requestData = {
+      configKey: 'AI_ASSISTANT_ENABLED',
+      configValue: configValue,
+      configType: 'BOOLEAN',
+      configName: 'AI悬浮球功能开关',
+      description: '控制各角色端是否显示AI悬浮球及气泡框',
+      status: 1
+    }
+    
+    let response
+    if (exists) {
+      response = await request.put('/admin/system-config/key/AI_ASSISTANT_ENABLED', requestData)
+    } else {
+      response = await request.post('/admin/system-config', requestData)
+    }
+    
+    if (response.code === 200) {
+      ElMessage.success('AI悬浮球功能配置已更新')
+    } else {
+      ElMessage.error(response.message || '配置更新失败')
+      aiAssistantEnabled.value = !val // 恢复原状
+    }
+  } catch (error) {
+    logger.error('保存AI悬浮球配置失败:', error)
+    ElMessage.error('配置更新失败')
+    aiAssistantEnabled.value = !val // 恢复原状
+  }
+}
+
 onMounted(() => {
   fetchRoles()
   fetchPermissionTree()
   fetchTeacherRoles()
   fetchTeacherPermissionList()
+  fetchStudentMenus()
+  fetchAiConfig()
 })
 </script>
 

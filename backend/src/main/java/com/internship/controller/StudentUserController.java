@@ -95,7 +95,7 @@ public class StudentUserController {
             
             // 创建表头行
             Row headerRow = sheet.createRow(0);
-            String[] headers = {"学号", "姓名", "年级", "专业", "班级", "入学时间"};
+            String[] headers = {"学号", "姓名", "年级", "专业", "班级"};
             CellStyle headerStyle = workbook.createCellStyle();
             headerStyle.setFillForegroundColor(IndexedColors.GREEN.getIndex());
             headerStyle.setFillPattern(FillPatternType.SOLID_FOREGROUND);
@@ -143,11 +143,18 @@ public class StudentUserController {
                 } else {
                     dataRow.createCell(4).setCellValue("");
                 }
-                
+
                 // 设置数据行样式
                 for (int j = 0; j < headers.length; j++) {
-                    dataRow.getCell(j).setCellStyle(dataStyle);
-                    // 自动调整列宽
+                    Cell cell = dataRow.getCell(j);
+                    if (cell == null) {
+                        cell = dataRow.createCell(j);
+                    }
+                    cell.setCellStyle(dataStyle);
+                }
+
+                // 自动调整列宽（放在样式设置之后，只执行一次）
+                for (int j = 0; j < headers.length; j++) {
                     sheet.autoSizeColumn(j);
                 }
             }
@@ -404,7 +411,7 @@ public class StudentUserController {
 
             // 创建表头行（第 1 行）
             Row headerRow = sheet.createRow(0);
-            String[] headers = {"学号", "姓名", "性别", "年级", "专业名称", "班级名称", "说明"};
+            String[] headers = {"学号", "姓名", "年级", "专业名称", "班级名称", "说明"};
 
             // 创建表头样式
             CellStyle headerStyle = workbook.createCellStyle();
@@ -419,6 +426,7 @@ public class StudentUserController {
 
             Font headerFont = workbook.createFont();
             headerFont.setBold(true);
+            headerFont.setColor(IndexedColors.WHITE.getIndex());
             headerFont.setFontHeightInPoints((short) 11);
             headerStyle.setFont(headerFont);
 
@@ -437,8 +445,8 @@ public class StudentUserController {
 
             // 在表头行的最后一列右边添加说明
             Row descRow = sheet.createRow(1);
-            Cell descCell = descRow.createCell(6);
-            descCell.setCellValue("说明：学号、姓名、性别、年级、专业名称、班级名称为必填项");
+            Cell descCell = descRow.createCell(5);
+            descCell.setCellValue("说明：学号、姓名、年级、专业名称、班级名称为必填项");
 
             CellStyle descStyle = workbook.createCellStyle();
             descStyle.setFillForegroundColor(IndexedColors.YELLOW.getIndex());

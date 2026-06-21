@@ -5,6 +5,7 @@ import com.internship.entity.TeacherUser;
 import com.internship.entity.dto.HomeStatsDTO;
 import com.internship.mapper.TeacherUserMapper;
 import com.internship.service.HomeService;
+import com.internship.service.SystemConfigService;
 import com.internship.utils.CurrentHolder;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -20,6 +21,23 @@ public class HomeController {
 
     @Autowired
     private TeacherUserMapper teacherUserMapper;
+
+    @Autowired
+    private SystemConfigService systemConfigService;
+    
+    @GetMapping("/ai-config")
+    public Result getAiConfig() {
+        try {
+            com.internship.entity.SystemConfig config = systemConfigService.findByConfigKey("AI_ASSISTANT_ENABLED");
+            if (config != null) {
+                return Result.success(Boolean.parseBoolean(config.getConfigValue()));
+            }
+            return Result.success(true); // 默认开启
+        } catch (Exception e) {
+            log.error("获取AI助手配置失败: {}", e.getMessage());
+            return Result.success(true); // 出错时默认开启
+        }
+    }
     
     @GetMapping("/stats")
     public Result getHomeStats(@RequestParam(required = false) String startDate,

@@ -4,10 +4,14 @@ import com.internship.entity.Result;
 import com.internship.entity.StudentInternshipStatus;
 import com.internship.entity.PageResult;
 import com.internship.entity.InternshipConfirmationRecord;
+import com.internship.entity.InternshipTimeSettings;
+import com.internship.entity.Position;
+import com.internship.mapper.PositionMapper;
 import com.internship.service.StudentInternshipStatusService;
 import com.internship.service.UserService;
 import com.internship.service.InternshipConfirmationRecordService;
 import com.internship.service.InternshipProgressRecordService;
+import com.internship.service.InternshipTimeSettingsService;
 import com.internship.service.StudentJobApplicationService;
 import com.internship.websocket.AnnouncementWebSocketHandler;
 import com.internship.anno.Log;
@@ -63,6 +67,12 @@ public class StudentInternshipStatusController {
     @Autowired
     private AnnouncementWebSocketHandler webSocketHandler;
 
+    @Autowired
+    private PositionMapper positionMapper;
+
+    @Autowired
+    private InternshipTimeSettingsService internshipTimeSettingsService;
+
     /**
      * 推送企业待办数据更新
      */
@@ -83,6 +93,75 @@ public class StudentInternshipStatusController {
             webSocketHandler.sendCompanyTodoUpdate(companyId, pendingApplications, pendingConfirmations);
         } catch (Exception e) {
             log.error("推送待办数据失败: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * 计算并设置学生实习的开始和结束时间
+     * 开始时间 = max(岗位的 internshipStartDate, 当前时刻)，岗位无日期时用教师 startDate 兜底
+     * 结束时间 = 教师设置的 endDate 作为上界
+     * 若该生有前一段实习（同 studentId，status ≥ 2，不同 id），则将其结束时间截断为本段开始时间
+     */
+    private void calculateAndSetInternshipTimes(StudentInternshipStatus status) {
+        try {
+            // 1. 查询岗位信息
+            Position position = positionMapper.findById(status.getPositionId());
+
+            // 2. 查询教师时间设置
+            InternshipTimeSettings settings = internshipTimeSettingsService.findLatest();
+
+            java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("yyyy-MM-dd");
+            Date now = new Date();
+
+            // 3. 计算开始时间：max(岗位开始日期, 当前时刻)，岗位无日期时用教师 startDate 兜底
+            Date startTime;
+            if (position != null && position.getInternshipStartDate() != null) {
+                Date positionStart = position.getInternshipStartDate();
+                startTime = positionStart.after(now) ? positionStart : now;
+                log.info("使用岗位开始日期计算: positionStart={}, now={}, result={}", positionStart, now, startTime);
+            } else if (settings != null && settings.getStartDate() != null && !settings.getStartDate().isEmpty()) {
+                Date teacherStartDate = sdf.parse(settings.getStartDate());
+                startTime = teacherStartDate.after(now) ? teacherStartDate : now;
+                log.info("岗位无开始日期，使用教师 startDate 兜底: teacherStartDate={}, now={}, result={}", teacherStartDate, now, startTime);
+            } else {
+                startTime = now;
+                log.info("无岗位日期也无教师设置，使用当前时间: {}", now);
+            }
+            status.setInternshipStartTime(startTime);
+
+            // 4. 计算结束时间（上界）：教师设置的 endDate
+            Date teacherEndDate = null;
+            if (settings != null && settings.getEndDate() != null && !settings.getEndDate().isEmpty()) {
+                teacherEndDate = sdf.parse(settings.getEndDate());
+                status.setInternshipEndTime(teacherEndDate);
+                log.info("设置实习结束时间上界: {}", teacherEndDate);
+            }
+
+            // 5. 查询该生是否有前一段实习（同 studentId，status ≥ 2，不同 id），若有则截断其结束时间
+            if (teacherEndDate != null) {
+                List<StudentInternshipStatus> allStatuses = studentInternshipStatusService.list(
+                    status.getStudentId(), null, null, null, null, null, null, null, null, null);
+                if (allStatuses != null) {
+                    for (StudentInternshipStatus prev : allStatuses) {
+                        if (!prev.getId().equals(status.getId())
+                            && prev.getStatus() != null && prev.getStatus() >= 2) {
+                            // 前一段 endTime = min(本段 startTime, 教师 endDate)
+                            Date prevEndTime = startTime.before(teacherEndDate) ? startTime : teacherEndDate;
+                            prev.setInternshipEndTime(prevEndTime);
+                            studentInternshipStatusService.update(prev);
+                            log.info("截断前一段实习 {} 的结束时间为 {}（本段开始={}, 教师上界={}）",
+                                prev.getId(), prevEndTime, startTime, teacherEndDate);
+                        }
+                    }
+                }
+            }
+
+            // 6. 保存本段实习的时间
+            studentInternshipStatusService.update(status);
+            log.info("实习时间计算完成: statusId={}, studentId={}, startTime={}, endTime={}",
+                status.getId(), status.getStudentId(), status.getInternshipStartTime(), status.getInternshipEndTime());
+        } catch (Exception e) {
+            log.error("计算实习时间失败: {}", e.getMessage(), e);
         }
     }
 
@@ -830,6 +909,9 @@ public class StudentInternshipStatusController {
             }
 
             if (result > 0) {
+                // 计算并设置实习开始/结束时间
+                calculateAndSetInternshipTimes(status);
+
                 // 推送待办数据更新
                 pushTodoUpdate(status.getCompanyId());
 

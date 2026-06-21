@@ -587,7 +587,7 @@ public class StudentUserServiceImpl implements StudentUserService {
             }
         }
 
-        // 设置专业ID - 兼容导出的Excel中的"专业"和"专业编号"列名
+        // 设置专业ID - 兼容导出的Excel中的"专业名称"、"专业"和"专业编号"列名
         String majorIdStr = getStringValue(rowData, "专业ID");
         if (StringUtils.isBlank(majorIdStr)) {
             // 如果"专业ID"为空，尝试使用"专业编号"列的值
@@ -596,6 +596,10 @@ public class StudentUserServiceImpl implements StudentUserService {
         if (StringUtils.isBlank(majorIdStr)) {
             // 如果"专业编号"也为空，尝试使用"专业"列的值
             majorIdStr = getStringValue(rowData, "专业");
+        }
+        if (StringUtils.isBlank(majorIdStr)) {
+            // 如果"专业"也为空，尝试使用"专业名称"列的值（兼容下载模板）
+            majorIdStr = getStringValue(rowData, "专业名称");
         }
         if (StringUtils.isNotBlank(majorIdStr)) {
             try {
@@ -619,6 +623,22 @@ public class StudentUserServiceImpl implements StudentUserService {
         }
         log.debug("最终设置的专业ID: {}", studentUser.getMajorId());
 
+        // 根据专业自动推导学院（department）
+        if (studentUser.getMajorId() != null) {
+            try {
+                Major major = majorService.findById(studentUser.getMajorId());
+                if (major != null && major.getDepartmentId() != null) {
+                    Department dept = departmentService.findById(major.getDepartmentId());
+                    if (dept != null) {
+                        studentUser.setDepartment(dept.getName());
+                        log.debug("自动推导学院: major={}, department={}", major.getName(), dept.getName());
+                    }
+                }
+            } catch (Exception e) {
+                log.warn("自动推导学院失败, majorId={}: {}", studentUser.getMajorId(), e.getMessage());
+            }
+        }
+
         // 设置年级
         String gradeStr = getStringValue(rowData, "年级");
         if (StringUtils.isNotBlank(gradeStr)) {
@@ -629,7 +649,7 @@ public class StudentUserServiceImpl implements StudentUserService {
             }
         }
 
-        // 设置班级ID - 兼容导出的Excel中的"班级"和"班级编号"列名
+        // 设置班级ID - 兼容导出的Excel中的"班级名称"、"班级"和"班级编号"列名
         String classIdStr = getStringValue(rowData, "班级ID");
         if (StringUtils.isBlank(classIdStr)) {
             // 如果"班级ID"为空，尝试使用"班级编号"列的值
@@ -638,6 +658,10 @@ public class StudentUserServiceImpl implements StudentUserService {
         if (StringUtils.isBlank(classIdStr)) {
             // 如果"班级编号"也为空，尝试使用"班级"列的值
             classIdStr = getStringValue(rowData, "班级");
+        }
+        if (StringUtils.isBlank(classIdStr)) {
+            // 如果"班级"也为空，尝试使用"班级名称"列的值（兼容下载模板）
+            classIdStr = getStringValue(rowData, "班级名称");
         }
         if (StringUtils.isNotBlank(classIdStr)) {
             try {

@@ -338,17 +338,18 @@ export const updateApi = async (classData: Partial<ClassItem>) => {
 export const deleteApi = async (id: number | string) => {
   try {
     const response = await ClassService.deleteClass(id)
-    const result = response.data || response
+    // 拦截器已返回 response.data（即 { code, message, data }），直接用即可
+    const result = response as { code?: number; data?: unknown; msg?: string; message?: string }
 
-    if ((result as { code: number }).code === 200) {
+    if (result.code === 200) {
       return {
         code: 200,
-        msg: (result as { msg?: string }).msg || '删除成功'
+        msg: result.message || result.msg || '删除成功'
       }
     } else {
       return {
-        code: (result as { code?: number }).code || 500,
-        msg: (result as { msg?: string; message?: string }).msg || (result as { msg?: string; message?: string }).message || '删除失败'
+        code: result.code || 500,
+        msg: result.message || result.msg || '删除失败'
       }
     }
   } catch (error) {
@@ -361,17 +362,18 @@ export const deleteApi = async (id: number | string) => {
 export const batchDeleteApi = async (ids: (number | string)[]) => {
   try {
     const response = await ClassService.batchDeleteClass(ids)
-    const result = response.data || response
+    // 拦截器已返回 response.data（即 { code, message, data }），直接用即可
+    const result = response as { code?: number; data?: unknown; msg?: string; message?: string }
 
-    if ((result as { code: number }).code === 200) {
+    if (result.code === 200) {
       return {
         code: 200,
-        msg: (result as { msg?: string }).msg || '批量删除成功'
+        msg: result.message || result.msg || '批量删除成功'
       }
     } else {
       return {
-        code: (result as { code?: number }).code || 500,
-        msg: (result as { msg?: string; message?: string }).msg || (result as { msg?: string; message?: string }).message || '批量删除失败'
+        code: result.code || 500,
+        msg: result.message || result.msg || '批量删除失败'
       }
     }
   } catch (error) {
@@ -389,20 +391,20 @@ export const importExcelApi = async (formData: FormData) => {
       }
     })
 
-    // 处理后端返回的 Result 对象
-    const result = response.data || response
+    // 拦截器已返回 response.data（即 { code, message, data }），直接用即可
+    const result = response as { code?: number; data?: unknown; msg?: string; message?: string }
 
-    if ((result as { code: number }).code === 200) {
+    if (result.code === 200) {
       return {
         code: 200,
-        data: (result as { data?: unknown }).data || result,
-        msg: (result as { msg?: string; message?: string }).message || (result as { msg?: string; message?: string }).msg || '操作成功'
+        data: result.data || result,
+        msg: result.message || result.msg || '操作成功'
       }
     } else {
       return {
-        code: (result as { code?: number }).code || 500,
-        data: (result as { data?: unknown }).data || null,
-        msg: (result as { msg?: string; message?: string }).message || (result as { msg?: string; message?: string }).msg || '操作失败'
+        code: result.code || 500,
+        data: result.data || null,
+        msg: result.message || result.msg || '操作失败'
       }
     }
   } catch (error) {

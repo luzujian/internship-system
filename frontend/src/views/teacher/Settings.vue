@@ -46,6 +46,9 @@
     <!-- 下点后时间节点设置 -->
     <div v-show="activeTab === 'postNode'" class="settings-section card fade-in" style="animation-delay: 0.3s">
       <h3>下点后时间节点设置</h3>
+      <div class="hint-banner">
+        💡 每个学生的实际实习起止时间由系统根据岗位日期和企业确认时刻自动计算，此处的日期仅作备用和上限，不再一刀切。
+      </div>
       <div class="settings-form">
         <div class="form-group fade-in" :style="{ animationDelay: `${0.3 + index * 0.1}s`, '--item-color': item.color }" v-for="(item, index) in postInternshipNodesItems" :key="item.key">
           <label>{{ item.label }}：</label>
@@ -110,32 +113,32 @@ const preInternshipNodesItems = ref([
     key: 'applicationStartTime',
     label: '实习应聘开始时间',
     type: 'date',
-    desc: '学生可以开始投递简历和提交实习确认表的最早日期。在此日期之前，学生端的应聘相关操作均不可用。',
-    overdue: '早于此日期：学生无法投递简历、无法提交实习确认表。',
+    desc: '学生能开始投简历、提交实习确认的最早日期。早于此日期，应聘入口不开。',
+    overdue: '早于此日期：应聘入口关闭，无法投简历和提交确认。',
     color: '#1890ff'
   },
   {
     key: 'applicationEndTime',
     label: '实习应聘截止时间',
     type: 'date',
-    desc: '学生投递简历的最后期限。注意：此日期过后学生仍可面试、收Offer、提交实习确认表，直到确认截止日期为止。',
-    overdue: '超过此日期：学生无法投递新简历，但已投递的仍可继续面试。',
+    desc: '投递简历的最后期限。过期后仍可面试、收Offer、提交实习确认，直到确认截止日。',
+    overdue: '过期后：不能投新简历，已投的可继续面试。',
     color: '#1890ff'
   },
   {
     key: 'companyConfirmationDeadline',
     label: '实习单位确认截止日期',
     type: 'date',
-    desc: '学生拿到Offer后提交实习确认表的最后期限。应设置在应聘截止之后，给学生一段面试收Offer的时间窗口。',
-    overdue: '超过此日期：学生无法提交实习确认表，等于放弃本次实习。',
+    desc: '学生提交实习确认的最后期限。此日期和实习开始时间无关，过期后已确认的学生仍可按岗位约定的时间开始实习。',
+    overdue: '过期后：不能再提交新的实习确认，已确认的不受影响。',
     color: '#52c41a'
   },
   {
     key: 'delayApplicationDeadline',
     label: '延迟实习申请截止日期',
     type: 'date',
-    desc: '因考研、考公、出国等原因暂时不参加实习的学生，必须在此日期前提交延迟申请。',
-    overdue: '超过此日期：学生无法提交延迟实习申请，必须正常参加实习。',
+    desc: '考研、考公、出国的学生，在此日期前提交延迟申请。',
+    overdue: '过期后：不能再提交延迟申请，必须正常实习。',
     color: '#faad14'
   }
 ])
@@ -144,18 +147,18 @@ const preInternshipNodesItems = ref([
 const postInternshipNodesItems = ref([
   {
     key: 'startDate',
-    label: '实习开始日期',
+    label: '实习开始日期（兜底值）',
     type: 'date',
-    desc: '实习正式开始的日期。决定了实习心得阶段编号的计算起点（第1期从该日开始），也是学生端实习进度的计算基准。',
-    overdue: '早于此日期：学生无法提交实习心得。',
+    desc: '备用日期。只有岗位没设置开始时间时才用这个。每个学生的实际开始时间 = 岗位日期和确认时刻中较晚的那个，由系统自动算。',
+    overdue: '仅在岗位没日期时起作用，不影响学生端入口开放。',
     color: '#1890ff'
   },
   {
     key: 'endDate',
-    label: '实习结束日期',
+    label: '实习结束日期（上界）',
     type: 'date',
-    desc: '实习正式结束的日期。实习心得阶段编号计算的终点，也是学生端实习进度的计算终点。',
-    overdue: '超过此日期：学生无法再提交实习心得，实习相关的所有提交入口关闭。',
+    desc: '所有学生实习结束的最晚时间。只有一段实习就用这个；中途换单位的，前一段会自动截断到第二段开始前。',
+    overdue: '最晚结束时间，系统配合换单位机制自动决定每个学生的实际结束时间。',
     color: '#52c41a'
   },
   {
@@ -218,12 +221,7 @@ const validateDates = (): string | null => {
     return `应聘截止时间（${s.applicationEndTime}）不能晚于单位确认截止日期（${s.companyConfirmationDeadline}）`
   }
 
-  // 3. 确认截止 < 实习开始（如果设置了确认截止）
-  if (s.companyConfirmationDeadline && s.companyConfirmationDeadline > s.startDate) {
-    return `单位确认截止日期（${s.companyConfirmationDeadline}）不能晚于实习开始日期（${s.startDate}）`
-  }
-
-  // 4. 实习开始 < 实习结束
+  // 3. 实习开始 < 实习结束
   if (s.startDate > s.endDate) {
     return `实习开始日期（${s.startDate}）不能晚于实习结束日期（${s.endDate}）`
   }
@@ -311,6 +309,19 @@ onMounted(() => {
   font-size: 14px;
   color: #666;
   margin: 8px 0 0 0;
+}
+
+/* 提示横幅 */
+.hint-banner {
+  background: linear-gradient(135deg, #e6f7ff 0%, #f0f5ff 100%);
+  border: 1px solid #91d5ff;
+  border-left: 4px solid #1890ff;
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  font-size: 13px;
+  color: #0050b3;
+  line-height: 1.8;
 }
 
 /* 设置选项卡 */
