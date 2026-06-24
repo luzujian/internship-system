@@ -355,8 +355,7 @@ const getStudentId = () => {
 }
 
 const userName = computed(() => authStore.user?.name || authStore.user?.username || '同学')
-const AVATAR_CACHE_KEY = 'student_avatar_url'
-const avatarUrl = ref(localStorage.getItem(AVATAR_CACHE_KEY) || '')
+const avatarUrl = ref('')
 const avatarInput = ref(null)
 
 const stats = ref({
@@ -649,7 +648,6 @@ const handleAvatarChange = async (event) => {
     })
     if (response.code === 200) {
       avatarUrl.value = response.data.url
-      localStorage.setItem(AVATAR_CACHE_KEY, response.data.url)
       ElMessage.success('头像上传成功')
     } else {
       ElMessage.error(response.message || '头像上传失败')
@@ -810,11 +808,8 @@ const fetchProfileStatus = async () => {
     const response = await request.get(`/student/profile`, requestConfig)
     if (response && response.code === 200 && response.data) {
       const profile = response.data
-      // 设置头像
-      if (profile.avatar) {
-        avatarUrl.value = profile.avatar
-        localStorage.setItem(AVATAR_CACHE_KEY, profile.avatar)
-      }
+      // 设置头像（无头像时清空，避免显示他人缓存的头像）
+      avatarUrl.value = profile.avatar || ''
       // 检查是否有基本个人信息
       if (profile.name && profile.studentId && profile.phone && profile.email) {
         hasProfile.value = true
