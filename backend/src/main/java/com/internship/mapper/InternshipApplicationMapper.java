@@ -24,6 +24,10 @@ public interface InternshipApplicationMapper {
     List<InternshipApplicationEntity> findByCompanyIdAndStatus(@Param("companyId") Long companyId, @Param("status") String status);
     
     int updateStatus(@Param("id") Long id, @Param("status") String status);
+
+    int updateLatestStatusByStudentAndPosition(@Param("studentId") Long studentId,
+                                               @Param("positionId") Long positionId,
+                                               @Param("status") String status);
     
     int updateViewed(@Param("id") Long id, @Param("viewed") Boolean viewed);
     

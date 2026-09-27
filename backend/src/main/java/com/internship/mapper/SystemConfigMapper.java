@@ -21,6 +21,9 @@ public interface SystemConfigMapper {
     
     @Select("SELECT * FROM system_config WHERE config_key = #{configKey} AND deleted = 0")
     SystemConfig findByConfigKey(String configKey);
+
+    @Select("SELECT * FROM system_config WHERE config_key = #{configKey} AND deleted = 0 FOR UPDATE")
+    SystemConfig lockByConfigKey(String configKey);
     
     @Update("UPDATE system_config SET config_key = #{configKey}, config_value = #{configValue}, config_type = #{configType}, " +
             "config_name = #{configName}, description = #{description}, status = #{status}, update_time = NOW() " +

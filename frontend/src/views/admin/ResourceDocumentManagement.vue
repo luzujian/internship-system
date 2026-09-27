@@ -50,7 +50,7 @@
           <el-divider direction="vertical" class="divider"></el-divider>
           <el-form-item>
             <div class="action-buttons-row">
-              <el-button v-if="authStore.hasPermission('resource:add')" type="primary" @click="handleAdd" class="action-btn primary">
+              <el-button v-if="authStore.hasPermission('resource:add')" type="primary" data-agent-open @click="handleAdd" class="action-btn primary">
                 <el-icon><Plus /></el-icon>&nbsp;发布文档
               </el-button>
               <el-button v-if="authStore.hasPermission('resource:delete')" type="danger" @click="handleBatchDelete" class="action-btn danger">
@@ -240,6 +240,7 @@
       v-model="filePreviewVisible"
       :file-url="currentFileUrl"
       :file-name="currentFileName"
+      :authorized-url="currentAuthorizedUrl"
     />
 
     <el-dialog v-model="dialogVisible" :title="dialogTitle" width="700px" @close="handleDialogClose" class="form-dialog">
@@ -252,10 +253,12 @@
         </el-form-item>
         <el-form-item label="文件">
           <el-upload
+            drag
             v-model:file-list="fileList"
             :action="uploadAction"
             :headers="uploadHeaders"
             :on-success="handleUploadSuccess"
+            :on-error="error => ElMessage.error(getUploadErrorMessage(error))"
             :on-remove="handleRemoveFile"
             :before-upload="beforeUpload"
             :limit="1"
@@ -263,10 +266,8 @@
             :auto-upload="true"
             class="compact-upload"
           >
-            <el-button type="primary" size="small">
-              <el-icon><Upload /></el-icon>
-              选择文件
-            </el-button>
+            <el-icon class="el-icon--upload"><Upload /></el-icon>
+            <div class="el-upload__text">将资源文档拖到此处，或<em>点击上传</em></div>
             <template #tip>
               <div class="el-upload__tip">
                 支持 PDF、Word、Excel、PPT、TXT、ZIP、RAR、7Z 等格式，单个文件≤10MB
@@ -321,16 +322,69 @@
 </template>
 
 <script setup lang="ts">
+import { getUploadErrorMessage } from '@/utils/uploadErrorMessage'
 import logger from '@/utils/logger'
-import { ref, reactive, onMounted, computed } from 'vue'
+import { highlightPlainText as highlightKeyword } from '@/utils/highlightPlainText'
+import { ref, reactive, onMounted, onUnmounted, computed, watch } from 'vue'
 import type { ResourceDocument } from '@/types/admin'
+import type { FormFieldDescriptor } from '@/agent/types'
+// 资源行精确局部接口：覆盖后端驼峰/snake两种形态与模板实际使用的全部字段，均可选
+interface ResourceRow {
+  id?: string | number
+  title?: string
+  description?: string
+  fileUrl?: string
+  file_url?: string
+  fileName?: string
+  file_name?: string
+  fileType?: string
+  file_type?: string
+  fileSize?: number
+  file_size?: number
+  publisherId?: number | string
+  publisher_id?: number | string
+  publisher?: string
+  publisherRole?: string
+  publisher_role?: string
+  publishTime?: string
+  publish_time?: string
+  targetType?: string
+  target_type?: string
+  targetValue?: string
+  target_value?: string
+  status?: string
+  downloadCount?: number
+  download_count?: number
+  viewCount?: number
+  view_count?: number
+  createTime?: string
+  create_time?: string
+  updateTime?: string
+  update_time?: string
+}
+// 发布人选项行（含模板使用的 id/name）
+interface UserOptionRow {
+  id?: string | number
+  name: string
+}
+// 上传文件行（el-upload 条目形态，兼容回显字段）
+interface UploadFileRow {
+  uid?: string | number
+  name?: string
+  url?: string
+  status?: string
+  raw?: File
+  response?: { url?: string; filename?: string; type?: string; size?: number }
+}
 
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search, Refresh, Plus, Delete, Edit, View, Download, User, Clock, ZoomIn } from '@element-plus/icons-vue'
+import { Search, Refresh, Plus, Delete, Edit, View, Download, User, Clock, ZoomIn, Upload } from '@element-plus/icons-vue'
 import * as resourceDocumentApi from '../../api/resourceDocument'
 import * as announcementApi from '../../api/announcement'
 import { useAuthStore } from '../../store/auth'
 import FilePreviewDialog from '@/components/FilePreviewDialog.vue'
+import { resourceDocumentByteUrl } from '@/utils/authorizedFileUrl'
+import { useFormContext } from '@/agent/formContext'
 
 const authStore = useAuthStore()
 
@@ -338,8 +392,8 @@ const currentPage = ref<number>(1)
 const pageSize = ref(12)
 const total = ref<number>(0)
 const loading = ref<boolean>(false)
-const resourcesList = ref<unknown[]>([])
-const selectedIds = ref<unknown[]>([])
+const resourcesList = ref<ResourceRow[]>([])
+const selectedIds = ref<Array<string | number>>([])
 
 const searchForm = reactive({ title: '', status: '', publisherRole: '' })
 
@@ -358,7 +412,7 @@ const formData = reactive({
   targetType: 'ALL'
 })
 
-const userList = ref<unknown[]>([])
+const userList = ref<UserOptionRow[]>([])
 const userListLoading = ref<boolean>(false)
 
 const fileList = ref<unknown[]>([])
@@ -370,6 +424,7 @@ const selectedResource = ref(null)
 const filePreviewVisible = ref<boolean>(false)
 const currentFileUrl = ref<string>('')
 const currentFileName = ref<string>('')
+const currentAuthorizedUrl = ref<string>('')
 const originalFileUrl = ref<string>('') // 编辑模式下的原始文件 URL
 
 // 文件上传配置
@@ -395,8 +450,15 @@ const fetchData = async (): Promise<void> => {
     const response = await resourceDocumentApi.getResourceDocumentsByPage(params)
     const result = response
     if (result && result.code === 200 && result.data) {
-      resourcesList.value = result.data.rows || []
-      total.value = result.data.total || 0
+      // getResourceDocumentsByPage 的 data 声明为 ResourceDocumentResponse（双层），
+      // 运行时 body.data 即分页对象 { rows, total }；用精确接口收窄并兼容双层，可达路径与原 `result.data.rows` 等价
+      const pageData = result.data as unknown as {
+        rows?: ResourceRow[]
+        total?: number
+        data?: { rows?: ResourceRow[]; total?: number }
+      }
+      resourcesList.value = pageData.rows ?? pageData.data?.rows ?? []
+      total.value = pageData.total ?? pageData.data?.total ?? 0
     } else if (result && Array.isArray(result.data)) {
       // 兼容直接返回数组的情况
       resourcesList.value = result.data
@@ -459,12 +521,6 @@ const handleCheckboxChange = (id, checked) => {
   }
 }
 
-const highlightKeyword = (text, keyword) => {
-  if (!keyword || !text) return text
-  const regex = new RegExp(`(${keyword})`, 'gi')
-  return text.replace(regex, '<span style="background-color: #ffeb3b;">$1</span>')
-}
-
 const getStatusText = (status) => {
   const statusMap = {
     'DRAFT': '草稿',
@@ -514,7 +570,7 @@ const getTargetTypeText = (type) => {
   return typeMap[type] || type
 }
 
-const getFileTypeText = (fileType, fileName) => {
+const getFileTypeText = (fileType, fileName = '') => {
   if (!fileType && !fileName) return '未知'
   
   const lowerType = (fileType || '').toLowerCase()
@@ -597,6 +653,7 @@ const editResource = async (resource): Promise<void> => {
   }
   
   dialogVisible.value = true
+  registerResourceForm('编辑文档')
 }
 
 const deleteResource = async (id): Promise<void> => {
@@ -624,8 +681,8 @@ const deleteResource = async (id): Promise<void> => {
 
 const downloadResource = async (resource): Promise<void> => {
   try {
-    // 响应拦截器已返回 Blob
-    const blob = await resourceDocumentApi.downloadResourceDocument(resource.id)
+    // 响应拦截器已返回 Blob（类型声明为 ApiResult，运行时为 Blob，用断言保持运行时一致）
+    const blob = await resourceDocumentApi.downloadResourceDocument(resource.id) as unknown as Blob
     const url = window.URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
@@ -649,37 +706,14 @@ const previewResource = (resource) => {
     return
   }
 
-  // 获取文件 URL
-  const fileUrl = resource.fileUrl
-  logger.log('[ResourceDocumentManagement] previewResource called with fileUrl:', fileUrl)
-
-  if (!fileUrl) {
-    ElMessage.error('文件地址不存在')
+  const authorizedUrl = resourceDocumentByteUrl(resource.id)
+  if (!authorizedUrl) {
+    ElMessage.error('资源记录不存在')
     return
   }
-
-  // 如果是完整的 OSS URL（http 开头），转换为后端代理 URL
-  let proxyUrl
-  if (fileUrl.startsWith('http://') || fileUrl.startsWith('https://')) {
-    // 提取 OSS 路径部分
-    try {
-      const urlObj = new URL(fileUrl)
-      const ossPath = urlObj.pathname.substring(1) // 去掉开头的 /
-      proxyUrl = `/api/upload/preview/${ossPath}`
-      logger.log('[ResourceDocumentManagement] 使用 OSS URL 转换后的代理 URL:', proxyUrl)
-    } catch (e) {
-      logger.error('解析 OSS URL 失败:', e)
-      proxyUrl = fileUrl
-    }
-  } else {
-    // 相对路径格式
-    const cleanPath = fileUrl.startsWith('/') ? fileUrl.substring(1) : fileUrl
-    proxyUrl = `/api/upload/preview/${cleanPath}`
-    logger.log('[ResourceDocumentManagement] 使用相对路径的代理 URL:', proxyUrl)
-  }
-
-  currentFileUrl.value = proxyUrl
-  currentFileName.value = resource.fileName
+  currentFileUrl.value = resource.fileUrl || ''
+  currentFileName.value = resource.fileName || '未知文件'
+  currentAuthorizedUrl.value = authorizedUrl
   filePreviewVisible.value = true
 }
 
@@ -694,7 +728,7 @@ const handleBatchDelete = async (): Promise<void> => {
       cancelButtonText: '取消',
       type: 'warning'
     })
-    const response = await resourceDocumentApi.batchDeleteResourceDocuments(selectedIds.value)
+    const response = await resourceDocumentApi.batchDeleteResourceDocuments(selectedIds.value.map(id => Number(id)))
     const result = response
     if (result && result.code === 200) {
       ElMessage.success('批量删除成功')
@@ -711,10 +745,61 @@ const handleBatchDelete = async (): Promise<void> => {
   }
 }
 
+// ===== 智能填表：资源文档弹窗（文件 upload 需手动上传，不声明；只写响应式 model，不触发提交） =====
+const formContext = useFormContext()
+const resourceFillFields = (): FormFieldDescriptor[] => [
+  { prop: 'title', label: '标题', type: 'input', required: true, patternHint: '文档文件需手动在文件栏上传' },
+  { prop: 'description', label: '描述', type: 'textarea' },
+  { prop: 'status', label: '状态', type: 'select', required: true,
+    options: [
+      { label: '草稿', value: 'DRAFT' },
+      { label: '发布', value: 'PUBLISHED' },
+      { label: '归档', value: 'ARCHIVED' }
+    ] },
+  { prop: 'publisherRole', label: '发布人身份', type: 'select', required: true,
+    options: [
+      { label: '管理员', value: 'ADMIN' },
+      { label: '学院教师', value: 'COLLEGE' },
+      { label: '系室教师', value: 'DEPARTMENT' },
+      { label: '辅导员', value: 'COUNSELOR' }
+    ] },
+  { prop: 'publisher', label: '发布人', type: 'select', required: true, allowCustom: true,
+    options: userList.value.map(u => ({ label: u.name, value: u.name })),
+    patternHint: '未选择发布人身份时该项不可用，需先选发布人身份（手动）' },
+  { prop: 'targetType', label: '目标群体', type: 'select',
+    options: [
+      { label: '全体师生', value: 'ALL' },
+      { label: '全体学生', value: 'STUDENT' },
+      { label: '全体教师', value: 'TEACHER' }
+    ] }
+]
+const registerResourceForm = (title: string) => {
+  formContext.register({
+    formId: 'admin:resource',
+    title,
+    fields: resourceFillFields(),
+    getFields: resourceFillFields,
+    getModel: () => formData,
+    getFormEl: () => formRef.value,
+    getValidationSummary: () => ({ missingFields: fileList.value.length || (dialogTitle.value === '编辑文档' && originalFileUrl.value) ? [] : ['资源文件（需手动提供）'], validationErrors: [] })
+  })
+}
+// AI 填入发布人身份后联动加载发布人选项（手动切换走原 @change；此处仅选项为空时加载并保留已填发布人，幂等）
+watch(() => formData.publisherRole, (v, old) => {
+  if (!v || v === old || !dialogVisible.value || userList.value.length > 0) return
+  const keep = formData.publisher
+  void (handlePublisherRoleChange(v) as Promise<void>).then(() => { if (keep) formData.publisher = keep })
+})
+watch(dialogVisible, (open) => {
+  if (!open) formContext.unregister('admin:resource')
+})
+onUnmounted(() => formContext.unregister('admin:resource'))
+
 const handleAdd = () => {
   dialogTitle.value = '发布文档'
   resetFormData()
   dialogVisible.value = true
+  registerResourceForm('发布文档')
 }
 
 const resetFormData = () => {
@@ -746,7 +831,9 @@ const handlePublisherRoleChange = async (role): Promise<void> => {
     const response = await announcementApi.getUsersByPublisherRole(role)
     const result = response
     if (result && result.code === 200 && result.data) {
-      userList.value = result.data
+      // getUsersByPublisherRole 返回 ApiResult<unknown[]>，收窄为选项行数组
+      const rawUsers: unknown = result.data
+      userList.value = Array.isArray(rawUsers) ? (rawUsers as UserOptionRow[]) : []
       formData.publisher = ''
     } else {
       userList.value = []
@@ -786,7 +873,7 @@ const beforeUpload = (file) => {
   ]
   
   const isAllowedType = allowedTypes.includes(file.type) || file.type.startsWith('image/')
-  const isLt10M = file.size / 1024 / 1024 < 10
+  const isLt10M = file.size / 1024 / 1024 <= 10
   
   if (!isAllowedType) {
     ElMessage.error('不支持的文件格式！')
@@ -822,8 +909,8 @@ const handleUploadSuccess = (response, uploadFile, uploadFiles) => {
     }
   } else {
     ElMessage.error(response.msg || '文件上传失败')
-    // 上传失败时从列表中移除
-    const index = fileList.value.findIndex(f => f.uid === uploadFile.uid)
+    // 上传失败时从列表中移除（fileList 为 unknown[]，回调参数用精确行接口收窄）
+    const index = fileList.value.findIndex((f: UploadFileRow) => f.uid === (uploadFile as UploadFileRow).uid)
     if (index > -1) {
       fileList.value.splice(index, 1)
     }
@@ -878,11 +965,15 @@ const handleSubmit = async (): Promise<void> => {
     return
   }
 
+  const operation = formContext.beginFormOperation('admin:resource')
+    const receiptStatus = formData.status === 'PUBLISHED' ? 'published' : 'saved'
   submitLoading.value = true
   try {
     if (dialogTitle.value === '发布文档') {
       const formDataObj = new FormData()
-      formDataObj.append('file', fileList.value[0]?.raw)
+      // fileList 为 unknown[]，首项用精确行接口收窄后使用（raw 为 File，运行时同一对象）
+      const firstFile = fileList.value[0] as UploadFileRow | undefined
+      formDataObj.append('file', firstFile?.raw as unknown as Blob)
       formDataObj.append('title', formData.title)
       formDataObj.append('description', formData.description || '')
       formDataObj.append('publisher', formData.publisher)
@@ -893,6 +984,7 @@ const handleSubmit = async (): Promise<void> => {
       const response = await resourceDocumentApi.uploadResourceDocument(formDataObj)
       const result = response
       if (result && result.code === 200) {
+        operation.complete({ status: receiptStatus, label: receiptStatus === 'published' ? '资源文档已发布' : '资源文档已保存', url: '/admin/resource-documents' })
         ElMessage.success('发布成功')
         dialogVisible.value = false
         fetchData()
@@ -900,8 +992,8 @@ const handleSubmit = async (): Promise<void> => {
         ElMessage.error(result?.msg || '发布失败')
       }
     } else {
-      // 编辑模式
-      const newFile = fileList.value[0]
+      // 编辑模式（fileList 为 unknown[]，首项用精确行接口收窄后使用）
+      const newFile = fileList.value[0] as UploadFileRow | undefined
       const hasNewFile = newFile && newFile.url && newFile.url !== originalFileUrl.value
       
       logger.log('[ResourceDocumentManagement] 编辑模式提交:')
@@ -929,6 +1021,7 @@ const handleSubmit = async (): Promise<void> => {
 
         const result = await resourceDocumentApi.updateResourceDocument(formData.id, updateData)
         if (result && result.code === 200) {
+        operation.complete({ status: receiptStatus, label: receiptStatus === 'published' ? '资源文档已发布' : '资源文档已保存', url: '/admin/resource-documents' })
           ElMessage.success('更新成功')
           dialogVisible.value = false
           fetchData()
@@ -949,6 +1042,7 @@ const handleSubmit = async (): Promise<void> => {
 
         const result = await resourceDocumentApi.updateResourceDocument(formData.id, updateData)
         if (result && result.code === 200) {
+        operation.complete({ status: receiptStatus, label: receiptStatus === 'published' ? '资源文档已发布' : '资源文档已保存', url: '/admin/resource-documents' })
           ElMessage.success('更新成功')
           dialogVisible.value = false
           fetchData()
@@ -973,6 +1067,20 @@ const handleDialogClose = () => {
 </script>
 
 <style scoped>
+.compact-upload,
+.compact-upload :deep(.el-upload) {
+  width: 100%;
+}
+
+.compact-upload :deep(.el-upload-dragger) {
+  padding: 20px 12px;
+}
+
+.compact-upload .el-icon--upload {
+  font-size: 36px;
+  margin-bottom: 8px;
+}
+
 .resource-document-management-container {
   padding: 20px;
   background: #f5f7fa;

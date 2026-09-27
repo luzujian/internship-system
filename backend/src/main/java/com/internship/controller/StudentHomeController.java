@@ -1,17 +1,18 @@
 package com.internship.controller;
 
+import com.internship.anno.Log;
 import com.internship.entity.Result;
 import com.internship.entity.User;
 import com.internship.entity.StudentInternshipStatus;
 import com.internship.entity.Announcement;
-import com.internship.entity.InternshipProgressRecord;
+import com.internship.entity.dto.JobSearchStatusDTO;
+import com.internship.entity.dto.RecentActivityPageDTO;
 import com.internship.mapper.AnnouncementMapper;
 import com.internship.mapper.StudentJobApplicationMapper;
 import com.internship.service.InternshipProgressRecordService;
-import com.internship.service.InternshipReflectionService;
-import com.internship.service.InterviewInvitationService;
-import com.internship.service.InternshipConfirmationRecordService;
+import com.internship.service.StudentHomeTodoService;
 import com.internship.service.StudentInternshipStatusService;
+import com.internship.service.JobSearchStatusService;
 import com.internship.service.SystemConfigService;
 import com.internship.service.UserService;
 import lombok.extern.slf4j.Slf4j;
@@ -21,7 +22,6 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
@@ -47,16 +47,16 @@ public class StudentHomeController {
     private StudentInternshipStatusService internshipStatusService;
 
     @Autowired
+    private JobSearchStatusService jobSearchStatusService;
+
+    @Autowired
     private AnnouncementMapper announcementMapper;
 
     @Autowired
-    private InterviewInvitationService interviewInvitationService;
+    private StudentHomeTodoService studentHomeTodoService;
 
     @Autowired
-    private InternshipConfirmationRecordService confirmationRecordService;
-
-    @Autowired
-    private InternshipReflectionService internshipReflectionService;
+    private com.internship.mapper.StudentUserMapper studentUserMapper;
 
     @Autowired
     private com.internship.service.AnnouncementReadRecordService readRecordService;
@@ -134,47 +134,7 @@ public class StudentHomeController {
         try {
             User user = getCurrentUser();
             if (user == null) return Result.error("未登录");
-            Long studentId = user.getId();
-
-            List<Map<String, Object>> todos = new ArrayList<>();
-
-            // 查询实习心得待提交（当前阶段未提交的学生）
-            // 计算当前阶段
-            Integer currentPeriod = internshipReflectionService.calculatePeriodNumber(new Date());
-            if (currentPeriod != null) {
-                boolean hasSubmitted = internshipReflectionService.existsByStudentIdAndPeriodNumber(studentId, currentPeriod);
-                if (!hasSubmitted) {
-                    Map<String, Object> todo = new HashMap<>();
-                    todo.put("id", 0);
-                    todo.put("type", "reflection");
-                    todo.put("title", "第" + currentPeriod + "期实习心得待提交");
-                    todo.put("description", "请提交本期实习心得");
-                    todo.put("priority", "high");
-                    todo.put("completed", false);
-                    todos.add(todo);
-                }
-            }
-
-            // 查询待处理的面试邀请（状态为 pending_interview）
-            interviewInvitationService.findByStudentIdAndStatus(studentId, "pending_interview").forEach(invitation -> {
-                Map<String, Object> todo = new HashMap<>();
-                todo.put("id", invitation.getId());
-                todo.put("type", "interview");
-                todo.put("title", "面试邀请待处理");
-                // 描述显示公司、岗位、面试时间
-                String desc = invitation.getCompanyName() + " - " + invitation.getPositionName();
-                if (invitation.getInterviewTime() != null) {
-                    java.time.format.DateTimeFormatter formatter = java.time.format.DateTimeFormatter.ofPattern("MM-dd HH:mm");
-                    desc += " | " + invitation.getInterviewTime().format(formatter);
-                }
-                todo.put("description", desc);
-                todo.put("priority", "high");
-                todo.put("completed", false);
-                todo.put("interviewId", invitation.getId());
-                todos.add(todo);
-            });
-
-            return Result.success(todos);
+            return Result.success(studentHomeTodoService.getActionableTodos(user.getId()));
         } catch (Exception e) {
             log.error("获取待办列表失败: {}", e.getMessage(), e);
             return Result.error("获取待办列表失败");
@@ -182,26 +142,22 @@ public class StudentHomeController {
     }
 
     @GetMapping("/progress-list")
-    public Result getProgressList() {
+    public Result getProgressList(
+            @RequestParam(defaultValue = "10") String limit,
+            @RequestParam(required = false) String cursor) {
         try {
             User user = getCurrentUser();
             if (user == null) return Result.error("未登录");
-            Long studentId = user.getId();
-
-            List<InternshipProgressRecord> records = progressRecordService.getByStudentId(studentId);
-
-            List<Map<String, Object>> progress = records.stream().map(r -> {
-                Map<String, Object> item = new HashMap<>();
-                item.put("id", r.getId());
-                item.put("eventType", r.getEventType());
-                item.put("title", r.getEventTitle());
-                item.put("description", r.getDescription());
-                item.put("status", r.getStatus());
-                item.put("time", r.getEventTime());
-                return item;
-            }).collect(Collectors.toList());
-
-            return Result.success(progress);
+            int parsedLimit;
+            try {
+                parsedLimit = Integer.parseInt(limit);
+            } catch (NumberFormatException e) {
+                throw new IllegalArgumentException("limit必须是整数");
+            }
+            RecentActivityPageDTO page = progressRecordService.getRecentActivities(user.getId(), parsedLimit, cursor);
+            return Result.success(page);
+        } catch (IllegalArgumentException e) {
+            throw e;
         } catch (Exception e) {
             log.error("获取进展列表失败: {}", e.getMessage(), e);
             return Result.error("获取进展列表失败");
@@ -214,6 +170,17 @@ public class StudentHomeController {
             User user = getCurrentUser();
             if (user == null) return Result.error("未登录");
 
+            // 获取学生专业ID
+            String majorId = null;
+            try {
+                com.internship.entity.StudentUser studentUser = studentUserMapper.findById(user.getId());
+                if (studentUser != null && studentUser.getMajorId() != null) {
+                    majorId = String.valueOf(studentUser.getMajorId());
+                }
+            } catch (Exception e) {
+                log.warn("获取学生专业信息失败: {}", e.getMessage());
+            }
+
             // 获取学生已读公告ID集合
             java.util.Set<Long> readIds = readRecordService
                     .findByUserId(String.valueOf(user.getId()), "STUDENT")
@@ -221,20 +188,21 @@ public class StudentHomeController {
                     .map(com.internship.entity.AnnouncementReadRecord::getAnnouncementId)
                     .collect(Collectors.toSet());
 
-            // 获取所有已发布的公告
-            List<Announcement> announcements = announcementMapper.findAll();
+            // 使用带目标群体过滤的查询（SQL 层已过滤 status=PUBLISHED 和有效期限）
+            List<Announcement> announcements = announcementMapper.getAnnouncementsForUser(
+                    "STUDENT", majorId, String.valueOf(user.getId()), "STUDENT");
 
-            // 转换为通知格式
+            // 转换为通知格式（SQL 已过滤，无需 Java 侧再过滤 status）
             List<Map<String, Object>> notifications = announcements.stream()
-                    .filter(a -> "PUBLISHED".equals(a.getStatus()))
-                    .filter(a -> a.getValidTo() == null || a.getValidTo().after(new java.util.Date()))
                     .map(a -> {
                         Map<String, Object> notification = new HashMap<>();
                         notification.put("id", a.getId());
                         notification.put("title", a.getTitle());
                         notification.put("content", a.getContent());
                         notification.put("notificationTime", a.getPublishTime());
-                        notification.put("priority", a.getPriority());
+                        notification.put("publishTime", a.getPublishTime());
+                        notification.put("publisher", a.getPublisher());
+                        notification.put("publisherRole", a.getPublisherRole());
                         notification.put("isRead", readIds.contains(a.getId()));
                         return notification;
                     })
@@ -253,22 +221,30 @@ public class StudentHomeController {
             User user = getCurrentUser();
             if (user == null) return Result.error("未登录");
 
+            // 获取学生专业ID
+            String majorId = null;
+            try {
+                com.internship.entity.StudentUser studentUser = studentUserMapper.findById(user.getId());
+                if (studentUser != null && studentUser.getMajorId() != null) {
+                    majorId = String.valueOf(studentUser.getMajorId());
+                }
+            } catch (Exception e) {
+                log.warn("获取学生专业信息失败: {}", e.getMessage());
+            }
+
             // 获取学生已读公告ID集合
-            java.util.Set<Long> readIds = readRecordService
+            java.util.Set<Long> readIds2 = readRecordService
                     .findByUserId(String.valueOf(user.getId()), "STUDENT")
                     .stream()
                     .map(com.internship.entity.AnnouncementReadRecord::getAnnouncementId)
                     .collect(Collectors.toSet());
 
-            // 未读数 = 全部已发布公告数 - 已读数
-            List<Announcement> announcements = announcementMapper.findAll();
-            long totalPublished = announcements.stream()
-                    .filter(a -> "PUBLISHED".equals(a.getStatus()))
-                    .filter(a -> a.getValidTo() == null || a.getValidTo().after(new java.util.Date()))
-                    .count();
-            long readCount = announcements.stream()
-                    .filter(a -> "PUBLISHED".equals(a.getStatus()))
-                    .filter(a -> readIds.contains(a.getId()))
+            // 使用带目标群体过滤的查询（SQL 层已过滤 status=PUBLISHED 和有效期限）
+            List<Announcement> announcements2 = announcementMapper.getAnnouncementsForUser(
+                    "STUDENT", majorId, String.valueOf(user.getId()), "STUDENT");
+            long totalPublished = announcements2.size();
+            long readCount = announcements2.stream()
+                    .filter(a -> readIds2.contains(a.getId()))
                     .count();
 
             return Result.success(Map.of("count", totalPublished - readCount));
@@ -276,11 +252,6 @@ public class StudentHomeController {
             log.error("获取未读通知数量失败: {}", e.getMessage(), e);
             return Result.error("获取未读通知数量失败");
         }
-    }
-
-    @PutMapping("/todos/{id}/complete")
-    public Result completeTodo(@PathVariable Long id) {
-        return Result.success("已完成");
     }
 
     /**
@@ -308,6 +279,7 @@ public class StudentHomeController {
 
             // 计算当前状态
             int currentStatus = calculateCurrentStatus(status, studentId, hasPendingApplication);
+            JobSearchStatusDTO jobSearchStatus = jobSearchStatusService.resolve(studentId, currentStatus);
 
             // 返回完整状态信息，包含计算后的状态值
             Map<String, Object> result = new HashMap<>();
@@ -331,6 +303,9 @@ public class StudentHomeController {
             }
             // 添加计算后的状态值
             result.put("currentStatus", currentStatus);
+            result.put("internshipStatus", currentStatus);
+            result.put("jobSearchStatus", jobSearchStatus.jobSearchStatus());
+            result.put("jobSearchStatusText", jobSearchStatus.jobSearchStatusText());
             result.put("hasPendingApplication", hasPendingApplication);
 
             return Result.success(result);
@@ -375,8 +350,15 @@ public class StudentHomeController {
             } else if (startTime != null && now.after(startTime)) {
                 // 没有结束时间但有开始时间，且已过开始时间，视为进行中
                 return 3;
+            } else if (startTime == null && Integer.valueOf(3).equals(status.getStatus())) {
+                // 开始时间缺失但数据库状态已是"实习中"（如批量导入未同步时间），
+                // 不再降级为"已确认"，保持与实际状态一致
+                return 3;
+            } else if (startTime == null && Integer.valueOf(4).equals(status.getStatus())) {
+                // 同理，已结束状态不因时间缺失而降级
+                return 4;
             } else {
-                // 已确认但时间未到
+                // 其他情况（状态为 2 的"已确定"、或仅有开始时间但尚未开始）→ 按"已确认（等待开始）"显示
                 return 2;
             }
         }
@@ -399,6 +381,8 @@ public class StudentHomeController {
      * 提交或更新实习状态
      */
     @PostMapping("/internship-status")
+    @PreAuthorize("denyAll()")
+    @Log(operationType = "CREATE", module = "STUDENT_INTERNSHIP", description = "提交实习状态", riskLevel = "MEDIUM")
     public Result submitInternshipStatus(@RequestBody StudentInternshipStatus status) {
         try {
             User user = getCurrentUser();

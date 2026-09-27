@@ -3,38 +3,54 @@ package com.internship.controller;
 import com.internship.anno.Log;
 import com.internship.entity.Announcement;
 import com.internship.entity.CompanyUser;
+import com.internship.entity.CompanyAlumniMember;
 import com.internship.entity.InternshipApplicationEntity;
-import com.internship.entity.InternshipProgressRecord;
 import com.internship.entity.PageResult;
 import com.internship.entity.Position;
 import com.internship.entity.Result;
 import com.internship.entity.StudentInternshipStatus;
 import com.internship.entity.StudentJobApplication;
+import com.internship.entity.InternshipStageAssignment;
+import com.internship.exception.BusinessException;
 import com.internship.service.AnnouncementService;
 import com.internship.service.CompanyUserService;
+import com.internship.service.DirectHireService;
 import com.internship.service.InternshipApplicationService;
 import com.internship.service.InternshipProgressRecordService;
 import com.internship.service.PositionCacheService;
 import com.internship.service.PositionService;
 import com.internship.service.StudentInternshipStatusService;
 import com.internship.service.StudentJobApplicationService;
+import com.internship.service.InternshipStageAssignmentService;
+import com.internship.service.InternshipFlowRules;
+import com.internship.service.JobApplicationResultNotification;
+import com.internship.service.JobApplicationResultNotifier;
 import com.internship.utils.CurrentHolder;
 import com.internship.utils.PasswordValidator;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.NoTransactionException;
+import org.springframework.transaction.interceptor.TransactionAspectSupport;
 
 import java.util.Date;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 import com.internship.entity.InterviewInvitation;
 
+import static com.internship.service.InternshipProgressEvents.append;
+
 @Slf4j
 @RestController
 @RequestMapping("/api/company")
+@PreAuthorize("hasRole('COMPANY')")
 public class CompanyController {
 
     @Autowired
@@ -59,6 +75,9 @@ public class CompanyController {
     private StudentJobApplicationService studentJobApplicationService;
 
     @Autowired
+    private InternshipStageAssignmentService internshipStageAssignmentService;
+
+    @Autowired
     private com.internship.service.AnnouncementReadRecordService announcementReadRecordService;
 
     @Autowired
@@ -73,8 +92,24 @@ public class CompanyController {
     @Autowired
     private com.internship.service.InterviewInvitationService interviewInvitationService;
 
+    @Autowired
+    private DirectHireService directHireService;
+
+    @Autowired
+    private com.internship.service.CompanyTagService companyTagService;
+
+    @Autowired
+    private JobApplicationResultNotifier jobApplicationResultNotifier;
+
+    @Autowired(required = false)
+    private com.internship.service.UserCacheService userCacheService;
+
     @GetMapping("/info")
     public Result getCompanyInfo(@RequestParam Long companyId) {
+        Long currentCompanyId = requireCurrentCompanyId();
+        if (!currentCompanyId.equals(companyId)) {
+            throw new AccessDeniedException("无权访问其他企业资料");
+        }
         log.info("获取企业信息：{}", companyId);
         try {
             CompanyUser company = companyUserService.findById(companyId);
@@ -101,13 +136,16 @@ public class CompanyController {
             companyInfo.put("website", company.getWebsite());
             companyInfo.put("description", company.getDescription());
             companyInfo.put("cooperationMode", company.getCooperationMode());
+            companyInfo.put("auditStatus", company.getAuditStatus());
             companyInfo.put("isInternshipBase", company.getIsInternshipBase());
             companyInfo.put("acceptBackup", company.getAcceptBackup());
-            companyInfo.put("maxBackupStudents", company.getMaxBackupStudents());
             companyInfo.put("companyTag", company.getCompanyTag());
             companyInfo.put("logo", company.getLogo());
             companyInfo.put("photos", company.getPhotos());
             companyInfo.put("videos", company.getVideos());
+            companyInfo.put("isAlumniUnit", company.getIsAlumniUnit());
+            companyInfo.put("alumniMembers", company.getAlumniMembers());
+            companyInfo.put("hasTrainingBaseAgreement", company.getHasTrainingBaseAgreement());
 
             return Result.success(companyInfo);
         } catch (Exception e) {
@@ -140,7 +178,7 @@ public class CompanyController {
             profile.put("industry", company.getIndustry());
             profile.put("scale", company.getScale());
 
-            log.info("返回个人信息：{}", profile);
+            log.info("企业个人信息查询成功");
             return Result.success(profile);
         } catch (Exception e) {
             log.error("获取个人信息失败", e);
@@ -151,7 +189,7 @@ public class CompanyController {
     @Log(operationType = "UPDATE", module = "COMPANY_MANAGEMENT", description = "企业更新个人信息")
     @PutMapping("/profile")
     public Result updateProfile(@RequestBody Map<String, Object> profileData) {
-        log.info("更新企业账号个人信息：{}", profileData);
+        log.info("收到企业账号个人信息更新请求");
         try {
             Long companyId = getCurrentCompanyId();
             CompanyUser company = companyUserService.findById(companyId);
@@ -166,7 +204,13 @@ public class CompanyController {
                 company.setPhone((String) profileData.get("phone"));
             }
             if (profileData.containsKey("email")) {
-                company.setEmail((String) profileData.get("email"));
+                String email = profileData.get("email") == null ? "" : profileData.get("email").toString().trim();
+                if (!email.isEmpty()) {
+                    if (!email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$")) {
+                        return Result.error("邮箱格式不正确");
+                    }
+                    company.setEmail(email);
+                }
             }
 
             company.setUpdateTime(new java.util.Date());
@@ -237,25 +281,35 @@ public class CompanyController {
                 company.setDetailAddress((String) companyInfo.get("detailAddress"));
             }
             if (companyInfo.containsKey("website")) {
-                company.setWebsite((String) companyInfo.get("website"));
+                String website = (String) companyInfo.get("website");
+                if (website != null && !website.isEmpty() && !website.matches("^https?://.*")) {
+                    return Result.error("企业网站必须以 http:// 或 https:// 开头");
+                }
+                company.setWebsite(website);
             }
             if (companyInfo.containsKey("description")) {
                 company.setDescription((String) companyInfo.get("description"));
             }
-            if (companyInfo.containsKey("cooperationMode")) {
-                company.setCooperationMode((String) companyInfo.get("cooperationMode"));
-            }
+            // 合作模式由准入审核确定，企业资料修改不得改写。
             if (companyInfo.containsKey("isInternshipBase")) {
                 company.setIsInternshipBase((Integer) companyInfo.get("isInternshipBase"));
             }
             if (companyInfo.containsKey("acceptBackup")) {
                 company.setAcceptBackup((Integer) companyInfo.get("acceptBackup"));
             }
-            if (companyInfo.containsKey("maxBackupStudents")) {
-                Object value = companyInfo.get("maxBackupStudents");
-                if (value != null) {
-                    company.setMaxBackupStudents(((Number) value).longValue());
+            if (companyInfo.containsKey("isAlumniUnit")) {
+                Integer isAlumniUnit = parseBinaryFlag(companyInfo.get("isAlumniUnit"), "是否校友单位");
+                company.setIsAlumniUnit(isAlumniUnit);
+                if (isAlumniUnit == 0 && !companyInfo.containsKey("alumniMembers")) {
+                    company.setAlumniMembers(new ArrayList<>());
                 }
+            }
+            if (companyInfo.containsKey("alumniMembers")) {
+                company.setAlumniMembers(parseAlumniMembers(companyInfo.get("alumniMembers")));
+            }
+            if (companyInfo.containsKey("hasTrainingBaseAgreement")) {
+                company.setHasTrainingBaseAgreement(parseBinaryFlag(
+                        companyInfo.get("hasTrainingBaseAgreement"), "是否签订实习基地协议"));
             }
             if (companyInfo.containsKey("logo")) {
                 String logo = (String) companyInfo.get("logo");
@@ -290,6 +344,10 @@ public class CompanyController {
             int result = companyUserService.update(company);
             log.info("更新结果：{}", result);
             if (result > 0) {
+                // 企业更新后同步重建自动标签（接受兜底/合作方式），保留手动标签
+                companyTagService.updateCompanyTag(companyId);
+                // 企业信息影响岗位展示（实习基地标签等），清除岗位列表缓存
+                positionCacheService.clearPositionsCache();
                 return Result.success("企业信息更新成功");
             }
             return Result.error("企业信息更新失败");
@@ -414,11 +472,16 @@ public class CompanyController {
 
     @Log(operationType = "UPDATE", module = "POSITION_MANAGEMENT", description = "企业更新岗位")
     @PutMapping("/positions/{id}")
+    @PreAuthorize("hasRole('COMPANY')")
     public Result updatePosition(@PathVariable Long id, @RequestBody Position position) {
         log.info("更新岗位：id={}", id);
         try {
+            Long companyId = getCurrentCompanyId();
+            if (companyId == null) {
+                throw new org.springframework.security.access.AccessDeniedException("未获取到当前登录企业 ID");
+            }
             position.setId(id);
-            int result = positionService.update(position);
+            int result = positionService.updateForCompany(position, companyId);
             if (result > 0) {
                 // 清除职位列表缓存
                 positionCacheService.clearPositionsCache();
@@ -426,6 +489,8 @@ public class CompanyController {
                 return Result.success("岗位更新成功");
             }
             return Result.error("岗位更新失败");
+        } catch (org.springframework.security.access.AccessDeniedException e) {
+            throw e;
         } catch (Exception e) {
             log.error("更新岗位失败：{}", e.getMessage(), e);
             return Result.error("更新岗位失败：" + e.getMessage());
@@ -434,10 +499,15 @@ public class CompanyController {
 
     @Log(operationType = "DELETE", module = "POSITION_MANAGEMENT", description = "企业删除岗位")
     @DeleteMapping("/positions/{id}")
+    @PreAuthorize("hasRole('COMPANY')")
     public Result deletePosition(@PathVariable Long id) {
         log.info("删除岗位：id={}", id);
         try {
-            int result = positionService.delete(id);
+            Long companyId = getCurrentCompanyId();
+            if (companyId == null) {
+                throw new org.springframework.security.access.AccessDeniedException("未获取到当前登录企业 ID");
+            }
+            int result = positionService.deleteForCompany(id, companyId);
             if (result > 0) {
                 // 清除职位列表缓存
                 positionCacheService.clearPositionsCache();
@@ -447,19 +517,67 @@ public class CompanyController {
                 return Result.success("岗位删除成功");
             }
             return Result.error("岗位删除失败");
+        } catch (org.springframework.security.access.AccessDeniedException e) {
+            throw e;
         } catch (Exception e) {
             log.error("删除岗位失败：{}", e.getMessage(), e);
             return Result.error("删除岗位失败：" + e.getMessage());
         }
     }
 
+    private Integer parseBinaryFlag(Object value, String fieldName) {
+        if (value instanceof Boolean booleanValue) {
+            return booleanValue ? 1 : 0;
+        }
+        if (value instanceof Number number) {
+            int result = number.intValue();
+            if (result == 0 || result == 1) {
+                return result;
+            }
+        }
+        if (value instanceof String text && ("0".equals(text) || "1".equals(text))) {
+            return Integer.valueOf(text);
+        }
+        throw new BusinessException(fieldName + "必须为0或1");
+    }
+
+    private List<CompanyAlumniMember> parseAlumniMembers(Object value) {
+        if (!(value instanceof List<?> rawMembers)) {
+            throw new BusinessException("校友列表格式不正确");
+        }
+        List<CompanyAlumniMember> members = new ArrayList<>();
+        for (Object rawMember : rawMembers) {
+            if (!(rawMember instanceof Map<?, ?> memberMap)) {
+                throw new BusinessException("校友列表格式不正确");
+            }
+            CompanyAlumniMember member = new CompanyAlumniMember();
+            member.setName(asNullableString(memberMap.get("name")));
+            member.setPhone(asNullableString(memberMap.get("phone")));
+            member.setPosition(asNullableString(memberMap.get("position")));
+            members.add(member);
+        }
+        return members;
+    }
+
+    private String asNullableString(Object value) {
+        return value == null ? null : value.toString();
+    }
+
     private Long getCurrentCompanyId() {
         Long companyId = CurrentHolder.getUserId();
-        if (companyId == null) {
-            log.warn("未获取到当前登录企业 ID");
+        if (companyId == null || !"ROLE_COMPANY".equals(CurrentHolder.getUserRole())) {
+            log.warn("当前身份不是企业或未获取到企业 ID");
             return null;
         }
         log.debug("获取到当前登录企业 ID: {}", companyId);
+        return companyId;
+    }
+
+    private Long requireCurrentCompanyId() {
+        Long companyId = getCurrentCompanyId();
+        if (companyId == null) {
+            throw new AccessDeniedException("当前身份不是企业");
+        }
         return companyId;
     }
 
@@ -475,6 +593,10 @@ public class CompanyController {
             CompanyUser company = companyUserService.findById(companyId);
             if (company == null) {
                 return Result.error("企业不存在");
+            }
+
+            if (company.getEmail() == null || company.getEmail().trim().isEmpty()) {
+                return Result.error("请先在个人信息中绑定邮箱后再修改密码，绑定后可使用忘记密码找回");
             }
 
             String oldPassword = passwordData.get("oldPassword");
@@ -500,6 +622,10 @@ public class CompanyController {
             company.setUpdateTime(new java.util.Date());
             int result = companyUserService.update(company);
             if (result > 0) {
+                // 清除该用户在 Redis 中的缓存，避免登录时仍命中旧密码哈希
+                if (userCacheService != null && company.getUsername() != null) {
+                    userCacheService.evictUserCache(company.getUsername());
+                }
                 Map<String, Object> data = new HashMap<>();
                 data.put("message", "密码修改成功，请重新登录");
                 data.put("requireRelogin", true);
@@ -514,19 +640,17 @@ public class CompanyController {
 
     @GetMapping("/applications/recent")
     public Result getRecentApplications(@RequestParam(required = false) Long companyId, @RequestParam(defaultValue = "5") Integer limit) {
-        log.info("获取企业最新岗位申请：companyId={}, limit={}", companyId, limit);
+        Long currentCompanyId = requireCurrentCompanyId();
+        if (companyId != null && !currentCompanyId.equals(companyId)) {
+            throw new AccessDeniedException("无权访问其他企业的申请");
+        }
+        log.info("获取企业最新岗位申请：companyId={}, limit={}", currentCompanyId, limit);
         try {
-            // 如果没有传 companyId，使用当前登录企业的 ID
-            if (companyId == null) {
-                companyId = getCurrentCompanyId();
-            }
-            if (companyId == null) {
-                return Result.error("未获取到当前登录企业 ID");
-            }
             // 查询岗位申请表，获取最近的申请记录
-            List<InternshipApplicationEntity> applications = internshipApplicationService.findByCompanyId(companyId);
+            List<InternshipApplicationEntity> applications = internshipApplicationService.findByCompanyId(currentCompanyId);
 
             java.util.List<InternshipApplicationEntity> recentApplications = applications.stream()
+                    .filter(application -> currentCompanyId.equals(application.getCompanyId()))
                     .sorted((a, b) -> {
                         Date aTime = a.getCreateTime() != null ? a.getCreateTime() : new Date(0);
                         Date bTime = b.getCreateTime() != null ? b.getCreateTime() : new Date(0);
@@ -560,14 +684,24 @@ public class CompanyController {
      */
     @PutMapping("/applications/{id}/view")
     public Result markApplicationAsViewed(@PathVariable Long id) {
+        Long companyId = requireCurrentCompanyId();
         log.info("标记申请为已读，ID: {}", id);
         try {
+            InternshipApplicationEntity application = internshipApplicationService.findById(id);
+            if (application == null) {
+                return Result.error("申请不存在");
+            }
+            if (!companyId.equals(application.getCompanyId())) {
+                throw new AccessDeniedException("无权操作其他企业的申请");
+            }
             boolean result = internshipApplicationService.markAsViewed(id);
             if (result) {
                 return Result.success("标记成功");
             } else {
                 return Result.error("标记失败");
             }
+        } catch (AccessDeniedException e) {
+            throw e;
         } catch (Exception e) {
             log.error("标记申请已读失败：{}", e.getMessage(), e);
             return Result.error("标记已读失败：" + e.getMessage());
@@ -596,11 +730,11 @@ public class CompanyController {
                     if (targetType == null || targetType.isEmpty()) {
                         return false;
                     }
-                    // 支持 JSON 数组格式或单个值
+                    // 支持 JSON 数组格式或单个值（包含 COMPANY 或 ALL 类型）
                     if (targetType.startsWith("[")) {
-                        return targetType.contains("\"COMPANY\"");
+                        return targetType.contains("\"COMPANY\"") || targetType.contains("\"ALL\"");
                     } else {
-                        return "COMPANY".equals(targetType);
+                        return "COMPANY".equals(targetType) || "ALL".equals(targetType);
                     }
                 })
                 .limit(limit.longValue())
@@ -634,7 +768,9 @@ public class CompanyController {
                         item.put("title", announcement.getTitle());
                         item.put("content", announcement.getContent());
                         item.put("time", formatTime(announcement.getPublishTime()));
-                        item.put("priority", announcement.getPriority() != null ? announcement.getPriority() : "info");
+                        item.put("publishTime", announcement.getPublishTime());
+                        item.put("publisher", announcement.getPublisher());
+                        item.put("publisherRole", announcement.getPublisherRole());
                         item.put("positionId", (Long) null);
                         item.put("positionName", "");
                         item.put("isRead", isRead); // 添加阅读状态
@@ -642,7 +778,7 @@ public class CompanyController {
                     })
                     .toList();
 
-            log.info("返回的通知数据：{}", result);
+            log.info("企业通知查询完成：count={}", result.size());
             return Result.success(result);
         } catch (Exception e) {
             log.error("获取企业通知失败：{}", e.getMessage(), e);
@@ -682,8 +818,11 @@ public class CompanyController {
             log.info("当前登录企业 ID: {}", companyId);
 
             List<InternshipApplicationEntity> applications = internshipApplicationService.findByCompanyId(companyId);
-            log.info("获取到 {} 条岗位申请记录", applications.size());
-            return Result.success(applications);
+            List<InternshipApplicationEntity> ownedApplications = applications.stream()
+                    .filter(application -> companyId.equals(application.getCompanyId()))
+                    .toList();
+            log.info("获取到 {} 条岗位申请记录", ownedApplications.size());
+            return Result.success(ownedApplications);
         } catch (Exception e) {
             log.error("获取岗位申请列表失败：{}", e.getMessage(), e);
             return Result.error("获取岗位申请列表失败：" + e.getMessage());
@@ -705,6 +844,10 @@ public class CompanyController {
             log.info("当前登录企业 ID: {}", companyId);
 
             List<com.internship.entity.StudentJobApplication> applications = studentJobApplicationService.findByCompanyId(companyId);
+            for (com.internship.entity.StudentJobApplication application : applications) {
+                application.setDirectHire(directHireService.isDirectHire(
+                        application.getStudentId(), application.getPositionId()));
+            }
             log.info("获取到 {} 条学生快速申请记录", applications.size());
             return Result.success(applications);
         } catch (Exception e) {
@@ -718,7 +861,8 @@ public class CompanyController {
      */
     @Log(operationType = "UPDATE", module = "COMPANY_MANAGEMENT", description = "企业更新学生快速申请状态")
     @PutMapping("/job-applications/{id}/status")
-    public Result updateJobApplicationStatus(@PathVariable Long id, @RequestBody Map<String, String> statusData) {
+    @Transactional(rollbackFor = Exception.class)
+    public synchronized Result updateJobApplicationStatus(@PathVariable Long id, @RequestBody Map<String, String> statusData) {
         log.info("企业更新学生快速申请状态，ID: {}, 状态: {}", id, statusData.get("status"));
         try {
             Long companyId = getCurrentCompanyId();
@@ -737,11 +881,11 @@ public class CompanyController {
             }
 
             String newStatus = statusData.get("status");
+            String rejectReason = com.internship.service.StudentJobApplicationStatuses
+                    .normalizeRejectReason(newStatus, statusData.get("rejectReason"));
 
-            // 非 pending/approved/interview 状态不允许重复操作
             String currentStatus = application.getStatus();
-            if (!"pending".equals(currentStatus) && !"approved".equals(currentStatus)
-                && !"interview".equals(currentStatus)) {
+            if (!com.internship.service.StudentJobApplicationStatuses.isActive(currentStatus)) {
                 return Result.error("该申请已处理，请勿重复操作");
             }
 
@@ -752,49 +896,41 @@ public class CompanyController {
                     application.getStudentId(), application.getPositionId());
                 if (invitation != null) {
                     // 先更新申请状态(轻量操作, 不会失败)
+                    if (studentJobApplicationService.updateStatusIfActive(
+                            application.getId(), newStatus, rejectReason) <= 0) {
+                        return Result.error("该申请已被处理，请刷新后重试");
+                    }
                     application.setStatus(newStatus);
-                    studentJobApplicationService.update(application);
+                    syncLatestLegacyApplication(
+                            application.getStudentId(), application.getPositionId(), newStatus);
 
                     // 再更新邀请状态
                     interviewInvitationService.updateStatus(invitation.getId(), newStatus, null);
                     log.info("更新面试邀请状态成功，invitationId: {}, status: {}", invitation.getId(), newStatus);
 
-                    // 更新面试进展记录状态
-                    String progressStatus = "interview_passed".equals(newStatus) ? "success" : "failed";
-                    progressRecordService.updateStatusByRelatedId(invitation.getId(), "interview", progressStatus);
-
-                    // 【修复】同时更新投递申请进展记录状态
-                    progressRecordService.updateStatusByRelatedId(application.getId(), "job_application", progressStatus);
+                    appendInterviewOutcome(application.getStudentId(), invitation.getId(),
+                            application.getCompanyName(), application.getPositionName(),
+                            newStatus);
+                    queueJobResultEmail(
+                            application.getId(), application.getStudentId(), application.getCompanyId(),
+                            application.getCompanyName(), application.getPositionId(),
+                            application.getPositionName(), newStatus, false, rejectReason);
 
                     // 面试通过时，创建或更新学生实习状态为待确认
                     if ("interview_passed".equals(newStatus)) {
-                        StudentInternshipStatus existingStatus = studentInternshipStatusService.findByStudentId(application.getStudentId());
-                        if (existingStatus != null) {
-                            // 已存在记录，更新
-                            existingStatus.setPositionId(application.getPositionId());
-                            existingStatus.setCompanyId(application.getCompanyId());
-                            existingStatus.setStatus(1); // 待确认
-                            existingStatus.setCompanyConfirmStatus(1);
-                            existingStatus.setUpdateTime(new Date());
-                            existingStatus.setStudentName(application.getStudentName());
-                            existingStatus.setPositionName(application.getPositionName());
-                            studentInternshipStatusService.update(existingStatus);
-                            log.info("【面试通过】更新实习状态记录为待确认，学生ID: {}", application.getStudentId());
-                        } else {
-                            // 不存在记录，创建新记录
-                            StudentInternshipStatus internshipStatus = new StudentInternshipStatus();
-                            internshipStatus.setStudentId(application.getStudentId());
-                            internshipStatus.setPositionId(application.getPositionId());
-                            internshipStatus.setCompanyId(application.getCompanyId());
-                            internshipStatus.setStatus(1); // 待确认
-                            internshipStatus.setCompanyConfirmStatus(1);
-                            internshipStatus.setCreateTime(new Date());
-                            internshipStatus.setUpdateTime(new Date());
-                            internshipStatus.setStudentName(application.getStudentName());
-                            internshipStatus.setPositionName(application.getPositionName());
-                            studentInternshipStatusService.insert(internshipStatus);
-                            log.info("【面试通过】创建实习状态记录为待确认，学生ID: {}", application.getStudentId());
-                        }
+                        InternshipStageAssignment stageAssignment = new InternshipStageAssignment();
+                        stageAssignment.setStudentId(application.getStudentId());
+                        stageAssignment.setStageNo(application.getStageNo() == null ? 1 : application.getStageNo());
+                        stageAssignment.setApplicationId(application.getId());
+                        stageAssignment.setSourceType(application.getSourceType() == null
+                                ? InternshipFlowRules.SOURCE_NEW_APPLICATION : application.getSourceType());
+                        stageAssignment.setCompanyId(application.getCompanyId());
+                        stageAssignment.setCompanyName(application.getCompanyName());
+                        stageAssignment.setPositionId(application.getPositionId());
+                        stageAssignment.setPositionName(application.getPositionName());
+                        stageAssignment.setStatus("PENDING_CONFIRMATION");
+                        internshipStageAssignmentService.createFromApplication(stageAssignment);
+
                     }
 
                     // WebSocket推送面试状态更新给学生（handler内部会转换statusText）
@@ -807,8 +943,14 @@ public class CompanyController {
             }
 
             // 申请状态更新
+            int result = studentJobApplicationService.updateStatusIfActive(
+                    application.getId(), newStatus, rejectReason);
+            application.setRejectReason(rejectReason);
             application.setStatus(newStatus);
-            int result = studentJobApplicationService.update(application);
+            if (result > 0) {
+                syncLatestLegacyApplication(
+                        application.getStudentId(), application.getPositionId(), newStatus);
+            }
 
             // 如果是同意申请，需要创建面试邀请
             if (result > 0 && "approved".equals(newStatus)) {
@@ -816,16 +958,25 @@ public class CompanyController {
                 if (position != null) {
                     createInterviewInvitationIfNotExistsForJobApplication(application, position);
                 }
-                // 更新投递申请进度记录为已通过
-                progressRecordService.updateStatusByRelatedId(application.getId(), "job_application", "success");
             }
 
             // 如果是拒绝申请，更新投递申请进度记录为未通过
             if (result > 0 && "rejected".equals(newStatus)) {
-                progressRecordService.updateStatusByRelatedId(application.getId(), "job_application", "failed");
+                append(progressRecordService,
+                        application.getStudentId(),
+                        "job_rejected",
+                        "岗位申请未通过",
+                        application.getCompanyName() + " · " + application.getPositionName(),
+                        "failed",
+                        application.getId(),
+                        new Date());
             }
 
             if (result > 0) {
+                queueJobResultEmail(
+                        application.getId(), application.getStudentId(), application.getCompanyId(),
+                        application.getCompanyName(), application.getPositionId(),
+                        application.getPositionName(), newStatus, false, rejectReason);
                 // 推送待办数据更新
                 pushTodoUpdate(companyId);
                 // 向学生推送申请状态更新通知
@@ -839,8 +990,108 @@ public class CompanyController {
                 return Result.error("更新失败");
             }
         } catch (Exception e) {
+            rollbackCurrentTransaction();
             log.error("更新学生快速申请状态失败：{}", e.getMessage(), e);
             return Result.error("更新失败：" + e.getMessage());
+        }
+    }
+
+    @Log(operationType = "UPDATE", module = "COMPANY_MANAGEMENT", description = "企业直接录取学生")
+    @PostMapping("/job-applications/{id}/direct-hire")
+    @PreAuthorize("hasRole('COMPANY')")
+    @Transactional(rollbackFor = Exception.class)
+    public synchronized Result directHire(@PathVariable Long id) {
+        Long companyId = getCurrentCompanyId();
+        if (companyId == null) {
+            return Result.error("未获取到当前登录企业 ID");
+        }
+
+        try {
+            DirectHireService.DirectHireResult directHire = directHireService.directHire(companyId, id);
+            syncLatestLegacyApplication(
+                    directHire.studentId(), directHire.positionId(), "interview_passed");
+
+            com.internship.entity.StudentJobApplication directHireApplication =
+                    studentJobApplicationService.findById(directHire.applicationId());
+            if (directHireApplication != null) {
+                InternshipStageAssignment stageAssignment = new InternshipStageAssignment();
+                stageAssignment.setStudentId(directHireApplication.getStudentId());
+                stageAssignment.setStageNo(directHireApplication.getStageNo() == null ? 1 : directHireApplication.getStageNo());
+                stageAssignment.setApplicationId(directHireApplication.getId());
+                stageAssignment.setSourceType(directHireApplication.getSourceType() == null
+                        ? InternshipFlowRules.SOURCE_NEW_APPLICATION : directHireApplication.getSourceType());
+                stageAssignment.setCompanyId(directHireApplication.getCompanyId());
+                stageAssignment.setCompanyName(directHireApplication.getCompanyName());
+                stageAssignment.setPositionId(directHireApplication.getPositionId());
+                stageAssignment.setPositionName(directHireApplication.getPositionName());
+                stageAssignment.setStatus("PENDING_CONFIRMATION");
+                internshipStageAssignmentService.createFromApplication(stageAssignment);
+            }
+
+            queueJobResultEmail(
+                    directHire.applicationId(), directHire.studentId(), directHire.companyId(),
+                    directHire.companyName(), directHire.positionId(), directHire.positionName(),
+                    "interview_passed", true, null);
+
+            Map<String, Object> applicationEvent = new HashMap<>();
+            applicationEvent.put("studentId", directHire.studentId());
+            applicationEvent.put("positionName", directHire.positionName());
+            applicationEvent.put("companyName", directHire.companyName());
+            applicationEvent.put("status", "interview_passed");
+            applicationEvent.put("statusText", "直接录取（免面试）");
+            applicationEvent.put("directHire", true);
+            webSocketHandler.sendApplicationStatusToUser(directHire.studentId(), applicationEvent);
+
+            Map<String, Object> interviewEvent = new HashMap<>();
+            interviewEvent.put("id", directHire.invitationId());
+            interviewEvent.put("positionId", directHire.positionId());
+            interviewEvent.put("positionName", directHire.positionName());
+            interviewEvent.put("companyId", directHire.companyId());
+            interviewEvent.put("companyName", directHire.companyName());
+            interviewEvent.put("interviewMethod", DirectHireService.DIRECT_HIRE_METHOD);
+            interviewEvent.put("status", "interview_passed");
+            interviewEvent.put("statusText", "直接录取（免面试）");
+            interviewEvent.put("directHire", true);
+            webSocketHandler.sendInterviewCreateToUser(directHire.studentId(), interviewEvent);
+
+            pushTodoUpdate(companyId);
+
+            Map<String, Object> data = new HashMap<>();
+            data.put("applicationId", directHire.applicationId());
+            data.put("invitationId", directHire.invitationId());
+            data.put("status", "interview_passed");
+            data.put("statusText", "直接录取（免面试）");
+            data.put("directHire", true);
+            return Result.success("直接录取成功", data);
+        } catch (com.internship.exception.BusinessException e) {
+            rollbackCurrentTransaction();
+            return Result.error(e.getMessage());
+        } catch (Exception e) {
+            rollbackCurrentTransaction();
+            log.error("直接录取学生失败，applicationId={}: {}", id, e.getMessage(), e);
+            return Result.error("直接录取失败，请稍后重试");
+        }
+    }
+
+    private void queueJobResultEmail(Long applicationId,
+                                     Long studentId,
+                                     Long companyId,
+                                     String companyName,
+                                     Long positionId,
+                                     String positionName,
+                                     String status,
+                                     boolean directHire,
+                                     String rejectReason) {
+        jobApplicationResultNotifier.afterCommit(new JobApplicationResultNotification(
+                applicationId, studentId, companyId, companyName,
+                positionId, positionName, status, directHire, rejectReason));
+    }
+
+    private void syncLatestLegacyApplication(Long studentId, Long positionId, String status) {
+        if (!internshipApplicationService.updateLatestStatusByStudentAndPosition(
+                studentId, positionId, status)) {
+            log.warn("兼容申请记录未匹配到活动镜像: studentId={}, positionId={}, status={}",
+                    studentId, positionId, status);
         }
     }
 
@@ -849,7 +1100,8 @@ public class CompanyController {
      */
     @Log(operationType = "UPDATE", module = "COMPANY_MANAGEMENT", description = "企业更新申请状态")
     @PutMapping("/applications/{id}/status")
-    public Result updateApplicationStatus(@PathVariable Long id, @RequestBody Map<String, String> statusData) {
+    @Transactional(rollbackFor = Exception.class)
+    public synchronized Result updateApplicationStatus(@PathVariable Long id, @RequestBody Map<String, String> statusData) {
         log.info("企业更新申请状态，ID: {}, 状态: {}", id, statusData.get("status"));
         try {
             Long companyId = getCurrentCompanyId();
@@ -868,11 +1120,11 @@ public class CompanyController {
             }
 
             String newStatus = statusData.get("status");
+            String rejectReason = com.internship.service.StudentJobApplicationStatuses
+                    .normalizeRejectReason(newStatus, statusData.get("rejectReason"));
 
-            // 非 pending/approved/interview 状态不允许重复操作
             String curStatus2 = application.getStatus();
-            if (!"pending".equals(curStatus2) && !"approved".equals(curStatus2)
-                && !"interview".equals(curStatus2)) {
+            if (!com.internship.service.StudentJobApplicationStatuses.isActive(curStatus2)) {
                 return Result.error("该申请已处理，请勿重复操作");
             }
 
@@ -882,54 +1134,62 @@ public class CompanyController {
                 return Result.error("更新失败");
             }
 
-            // 如果是同意申请，需要创建或更新实习状态记录
+            int synced = studentJobApplicationService.updateLatestStatusIfActive(
+                    application.getStudentId(), application.getPositionId(), newStatus, rejectReason);
+            if (synced <= 0) {
+                log.warn("兼容申请记录未匹配到活动主记录: mirrorId={}, studentId={}, positionId={}",
+                        id, application.getStudentId(), application.getPositionId());
+            }
+
+            if ("rejected".equals(newStatus)) {
+                CompanyUser eventCompany = companyUserService.findById(application.getCompanyId());
+                append(progressRecordService,
+                        application.getStudentId(),
+                        "job_rejected",
+                        "岗位申请未通过",
+                        (eventCompany == null ? "" : eventCompany.getCompanyName() + " · ")
+                                + application.getPositionName(),
+                        "failed",
+                        resolveJobApplicationId(application),
+                        new Date());
+            }
+
+            // 同意申请只代表获得面试机会，不提前进入待确认状态
             if ("approved".equals(newStatus)) {
-                // 获取岗位信息
                 Position position = positionService.findById(application.getPositionId());
-
-                // 检查学生是否已有实习状态记录
-                StudentInternshipStatus existingStatus = studentInternshipStatusService.findByStudentId(application.getStudentId());
-
-                if (existingStatus != null) {
-                    // 已存在记录，更新而不是插入
-                    existingStatus.setPositionId(application.getPositionId());
-                    existingStatus.setCompanyId(application.getCompanyId());
-                    existingStatus.setStatus(1);
-                    existingStatus.setCompanyConfirmStatus(1);
-                    existingStatus.setUpdateTime(new Date());
-                    existingStatus.setStudentName(application.getStudentName());
-                    existingStatus.setPositionName(application.getPositionName());
-
-                    studentInternshipStatusService.update(existingStatus);
-                    log.info("更新实习状态记录成功，学生ID: {}", application.getStudentId());
-
-                    // 【修复】更新实习状态后，也需要检查并创建面试卡片
-                    createInterviewInvitationIfNotExists(application, position);
-                } else {
-                    // 不存在记录，创建新记录
-                    StudentInternshipStatus internshipStatus = new StudentInternshipStatus();
-                    internshipStatus.setStudentId(application.getStudentId());
-                    internshipStatus.setPositionId(application.getPositionId());
-                    internshipStatus.setCompanyId(application.getCompanyId());
-                    internshipStatus.setStatus(1);
-                    internshipStatus.setCompanyConfirmStatus(1);
-                    internshipStatus.setCreateTime(new Date());
-                    internshipStatus.setUpdateTime(new Date());
-                    internshipStatus.setStudentName(application.getStudentName());
-                    internshipStatus.setPositionName(application.getPositionName());
-
-                    studentInternshipStatusService.insert(internshipStatus);
-                    log.info("创建实习状态记录成功，学生ID: {}", application.getStudentId());
-                }
-
-                // 数据库侧重新计算 recruited_count 和 remaining_quota（原子操作）
                 if (position != null) {
-                    positionService.updateRecruitedCount(position.getId());
+                    createInterviewInvitationIfNotExists(application, position);
                 }
             }
 
-            // 向学生推送申请状态更新通知
+            if ("interview_passed".equals(newStatus) || "interview_failed".equals(newStatus)) {
+                if ("interview_failed".equals(newStatus)
+                        && application.getStudentId() != null && application.getPositionId() != null) {
+                    studentInternshipStatusService.rollbackPendingConfirmationForFailedApplication(
+                            application.getStudentId(), application.getPositionId());
+                }
+                InterviewInvitation invitation = interviewInvitationService.findByStudentAndPosition(
+                    application.getStudentId(), application.getPositionId());
+                if (invitation != null) {
+                    interviewInvitationService.updateStatus(invitation.getId(), newStatus, null);
+                    CompanyUser outcomeCompany = companyUserService.findById(application.getCompanyId());
+                    appendInterviewOutcome(application.getStudentId(), invitation.getId(),
+                            outcomeCompany == null ? "" : outcomeCompany.getCompanyName(),
+                            application.getPositionName(), newStatus);
+                    webSocketHandler.sendInterviewStatusUpdateToUser(
+                        application.getStudentId(), invitation.getId(), newStatus);
+                }
+            }
+
+            Long emailApplicationId = resolveJobApplicationId(application);
             CompanyUser company = companyUserService.findById(companyId);
+            queueJobResultEmail(
+                    emailApplicationId == null ? application.getId() : emailApplicationId,
+                    application.getStudentId(), application.getCompanyId(),
+                    company == null ? "" : company.getCompanyName(), application.getPositionId(),
+                    application.getPositionName(), newStatus, false, rejectReason);
+
+            // 向学生推送申请状态更新通知
             String companyName = company != null ? company.getCompanyName() : "";
             // 使用 studentUserId（用户数据库ID）进行通知
             Long studentUserId = null;
@@ -948,6 +1208,7 @@ public class CompanyController {
 
             return Result.success("更新成功");
         } catch (Exception e) {
+            rollbackCurrentTransaction();
             log.error("更新申请状态失败：{}", e.getMessage(), e);
             return Result.error("更新申请状态失败：" + e.getMessage());
         }
@@ -1006,7 +1267,8 @@ public class CompanyController {
             // 检查是否已存在该学生和岗位的面试邀请
             InterviewInvitation existing = interviewInvitationService.findByStudentAndPosition(
                 application.getStudentId(), application.getPositionId());
-            if (existing != null) {
+            if (existing != null
+                    && !com.internship.service.StudentJobApplicationStatuses.canRetry(existing.getStatus())) {
                 log.debug("面试邀请已存在，无需创建，学生ID: {}, 岗位ID: {}",
                     application.getStudentId(), application.getPositionId());
                 return;
@@ -1038,16 +1300,14 @@ public class CompanyController {
             invitation.setStatus("pending_interview");
             interviewInvitationService.create(invitation);
 
-            // 创建面试进度记录（待处理状态）
-            InternshipProgressRecord interviewRecord = new InternshipProgressRecord();
-            interviewRecord.setStudentId(application.getStudentId());
-            interviewRecord.setEventType("interview");
-            interviewRecord.setEventTitle("面试邀请");
-            interviewRecord.setDescription("收到来自 " + companyName + " 的面试邀请，岗位: " + position.getPositionName());
-            interviewRecord.setStatus("pending");
-            interviewRecord.setRelatedId(invitation.getId());
-            interviewRecord.setEventTime(new Date());
-            progressRecordService.saveRecord(interviewRecord);
+            append(progressRecordService,
+                    application.getStudentId(),
+                    "interview_invited",
+                    "收到面试邀请",
+                    companyName + " · " + position.getPositionName(),
+                    "pending",
+                    invitation.getId(),
+                    new Date());
 
             // WebSocket推送面试邀请给学生
             Map<String, Object> data = new HashMap<>();
@@ -1078,6 +1338,7 @@ public class CompanyController {
             }
         } catch (Exception e) {
             log.error("创建面试邀请失败：{}", e.getMessage(), e);
+            throw new BusinessException("创建面试邀请失败: " + e.getMessage());
         }
     }
 
@@ -1091,7 +1352,8 @@ public class CompanyController {
             // 检查是否已存在该学生和岗位的面试邀请
             InterviewInvitation existing = interviewInvitationService.findByStudentAndPosition(
                 application.getStudentId(), application.getPositionId());
-            if (existing != null) {
+            if (existing != null
+                    && !com.internship.service.StudentJobApplicationStatuses.canRetry(existing.getStatus())) {
                 log.debug("面试邀请已存在，无需创建，学生ID: {}, 岗位ID: {}",
                     application.getStudentId(), application.getPositionId());
                 return;
@@ -1130,16 +1392,14 @@ public class CompanyController {
             invitation.setContactPhone(contactPhone);
             interviewInvitationService.create(invitation);
 
-            // 创建面试进度记录（待处理状态）
-            InternshipProgressRecord interviewRecord = new InternshipProgressRecord();
-            interviewRecord.setStudentId(application.getStudentId());
-            interviewRecord.setEventType("interview");
-            interviewRecord.setEventTitle("面试邀请");
-            interviewRecord.setDescription("收到来自 " + companyName + " 的面试邀请，岗位: " + position.getPositionName());
-            interviewRecord.setStatus("pending");
-            interviewRecord.setRelatedId(invitation.getId());
-            interviewRecord.setEventTime(new Date());
-            progressRecordService.saveRecord(interviewRecord);
+            append(progressRecordService,
+                    application.getStudentId(),
+                    "interview_invited",
+                    "收到面试邀请",
+                    companyName + " · " + position.getPositionName(),
+                    "pending",
+                    invitation.getId(),
+                    new Date());
 
             // WebSocket推送面试邀请给学生
             Map<String, Object> data = new HashMap<>();
@@ -1164,6 +1424,46 @@ public class CompanyController {
             }
         } catch (Exception e) {
             log.error("创建面试邀请失败：{}", e.getMessage(), e);
+            throw new BusinessException("创建面试邀请失败: " + e.getMessage());
+        }
+    }
+
+    private void appendInterviewOutcome(Long studentId,
+                                        Long invitationId,
+                                        String companyName,
+                                        String positionName,
+                                        String outcome) {
+        boolean passed = "interview_passed".equals(outcome);
+        append(progressRecordService,
+                studentId,
+                passed ? "interview_passed" : "interview_failed",
+                passed ? "面试已通过" : "面试未通过",
+                (companyName == null || companyName.isBlank() ? "" : companyName + " · ")
+                        + positionName,
+                passed ? "success" : "failed",
+                invitationId,
+                new Date());
+    }
+
+    private Long resolveJobApplicationId(InternshipApplicationEntity application) {
+        List<StudentJobApplication> applications = studentJobApplicationService
+                .findByStudentId(application.getStudentId());
+        if (applications == null) return null;
+        return applications.stream()
+                .filter(item -> application.getPositionId().equals(item.getPositionId()))
+                .filter(item -> application.getStageNo() == null || item.getStageNo() == null
+                        || application.getStageNo().equals(item.getStageNo()))
+                .map(StudentJobApplication::getId)
+                .filter(java.util.Objects::nonNull)
+                .max(Long::compareTo)
+                .orElse(null);
+    }
+
+    private void rollbackCurrentTransaction() {
+        try {
+            TransactionAspectSupport.currentTransactionStatus().setRollbackOnly();
+        } catch (NoTransactionException ignored) {
+            // Direct controller unit tests do not run through a transactional proxy.
         }
     }
 

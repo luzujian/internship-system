@@ -41,12 +41,12 @@
     <el-card class="search-card" shadow="never">
       <el-form :inline="true" :model="filters" class="search-form" @keyup.enter="applyFilters">
         <div class="search-row">
-          <el-form-item label="实习周期">
-            <el-select v-model="filters.period" placeholder="请选择实习周期" clearable style="width: 220px;" @change="applyFilters">
+          <el-form-item label="心得期次">
+            <el-select v-model="filters.period" placeholder="请选择心得期次" clearable style="width: 220px;" @change="applyFilters">
               <el-option
                 v-for="period in availablePeriods"
                 :key="period.period"
-                :label="`${period.periodName} (${period.startDate} ~ ${period.endDate})`"
+                :label="period.periodName || `第${period.period}期`"
                 :value="period.period.toString()">
               </el-option>
             </el-select>
@@ -247,7 +247,7 @@
               <div class="word-page">
                 <div class="word-page-content">
                   <div class="report-meta">
-                    <span class="report-period">第{{ currentPeriodReport.periodNumber }}阶段心得</span>
+                    <span class="report-period">第{{ currentPeriodReport.periodNumber }}期心得</span>
                     <span class="report-date">{{ currentPeriodReport.date }}</span>
                   </div>
                   <div class="report-full-content">
@@ -258,7 +258,7 @@
             </div>
             <div v-else class="word-empty">
               <div class="empty-icon">📄</div>
-              <p>暂无{{ currentPeriodName || '当前' }}阶段实习心得</p>
+              <p>暂无{{ currentPeriodName || '当前期次' }}实习心得</p>
             </div>
           </div>
         </div>
@@ -679,13 +679,91 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { evaluationApi, type EvaluationStudent, type EvaluationSubmitParams, type PeriodInfo } from '../../api/teacherEvaluation'
+import { evaluationApi, type EvaluationStudent, type EvaluationSubmitParams, type PeriodInfo, type EvaluationInfo } from '../../api/teacherEvaluation'
+import { useFormContext } from '@/agent/formContext'
+import { useAgentPageContext } from '@/agent/useAgentPageContext'
+import type { FormFieldDescriptor } from '@/agent/types'
+// 心得行精确局部接口：以 api Report 为基，补全模板使用的 AI 字段，均可选
+interface StudentReportRow {
+  id?: number
+  date?: string
+  content?: string
+  periodNumber?: number
+  isDraft?: boolean
+  aiComment?: string
+  aiImprovements?: string
+}
+// 学生行扩展：补全统计使用的 gradePublished
+interface EvaluationStudentRow extends EvaluationStudent {
+  gradePublished?: boolean
+}
+// 评分权重行（后端形态）
+interface CategoryWeightRow {
+  categoryCode?: string
+  categoryName?: string
+  weight?: number
+}
+// 动态评分表单（键为评分项 categoryCode，值为分数；comment 为评语）
+interface ScoreForm {
+  comment?: string
+  [key: string]: number | string | undefined
+}
+// AI 分析行（后端形态，兼容驼峰/snake两种形态）
+interface AIAnalysisRow {
+  id?: string | number
+  reflectionId?: string | number
+  reflection_id?: string | number
+  createTime?: string
+  create_time?: string
+  totalScore?: number
+  total_score?: number
+  grade?: string
+  analysisReport?: string
+  analysis_report?: string
+  summary?: string
+  keywords?: string[]
+  strengths?: string[]
+  highlights?: string[]
+  suggestions?: string[]
+  improvements?: string[]
+  comment?: string
+  sentimentPositive?: number
+  sentiment_positive?: number
+  sentimentNeutral?: number
+  sentiment_neutral?: number
+  sentimentNegative?: number
+  sentiment_negative?: number
+  scoreDetails?: unknown
+  score_details?: unknown
+}
+// 当前 AI 分析展示形态（模板实际使用的全部字段）
+interface CurrentAIAnalysis {
+  id?: string | number
+  reflectionId?: string | number
+  studentName?: string
+  analysisTime?: string
+  totalScore?: number
+  grade?: string
+  summary?: string
+  keywords?: string[]
+  aspects?: Record<string, number>
+  highlights?: string[]
+  improvements?: string[]
+  comment?: string
+  sentimentAnalysis?: { positive?: number; neutral?: number; negative?: number }
+}
+// 命名选项（学院/专业/班级下拉）
+interface NamedOption {
+  id: string | number
+  name: string
+}
 import { getScoringRules, getActiveCategoryWeights } from '../../api/counselorAISettings'
 import { getAnalysisByStudentId } from '../../api/studentReflectionAIAnalysis'
 import html2pdf from 'html2pdf.js/dist/html2pdf.bundle.min.js'
 import { Search, Refresh, Edit, View, Select, Close, Check, Setting, DataAnalysis, Download, EditPen, Upload } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { getTeacherClasses, getCounselorRelations } from '../../api/teacherClass'
+import type { TeacherClass } from '../../api/teacherClass'
 import { onTeacherTodoUpdate, offTeacherTodoUpdate } from '@/utils/websocket'
 import request from '../../utils/request'
 
@@ -698,16 +776,16 @@ const goToAiScoringConfig = () => {
   })
 }
 
-// 时间阶段数据
+// 心得期次数据
 const periods = ref<PeriodInfo[]>([])
 
-// 学院、专业、班级数据
-const departments = ref<any[]>([])
-const majors = ref<any[]>([])
-const classes = ref<any[]>([])
+// 学院、专业、班级数据（命名选项形态）
+const departments = ref<NamedOption[]>([])
+const majors = ref<NamedOption[]>([])
+const classes = ref<NamedOption[]>([])
 
-// 学生数据
-const students = ref<EvaluationStudent[]>([])
+// 学生数据（含后端扩展字段 gradePublished）
+const students = ref<EvaluationStudentRow[]>([])
 
 // 分页
 const currentPage = ref(1)
@@ -736,13 +814,13 @@ const totalPages = computed(() => {
   return Math.ceil(students.value.length / pageSize.value)
 })
 
-// 当前选中的实习周期名称（优先显示筛选阶段，没有则显示当前实际阶段）
+// 当前选中的心得期次名称
 const currentPeriodName = computed(() => {
   if (filters.value.period) {
     const period = periods.value.find(p => p.period.toString() === filters.value.period)
     return period ? period.periodName : ''
   }
-  // 没有选择阶段时，显示当前实际阶段
+  // 未筛选时显示最新期次
   if (actualCurrentPeriodNumber.value && periods.value.length > 0) {
     const currentPeriod = periods.value.find(p => p.period === actualCurrentPeriodNumber.value)
     return currentPeriod ? currentPeriod.periodName : ''
@@ -750,47 +828,20 @@ const currentPeriodName = computed(() => {
   return ''
 })
 
-// 根据系统日期计算当前阶段编号
+// 根据全局教学日历定位当前心得期次。
 const actualCurrentPeriodNumber = computed(() => {
-  if (!periods.value || periods.value.length === 0) {
-    return null
-  }
-  // 使用本地日期字符串避免时区问题，确保日期比较在同一天内正确
+  if (!periods.value?.length) return null
   const now = new Date()
-  const nowDateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
-  const firstPeriod = periods.value[0]
-  const lastPeriod = periods.value[periods.value.length - 1]
-  // 当前日期在第一个阶段开始之前，返回第一个阶段
-  if (nowDateStr < firstPeriod.startDate) {
-    return firstPeriod.period
-  }
-  // 当前日期在最后一个阶段结束之后，返回最后一个阶段
-  if (nowDateStr > lastPeriod.endDate) {
-    return lastPeriod.period
-  }
-  for (const period of periods.value) {
-    if (nowDateStr >= period.startDate && nowDateStr <= period.endDate) {
-      return period.period
-    }
-  }
-  // 兜底返回第一个阶段
-  return firstPeriod.period
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+  const current = periods.value.find(period => today >= period.startDate && today <= period.endDate)
+  if (current) return current.period
+  if (today < periods.value[0].startDate) return periods.value[0].period
+  return periods.value[periods.value.length - 1].period
 })
 
-// 下拉框可选的阶段列表（只显示当前及之前的阶段）
-const availablePeriods = computed(() => {
-  if (!periods.value || periods.value.length === 0) {
-    return []
-  }
-  const currentPeriod = actualCurrentPeriodNumber.value
-  if (!currentPeriod) {
-    return periods.value
-  }
-  // 只显示当前阶段及之前的阶段
-  return periods.value.filter(p => p.period <= currentPeriod)
-})
+const availablePeriods = computed(() => periods.value)
 
-// 检查是否可以切换到上一个有当前阶段心得的学生
+// 检查是否可以切换到上一个有当前期次心得的学生
 const canGoToPrevStudent = computed(() => {
   if (currentStudentIndex.value <= 0) return false
   for (let i = currentStudentIndex.value - 1; i >= 0; i--) {
@@ -802,7 +853,7 @@ const canGoToPrevStudent = computed(() => {
   return false
 })
 
-// 检查是否可以切换到下一个有当前阶段心得的学生
+// 检查是否可以切换到下一个有当前期次心得的学生
 const canGoToNextStudent = computed(() => {
   if (currentStudentIndex.value >= students.value.length - 1) return false
   for (let i = currentStudentIndex.value + 1; i < students.value.length; i++) {
@@ -814,8 +865,8 @@ const canGoToNextStudent = computed(() => {
   return false
 })
 
-// 获取要显示的心得（优先显示当前阶段的心得，如果没有则显示最新的）
-const currentPeriodReport = computed(() => {
+// 获取要显示的心得（优先显示所选期次，没有则显示最新心得；行用精确局部接口收窄）
+const currentPeriodReport = computed((): StudentReportRow | null => {
   if (!currentStudent.value?.reports || currentStudent.value.reports.length === 0) {
     return null
   }
@@ -823,15 +874,15 @@ const currentPeriodReport = computed(() => {
   const targetPeriod = selectedPeriod || actualCurrentPeriodNumber.value
 
   if (targetPeriod) {
-    // 优先查找目标阶段的心得
-    const report = currentStudent.value.reports.find((r: any) => r.periodNumber === targetPeriod)
+    // 优先查找目标期次的心得
+    const report = currentStudent.value.reports.find((r: StudentReportRow) => r.periodNumber === targetPeriod)
     // 如果找到的是草稿状态的心得，返回null显示空状态
     if (report && !report.isDraft) return report
     // 如果是草稿状态，返回null
     if (report && report.isDraft) return null
   }
-  // 如果没找到目标阶段的心得，返回最新的非草稿心得
-  const nonDraftReports = currentStudent.value.reports.filter((r: any) => !r.isDraft)
+  // 如果没找到目标期次的心得，返回最新的非草稿心得
+  const nonDraftReports = currentStudent.value.reports.filter((r: StudentReportRow) => !r.isDraft)
   return nonDraftReports.length > 0 ? nonDraftReports[0] : null
 })
 
@@ -861,8 +912,8 @@ const refreshData = () => {
 const scoreItems = ref<Array<{ key: string; label: string; max: number; weight: number; description?: string; evaluationCriteria?: string }>>([])
 const loadingScoreRules = ref(false)
 
-// 当前选中的学生
-const currentStudent = ref<EvaluationStudent | null>(null)
+// 当前选中的学生（含后端扩展字段）
+const currentStudent = ref<EvaluationStudentRow | null>(null)
 // 当前学生在列表中的索引
 const currentStudentIndex = ref(-1)
 
@@ -873,15 +924,15 @@ const loading = ref(false)
 const statsLoading = ref(false)
 const isSubmitting = ref(false) // 防止重复提交
 
-// 统计数据 - 学生总数显示所有学生，其他统计只显示当前阶段的数据
+// 统计数据 - 学生总数显示所有学生，其他统计显示当前期次的数据
 const statistics = computed(() => {
-  // 只统计当前阶段有心得的学生（hasCurrentPeriodReport=true）
+  // 只统计当前期次有心得的学生
   const studentsWithCurrentPeriodReport = students.value.filter(s => s.hasCurrentPeriodReport)
   const total = students.value.length // 学生总数：所有学生
   const evaluated = studentsWithCurrentPeriodReport.filter(s => s.isEvaluated).length
   const unevaluated = studentsWithCurrentPeriodReport.filter(s => !s.isEvaluated).length
-  const hasReport = studentsWithCurrentPeriodReport.length // 有当前阶段心得的学生数
-  // 有当前阶段心得、已评分但未发布（上传）的数量
+  const hasReport = studentsWithCurrentPeriodReport.length // 有当前期次心得的学生数
+  // 有当前期次心得、已评分但未发布（上传）的数量
   const unpublished = studentsWithCurrentPeriodReport.filter(s => s.isEvaluated && !s.gradePublished).length
   return {
     totalStudents: total,
@@ -945,22 +996,49 @@ const displayedStudents = computed(() => {
 // 当前标签页的学生总数
 const tabTotal = computed(() => filteredStudentsByTab.value.length)
 
-// 展开的学生ID，用于操作面板
-const expandedStudentId = ref<string | null>(null)
+// 展开的学生ID，用于操作面板（学生 id 为数字）
+const expandedStudentId = ref<number | null>(null)
 
 // 批量打分相关
 const selectedStudents = ref<number[]>([])
 const allSelected = ref(false)
 const showBatchEvaluationModal = ref(false)
 // 批量评价表单（动态，根据评分规则生成）
-const batchEvaluationForm = ref<Record<string, any>>({})
+const batchEvaluationForm = ref<ScoreForm>({})
+
+// ===== 智能填表：评分弹窗注册到 AI 侧栏（只写响应式 form，不触发提交，无 el-form 实例） =====
+// scoreItems 为动态数组（key 即后端 categoryCode，上限为 max）：打开时按当前 scoreItems 快照生成 number 字段
+const formContext = useFormContext()
+const buildScoreFillFields = (): FormFieldDescriptor[] => [
+  // map 生成的元素无上下文类型，标注回调返回类型以收窄字面量（运行时同一数组）
+  ...scoreItems.value.map((item): FormFieldDescriptor => ({ prop: item.key, label: item.label, type: 'number', valueType: 'number', min: 0, max: item.max })),
+  { prop: 'comment', label: '评语', type: 'textarea' }
+]
+const scoreValidationSummary = (model: ScoreForm, batch = false) => ({
+  missingFields: !batch && !model.comment?.trim() ? ['评语'] : [],
+  validationErrors: [
+    ...scoreItems.value.filter(item => {
+      const value = Number(model[item.key] || 0)
+      return !Number.isFinite(value) || value < 0 || value > item.max
+    }).map(item => `${item.label}必须在0至${item.max}分之间`),
+    ...((batch ? batchTotalScore.value : totalScore.value) > 100 ? ['总分不能超过100分'] : []),
+    ...(batch && !selectedStudents.value.length ? ['请选择学生'] : [])
+  ]
+})
+watch(showEvaluationModal, (open) => {
+  if (!open) formContext.unregister('teacher:evaluation')
+})
+watch(showBatchEvaluationModal, (open) => {
+  if (!open) formContext.unregister('teacher:evaluation')
+})
+onUnmounted(() => formContext.unregister('teacher:evaluation'))
 
 // 评价表单（动态，根据评分规则生成）
-const evaluationForm = ref<Record<string, any>>({})
+const evaluationForm = ref<ScoreForm>({})
 
 // AI 分析对话框相关
 const aiAnalysisDialogVisible = ref(false)
-const currentAIAnalysis = ref<any>(null)
+const currentAIAnalysis = ref<CurrentAIAnalysis | null>(null)
 const aiAnalysisLoading = ref(false)
 
 // 筛选条件
@@ -1007,31 +1085,38 @@ const loadScoreRules = async () => {
     
     const response = await getActiveCategoryWeights(parseInt(userId))
     console.log('类别权重响应:', response)
-    
-    if (response && response.data && response.data.weights && Array.isArray(response.data.weights)) {
-      const weights = response.data.weights
-      
+
+    // getActiveCategoryWeights 的 data 为 unknown（运行时为 { weights }），收窄后使用
+    const weightsWrap = response as unknown as { data?: unknown }
+    const weightsData: Record<string, unknown> | null =
+      weightsWrap.data !== null && typeof weightsWrap.data === 'object'
+        ? (weightsWrap.data as Record<string, unknown>)
+        : null
+    const weightsRaw: unknown = weightsData?.['weights']
+    if (response && weightsWrap.data && weightsRaw && Array.isArray(weightsRaw)) {
+      const weights = weightsRaw as CategoryWeightRow[]
+
       if (weights.length === 0) {
         scoreItems.value = []
         evaluationForm.value = { comment: '' }
         batchEvaluationForm.value = { comment: '' }
         console.warn('未配置评分规则类别，请先在设置页面配置评分规则')
       } else {
-        scoreItems.value = weights.map((weight: any) => ({
-          key: weight.categoryCode,
-          label: weight.categoryName,
+        scoreItems.value = weights.map((weight: CategoryWeightRow) => ({
+          key: weight.categoryCode ?? '',
+          label: weight.categoryName ?? '',
           max: 100,
-          weight: weight.weight,
+          weight: weight.weight ?? 0,
           description: '',
           evaluationCriteria: ''
         }))
-        
-        const formKeys: any = {}
-        weights.forEach((weight: any) => {
-          formKeys[weight.categoryCode] = 0
+
+        const formKeys: ScoreForm = {}
+        weights.forEach((weight: CategoryWeightRow) => {
+          if (weight.categoryCode) formKeys[weight.categoryCode] = 0
         })
         formKeys.comment = ''
-        
+
         evaluationForm.value = { ...formKeys }
         batchEvaluationForm.value = { ...formKeys }
       }
@@ -1093,13 +1178,13 @@ const loadStudentList = async () => {
   }
 }
 
-// 加载时间阶段列表
+// 加载心得期次列表
 const loadPeriods = async () => {
   try {
     const response = await evaluationApi.getPeriods()
     periods.value = response || []
   } catch (error) {
-    console.error('加载时间阶段失败：', error)
+    console.error('加载心得期次失败：', error)
   }
 }
 
@@ -1113,9 +1198,9 @@ const loadDepartments = async () => {
     
     const response = await getTeacherClasses(counselorId)
     const teacherClasses = response?.data || []
-    
-    const uniqueDepartments = new Map()
-    teacherClasses.forEach((cls: any) => {
+
+    const uniqueDepartments = new Map<string | number, NamedOption>()
+    teacherClasses.forEach((cls: TeacherClass) => {
       if (cls.departmentId && cls.departmentName) {
         uniqueDepartments.set(cls.departmentId, { id: cls.departmentId, name: cls.departmentName })
       }
@@ -1145,8 +1230,8 @@ const loadMajors = async () => {
     const response = await getTeacherClasses(counselorId)
     const teacherClasses = response?.data || []
     
-    const uniqueMajors = new Map()
-    teacherClasses.forEach((cls: any) => {
+    const uniqueMajors = new Map<string | number, NamedOption>()
+    teacherClasses.forEach((cls: TeacherClass) => {
       if (cls.majorId && cls.majorName) {
         uniqueMajors.set(cls.majorId, { id: cls.majorId, name: cls.majorName })
       }
@@ -1168,7 +1253,7 @@ const loadClasses = async () => {
     const response = await getTeacherClasses(counselorId)
     const teacherClasses = response?.data || []
     
-    classes.value = teacherClasses.map((cls: any) => ({
+    classes.value = teacherClasses.map((cls: TeacherClass) => ({
       id: cls.id,
       name: cls.name
     }))
@@ -1221,7 +1306,8 @@ const totalScore = computed(() => {
   let weightedSum = 0
   let totalWeight = 0
   scoreItems.value.forEach(item => {
-    const score = evaluationForm.value[item.key] || 0
+    // 表单值为数字（输入框写入），Number 包裹后与原算术语义一致
+    const score = Number(evaluationForm.value[item.key] || 0)
     const weight = item.weight || 1
     weightedSum += score * weight
     totalWeight += weight
@@ -1235,7 +1321,7 @@ const batchTotalScore = computed(() => {
   let weightedSum = 0
   let totalWeight = 0
   scoreItems.value.forEach(item => {
-    const score = batchEvaluationForm.value[item.key] || 0
+    const score = Number(batchEvaluationForm.value[item.key] || 0)
     const weight = item.weight || 1
     weightedSum += score * weight
     totalWeight += weight
@@ -1281,7 +1367,7 @@ const batchGrade = computed(() => {
 const isFormValid = computed(() => {
   // 检查所有评分项是否在有效范围内
   for (const item of scoreItems.value) {
-    const score = evaluationForm.value[item.key] || 0
+    const score = Number(evaluationForm.value[item.key] || 0)
     if (score < 0 || score > item.max) {
       return false
     }
@@ -1313,7 +1399,7 @@ const openEvaluationModal = async (student: EvaluationStudent) => {
   }
   
   // 初始化表单
-  const formKeys: any = {}
+  const formKeys: ScoreForm = {}
   scoreItems.value.forEach(item => {
     formKeys[item.key] = 0
   })
@@ -1325,30 +1411,34 @@ const openEvaluationModal = async (student: EvaluationStudent) => {
     
     // 优先使用动态scores字段
     if (evaluation.scores) {
+      const evalDynScores: Record<string, number> = evaluation.scores
       scoreItems.value.forEach(item => {
-        formKeys[item.key] = evaluation.scores[item.key] || 0
+        formKeys[item.key] = evalDynScores[item.key] || 0
       })
     } else {
-      // 向后兼容：使用传统的评分字段
+      // 向后兼容：使用传统的评分字段（保持原读取语义，收窄后使用）
+      const legacyEval = evaluation as unknown as Record<string, number | undefined>
       scoreItems.value.forEach(item => {
-        formKeys[item.key] = evaluation[item.key as keyof typeof evaluation] || 0
+        formKeys[item.key] = legacyEval[item.key] || 0
       })
     }
     
     formKeys.comment = evaluation.comment || ''
   } else {
-    // 否则使用AI建议分数或默认值
-    const suggestedScores = currentStudent.value.aiAnalysisData?.suggestedScores || {}
-    
+    // 否则使用AI建议分数或默认值（缺失时用空对象形态，保持原 `|| {}` 语义）
+    const suggestedScores = currentStudent.value.aiAnalysisData?.suggestedScores || ({} as NonNullable<EvaluationStudent['aiAnalysisData']>['suggestedScores'])
+
     // 优先使用动态scores字段
     if (suggestedScores.scores) {
+      const dynScores: Record<string, number> = suggestedScores.scores
       scoreItems.value.forEach(item => {
-        formKeys[item.key] = suggestedScores.scores[item.key] || 0
+        formKeys[item.key] = dynScores[item.key] || 0
       })
     } else {
       // 向后兼容：使用传统的评分字段
+      const legacyScores = suggestedScores as unknown as Record<string, number | undefined>
       scoreItems.value.forEach(item => {
-        formKeys[item.key] = suggestedScores[item.key as keyof typeof suggestedScores] || 0
+        formKeys[item.key] = legacyScores[item.key] || 0
       })
     }
     // 评语默认使用AI生成的改进建议
@@ -1365,6 +1455,16 @@ const openEvaluationModal = async (student: EvaluationStudent) => {
 
   showEvaluationModal.value = true
   expandedStudentId.value = null
+  if (isViewOnly.value) { formContext.unregister('teacher:evaluation'); return }
+  formContext.register({
+    formId: 'teacher:evaluation',
+    title: '综合评价',
+    fields: buildScoreFillFields(),
+    getFields: buildScoreFillFields,
+    getModel: () => evaluationForm.value,
+    getValidationSummary: () => scoreValidationSummary(evaluationForm.value),
+    getObject: () => currentStudent.value?.id ? { type: 'student', id: String(currentStudent.value.id) } : null
+  })
 }
 
 // 查看已评分学生的详情（打开弹窗，只读模式）
@@ -1373,13 +1473,13 @@ const viewEvaluation = async (student: EvaluationStudent) => {
   await openEvaluationModal(student)
 }
 
-// 切换到上一个已提交当前阶段心得的学生
+// 切换到上一个已提交当前期次心得的学生
 const goToPrevStudent = async () => {
   if (currentStudentIndex.value > 0) {
-    // 从当前索引往前查找当前阶段有心得的学生
+    // 从当前索引往前查找当前期次有心得的学生
     for (let i = currentStudentIndex.value - 1; i >= 0; i--) {
       const student = students.value[i]
-      // 只检查当前阶段是否有心得
+      // 只检查当前期次是否有心得
       if (student.hasCurrentPeriodReport) {
         await openEvaluationModal(student)
         return
@@ -1388,13 +1488,13 @@ const goToPrevStudent = async () => {
   }
 }
 
-// 切换到下一个已提交当前阶段心得的学生
+// 切换到下一个已提交当前期次心得的学生
 const goToNextStudent = async () => {
   if (currentStudentIndex.value < students.value.length - 1) {
-    // 从当前索引往后查找当前阶段有心得的学生
+    // 从当前索引往后查找当前期次有心得的学生
     for (let i = currentStudentIndex.value + 1; i < students.value.length; i++) {
       const student = students.value[i]
-      // 只检查当前阶段是否有心得
+      // 只检查当前期次是否有心得
       if (student.hasCurrentPeriodReport) {
         await openEvaluationModal(student)
         return
@@ -1412,7 +1512,7 @@ const startEvaluation = async () => {
 }
 
 // 切换操作面板
-const toggleActionPanel = (student: Student) => {
+const toggleActionPanel = (student: EvaluationStudent) => {
   if (expandedStudentId.value === student.id) {
     expandedStudentId.value = null
   } else {
@@ -1429,35 +1529,50 @@ const submitEvaluation = async () => {
   isSubmitting.value = true
 
   try {
-    const params: any = {
+    // 提交载荷为动态评分键 + 评语，类型层用精确提交参数类型断言，运行时同一对象
+    const params: Record<string, number | string> = {
       studentId: currentStudent.value.id,
-      comment: evaluationForm.value.comment
+      comment: evaluationForm.value.comment ?? ''
     }
 
     // 动态添加评分项
     scoreItems.value.forEach(item => {
-      params[item.key] = evaluationForm.value[item.key]
+      const v: number | string | undefined = evaluationForm.value[item.key]
+      if (v !== undefined) params[item.key] = v
     })
 
-    await evaluationApi.submitEvaluation(params)
+    const operation = formContext.beginFormOperation('teacher:evaluation')
+    await evaluationApi.submitEvaluation(params as unknown as EvaluationSubmitParams)
+    operation.complete({ status: 'submitted', label: '评价已提交', url: '/teacher/evaluation' })
 
-    // 更新当前学生的评价状态
+    // 更新当前学生的评价状态（保持原对象形态，类型层断言，不改运行时）
     if (currentStudent.value) {
       currentStudent.value.isEvaluated = true
       currentStudent.value.evaluation = {
-        scores: { ...evaluationForm.value },
-        comment: evaluationForm.value.comment,
+        scores: { ...(evaluationForm.value as unknown as Record<string, number>) },
+        comment: evaluationForm.value.comment ?? '',
         totalScore: totalScore.value,
         grade: grade.value
-      }
+      } as unknown as EvaluationInfo
     }
 
     ElMessage.success('评价提交成功')
 
-  } catch (error: any) {
+  } catch (error) {
     // 响应拦截器已经处理了错误消息的显示（如果有后端消息）
-    // 这里只处理其他类型的错误（无后端消息时）
-    const errorMsg = error?.response?.data?.message || error?.response?.data?.msg
+    // 这里只处理其他类型的错误（无后端消息时）；保持原读取语义，收窄后使用
+    const errResp: unknown =
+      error !== null && typeof error === 'object' && 'response' in error
+        ? (error as { response?: unknown }).response
+        : undefined
+    const errRespData: unknown =
+      errResp !== null && typeof errResp === 'object' && 'data' in errResp
+        ? (errResp as { data?: unknown }).data
+        : undefined
+    const errDataRec: Record<string, unknown> | null =
+      errRespData !== null && typeof errRespData === 'object' ? (errRespData as Record<string, unknown>) : null
+    const errorMsgPick: unknown = errDataRec?.['message'] ? errDataRec['message'] : errDataRec?.['msg']
+    const errorMsg: string = typeof errorMsgPick === 'string' ? errorMsgPick : ''
     if (!errorMsg) {
       ElMessage.error('评价提交失败，请重试')
     }
@@ -1491,7 +1606,7 @@ const toggleSelectAll = () => {
 
 // 打开批量打分弹窗
 const openBatchEvaluationModal = () => {
-  const formKeys: any = {}
+  const formKeys: ScoreForm = {}
   scoreItems.value.forEach(item => {
     formKeys[item.key] = 0
   })
@@ -1499,13 +1614,22 @@ const openBatchEvaluationModal = () => {
   
   batchEvaluationForm.value = { ...formKeys }
   showBatchEvaluationModal.value = true
+  formContext.register({
+    formId: 'teacher:evaluation',
+    title: '批量打分',
+    fields: buildScoreFillFields(),
+    getFields: buildScoreFillFields,
+    getModel: () => batchEvaluationForm.value,
+    getValidationSummary: () => scoreValidationSummary(batchEvaluationForm.value, true),
+    getObject: () => ({ type: 'student_selection', id: [...selectedStudents.value].sort((a, b) => a - b).join(',') })
+  })
 }
 
 // 批量表单验证（动态）
 const isBatchFormValid = computed(() => {
   // 检查所有评分项是否在有效范围内
   for (const item of scoreItems.value) {
-    const score = batchEvaluationForm.value[item.key] || 0
+    const score = Number(batchEvaluationForm.value[item.key] || 0)
     if (score < 0 || score > item.max) {
       return false
     }
@@ -1536,20 +1660,23 @@ const submitBatchEvaluation = async () => {
   try {
     let successCount = 0
     let failCount = 0
+    const operation = formContext.beginFormOperation('teacher:evaluation')
 
     for (const studentId of selectedStudents.value) {
       try {
-        const params: any = {
+        // 提交载荷形态与单次提交一致，类型层断言，运行时同一对象
+        const params: Record<string, number | string> = {
           studentId: studentId,
-          comment: batchEvaluationForm.value.comment
+          comment: batchEvaluationForm.value.comment ?? ''
         }
 
         // 动态添加评分项
         scoreItems.value.forEach(item => {
-          params[item.key] = batchEvaluationForm.value[item.key]
+          const v: number | string | undefined = batchEvaluationForm.value[item.key]
+          if (v !== undefined) params[item.key] = v
         })
 
-        const response = await evaluationApi.submitEvaluation(params)
+        const response = await evaluationApi.submitEvaluation(params as unknown as EvaluationSubmitParams)
 
         successCount++
       } catch (error) {
@@ -1557,6 +1684,8 @@ const submitBatchEvaluation = async () => {
       }
     }
 
+    if (successCount > 0) operation.complete({ status: 'submitted', label: `评价已提交 ${successCount} 人${failCount > 0 ? `，${failCount} 人失败` : ''}`, url: '/teacher/evaluation' })
+    if (successCount === 0) { ElMessage.error('批量打分未成功，请保留表单重试'); return }
     showBatchEvaluationModal.value = false
     ElMessage.success(`批量打分完成！成功 ${successCount} 人，失败 ${failCount} 人`)
 
@@ -1576,15 +1705,19 @@ const openAIAnalysisDialog = async (student: EvaluationStudent) => {
     aiAnalysisLoading.value = true
     const response = await getAnalysisByStudentId(student.id)
 
-    if (response && response.data) {
-      const analysis = response.data
+    // getAnalysisByStudentId 的 data 为 unknown（运行时为分析对象，兼容驼峰/snake），收窄后使用
+    const analysisRaw: unknown = response?.data
+    if (response && analysisRaw !== null && typeof analysisRaw === 'object') {
+      const analysis = analysisRaw as AIAnalysisRow
       // 将 scoreDetails 对象转换为 aspects 数组格式
       const aspects: Record<string, number> = {}
-      if (analysis.scoreDetails) {
-        const scoreDetails = parseScoreDetails(analysis.scoreDetails)
-        if (typeof scoreDetails === 'object' && !Array.isArray(scoreDetails)) {
-          Object.keys(scoreDetails).forEach(key => {
-            const detail = scoreDetails[key]
+      const scoreDetailsRaw: unknown = analysis.scoreDetails ?? analysis.score_details
+      if (scoreDetailsRaw) {
+        const scoreDetails = parseScoreDetails(scoreDetailsRaw)
+        if (typeof scoreDetails === 'object' && scoreDetails !== null && !Array.isArray(scoreDetails)) {
+          const detailsRec = scoreDetails as Record<string, { score?: unknown } | null | undefined>
+          Object.keys(detailsRec).forEach(key => {
+            const detail = detailsRec[key]
             if (detail && typeof detail === 'object' && detail.score !== undefined) {
               // 分数通常是0-100的范围
               aspects[key] = typeof detail.score === 'number' ? detail.score : 0
@@ -1594,22 +1727,22 @@ const openAIAnalysisDialog = async (student: EvaluationStudent) => {
       }
 
       currentAIAnalysis.value = {
-        id: analysis.id || 0,
-        reflectionId: analysis.reflectionId || 0,
+        id: analysis.id ?? 0,
+        reflectionId: analysis.reflectionId ?? analysis.reflection_id ?? 0,
         studentName: student.name,
-        analysisTime: analysis.createTime || analysis.createTime || '',
-        totalScore: analysis.totalScore || 0,
-        grade: analysis.grade || '',
-        summary: analysis.analysisReport || analysis.summary || '',
-        keywords: analysis.keywords || [],
+        analysisTime: analysis.createTime ?? analysis.create_time ?? '',
+        totalScore: analysis.totalScore ?? analysis.total_score ?? 0,
+        grade: analysis.grade ?? '',
+        summary: analysis.analysisReport ?? analysis.analysis_report ?? analysis.summary ?? '',
+        keywords: Array.isArray(analysis.keywords) ? analysis.keywords : [],
         aspects: aspects,
-        highlights: analysis.strengths || analysis.highlights || [],
-        improvements: analysis.suggestions || analysis.improvements || [],
-        comment: analysis.comment || '',
+        highlights: analysis.strengths ?? analysis.highlights ?? [],
+        improvements: analysis.suggestions ?? analysis.improvements ?? [],
+        comment: analysis.comment ?? '',
         sentimentAnalysis: {
-          positive: analysis.sentimentPositive || 0,
-          neutral: analysis.sentimentNeutral || 0,
-          negative: analysis.sentimentNegative || 0
+          positive: analysis.sentimentPositive ?? analysis.sentiment_positive ?? 0,
+          neutral: analysis.sentimentNeutral ?? analysis.sentiment_neutral ?? 0,
+          negative: analysis.sentimentNegative ?? analysis.sentiment_negative ?? 0
         }
       }
       aiAnalysisDialogVisible.value = true
@@ -1648,8 +1781,8 @@ const getAspectLabel = (key: string) => {
   return key
 }
 
-// 解析评分详情
-const parseScoreDetails = (scoreDetails: any) => {
+// 解析评分详情（输入为未知形态：JSON 字符串或对象，收窄后使用）
+const parseScoreDetails = (scoreDetails: unknown): unknown => {
   try {
     if (typeof scoreDetails === 'string') {
       return JSON.parse(scoreDetails)
@@ -1721,6 +1854,16 @@ const downloadAIAnalysisReport = () => {
     ElMessage.error('PDF生成失败，请稍后重试')
   })
 }
+useAgentPageContext(() => {
+  const selectedClass = classes.value.find(item => item.name === filters.value.class || String(item.id) === String(filters.value.class))
+  return {
+    title: '心得批阅', view: showEvaluationModal.value ? 'student-evaluation' : showBatchEvaluationModal.value ? 'batch-evaluation' : 'page',
+    object: showEvaluationModal.value && currentStudent.value?.id ? { type: 'student', id: String(currentStudent.value.id) } : null,
+    selectedObjects: selectedStudents.value.slice(0, 20).map(id => ({ type: 'student', id: String(id) })),
+    filters: { keyword: filters.value.search, period: filters.value.period, major: filters.value.majorName,
+      reflectionStatus: filters.value.hasReport, classId: selectedClass?.id ? String(selectedClass.id) : '' }
+  }
+})
 </script>
 
 <style scoped>
@@ -4072,5 +4215,65 @@ const downloadAIAnalysisReport = () => {
 .comment-textarea-compact:focus {
   border-color: #409EFF;
   outline: none;
+}
+
+/* 手机端评分详情：全屏单列，文档预览在上、评分表单在下，底部提交保持可见 */
+@media (max-width: 768px) {
+  .modal-overlay {
+    align-items: stretch;
+    padding: 0;
+  }
+
+  .combined-modal {
+    flex-direction: column;
+    gap: 0;
+    width: 100vw;
+    max-width: 100vw;
+    height: 100vh;
+    height: 100dvh;
+    max-height: none;
+    border-radius: 0;
+    background: #fff;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  .word-document-card {
+    flex: 0 0 auto;
+    min-width: 0;
+    max-width: 100%;
+    height: auto;
+    max-height: 38vh;
+    max-height: 38dvh;
+    border: none;
+    border-radius: 0;
+    border-bottom: 1px solid #e8e8e8;
+  }
+
+  .word-document-header {
+    border-radius: 0;
+    position: sticky;
+    top: 0;
+    z-index: 1;
+  }
+
+  .evaluation-card {
+    flex: 1 1 auto;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    min-height: 0;
+    border: none;
+    border-radius: 0;
+  }
+
+  .evaluation-section-fixed {
+    max-height: 46%;
+    padding: 10px 12px;
+  }
+
+  .evaluation-card .modal-footer {
+    padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+    flex-wrap: wrap;
+  }
 }
 </style>

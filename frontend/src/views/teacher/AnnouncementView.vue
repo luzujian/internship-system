@@ -38,7 +38,7 @@
         </div>
         <div class="action-buttons-row">
           <div class="primary-actions">
-            <el-button type="primary" @click="handleAdd" class="action-btn primary">
+            <el-button type="primary" data-agent-open @click="handleAdd" class="action-btn primary">
               <el-icon><Plus /></el-icon>&nbsp;发布公告
             </el-button>
             <el-button type="danger" @click="handleBatchDelete" class="action-btn danger">
@@ -136,10 +136,12 @@
         </el-form-item>
         <el-form-item label="附件">
           <el-upload
+            drag
             v-model:file-list="formData.attachments"
             :action="uploadAction"
             :headers="uploadHeaders"
             :on-success="handleUploadSuccess"
+            :on-error="error => ElMessage.error(getUploadErrorMessage(error))"
             :on-remove="handleRemoveFile"
             :before-upload="beforeUpload"
             :limit="5"
@@ -148,10 +150,8 @@
             :auto-upload="true"
             class="compact-upload"
           >
-            <el-button type="primary" size="small">
-              <el-icon><Upload /></el-icon>
-              选择文件
-            </el-button>
+            <el-icon class="el-icon--upload"><Upload /></el-icon>
+            <div class="el-upload__text">将附件拖到此处，或<em>点击上传</em></div>
             <template #tip>
               <div class="el-upload__tip">
                 支持PDF、Word、Excel、PPT、TXT、ZIP等格式，单个文件≤10MB，最多5个
@@ -165,32 +165,15 @@
             <el-option label="发布" value="PUBLISHED"></el-option>
           </el-select>
         </el-form-item>
-        <el-form-item label="发布日期" prop="publishDate">
-          <el-date-picker v-model="formData.publishDate" type="datetime" placeholder="选择发布日期" style="width: 100%"></el-date-picker>
-        </el-form-item>
-        <el-form-item label="过期日期" prop="expireDate">
-          <el-date-picker v-model="formData.expireDate" type="datetime" placeholder="选择过期日期" style="width: 100%"></el-date-picker>
-        </el-form-item>
         <el-form-item label="目标群体">
           <el-select v-model="formData.targetType" placeholder="请选择目标群体" multiple collapse-tags collapse-tags-tooltip @change="handleTargetTypeChange">
-            <template v-if="isCounselor">
-              <el-option label="所有负责班级" value="ALL_CLASSES"></el-option>
-              <el-option label="特定班级" value="CLASS"></el-option>
-            </template>
-            <template v-else>
-              <el-option label="全体学生" value="STUDENT"></el-option>
-              <el-option label="特定专业学生" value="MAJOR"></el-option>
-            </template>
+            <el-option label="全体学生" value="STUDENT"></el-option>
+            <el-option label="特定专业学生" value="MAJOR"></el-option>
           </el-select>
         </el-form-item>
-        <el-form-item v-if="formData.targetType.includes('MAJOR') && !isCounselor" label="专业">
+        <el-form-item v-if="formData.targetType.includes('MAJOR')" label="专业">
           <el-select v-model="formData.majorIds" placeholder="请选择专业（可多选）" multiple collapse-tags collapse-tags-tooltip filterable>
             <el-option v-for="major in majorList" :key="major.id" :label="major.name" :value="String(major.id)"></el-option>
-          </el-select>
-        </el-form-item>
-        <el-form-item v-if="formData.targetType.includes('CLASS') && isCounselor" label="选择班级">
-          <el-select v-model="formData.classIds" placeholder="请选择班级（可多选）" multiple collapse-tags collapse-tags-tooltip filterable>
-            <el-option v-for="cls in classList" :key="cls.id" :label="cls.name" :value="String(cls.id)"></el-option>
           </el-select>
         </el-form-item>
       </el-form>
@@ -225,10 +208,6 @@
             <span class="meta-value">{{ formatDate(viewData.publishDate || viewData.publishTime) }}</span>
           </div>
           <div class="meta-item">
-            <span class="meta-label">过期日期:</span>
-            <span class="meta-value">{{ formatDate(viewData.expireDate || viewData.validTo) }}</span>
-          </div>
-          <div class="meta-item">
             <span class="meta-label">状态:</span>
             <el-tag :type="getTagType(viewData)" size="small" class="status-tag">
               {{ getStatusText(viewData) }}
@@ -240,7 +219,7 @@
           </div>
         </div>
         <el-divider></el-divider>
-        <div class="content-body" v-html="viewData.content"></div>
+        <div class="content-body" v-html="sanitizeHTML(viewData.content)"></div>
         <div v-if="viewData.attachments && parseAttachments(viewData.attachments).length > 0" class="attachments-section">
           <el-divider></el-divider>
           <div class="attachments-title">
@@ -290,20 +269,72 @@
       v-model="filePreviewVisible"
       :file-url="currentFileUrl"
       :file-name="currentFileName"
+      :authorized-url="currentAuthorizedUrl"
     />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, computed, watch } from 'vue'
+import { getUploadErrorMessage } from '@/utils/uploadErrorMessage'
+import { ref, reactive, onMounted, onUnmounted, computed, watch } from 'vue'
+import { useFormContext } from '@/agent/formContext'
 import { useRoute } from 'vue-router'
 import type { Announcement, Major } from '@/types/admin'
+import type { FormFieldDescriptor } from '@/agent/types'
+// 教师端公告行精确局部接口：以 Announcement 为基，补全模板/脚本实际使用的扩展字段，均可选
+interface TeacherAnnouncementRow {
+  id?: string | number
+  title?: string
+  content?: string
+  status?: string
+  publisher?: string
+  publisherId?: string | number
+  publisherName?: string
+  publisherRole?: string
+  publishDate?: string | number | null
+  publishTime?: string | number | null
+  validFrom?: string | number | null
+  targetType?: string | string[]
+  targetValue?: unknown
+  attachments?: unknown
+  isRead?: boolean
+  readCount?: number
+  createTime?: string
+  updateTime?: string
+}
+// 专业选项行（含模板使用的 id/name）
+interface MajorOptionRow {
+  id?: string | number
+  name: string
+  departmentId?: string | number
+  departmentName?: string
+  divisionId?: string | number
+  divisionName?: string
+  createTime?: string
+  updateTime?: string
+}
+// 公告附件项（解析后形态）
+interface AnnouncementAttachment {
+  name?: string
+  url?: string
+}
+// 分页查询参数（含“我的公告”发布人过滤，后端透传）
+interface AnnouncementPageQuery {
+  page?: number
+  pageSize?: number
+  title?: string
+  status?: string
+  publisher?: string
+}
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Refresh, Plus, Delete, Edit, View, Upload, Download, Document, Paperclip, ZoomIn } from '@element-plus/icons-vue'
 import * as announcementApi from '@/api/announcement'
 import MajorService from '@/api/major'
 import { useAuthStore } from '@/store/auth'
 import FilePreviewDialog from '@/components/FilePreviewDialog.vue'
+import { announcementAttachmentByteUrl } from '@/utils/authorizedFileUrl'
+import { downloadAuthorizedFile } from '@/utils/authorizedFileDownload'
+import { sanitizeHTML } from '@/utils/sanitize'
 import { getTeacherClasses } from '@/api/teacherClass'
 import type { TeacherClass } from '@/api/teacherClass'
 
@@ -319,13 +350,13 @@ const currentPage = ref<number>(1)
 const pageSize = ref<number>(10)
 const total = ref<number>(0)
 const loading = ref(false)
-const tableData = ref<Announcement[]>([])
+const tableData = ref<TeacherAnnouncementRow[]>([])
 
 const searchForm = reactive({ title: '', status: '' })
 
 const activeTab = ref('all')
 
-const majorList = ref<Major[]>([])
+const majorList = ref<MajorOptionRow[]>([])
 const classList = ref<TeacherClass[]>([])
 
 // 获取当前教师类型
@@ -344,7 +375,9 @@ const loadCounselorClasses = async (): Promise<void> => {
   try {
     const counselorId = authStore.user?.id
     if (!counselorId) return
-    const response = await getTeacherClasses(counselorId)
+    // counselorId 运行时为后端可接受的字符串/数字形态（教师 ID 可能是 'T001' 类非数字串，不可 Number 转换）；
+    // query 参数序列化后与原值一致，类型层断言保持运行时一致
+    const response = await getTeacherClasses(counselorId as unknown as number)
     if (response && response.data) {
       classList.value = response.data
     }
@@ -364,10 +397,8 @@ const formData = reactive({
   status: 'DRAFT',
   publisher: '',
   publisherRole: '',
-  publishDate: null,
-  expireDate: null,
-  priority: 'normal',
   targetType: [] as string[],
+  teacherTypes: [] as string[],
   majorIds: [] as string[],
   classIds: [] as string[],
   targetValue: null,
@@ -381,15 +412,15 @@ const rules = {
   ],
   content: [{ required: true, message: '请输入公告内容', trigger: 'blur' }],
   status: [{ required: true, message: '请选择公告状态', trigger: 'change' }],
-  publishDate: [{ required: true, message: '请选择发布日期', trigger: 'change' }],
-  expireDate: [{ required: true, message: '请选择过期日期', trigger: 'change' }],
   targetType: [
-    { 
-      required: true, 
-      message: '请选择目标群体', 
+    {
+      required: true,
+      message: '请选择目标群体',
       trigger: 'change',
-      validator: (rule: any, value: any, callback: any) => {
-        if (!value || value.length === 0) {
+      validator: (rule: unknown, value: unknown, callback: (error?: string | Error) => void) => {
+        // value 运行时为目标群体数组，保持原 `!value || value.length === 0` 语义
+        const list = value as unknown[]
+        if (!value || list.length === 0) {
           callback(new Error('请选择目标群体'))
         } else {
           callback()
@@ -399,12 +430,38 @@ const rules = {
   ]
 }
 
+// ===== 智能填表：公告弹窗注册到 AI 侧栏（只写响应式 formData，不触发提交） =====
+// 未覆盖字段说明：附件 upload 需手动上传
+const formContext = useFormContext()
+const buildAnnouncementFillFields = (): FormFieldDescriptor[] => [
+  { prop: 'title', label: '标题', type: 'input', required: true },
+  { prop: 'content', label: '内容', type: 'textarea', required: true },
+  { prop: 'status', label: '状态', type: 'select', required: true, options: [{ label: '草稿', value: 'DRAFT' }, { label: '发布', value: 'PUBLISHED' }] },
+  { prop: 'targetType', label: '目标群体', type: 'select', valueType: 'array', required: true, options: [{ label: '全体学生', value: 'STUDENT' }, { label: '特定专业学生', value: 'MAJOR' }] },
+  { prop: 'majorIds', label: '专业', type: 'select', valueType: 'array', options: majorList.value.map((m) => ({ label: m.name, value: String(m.id) })), patternHint: '需先选目标群体含 MAJOR，再多选专业；附件需手动上传' }
+]
+const registerAnnouncementForm = (title: string) => {
+  formContext.register({
+    formId: 'teacher:announcement',
+    title,
+    fields: buildAnnouncementFillFields(),
+    getFields: buildAnnouncementFillFields,
+    getModel: () => formData,
+    getFormEl: () => formRef.value
+  })
+}
+watch(dialogVisible, (open) => {
+  if (!open) formContext.unregister('teacher:announcement')
+})
+onUnmounted(() => formContext.unregister('teacher:announcement'))
+
 const viewDialogVisible = ref(false)
-const viewData = ref<Announcement | null>(null)
+const viewData = ref<TeacherAnnouncementRow | null>(null)
 
 const filePreviewVisible = ref(false)
 const currentFileUrl = ref('')
 const currentFileName = ref('')
+const currentAuthorizedUrl = ref('')
 
 const selectedIds = ref<(string | number)[]>([])
 
@@ -415,7 +472,8 @@ onMounted(() => {
 })
 
 // 监听路由变化，当从首页跳转过来时自动加载数据
-watch(() => route.state?.fromHome, (fromHome) => {
+// route 无 state 声明，用精确接口收窄后读取（运行时同一对象）
+watch(() => (route as unknown as { state?: { fromHome?: unknown } }).state?.fromHome, (fromHome) => {
   if (fromHome) {
     fetchData()
   }
@@ -426,7 +484,9 @@ const loadMajors = async (): Promise<void> => {
     const response = await MajorService.getMajors()
     const result = response
     if (result && result.code === 200 && result.data) {
-      majorList.value = result.data
+      // getMajors 的 data 为 unknown（运行时为数组），收窄后使用
+      const rawMajors: unknown = result.data
+      majorList.value = Array.isArray(rawMajors) ? (rawMajors as MajorOptionRow[]) : []
     } else if (result && Array.isArray(result)) {
       majorList.value = result
     } else {
@@ -440,27 +500,35 @@ const loadMajors = async (): Promise<void> => {
 const fetchData = async (): Promise<void> => {
   loading.value = true
   try {
-    const params: any = {
+    // 分页查询参数（publisher 仅“我的公告”时透传，后端接收；类型层用精确接口）
+    const params: AnnouncementPageQuery = {
       page: currentPage.value,
       pageSize: pageSize.value,
       title: searchForm.title || undefined,
       status: searchForm.status || undefined
     }
-    
+
     if (activeTab.value === 'my') {
       const publisherName = authStore.user?.name
       if (publisherName) {
         params.publisher = publisherName
       }
     }
-    
+
     console.log('请求参数:', params)
-    const response = await announcementApi.getAnnouncementsByPage(params)
+    // getAnnouncementsByPage 未声明 publisher 参数，运行时透传，用精确参数类型断言保持运行时一致
+    const response = await announcementApi.getAnnouncementsByPage(params as unknown as Parameters<typeof announcementApi.getAnnouncementsByPage>[0])
     const result = response
     console.log('响应结果:', result)
     if (result && result.code === 200 && result.data) {
-      tableData.value = result.data.rows || []
-      total.value = result.data.total || 0
+      // data 声明为 ApiResponse<PageResponse>（双层），运行时 body.data 即分页 { rows, total }；收窄兼容双层
+      const pageData = result.data as unknown as {
+        rows?: TeacherAnnouncementRow[]
+        total?: number
+        data?: { rows?: TeacherAnnouncementRow[]; total?: number }
+      }
+      tableData.value = pageData.rows ?? pageData.data?.rows ?? []
+      total.value = pageData.total ?? pageData.data?.total ?? 0
     } else if (result && Array.isArray(result.data)) {
       tableData.value = result.data
       total.value = result.data.length || 0
@@ -487,7 +555,7 @@ const handleTabChange = (tabName: string): void => {
   fetchData()
 }
 
-const canEditAnnouncement = (announcement: Announcement): boolean => {
+const canEditAnnouncement = (announcement: TeacherAnnouncementRow): boolean => {
   return announcement.publisher === authStore.user?.name
 }
 
@@ -514,7 +582,7 @@ const handleCurrentChange = (val: number): void => {
   fetchData()
 }
 
-const handleSelectionChange = (val: Announcement[]): void => {
+const handleSelectionChange = (val: TeacherAnnouncementRow[]): void => {
   // Only allow selecting announcements that the current user can edit
   const selectableIds = val
     .filter(item => canEditAnnouncement(item))
@@ -534,10 +602,8 @@ const resetFormData = (): void => {
   formData.status = 'DRAFT'
   formData.publisher = ''
   formData.publisherRole = ''
-  formData.publishDate = null
-  formData.expireDate = null
-  formData.priority = 'normal'
-  formData.targetType = []
+    formData.targetType = []
+  formData.teacherTypes = []
   formData.majorIds = []
   formData.classIds = []
   formData.targetValue = null
@@ -548,48 +614,64 @@ const handleAdd = (): void => {
   resetFormData()
   formData.publisher = authStore.user?.name || ''
   formData.publisherRole = getTeacherType()
-  formData.publishDate = new Date()
   dialogTitle.value = '发布公告'
   dialogVisible.value = true
+  registerAnnouncementForm('发布公告')
 }
 
-const handleEdit = (row: Announcement): void => {
+const handleEdit = (row: TeacherAnnouncementRow): void => {
   formData.id = row.id
   formData.title = row.title
   formData.content = row.content
   formData.status = row.status
   formData.publisher = row.publisher
   formData.publisherRole = row.publisherRole
-  formData.publishDate = row.publishDate || row.publishTime
-  formData.expireDate = row.expireDate || row.validTo
-  formData.priority = row.priority || 'normal'
   formData.targetType = row.targetType ? (Array.isArray(row.targetType) ? row.targetType : [row.targetType]) : []
-  formData.majorIds = row.targetType === 'MAJOR' && row.targetValue ? [String(row.targetValue)] : []
-  formData.attachments = row.attachments || []
+  formData.teacherTypes = []
+  formData.majorIds = []
+  formData.classIds = []
+  if (row.targetValue) {
+    try {
+      const tv = (typeof row.targetValue === 'string' ? JSON.parse(row.targetValue) : row.targetValue) as {
+        teacherTypes?: string[]
+        majorIds?: string[]
+        classIds?: string[]
+      }
+      if (tv.teacherTypes) formData.teacherTypes = tv.teacherTypes
+      if (tv.majorIds) formData.majorIds = tv.majorIds
+      if (tv.classIds) formData.classIds = tv.classIds
+    } catch (e) { /* ignore parse error */ }
+  }
+  // attachments 运行时为数组或 JSON 字符串，保持原值原引用透传（类型层断言为字段自身类型，不改运行时）
+  formData.attachments = (row.attachments || []) as typeof formData.attachments
   dialogTitle.value = '编辑公告'
   dialogVisible.value = true
+  registerAnnouncementForm('编辑公告')
 }
 
-const handleView = async (row: Announcement): Promise<void> => {
-  try {
-    await announcementApi.getAnnouncementById(row.id)
-    row.readCount = (row.readCount ?? 0) + 1
-    row.isRead = true
-  } catch {
-    // 接口失败时仍可查看详情，只是不更新计数
-  }
+const handleView = async (row: TeacherAnnouncementRow): Promise<void> => {
   viewData.value = row
+  try {
+    const response = await announcementApi.getAnnouncementById(Number(row.id))
+    const detail = (response as { data?: TeacherAnnouncementRow }).data
+    row.readCount = detail?.readCount ?? (row.readCount ?? 0) + 1
+    row.isRead = true
+    viewData.value = detail || row
+  } catch {
+    // 接口失败时仍可查看详情，但不伪造持久化已读状态
+  }
   viewDialogVisible.value = true
 }
 
-const handleDelete = async (id: number): Promise<void> => {
+const handleDelete = async (id: string | number): Promise<void> => {
   try {
     await ElMessageBox.confirm('确定要删除这条公告吗？', '提示', {
       confirmButtonText: '确定',
       cancelButtonText: '取消',
       type: 'warning'
     })
-    await announcementApi.deleteAnnouncement(id)
+    // id 转 Number 后 URL 与运行时一致（后端 Long 接受数字）
+    await announcementApi.deleteAnnouncement(Number(id))
     ElMessage.success('删除成功')
     fetchData()
   } catch (error) {
@@ -622,13 +704,9 @@ const handleBatchDelete = async (): Promise<void> => {
 
 // 处理目标群体类型变化
 const handleTargetTypeChange = (): void => {
-  // 如果选择"所有负责班级"，清空班级选择
-  if (formData.targetType.includes('ALL_CLASSES')) {
-    formData.classIds = []
-  }
-  // 如果取消选择"特定班级"，清空班级选择
-  if (!formData.targetType.includes('CLASS')) {
-    formData.classIds = []
+  // 如果取消选择"特定专业学生"，清空专业选择
+  if (!formData.targetType.includes('MAJOR')) {
+    formData.majorIds = []
   }
 }
 
@@ -642,8 +720,6 @@ const handleSubmit = async (): Promise<void> => {
     let targetValue = null
     if (formData.targetType.includes('MAJOR') && formData.majorIds.length > 0) {
       targetValue = JSON.stringify({ majorIds: formData.majorIds })
-    } else if (formData.targetType.includes('CLASS') && formData.classIds.length > 0) {
-      targetValue = JSON.stringify({ classIds: formData.classIds })
     }
 
     const submitData = {
@@ -652,22 +728,23 @@ const handleSubmit = async (): Promise<void> => {
       status: formData.status,
       publisher: formData.publisher || authStore.user?.name,
       publisherRole: formData.publisherRole || getTeacherType(),
-      publishDate: formData.publishDate instanceof Date ? formData.publishDate.toISOString() : formData.publishDate,
-      expireDate: formData.expireDate instanceof Date ? formData.expireDate.toISOString() : formData.expireDate,
-      priority: formData.priority,
       targetType: formData.targetType,
       targetValue: targetValue,
       attachments: formData.attachments
     }
 
+    const operation = formContext.beginFormOperation('teacher:announcement')
+    const published = formData.status === 'PUBLISHED'
     if (formData.id) {
-      await announcementApi.updateAnnouncement(formData.id, submitData)
+      // 提交载荷含后端扩展字段（后端 Announcement 实体所有字段），类型层用精确参数类型断言，运行时同一对象
+      await announcementApi.updateAnnouncement(Number(formData.id), submitData as unknown as Parameters<typeof announcementApi.updateAnnouncement>[1])
       ElMessage.success('更新成功')
     } else {
-      await announcementApi.addAnnouncement(submitData)
+      await announcementApi.addAnnouncement(submitData as unknown as Parameters<typeof announcementApi.addAnnouncement>[0])
       ElMessage.success('发布成功')
     }
 
+    operation.complete({ status: published ? 'published' : 'saved', label: published ? '公告已发布' : '公告已保存', url: '/teacher/announcements' })
     dialogVisible.value = false
 
     // 切换到"我的"标签页并刷新数据
@@ -693,14 +770,19 @@ const handleDialogOpen = (): void => {
   })
 }
 
-const handleUploadSuccess = (response: any, file: any): void => {
+const handleUploadSuccess = (response: { code?: unknown; data?: unknown }, file: AnnouncementAttachment): void => {
   if (response.code === 200) {
-    file.url = response.data.url
-    file.name = response.data.name
+    // 上传返回的 data 为 { url, name } 对象；保持原 `response.data.url` 读取语义，仅加空安全收窄
+    const dataObj: AnnouncementAttachment | null | undefined =
+      response.data !== null && typeof response.data === 'object'
+        ? (response.data as AnnouncementAttachment)
+        : undefined
+    file.url = dataObj?.url
+    file.name = dataObj?.name
   }
 }
 
-const handleRemoveFile = (file: any): void => {
+const handleRemoveFile = (file: AnnouncementAttachment): void => {
   const index = formData.attachments.indexOf(file)
   if (index > -1) {
     formData.attachments.splice(index, 1)
@@ -723,40 +805,42 @@ const refreshData = (): void => {
   fetchData()
 }
 
-const parseAttachments = (attachments: any) => {
+const parseAttachments = (attachments: unknown): AnnouncementAttachment[] => {
   if (!attachments) return []
   try {
     if (typeof attachments === 'string') {
-      return JSON.parse(attachments)
+      const parsed: unknown = JSON.parse(attachments)
+      return Array.isArray(parsed) ? (parsed as AnnouncementAttachment[]) : []
     }
-    return attachments
+    return Array.isArray(attachments) ? (attachments as AnnouncementAttachment[]) : []
   } catch (e) {
     return []
   }
 }
 
-const previewFile = (attachment: any): void => {
-  if (!attachment.url) {
-    ElMessage.error('附件地址不存在')
+const previewFile = (attachment: AnnouncementAttachment): void => {
+  const authorizedUrl = announcementAttachmentByteUrl(viewData.value?.id, attachment?.name)
+  if (!authorizedUrl) {
+    ElMessage.error('公告附件记录不完整')
     return
   }
-  currentFileUrl.value = attachment.url
-  currentFileName.value = attachment.name
+  currentFileUrl.value = attachment.url || ''
+  currentFileName.value = attachment.name || '附件'
+  currentAuthorizedUrl.value = authorizedUrl
   filePreviewVisible.value = true
 }
 
-const downloadFileWithConfirm = (attachment: any): void => {
-  if (!attachment.url) {
-    ElMessage.error('附件地址不存在')
+const downloadFileWithConfirm = async (attachment: AnnouncementAttachment): Promise<void> => {
+  const authorizedUrl = announcementAttachmentByteUrl(viewData.value?.id, attachment?.name)
+  if (!authorizedUrl) {
+    ElMessage.error('公告附件记录不完整')
     return
   }
-  const link = document.createElement('a')
-  link.href = attachment.url
-  link.download = attachment.name || '附件'
-  link.target = '_blank'
-  document.body.appendChild(link)
-  link.click()
-  document.body.removeChild(link)
+  try {
+    await downloadAuthorizedFile(authorizedUrl, attachment.name || '附件')
+  } catch (error) {
+    ElMessage.error('下载失败，请检查权限')
+  }
 }
 
 const getTeacherType = (): string => {
@@ -771,7 +855,7 @@ const getTeacherType = (): string => {
   return typeMap[user.teacherType] || 'COLLEGE'
 }
 
-const formatDate = (date: string | Date | null): string => {
+const formatDate = (date: string | number | Date | null): string => {
   if (!date) return ''
   const d = new Date(date)
   const year = d.getFullYear()
@@ -782,32 +866,18 @@ const formatDate = (date: string | Date | null): string => {
   return `${year}-${month}-${day} ${hours}:${minutes}`
 }
 
-const getStatusText = (row: Announcement): string => {
-  const now = new Date()
-  const expireDate = row.expireDate || row.validTo
-  const isExpired = row.status === 'PUBLISHED' && expireDate && new Date(expireDate) < now
-  
-  if (isExpired) return '已过期'
-  
+const getStatusText = (row: TeacherAnnouncementRow): string => {
   const statusMap: Record<string, string> = {
     'DRAFT': '草稿',
-    'PUBLISHED': '已发布',
-    'EXPIRED': '已过期'
+    'PUBLISHED': '已发布'
   }
   return statusMap[row.status] || row.status
 }
 
-const getTagType = (row: Announcement): string => {
-  const now = new Date()
-  const expireDate = row.expireDate || row.validTo
-  const isExpired = row.status === 'PUBLISHED' && expireDate && new Date(expireDate) < now
-  
-  if (isExpired) return 'info'
-  
+const getTagType = (row: TeacherAnnouncementRow): string => {
   const typeMap: Record<string, string> = {
     'DRAFT': 'info',
-    'PUBLISHED': 'success',
-    'EXPIRED': 'warning'
+    'PUBLISHED': 'success'
   }
   return typeMap[row.status] || 'info'
 }
@@ -832,19 +902,20 @@ const getPublisherRoleType = (role: string): string => {
   return map[role] || 'info'
 }
 
-const getTargetText = (targetType: any, targetValue: any): string => {
+const getTargetText = (targetType: unknown, targetValue: unknown): string => {
   if (!targetType) return '-'
 
   // 如果是 JSON 字符串，解析为数组
   let types: string[] = []
   if (typeof targetType === 'string') {
     try {
-      types = JSON.parse(targetType)
+      const parsed: unknown = JSON.parse(targetType)
+      types = Array.isArray(parsed) ? (parsed as string[]) : [targetType]
     } catch (e) {
       types = [targetType]
     }
   } else if (Array.isArray(targetType)) {
-    types = targetType
+    types = targetType as string[]
   } else {
     types = [String(targetType)]
   }
@@ -860,16 +931,16 @@ const getTargetText = (targetType: any, targetValue: any): string => {
 
   const typeTexts = types.map(type => typeMap[type] || type).join('、')
 
-  // 解析 targetValue 获取教师类别和专业 ID
+  // 解析 targetValue 获取教师类别和专业 ID（收窄后使用，保持原语义）
   let teacherTypes: string[] = []
   let majorIds: string[] = []
   if (targetValue) {
     try {
-      const targetValueObj = typeof targetValue === 'string'
+      const targetValueObj = (typeof targetValue === 'string'
         ? JSON.parse(targetValue)
-        : targetValue
-      teacherTypes = targetValueObj.teacherTypes || []
-      majorIds = targetValueObj.majorIds || []
+        : targetValue) as { teacherTypes?: unknown; majorIds?: unknown }
+      teacherTypes = Array.isArray(targetValueObj.teacherTypes) ? targetValueObj.teacherTypes : []
+      majorIds = Array.isArray(targetValueObj.majorIds) ? targetValueObj.majorIds : []
     } catch (e) {
       // 兼容旧格式
       if (typeof targetValue === 'string' && !targetValue.startsWith('{')) {
@@ -909,6 +980,20 @@ const nextTick = (callback: () => void) => {
 </script>
 
 <style scoped>
+.compact-upload,
+.compact-upload :deep(.el-upload) {
+  width: 100%;
+}
+
+.compact-upload :deep(.el-upload-dragger) {
+  padding: 20px 12px;
+}
+
+.compact-upload .el-icon--upload {
+  font-size: 36px;
+  margin-bottom: 8px;
+}
+
 .announcement-management-container {
   padding: 20px;
   background: #f5f7fa;
@@ -1320,12 +1405,7 @@ const nextTick = (callback: () => void) => {
 
   .page-header {
     flex-direction: column;
-    text-align: center;
-    padding: 20px;
-  }
-
-  .header-illustration {
-    margin-top: 15px;
+    align-items: flex-start;
   }
 
   .search-row {

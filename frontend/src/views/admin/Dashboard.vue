@@ -21,10 +21,10 @@
           <span class="date-info">{{ currentDate }}</span>
         </div>
         <div class="dashboard-actions">
-          <el-button type="primary" @click="showResourceDocumentDialog" class="action-btn primary">
+          <el-button type="primary" data-agent-open @click="showResourceDocumentDialog" class="action-btn primary">
             <el-icon><Document /></el-icon>&nbsp;上传资源
           </el-button>
-          <el-button type="success" @click="showAnnouncementDialog" class="action-btn success">
+          <el-button type="success" data-agent-open @click="showAnnouncementDialog" class="action-btn success">
             <el-icon><Promotion /></el-icon>&nbsp;发布公告
           </el-button>
           <el-button type="success" @click="refreshAllData" :loading="loading" class="action-btn primary">
@@ -43,9 +43,21 @@
               <div class="stat-icon-wrapper">
                 <el-icon><UserFilled /></el-icon>
               </div>
-              <div class="stat-info">
-                <div class="stat-value">{{ stats.totalStudents }}</div>
-                <div class="stat-label">学生总人数</div>
+              <div class="stat-info-row">
+                <div class="stat-info">
+                  <div class="stat-value">{{ stats.totalStudents }}</div>
+                  <div class="stat-label">学生总人数</div>
+                </div>
+                <div class="stat-divider"></div>
+                <div class="stat-info">
+                  <div class="stat-value">{{ stats.loggedStudents }}</div>
+                  <div class="stat-label">登录学生数</div>
+                </div>
+                <div class="stat-divider"></div>
+                <div class="stat-info">
+                  <div class="stat-value">{{ stats.todayLoginStudents }}</div>
+                  <div class="stat-label">今日登录</div>
+                </div>
               </div>
               <div class="stat-action">
                 <span>点击查看详情</span>
@@ -53,7 +65,7 @@
               </div>
             </div>
           </el-card>
-          
+
           <el-card class="stat-card teachers" shadow="never" @click="navigateTo('/admin/teacher-users')">
             <div class="stat-content">
               <div class="stat-icon-wrapper">
@@ -168,27 +180,31 @@
             <div class="feedback-header">
               <div class="feedback-title">
                 <el-icon><ChatLineRound /></el-icon>
-                <span>未处理问题反馈</span>
+                <span>问题反馈</span>
                 <el-badge :value="processingFeedbackCount" :hidden="processingFeedbackCount === 0" class="feedback-badge" type="danger" />
               </div>
-              <span class="view-all-link" @click="navigateTo('/admin/problem-feedback')">
-                查看全部
-                <el-icon><ArrowRight /></el-icon>
-              </span>
+              <el-radio-group v-model="feedbackTab" size="small" class="feedback-tabs">
+                <el-radio-button label="all">全部</el-radio-button>
+                <el-radio-button label="processing">未处理</el-radio-button>
+                <el-radio-button label="resolved">已处理</el-radio-button>
+              </el-radio-group>
             </div>
           </template>
           <el-scrollbar height="400px">
             <div class="feedback-container" v-loading="loadingFeedback">
-              <div v-if="recentFeedback.length === 0" class="empty-feedback">
-                <el-empty description="暂无问题反馈" />
+              <div v-if="filteredFeedback.length === 0" class="empty-feedback">
+                <el-empty :description="emptyFeedbackText" />
               </div>
               <div v-else class="feedback-list">
-                <div v-for="feedback in recentFeedback" :key="feedback.id" class="feedback-item" @click="navigateToFeedback(feedback.id)">
+                <div v-for="feedback in filteredFeedback" :key="feedback.id" class="feedback-item" @click="openFeedbackDetail(feedback)">
                   <div class="feedback-content">
                     <div class="feedback-header">
                       <span class="feedback-user">{{ feedback.userName }}</span>
                       <el-tag :type="getUserTypeTag(feedback.userType)" size="small">
                         {{ getUserTypeText(feedback.userType) }}
+                      </el-tag>
+                      <el-tag :type="getFeedbackStatusTag(feedback.status)" size="small">
+                        {{ getFeedbackStatusText(feedback.status) }}
                       </el-tag>
                     </div>
                     <div class="feedback-title-text">{{ feedback.title }}</div>
@@ -201,6 +217,59 @@
         </el-card>
       </div>
     </div>
+
+    <!-- 问题反馈详情弹窗 -->
+    <el-dialog
+      v-model="feedbackDetailVisible"
+      title="问题反馈详情"
+      width="600px"
+      align-center
+      class="feedback-detail-dialog"
+    >
+      <div v-if="feedbackDetail" v-loading="detailLoading" class="feedback-detail">
+        <h3 class="feedback-detail-title">{{ feedbackDetail.title }}</h3>
+        <div class="feedback-detail-meta">
+          <div class="meta-item">
+            <span class="meta-label">用户姓名：</span>
+            <span>{{ feedbackDetail.userName }}</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-label">用户账号：</span>
+            <span>{{ feedbackDetail.userAccount }}</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-label">用户身份：</span>
+            <el-tag :type="getUserTypeTag(feedbackDetail.userType)" size="small">
+              {{ getUserTypeText(feedbackDetail.userType) }}
+            </el-tag>
+          </div>
+          <div class="meta-item">
+            <span class="meta-label">提交时间：</span>
+            <span>{{ feedbackDetail.createTime }}</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-label">当前状态：</span>
+            <el-tag :type="getFeedbackStatusTag(feedbackDetail.status)" size="small">
+              {{ getFeedbackStatusText(feedbackDetail.status) }}
+            </el-tag>
+          </div>
+        </div>
+        <el-divider />
+        <div class="feedback-detail-label">问题内容：</div>
+        <div class="feedback-detail-content">{{ feedbackDetail.content }}</div>
+      </div>
+      <template #footer>
+        <span class="dialog-footer">
+          <el-button @click="feedbackDetailVisible = false">取消</el-button>
+          <el-button
+            v-if="feedbackDetail && feedbackDetail.status === 'processing'"
+            type="primary"
+            :loading="markingResolved"
+            @click="markFeedbackResolved"
+          >已处理</el-button>
+        </span>
+      </template>
+    </el-dialog>
 
     <!-- 操作日志和反馈区域 -->
     <div class="logs-feedback-container">
@@ -285,27 +354,23 @@
                 <el-empty description="暂无公告" />
               </div>
               <div v-else class="announcement-list">
-                <div v-for="announcement in recentAnnouncements" :key="announcement.id" class="announcement-item" @click="navigateToAnnouncement(announcement.id)">
-                  <div class="announcement-content">
-                    <div class="announcement-header">
-                      <span class="announcement-title-text">{{ announcement.title }}</span>
-                      <el-tag :type="getPriorityTagType(announcement.priority)" size="small">
-                        {{ getPriorityText(announcement.priority) }}
-                      </el-tag>
-                    </div>
-                    <div class="announcement-publisher">
-                      <el-icon><User /></el-icon>
-                      <span>{{ announcement.publisherName || '管理员' }}</span>
-                    </div>
-                    <div class="announcement-time">{{ formatAnnouncementTime(announcement.publishTime || announcement.createTime) }}</div>
-                  </div>
-                </div>
+                <AnnouncementMessageItem
+                  v-for="announcement in recentAnnouncements"
+                  :key="announcement.id"
+                  :announcement="announcement"
+                  @select="openAnnouncementDetail"
+                />
               </div>
             </div>
           </el-scrollbar>
         </el-card>
       </div>
     </div>
+
+    <AnnouncementDetailDialog
+      v-model="announcementDetailVisible"
+      :announcement="selectedAnnouncement"
+    />
 
     <!-- 公告发布对话框 -->
     <el-dialog v-model="announcementDialogVisible" title="发布公告" width="800px" @close="handleAnnouncementDialogClose">
@@ -325,10 +390,12 @@
         </el-form-item>
         <el-form-item label="附件">
           <el-upload
+            drag
             v-model:file-list="announcementForm.attachments"
             :action="uploadAction"
             :headers="uploadHeaders"
             :on-success="handleAnnouncementUploadSuccess"
+            :on-error="error => ElMessage.error(getUploadErrorMessage(error))"
             :on-remove="handleAnnouncementRemoveFile"
             :before-upload="beforeAnnouncementUpload"
             :limit="5"
@@ -337,10 +404,8 @@
             :auto-upload="true"
             class="compact-upload"
           >
-            <el-button type="primary" size="small">
-              <el-icon><Paperclip /></el-icon>
-              选择文件
-            </el-button>
+            <el-icon class="el-icon--upload"><Paperclip /></el-icon>
+            <div class="el-upload__text">将附件拖到此处，或<em>点击上传</em></div>
             <template #tip>
               <div class="el-upload__tip">
                 支持PDF、Word、Excel、PPT、TXT、ZIP等格式，单个文件≤10MB，最多5个
@@ -353,12 +418,6 @@
             <el-option label="草稿" value="DRAFT"></el-option>
             <el-option label="发布" value="PUBLISHED"></el-option>
           </el-select>
-        </el-form-item>
-        <el-form-item label="发布日期" prop="publishDate">
-          <el-date-picker v-model="announcementForm.publishDate" type="datetime" placeholder="选择发布日期" style="width: 100%"></el-date-picker>
-        </el-form-item>
-        <el-form-item label="过期日期" prop="expireDate">
-          <el-date-picker v-model="announcementForm.expireDate" type="datetime" placeholder="选择过期日期" style="width: 100%"></el-date-picker>
         </el-form-item>
         <el-form-item label="发布人身份" prop="publisherRole">
           <el-select v-model="announcementForm.publisherRole" placeholder="请选择发布人身份" @change="handlePublisherRoleChange">
@@ -379,12 +438,6 @@
             clearable
           >
             <el-option v-for="user in userList" :key="user.id" :label="user.name" :value="user.name"></el-option>
-          </el-select>
-        </el-form-item>
-        <el-form-item label="优先级">
-          <el-select v-model="announcementForm.priority" placeholder="请选择优先级">
-            <el-option label="普通" value="normal"></el-option>
-            <el-option label="重要" value="important"></el-option>
           </el-select>
         </el-form-item>
         <el-form-item label="目标群体" prop="targetType">
@@ -426,14 +479,18 @@
         <el-form-item label="文件" prop="file">
           <div class="file-upload-container">
             <el-upload
+              drag
+              class="compact-upload"
               ref="resourceUploadRef"
               :auto-upload="false"
               :limit="1"
+              :on-exceed="() => ElMessage.warning('最多只能上传1个文件，请先移除已选文件')"
               :on-change="handleResourceFileChange"
               :on-remove="handleResourceFileRemove"
               :file-list="resourceFileList"
             >
-              <el-button type="primary">选择文件</el-button>
+              <el-icon class="el-icon--upload"><Document /></el-icon>
+              <div class="el-upload__text">将资源文档拖到此处，或<em>点击上传</em></div>
               <template #tip>
                 <div class="el-upload__tip">支持PDF、Word、Excel、PPT、TXT、ZIP、RAR、7Z等格式，文件大小不超过10MB</div>
               </template>
@@ -485,9 +542,56 @@
 </template>
 
 <script setup lang="ts">
+import { getUploadErrorMessage } from '@/utils/uploadErrorMessage'
 import logger from '@/utils/logger'
-import { ref, onMounted, onUnmounted, nextTick, computed } from 'vue'
+import { ref, onMounted, onUnmounted, nextTick, computed, watch } from 'vue'
+import { useFormContext } from '@/agent/formContext'
 import type { TeacherUser, Announcement, OperationLog, Feedback } from '@/types/admin'
+import type { FormInstance } from 'element-plus'
+// 看板行精确局部接口：覆盖模板实际使用的全部字段（均可选，不改 api/types 文件）
+interface FeedbackRow {
+  id?: string | number
+  userName?: string
+  userAccount?: string
+  userType?: string
+  title?: string
+  content?: string
+  status?: string
+  createTime?: string
+}
+interface LogRow {
+  id?: string | number
+  operatorName?: string
+  operatorRole?: string
+  operationResult?: string
+  operationType?: string
+  operationTypeName?: string
+  module?: string
+  moduleName?: string
+  roleName?: string
+  operateTime?: string
+  description?: string
+  ipAddress?: string
+}
+interface DashAnnRow {
+  id?: string | number
+  title?: string
+  content?: string
+  publisher?: string
+  publisherName?: string
+  publisherRole?: string
+  publishTime?: string
+  createTime?: string
+  attachments?: unknown
+}
+interface SimpleUser {
+  id?: string | number
+  name: string
+}
+interface DashMajorOption {
+  id?: string | number
+  name: string
+}
 
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
@@ -497,10 +601,12 @@ import {
 } from '@element-plus/icons-vue'
 import request from '@/utils/request'
 import { useAuthStore } from '@/store/auth'
-import { queryPageApi } from '@/api/log'
+import { getOperationsApi } from '@/api/log'
 import * as announcementApi from '@/api/announcement'
 import MajorService from '@/api/major'
 import * as resourceDocumentApi from '@/api/resourceDocument'
+import AnnouncementMessageItem from '@/components/AnnouncementMessageItem.vue'
+import AnnouncementDetailDialog from '@/components/AnnouncementDetailDialog.vue'
 import {
   initAnnouncementWebSocket,
   disconnectAnnouncementWebSocket
@@ -514,6 +620,8 @@ const loading = ref<boolean>(false)
 const loadingLogs = ref<boolean>(false)
 const loadingFeedback = ref<boolean>(false)
 const loadingAnnouncement = ref<boolean>(false)
+const announcementDetailVisible = ref<boolean>(false)
+const selectedAnnouncement = ref<DashAnnRow | null>(null)
 const submitting = ref<boolean>(false)
 
 const logFilterRole = ref<string>('')
@@ -531,25 +639,53 @@ const stats = ref({
   totalPositions: 0,
   totalPositionCategories: 0,
   totalAIModels: 0,
-  currentAIModel: ''
+  currentAIModel: '',
+  loggedStudents: 0,
+  todayLoginStudents: 0
 })
 
 // 最近操作日志
-const recentLogs = ref<unknown[]>([])
+const recentLogs = ref<LogRow[]>([])
 
 // 最近问题反馈
-const recentFeedback = ref<unknown[]>([])
+const recentFeedback = ref<FeedbackRow[]>([])
 const processingFeedbackCount = ref<number>(0)
 
+// 问题反馈标签与详情弹窗（首页本地过滤切换）
+const feedbackTab = ref<string>('all')
+const feedbackDetail = ref<FeedbackRow | null>(null)
+const feedbackDetailVisible = ref<boolean>(false)
+const detailLoading = ref<boolean>(false)
+const markingResolved = ref<boolean>(false)
+
+const filteredFeedback = computed<FeedbackRow[]>(() => {
+  const rows = Array.isArray(recentFeedback.value) ? [...recentFeedback.value] : []
+  rows.sort((a, b) => {
+    const ta = a.createTime ? new Date(a.createTime).getTime() : 0
+    const tb = b.createTime ? new Date(b.createTime).getTime() : 0
+    return tb - ta
+  })
+  if (feedbackTab.value === 'processing' || feedbackTab.value === 'resolved') {
+    return rows.filter((row) => row.status === feedbackTab.value)
+  }
+  return rows
+})
+
+const emptyFeedbackText = computed<string>(() => {
+  if (feedbackTab.value === 'processing') return '暂无未处理的问题反馈'
+  if (feedbackTab.value === 'resolved') return '暂无已处理的问题反馈'
+  return '暂无问题反馈'
+})
+
 // 最近公告
-const recentAnnouncements = ref<unknown[]>([])
+const recentAnnouncements = ref<DashAnnRow[]>([])
 const publishedAnnouncementCount = ref<number>(0)
 
 // 公告发布相关
 const announcementDialogVisible = ref<boolean>(false)
-const announcementFormRef = ref<InstanceType<typeof ElForm> | null>(null)
-const majorList = ref<unknown[]>([])
-const userList = ref<unknown[]>([])
+const announcementFormRef = ref<FormInstance | null>(null)
+const majorList = ref<DashMajorOption[]>([])
+const userList = ref<SimpleUser[]>([])
 const userListLoading = ref<boolean>(false)
 
 const uploadAction = '/api/upload/file'
@@ -563,9 +699,6 @@ const announcementForm = ref({
   status: 'DRAFT',
   publisher: '',
   publisherRole: '',
-  publishDate: null,
-  expireDate: null,
-  priority: 'normal',
   targetType: [] as string[],
   teacherTypes: [] as string[],
   majorIds: [] as string[],
@@ -582,8 +715,6 @@ const announcementRules = {
   status: [{ required: true, message: '请选择公告状态', trigger: 'change' }],
   publisher: [{ required: true, message: '请选择发布人姓名', trigger: 'change' }],
   publisherRole: [{ required: true, message: '请选择发布人身份', trigger: 'change' }],
-  publishDate: [{ required: true, message: '请选择发布日期', trigger: 'change' }],
-  expireDate: [{ required: true, message: '请选择过期日期', trigger: 'change' }],
   targetType: [
     { 
       required: true, 
@@ -629,10 +760,10 @@ const handleAnnouncementExceed = (files, fileList) => {
 
 // 资源文档发布相关
 const resourceDocumentDialogVisible = ref<boolean>(false)
-const resourceDocumentFormRef = ref<InstanceType<typeof ElForm> | null>(null)
-const uploadRef = ref<InstanceType<typeof ElForm> | null>(null)
+const resourceDocumentFormRef = ref<FormInstance | null>(null)
+const uploadRef = ref<FormInstance | null>(null)
 const resourceSubmitting = ref<boolean>(false)
-const resourceUserList = ref<unknown[]>([])
+const resourceUserList = ref<SimpleUser[]>([])
 const resourceUserListLoading = ref<boolean>(false)
 const resourceDocumentForm = ref({
   title: '',
@@ -680,21 +811,38 @@ const getSafeUsername = () => {
   return '管理员'
 }
 
-// 获取统计数据
+// 获取统计数据（各统计接口 data 均为 unknown，用精确收窄后合并；可达语义不变）
 const fetchStats = async (): Promise<void> => {
   try {
     const response = await request.get('/admin/dashboard/stats')
     if (response.code === 200 && response.data) {
-      stats.value = { ...stats.value, ...response.data }
+      const dataObj: unknown = response.data
+      if (dataObj !== null && typeof dataObj === 'object') {
+        stats.value = { ...stats.value, ...(dataObj as unknown as Partial<typeof stats.value>) }
+      }
     }
   } catch (error) {
     logger.error('获取统计数据失败:', error)
   }
-  
+
+  try {
+    const loginStatsResponse = await request.get('/login-logs/user-stats')
+    if (loginStatsResponse && loginStatsResponse.code === 200 && loginStatsResponse.data) {
+      const loginData = loginStatsResponse.data as { studentCount?: unknown; studentTodayCount?: unknown }
+      const sc: unknown = loginData.studentCount
+      const st: unknown = loginData.studentTodayCount
+      stats.value.loggedStudents = typeof sc === 'number' ? sc : Number(sc) || 0
+      stats.value.todayLoginStudents = typeof st === 'number' ? st : Number(st) || 0
+    }
+  } catch (error) {
+    logger.error('获取登录学生数失败:', error)
+  }
+
   try {
     const categoriesResponse = await request.get('/admin/position-categories')
     if (categoriesResponse && categoriesResponse.code === 200 && categoriesResponse.data) {
-      stats.value.totalPositionCategories = categoriesResponse.data.length
+      const catData: unknown = categoriesResponse.data
+      stats.value.totalPositionCategories = Array.isArray(catData) ? catData.length : 0
     }
   } catch (error) {
     logger.error('获取岗位类别总数失败:', error)
@@ -703,7 +851,8 @@ const fetchStats = async (): Promise<void> => {
   try {
     const modelsResponse = await request.get('/admin/ai-model')
     if (modelsResponse && modelsResponse.code === 200 && modelsResponse.data) {
-      stats.value.totalAIModels = modelsResponse.data.length
+      const modelData: unknown = modelsResponse.data
+      stats.value.totalAIModels = Array.isArray(modelData) ? modelData.length : 0
     }
   } catch (error) {
     logger.error('获取AI模型总数失败:', error)
@@ -712,7 +861,9 @@ const fetchStats = async (): Promise<void> => {
   try {
     const defaultResponse = await request.get('/admin/ai-model/default')
     if (defaultResponse && defaultResponse.code === 200 && defaultResponse.data) {
-      stats.value.currentAIModel = defaultResponse.data.modelName || '未设置'
+      const defData = defaultResponse.data as { modelName?: unknown }
+      const mn: unknown = defData.modelName
+      stats.value.currentAIModel = typeof mn === 'string' && mn !== '' ? mn : '未设置'
     }
   } catch (error) {
     logger.error('获取当前AI模型失败:', error)
@@ -723,14 +874,24 @@ const fetchStats = async (): Promise<void> => {
 const fetchRecentLogs = async (): Promise<void> => {
   loadingLogs.value = true
   try {
-    const response = await queryPageApi('', logFilterRole.value, '', '', 1, 5, 'operate_time', 'desc')
+    // 最近一年范围内的最新5条（新日志中心接口默认最近7天，此处放宽范围保持展示效果）
+    const startTime = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000)
+      .toISOString().slice(0, 19).replace('T', ' ')
+    const response = await getOperationsApi({
+      page: 1,
+      pageSize: 5,
+      startTime,
+      role: logFilterRole.value || undefined,
+      sortField: 'operate_time',
+      sortOrder: 'desc'
+    }) as unknown as { code: number; data: { rows: LogRow[] } }
     if (response.code === 200 && response.data) {
-      const rawData = response.data.rows || []
+      const rawData: LogRow[] = response.data.rows || []
       recentLogs.value = rawData.map(log => ({
         ...log,
-        operationTypeName: getOperationTypeText(log.operationType),
-        moduleName: getModuleName(log.module),
-        roleName: getRoleName(log.operatorRole)
+        operationTypeName: getOperationTypeText(log.operationType ?? ''),
+        moduleName: getModuleName(log.module ?? ''),
+        roleName: getRoleName(log.operatorRole ?? '')
       }))
     }
   } catch (error) {
@@ -749,17 +910,21 @@ const fetchRecentFeedback = async (): Promise<void> => {
       request.get('/problem-feedback/page', {
         params: {
           page: 1,
-          pageSize: 100,
-          status: 'processing'
+          pageSize: 100
         }
       }),
       request.get('/problem-feedback/processing-count')
     ])
     if (feedbackResponse && feedbackResponse.code === 200 && feedbackResponse.data) {
-      recentFeedback.value = feedbackResponse.data.rows || []
+      const fbData: unknown = feedbackResponse.data
+      const fbRows: unknown = fbData !== null && typeof fbData === 'object' && 'rows' in fbData
+        ? (fbData as { rows?: unknown }).rows
+        : undefined
+      recentFeedback.value = (Array.isArray(fbRows) ? fbRows : []) as FeedbackRow[]
     }
     if (countResponse && countResponse.code === 200) {
-      processingFeedbackCount.value = countResponse.data || 0
+      const cnt: unknown = countResponse.data
+      processingFeedbackCount.value = typeof cnt === 'number' ? cnt : Number(cnt) || 0
     }
   } catch (error) {
     logger.error('获取问题反馈失败:', error)
@@ -780,8 +945,14 @@ const fetchRecentAnnouncements = async (): Promise<void> => {
       status: 'PUBLISHED' // 已发布
     })
     if (response && response.code === 200 && response.data) {
-      recentAnnouncements.value = response.data.rows || []
-      publishedAnnouncementCount.value = response.data.total || 0
+      // data 声明为 ApiResponse<PageResponse>（双层），运行时即 { rows, total }；收窄兼容双层
+      const pageData = response.data as unknown as {
+        rows?: DashAnnRow[]
+        total?: number
+        data?: { rows?: DashAnnRow[]; total?: number }
+      }
+      recentAnnouncements.value = pageData.rows ?? pageData.data?.rows ?? []
+      publishedAnnouncementCount.value = pageData.total ?? pageData.data?.total ?? 0
     }
   } catch (error) {
     logger.error('获取公告失败:', error)
@@ -797,7 +968,7 @@ const formatAnnouncementTime = (time) => {
   if (!time) return ''
   const date = new Date(time)
   const now = new Date()
-  const diff = now - date
+  const diff = now.getTime() - date.getTime()
 
   if (diff < 60000) {
     return '刚刚'
@@ -815,34 +986,21 @@ const formatAnnouncementTime = (time) => {
   }
 }
 
-// 获取优先级标签类型
-const getPriorityTagType = (priority) => {
-  const typeMap = {
-    'urgent': 'danger',
-    'high': 'warning',
-    'normal': 'info',
-    'low': 'success'
-  }
-  return typeMap[priority] || 'info'
-}
 
-// 获取优先级文本
-const getPriorityText = (priority) => {
-  const typeMap = {
-    'urgent': '紧急',
-    'high': '高',
-    'normal': '普通',
-    'low': '低'
+const openAnnouncementDetail = async (announcement: DashAnnRow): Promise<void> => {
+  if (!announcement.id) return
+  try {
+    const response = await announcementApi.getAnnouncementById(Number(announcement.id))
+    if (response && response.code === 200 && response.data) {
+      selectedAnnouncement.value = response.data as unknown as DashAnnRow
+      announcementDetailVisible.value = true
+    } else {
+      ElMessage.error('获取公告详情失败')
+    }
+  } catch (error) {
+    logger.error('获取公告详情失败:', error)
+    ElMessage.error('获取公告详情失败')
   }
-  return typeMap[priority] || '普通'
-}
-
-// 导航到公告详情
-const navigateToAnnouncement = (id) => {
-  router.push({
-    path: '/admin/announcements',
-    query: { viewId: id }
-  })
 }
 
 // 格式化日志时间
@@ -850,7 +1008,7 @@ const formatLogTime = (time) => {
   if (!time) return ''
   const date = new Date(time)
   const now = new Date()
-  const diff = now - date
+  const diff = now.getTime() - date.getTime()
   
   if (diff < 60000) {
     return '刚刚'
@@ -961,7 +1119,7 @@ const formatFeedbackTime = (time) => {
   if (!time) return ''
   const date = new Date(time)
   const now = new Date()
-  const diff = now - date
+  const diff = now.getTime() - date.getTime()
   
   if (diff < 60000) {
     return '刚刚'
@@ -999,6 +1157,17 @@ const getUserTypeText = (type) => {
   return typeMap[type] || type
 }
 
+// 首页问题反馈状态标签（未处理/已处理）
+const getFeedbackStatusTag = (status) => {
+  if (status === 'resolved') return 'success'
+  return 'warning'
+}
+
+const getFeedbackStatusText = (status) => {
+  if (status === 'resolved') return '已处理'
+  return '未处理'
+}
+
 // 显示公告发布对话框
 const showAnnouncementDialog = async (): Promise<void> => {
   resetAnnouncementForm()
@@ -1006,7 +1175,8 @@ const showAnnouncementDialog = async (): Promise<void> => {
   try {
     const response = await MajorService.getMajors()
     if (response.code === 200) {
-      majorList.value = response.data || []
+      const rawMajors: unknown = response.data
+      majorList.value = (Array.isArray(rawMajors) ? rawMajors : []) as DashMajorOption[]
     }
   } catch (error) {
     logger.error('获取专业列表失败:', error)
@@ -1034,7 +1204,16 @@ const handlePublisherRoleChange = async (role): Promise<void> => {
     logger.log('用户列表响应:', response)
     // 响应拦截器已经返回了 response.data，所以 response 就是 { code, message, data }
     if (response && response.code === 200 && response.data) {
-      userList.value = response.data
+      const rawUsers: unknown = response.data
+      const arr: unknown[] = Array.isArray(rawUsers) ? rawUsers : []
+      userList.value = arr.map((u: unknown) => {
+        const o = u as { id?: unknown; name?: unknown }
+        const uid: unknown = o.id
+        return {
+          id: typeof uid === 'string' || typeof uid === 'number' ? uid : String(uid ?? ''),
+          name: String(o.name ?? '')
+        }
+      })
       announcementForm.value.publisher = ''
     } else {
       userList.value = []
@@ -1064,7 +1243,16 @@ const handleResourcePublisherRoleChange = async (role): Promise<void> => {
     logger.log('资源文档用户列表响应:', response)
     // 响应拦截器已经返回了 response.data，所以 response 就是 { code, message, data }
     if (response && response.code === 200 && response.data) {
-      resourceUserList.value = response.data
+      const rawResUsers: unknown = response.data
+      const resArr: unknown[] = Array.isArray(rawResUsers) ? rawResUsers : []
+      resourceUserList.value = resArr.map((u: unknown) => {
+        const o = u as { id?: unknown; name?: unknown }
+        const rid: unknown = o.id
+        return {
+          id: typeof rid === 'string' || typeof rid === 'number' ? rid : String(rid ?? ''),
+          name: String(o.name ?? '')
+        }
+      })
       resourceDocumentForm.value.publisher = ''
     } else {
       resourceUserList.value = []
@@ -1122,31 +1310,38 @@ const submitAnnouncement = async (): Promise<void> => {
           status: announcementForm.value.status,
           publisher: publisher,
           publisherRole: publisherRole,
-          priority: announcementForm.value.priority,
-          validFrom: announcementForm.value.publishDate,
-          validTo: announcementForm.value.expireDate,
           targetType: announcementForm.value.targetType && announcementForm.value.targetType.length > 0 ? announcementForm.value.targetType : ['ALL'],
-          targetValue: targetValue || null
+          targetValue: targetValue || null,
+          attachments: [] as { name?: unknown; url?: unknown; size?: unknown; type?: unknown }[]
         }
 
         if (announcementForm.value.attachments && announcementForm.value.attachments.length > 0) {
-          submitData.attachments = announcementForm.value.attachments.map(file => ({
-            name: file.name,
-            url: file.url,
-            size: file.size,
-            type: file.raw ? file.raw.type : (file.response ? file.response.type : '')
-          }))
+          submitData.attachments = (announcementForm.value.attachments as unknown[]).map((file: unknown) => {
+            const f = file as { name?: unknown; url?: unknown; size?: unknown; raw?: { type?: unknown }; response?: { type?: unknown } }
+            return {
+              name: f.name,
+              url: f.url,
+              size: f.size,
+              type: f.raw ? f.raw.type : (f.response ? f.response.type : '')
+            }
+          })
         }
 
+        const operation = formContext.beginFormOperation('admin:dashboard-announcement')
+    const receiptStatus = submitData.status === 'PUBLISHED' ? 'published' : 'saved'
         let response
+        // api/announcement 的 Announcement 声明已过期（status?:number、无 targetType 等），后端实际用字符串枚举；断言保持运行时载荷原样透传
+        type AddWithArgs = Parameters<typeof announcementApi.addAnnouncementWithAttachments>
+        type AddArgs = Parameters<typeof announcementApi.addAnnouncement>
         if (submitData.attachments && submitData.attachments.length > 0) {
-          response = await announcementApi.addAnnouncementWithAttachments(submitData)
+          response = await announcementApi.addAnnouncementWithAttachments(submitData as unknown as AddWithArgs[0])
         } else {
-          response = await announcementApi.addAnnouncement(submitData)
+          response = await announcementApi.addAnnouncement(submitData as unknown as AddArgs[0])
         }
 
         // 响应拦截器已经返回了 response.data，所以 response 就是 { code, message, data }
         if (response && response.code === 200) {
+          operation.complete({ status: receiptStatus, label: receiptStatus === 'published' ? '公告已发布' : '公告已保存', url: '/admin/announcements' })
           ElMessage.success('公告发布成功')
           announcementDialogVisible.value = false
           resetAnnouncementForm()
@@ -1170,10 +1365,7 @@ const resetAnnouncementForm = () => {
     status: 'DRAFT',
     publisher: '',
     publisherRole: '',
-    publishDate: null,
-    expireDate: null,
-    priority: 'normal',
-    targetType: [] as string[],
+      targetType: [] as string[],
     teacherTypes: [] as string[],
     majorIds: [] as string[],
     targetValue: null,
@@ -1222,9 +1414,12 @@ const submitResourceDocument = async (): Promise<void> => {
         formDataObj.append('targetType', resourceDocumentForm.value.targetType)
         formDataObj.append('status', resourceDocumentForm.value.status)
         
+        const operation = formContext.beginFormOperation('admin:dashboard-resource')
+    const receiptStatus = resourceDocumentForm.value.status === 'PUBLISHED' ? 'published' : 'saved'
         const response = await resourceDocumentApi.uploadResourceDocument(formDataObj)
         // 响应拦截器已经返回了 response.data，所以 response 就是 { code, message, data }
         if (response && response.code === 200) {
+          operation.complete({ status: receiptStatus, label: receiptStatus === 'published' ? '资源文档已发布' : '资源文档已保存', url: '/admin/resource-documents' })
           ElMessage.success('发布成功')
           resourceDocumentDialogVisible.value = false
           resetResourceDocumentForm()
@@ -1233,7 +1428,9 @@ const submitResourceDocument = async (): Promise<void> => {
         }
       } catch (error) {
         logger.error('发布失败:', error)
-        ElMessage.error('发布失败')
+        if (!(error as { skipErrorMessage?: boolean }).skipErrorMessage) {
+          ElMessage.error('发布失败')
+        }
       } finally {
         resourceSubmitting.value = false
       }
@@ -1259,6 +1456,12 @@ const resetResourceDocumentForm = () => {
 }
 
 const handleResourceFileChange = (file) => {
+  if (file.raw && file.raw.size > 10 * 1024 * 1024) {
+    ElMessage.error('文件大小不能超过10MB，请压缩文件后重新选择')
+    resourceDocumentForm.value.file = null
+    resourceFileList.value = []
+    return
+  }
   resourceDocumentForm.value.file = file.raw
   resourceFileList.value = [file]
 }
@@ -1276,9 +1479,15 @@ const handleResourceDocumentDialogClose = () => {
 const refreshAllData = async (): Promise<void> => {
   loading.value = true
   try {
-    await Promise.all([fetchStats(), fetchRecentLogs(), fetchRecentFeedback(), fetchPendingRecall()])
+    await Promise.all([
+      fetchStats(),
+      fetchRecentLogs(),
+      fetchRecentFeedback(),
+      fetchRecentAnnouncements()
+    ])
     ElMessage.success('数据刷新成功')
   } catch (error) {
+    logger.error('刷新数据失败:', error)
     ElMessage.error('数据刷新失败')
   } finally {
     loading.value = false
@@ -1290,12 +1499,54 @@ const navigateTo = (path) => {
   router.push(path)
 }
 
-// 导航到问题反馈详情
-const navigateToFeedback = (feedbackId) => {
-  router.push({
-    path: '/admin/problem-feedback',
-    query: { feedbackId: feedbackId }
-  })
+// 打开问题反馈详情弹窗（首页本地弹窗，不跳转）
+const openFeedbackDetail = async (row) => {
+  const id = row?.id
+  feedbackDetail.value = { ...row }
+  feedbackDetailVisible.value = true
+  if (id === undefined || id === null || !row.content || !row.userAccount) {
+    detailLoading.value = true
+    try {
+      const response = await request.get(`/problem-feedback/${id}`)
+      const detailData: unknown = (response as { data?: unknown })?.data
+      if (response && response.code === 200 && detailData && typeof detailData === 'object') {
+        feedbackDetail.value = { ...(detailData as FeedbackRow) }
+      }
+    } catch (error) {
+      logger.error('获取问题反馈详情失败:', error)
+    } finally {
+      detailLoading.value = false
+    }
+  }
+}
+
+// 标记问题反馈为已处理
+const markFeedbackResolved = async () => {
+  const id = feedbackDetail.value?.id
+  if (id === undefined || id === null) return
+  markingResolved.value = true
+  try {
+    const response = await request.put(`/problem-feedback/${id}/status`, { status: 'resolved' })
+    if (response && response.code === 200) {
+      ElMessage.success('已标记为已处理')
+      if (feedbackDetail.value) {
+        feedbackDetail.value.status = 'resolved'
+      }
+      const target = recentFeedback.value.find((item) => String(item.id) === String(id))
+      if (target) {
+        target.status = 'resolved'
+      }
+      processingFeedbackCount.value = Math.max(0, processingFeedbackCount.value - 1)
+      feedbackDetailVisible.value = false
+    } else {
+      ElMessage.error((response && response.msg) || '标记失败，请稍后重试')
+    }
+  } catch (error) {
+    logger.error('标记问题反馈失败:', error)
+    ElMessage.error('标记失败，请稍后重试')
+  } finally {
+    markingResolved.value = false
+  }
 }
 
 const handleWebSocketMessage = (data) => {
@@ -1352,6 +1603,107 @@ onMounted(() => {
 
 onUnmounted(() => {
   disconnectAnnouncementWebSocket()
+  formContext.unregister('admin:dashboard-announcement')
+  formContext.unregister('admin:dashboard-resource')
+})
+
+// ===== 智能填表：仪表盘快捷发布公告 / 上传资源注册到 AI 侧栏 =====
+// 与完整页（公告管理 / 资源文档管理）保持同一套字段注册：附件与文档文件需手动上传，
+// 发布人身份可由侧栏填写并自动加载发布人选项（发布人本身仍可手动确认/修改）。
+const formContext = useFormContext()
+watch(announcementDialogVisible, (open) => {
+  if (open) {
+    formContext.register({
+      formId: 'admin:dashboard-announcement',
+      title: '发布公告',
+      getFields() { return this.fields.map(field => field.prop === 'publisher'
+        ? { ...field, options: userList.value.map(user => ({ label: user.name, value: user.name })) }
+        : field.prop === 'majorIds' ? { ...field, options: majorList.value.map(major => ({ label: major.name, value: String(major.id) })) } : field) },
+      fields: [
+        { prop: 'title', label: '公告标题', type: 'input', required: true },
+        { prop: 'content', label: '公告内容', type: 'textarea', required: true },
+        { prop: 'status', label: '状态', type: 'select',
+          options: [{ label: '草稿', value: 'DRAFT' }, { label: '已发布', value: 'PUBLISHED' }] },
+        { prop: 'publisherRole', label: '发布人身份', type: 'select', required: true,
+          options: [
+            { label: '管理员', value: 'ADMIN' },
+            { label: '学院教师', value: 'COLLEGE' },
+            { label: '系室教师', value: 'DEPARTMENT' },
+            { label: '辅导员', value: 'COUNSELOR' }
+          ] },
+        { prop: 'publisher', label: '发布人', type: 'select', required: true,
+          options: (userList.value as { id: string; name: string }[]).map(u => ({ label: u.name, value: u.name })),
+          patternHint: '未选择发布人身份时该项不可用，需先选发布人身份（手动）' },
+        { prop: 'targetType', label: '目标群体', type: 'select', valueType: 'array', required: true,
+          options: [
+            { label: '全体学生', value: 'STUDENT' },
+            { label: '全体教师', value: 'TEACHER' },
+            { label: '特定教师类别', value: 'TEACHER_TYPE' },
+            { label: '特定专业学生', value: 'MAJOR' },
+            { label: '企业用户', value: 'COMPANY' }
+          ] },
+        { prop: 'teacherTypes', label: '教师类别', type: 'select', valueType: 'array',
+          options: [
+            { label: '学院教师', value: 'COLLEGE' },
+            { label: '系室教师', value: 'DEPARTMENT' },
+            { label: '辅导员', value: 'COUNSELOR' }
+          ] },
+        { prop: 'majorIds', label: '专业', type: 'select', valueType: 'array',
+          options: (majorList.value as { id: unknown; name: string }[]).map(m => ({ label: m.name, value: String(m.id) })) },
+        { prop: 'attachments', label: '附件', type: 'upload' }
+      ],
+      getModel: () => announcementForm.value,
+      getFormEl: () => announcementFormRef.value
+    })
+  } else formContext.unregister('admin:dashboard-announcement')
+})
+// AI 填入发布人身份后联动加载发布人选项（手动切换走原 @change；此处仅选项为空时加载并保留已填发布人，幂等）
+watch(() => announcementForm.value.publisherRole, (v, old) => {
+  if (!v || v === old || !announcementDialogVisible.value || userList.value.length > 0) return
+  const keep = announcementForm.value.publisher
+  void handlePublisherRoleChange(v).then(() => { if (keep) announcementForm.value.publisher = keep })
+})
+watch(resourceDocumentDialogVisible, (open) => {
+  if (open) {
+    formContext.register({
+      formId: 'admin:dashboard-resource',
+      title: '上传资源',
+      getFields() { return this.fields.map(field => field.prop === 'publisher'
+        ? { ...field, options: resourceUserList.value.map(user => ({ label: user.name, value: user.name })) } : field) },
+      fields: [
+        { prop: 'title', label: '文档标题', type: 'input', required: true },
+        { prop: 'description', label: '文档描述', type: 'textarea' },
+        { prop: 'status', label: '状态', type: 'select',
+          options: [{ label: '草稿', value: 'DRAFT' }, { label: '已发布', value: 'PUBLISHED' }, { label: '已归档', value: 'ARCHIVED' }] },
+        { prop: 'publisherRole', label: '发布人身份', type: 'select', required: true,
+          options: [
+            { label: '管理员', value: 'ADMIN' },
+            { label: '学院教师', value: 'COLLEGE' },
+            { label: '系室教师', value: 'DEPARTMENT' },
+            { label: '辅导员', value: 'COUNSELOR' }
+          ] },
+        { prop: 'publisher', label: '发布人', type: 'select', required: true,
+          options: (resourceUserList.value as { id: string; name: string }[]).map(u => ({ label: u.name, value: u.name })),
+          patternHint: '未选择发布人身份时该项不可用，需先选发布人身份（手动）' },
+        { prop: 'targetType', label: '目标群体', type: 'select',
+          options: [
+            { label: '全体师生', value: 'ALL' },
+            { label: '全体学生', value: 'STUDENT' },
+            { label: '全体教师', value: 'TEACHER' }
+          ] },
+        { prop: 'file', label: '文档文件', type: 'upload' }
+      ],
+      getModel: () => resourceDocumentForm.value,
+      getFormEl: () => resourceDocumentFormRef.value,
+      getValidationSummary: () => ({ missingFields: resourceDocumentForm.value.file ? [] : ['资源文件（需手动提供）'], validationErrors: [] })
+    })
+  } else formContext.unregister('admin:dashboard-resource')
+})
+// AI 填入发布人身份后联动加载发布人选项（资源文档，逻辑同公告）
+watch(() => resourceDocumentForm.value.publisherRole, (v, old) => {
+  if (!v || v === old || !resourceDocumentDialogVisible.value || resourceUserList.value.length > 0) return
+  const keep = resourceDocumentForm.value.publisher
+  void handleResourcePublisherRoleChange(v).then(() => { if (keep) resourceDocumentForm.value.publisher = keep })
 })
 </script>
 
@@ -1661,6 +2013,12 @@ onUnmounted(() => {
 .stat-card.positions .stat-icon-wrapper {
   background: rgba(19, 194, 194, 0.1);
   color: #13c2c2;
+}
+
+.stat-card.students .stat-info {
+  margin-bottom: 0;
+  flex-shrink: 0;
+  min-width: 80px;
 }
 
 .stat-info {
@@ -2007,6 +2365,49 @@ onUnmounted(() => {
   text-align: center;
 }
 
+.feedback-tabs {
+  margin-left: auto;
+}
+
+.feedback-detail-title {
+  margin: 0 0 12px;
+  font-size: 16px;
+  font-weight: 600;
+  color: #303133;
+}
+
+.feedback-detail-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.feedback-detail-meta .meta-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: #606266;
+}
+
+.feedback-detail-meta .meta-label {
+  color: #909399;
+}
+
+.feedback-detail-label {
+  font-size: 13px;
+  color: #909399;
+  margin-bottom: 8px;
+}
+
+.feedback-detail-content {
+  font-size: 14px;
+  line-height: 1.7;
+  color: #303133;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
 /* 最近公告卡片 */
 .announcement-card {
   border-radius: 16px;
@@ -2210,12 +2611,27 @@ onUnmounted(() => {
 
 /* 资源文档发布对话框样式 */
 .file-upload-container {
+  width: 100%;
   display: flex;
   flex-direction: column;
   gap: 12px;
 }
 
 /* 公告附件上传样式 */
+.compact-upload,
+.compact-upload :deep(.el-upload) {
+  width: 100%;
+}
+
+.compact-upload :deep(.el-upload-dragger) {
+  padding: 20px 12px;
+}
+
+.compact-upload .el-icon--upload {
+  font-size: 36px;
+  margin-bottom: 8px;
+}
+
 .compact-upload :deep(.el-upload-list) {
   max-height: 200px;
   overflow-y: auto;

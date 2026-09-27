@@ -4,6 +4,7 @@ import com.internship.config.SmsConfig;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Service;
 
 import java.security.SecureRandom;
@@ -16,6 +17,9 @@ public class SmsService {
     @Autowired
     private SmsConfig smsConfig;
 
+    @Autowired
+    private Environment environment;
+
     @Autowired(required = false)
     private RedisTemplate<String, String> redisTemplate;
 
@@ -27,25 +31,29 @@ public class SmsService {
      * 发送短信验证码（使用阿里云短信认证服务API）
      */
     public boolean sendVerifyCode(String phone) {
-        if (!smsConfig.getEnabled()) {
-            log.warn("短信服务未启用，使用模拟发送");
-            return mockSendVerifyCode(phone);
+        if (!isValidPhone(phone)) {
+            log.error("手机号格式不正确");
+            return false;
         }
 
-        if (!isValidPhone(phone)) {
-            log.error("手机号格式不正确: {}", phone);
+        if (!Boolean.TRUE.equals(smsConfig.getEnabled())) {
+            log.warn("短信服务未启用，拒绝发送验证码");
+            return false;
+        }
+
+        if (Boolean.TRUE.equals(smsConfig.getDebug()) && (!isLocalDebugMode() || redisTemplate == null)) {
+            log.warn("短信调试模式仅可在 local profile 且 Redis 可用时使用");
+            return false;
+        }
+        if (!checkRateLimit(phone)) {
             return false;
         }
 
         try {
-            if (smsConfig.getDebug()) {
-                // 调试模式：模拟发送，验证码存 Redis，不写入日志
+            if (Boolean.TRUE.equals(smsConfig.getDebug())) {
                 String code = generateVerifyCode();
-                if (redisTemplate != null) {
-                    String redisKey = "sms:code:" + phone;
-                    redisTemplate.opsForValue().set(redisKey, code, 5, TimeUnit.MINUTES);
-                }
-                log.info("短信验证码（调试模式）已生成: 手机号={}, 验证码=******", phone);
+                redisTemplate.opsForValue().set("sms:code:" + phone, code, 5, TimeUnit.MINUTES);
+                log.info("短信验证码（调试模式）已生成");
                 return true;
             }
 
@@ -60,16 +68,24 @@ public class SmsService {
      * 校验短信验证码（使用阿里云短信认证服务API）
      */
     public boolean verifyCode(String phone, String code) {
-        if (phone == null || code == null) {
+        if (!isValidPhone(phone) || code == null || code.isBlank()) {
             return false;
         }
 
-        if (!smsConfig.getEnabled()) {
-            // 调试模式跳过验证
-            return true;
+        if (!Boolean.TRUE.equals(smsConfig.getEnabled())) {
+            return false;
         }
 
         try {
+            if (Boolean.TRUE.equals(smsConfig.getDebug())) {
+                if (!isLocalDebugMode() || redisTemplate == null) {
+                    return false;
+                }
+                String key = "sms:code:" + phone;
+                String expected = redisTemplate.opsForValue().get(key);
+                return expected != null && expected.equals(code)
+                        && Boolean.TRUE.equals(redisTemplate.delete(key));
+            }
             return checkSmsVerifyCode(phone, code);
         } catch (Exception e) {
             log.error("校验短信验证码失败: {}", e.getMessage(), e);
@@ -102,10 +118,10 @@ public class SmsService {
 
         String apiCode = response.getBody().getCode();
         if ("OK".equals(apiCode)) {
-            log.info("短信验证码发送成功: 手机号={}, 请求ID={}", phone, response.getBody().getRequestId());
+            log.info("短信验证码发送成功: 请求ID={}", response.getBody().getRequestId());
             return true;
         } else {
-            log.error("短信验证码发送失败: 手机号={}, 错误码={}, 错误信息={}", phone, apiCode, response.getBody().getMessage());
+            log.error("短信验证码发送失败: 错误码={}, 错误信息={}", apiCode, response.getBody().getMessage());
             return false;
         }
     }
@@ -132,20 +148,17 @@ public class SmsService {
         // 先用 code 字段判断，OK 表示验证通过
         String apiCode = response.getBody().getCode();
         if ("OK".equals(apiCode)) {
-            log.info("短信验证码校验成功: 手机号={}", phone);
+            log.info("短信验证码校验成功");
             return true;
         } else {
-            log.warn("短信验证码校验失败: 手机号={}, 错误码={}, 错误信息={}", phone, apiCode, response.getBody().getMessage());
+            log.warn("短信验证码校验失败: 错误码={}, 错误信息={}", apiCode, response.getBody().getMessage());
             return false;
         }
     }
 
-    /**
-     * 模拟发送（调试模式）
-     */
-    private boolean mockSendVerifyCode(String phone) {
-        log.info("模拟发送短信验证码: 手机号={}", phone);
-        return true;
+    private boolean isLocalDebugMode() {
+        String[] activeProfiles = environment.getActiveProfiles();
+        return activeProfiles.length == 1 && "local".equals(activeProfiles[0]);
     }
 
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
@@ -171,8 +184,8 @@ public class SmsService {
      * 限流检查
      */
     public boolean checkRateLimit(String phone) {
-        if (redisTemplate == null) {
-            return true;
+        if (!Boolean.TRUE.equals(smsConfig.getEnabled()) || !isValidPhone(phone) || redisTemplate == null) {
+            return false;
         }
 
         String key = RATE_LIMIT_PREFIX + phone;
@@ -190,7 +203,7 @@ public class SmsService {
             return true;
         } catch (Exception e) {
             log.warn("限流检查失败: {}", e.getMessage());
-            return true;
+            return false;
         }
     }
 }

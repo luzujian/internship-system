@@ -1,6 +1,7 @@
 package com.internship.task;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -19,7 +20,10 @@ import java.util.List;
 @Slf4j
 @Component
 public class FileCleanupTask {
-    
+
+    @Autowired
+    private com.internship.service.AuditLogService auditLogService;
+
     @Value("${backup.path:D:/Web-work/Internship/backups}")
     private String backupPath;
     
@@ -39,42 +43,54 @@ public class FileCleanupTask {
     @Scheduled(cron = "0 15 * * * ?")
     public void cleanExpiredFiles() {
         log.info("开始清理过期文件");
-        
+
         try {
             String storagePath = uploadPath;
             int retentionDays = defaultRetentionDays;
-            
+
             File storageDir = new File(storagePath);
             if (!storageDir.exists() || !storageDir.isDirectory()) {
                 log.warn("存储路径不存在或不是目录: {}", storagePath);
                 return;
             }
-            
-            cleanDirectory(storageDir, retentionDays);
-            
-            log.info("过期文件清理完成");
+
+            int deleted = cleanDirectory(storageDir, retentionDays);
+
+            // 后台任务以 SYSTEM 身份记录自动状态变更（有删除才记录，避免每小时刷屏）
+            if (deleted > 0) {
+                try {
+                    auditLogService.recordSystemOperation("FILE_ACCESS", "DELETE",
+                            "定时清理过期上传文件（保留" + retentionDays + "天）", "MEDIUM", deleted);
+                } catch (Exception auditEx) {
+                    log.error("记录文件清理审计失败: {}", auditEx.getMessage());
+                }
+            }
+
+            log.info("过期文件清理完成，共删除 {} 个文件", deleted);
         } catch (Exception e) {
             log.error("清理过期文件失败: {}", e.getMessage(), e);
         }
     }
-    
-    private void cleanDirectory(File directory, int retentionDays) {
+
+    private int cleanDirectory(File directory, int retentionDays) {
         File[] files = directory.listFiles();
         if (files == null) {
-            return;
+            return 0;
         }
-        
+
+        int deleted = 0;
         for (File file : files) {
             if (file.isDirectory()) {
                 if (shouldExcludeDirectory(file)) {
                     log.debug("跳过排除的目录: {}", file.getAbsolutePath());
                     continue;
                 }
-                cleanDirectory(file, retentionDays);
+                deleted += cleanDirectory(file, retentionDays);
             } else {
                 if (isFileExpired(file, retentionDays)) {
                     try {
                         Files.delete(file.toPath());
+                        deleted++;
                         log.info("已删除过期文件: {}", file.getAbsolutePath());
                     } catch (IOException e) {
                         log.error("删除文件失败: {}", file.getAbsolutePath(), e);
@@ -82,6 +98,7 @@ public class FileCleanupTask {
                 }
             }
         }
+        return deleted;
     }
     
     private boolean shouldExcludeDirectory(File directory) {

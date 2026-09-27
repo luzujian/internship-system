@@ -114,21 +114,12 @@
       <el-table :data="classStudents" border style="width: 100%" v-loading="studentsLoading" max-height="400">
         <el-table-column prop="studentUserId" label="学号" align="center" width="120" />
         <el-table-column prop="name" label="姓名" align="center" width="100" />
-        <el-table-column prop="gender" label="性别" align="center" width="80">
-          <template #default="scope">
-            <span>{{ scope.row.gender === 1 ? '男' : '女' }}</span>
-          </template>
-        </el-table-column>
         <el-table-column prop="grade" label="年级" align="center" width="80" />
         <el-table-column prop="internshipStatus" label="实习状态" align="center" width="100">
           <template #default="scope">
-            <el-tag v-if="scope.row.internshipStatus === 0" type="info">未找到</el-tag>
-            <el-tag v-else-if="scope.row.internshipStatus === 1" type="warning">已有Offer</el-tag>
-            <el-tag v-else-if="scope.row.internshipStatus === 2" type="success">已确认</el-tag>
-            <el-tag v-else-if="scope.row.internshipStatus === 3" type="primary">已结束</el-tag>
-            <el-tag v-else-if="scope.row.internshipStatus === 4" type="danger">已中断</el-tag>
-            <el-tag v-else-if="scope.row.internshipStatus === 5" type="warning">延期</el-tag>
-            <el-tag v-else type="info">未找到</el-tag>
+            <el-tag :type="getStatusTagType(scope.row.jobSearchStatus || scope.row.internshipStatus)" size="small">
+              {{ scope.row.jobSearchStatusText || getStatusText(scope.row.internshipStatus) }}
+            </el-tag>
           </template>
         </el-table-column>
         <el-table-column prop="companyName" label="实习单位" align="center" min-width="150">
@@ -219,6 +210,56 @@ const formatDate = (dateStr: string) => {
     hour: '2-digit',
     minute: '2-digit'
   })
+}
+
+// 实习状态展示，与后端 JobSearchStatus 枚举及 fromEstablishedInternshipStatus 保持一致
+const getStatusText = (status: number | string | null | undefined): string => {
+  if (status === null || status === undefined) return '待核实'
+  if (typeof status === 'string') {
+    const derivedText: Record<string, string> = {
+      NOT_FOUND: '未投递',
+      NO_OFFER: '无 Offer',
+      PENDING_CONFIRMATION: '待确认',
+      CONFIRMED: '已确定',
+      IN_PROGRESS: '实习中',
+      ENDED: '已结束',
+      INTERRUPTED: '已中断',
+      DELAYED: '延期'
+    }
+    if (derivedText[status]) return derivedText[status]
+  }
+  const statusNum = typeof status === 'string' ? Number(status) : status
+  switch (statusNum) {
+    case 1: return '待确认'
+    case 2: return '已确定'
+    case 3: return '实习中'
+    case 4: return '已结束'
+    case 5: return '已中断'
+    case 6: return '延期'
+    case 0: return '尚无 Offer'
+    default: return '待核实'
+  }
+}
+
+const getStatusTagType = (status: number | string | null | undefined): string => {
+  if (typeof status === 'string') {
+    if (status === 'NOT_FOUND') return 'info'
+    if (status === 'NO_OFFER') return 'warning'
+    if (status === 'PENDING_CONFIRMATION') return 'warning'
+    if (status === 'CONFIRMED' || status === 'ENDED') return 'success'
+    if (status === 'IN_PROGRESS') return 'primary'
+    if (status === 'INTERRUPTED' || status === 'DELAYED') return 'warning'
+  }
+  const statusNum = typeof status === 'string' ? Number(status) : (status ?? 0)
+  switch (statusNum) {
+    case 1: return 'warning'   // 待确认
+    case 2: return 'success'    // 已确定
+    case 3: return 'primary'    // 实习中
+    case 4: return 'success'    // 已结束
+    case 5: return 'warning'    // 已中断
+    case 6: return 'warning'    // 延期
+    default: return 'info'      // 未找到
+  }
 }
 
 const loadMyClasses = async () => {
@@ -525,5 +566,42 @@ onMounted(() => {
 .action-btn.warning {
   background-color: #e6a23c;
   border-color: #e6a23c;
+}
+
+@media (max-width: 768px) {
+  .stats-card {
+    position: static;
+  }
+
+  .search-card {
+    margin-top: 0;
+  }
+
+  .search-row {
+    flex-wrap: wrap;
+  }
+
+  .search-row :deep(.el-form-item) {
+    width: 100%;
+    margin-right: 0;
+  }
+
+  .search-actions {
+    margin-left: 0;
+  }
+
+  .search-actions :deep(.el-button) {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  :deep(.el-transfer) {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  :deep(.el-transfer-panel) {
+    width: 100%;
+  }
 }
 </style>

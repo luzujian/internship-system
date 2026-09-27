@@ -173,7 +173,7 @@ public class ProblemFeedbackController {
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_STUDENT', 'ROLE_TEACHER', 'ROLE_COMPANY')")
+    @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_STUDENT', 'ROLE_TEACHER_COLLEGE', 'ROLE_TEACHER_DEPARTMENT', 'ROLE_TEACHER_COUNSELOR', 'ROLE_COMPANY')")
     @Log(operationType = "UPDATE", module = "PROBLEM_FEEDBACK", description = "更新问题反馈")
     public Result updateFeedback(@PathVariable Long id, @RequestBody ProblemFeedback feedback) {
         log.info("更新问题反馈: ID={}", id);
@@ -215,7 +215,7 @@ public class ProblemFeedbackController {
 
     @DeleteMapping("/batch")
     @PreAuthorize("hasRole('ROLE_ADMIN')")
-    @Log(operationType = "DELETE", module = "PROBLEM_FEEDBACK", description = "批量删除问题反馈")
+    @Log(operationType = "DELETE", module = "PROBLEM_FEEDBACK", description = "批量删除问题反馈", riskLevel = "HIGH", critical = true)
     public Result batchDeleteFeedback(@RequestBody Map<String, List<Long>> request) {
         List<Long> ids = request.get("ids");
         log.info("批量删除问题反馈，IDs: {}", ids);
@@ -254,6 +254,7 @@ public class ProblemFeedbackController {
 
     @PutMapping("/{id}/status")
     @PreAuthorize("hasRole('ROLE_ADMIN')")
+    @Log(operationType = "AUDIT", module = "PROBLEM_FEEDBACK", description = "处理问题反馈", riskLevel = "MEDIUM")
     public Result updateStatus(@PathVariable Long id, @RequestBody Map<String, String> request) {
         log.info("更新问题反馈状态: ID={}, 状态={}", id, request.get("status"));
         try {
@@ -327,7 +328,7 @@ public class ProblemFeedbackController {
     /**
      * 导出问题反馈到 Excel
      */
-    @Log(operationType = "EXPORT", module = "PROBLEM_FEEDBACK", description = "导出问题反馈")
+    @Log(operationType = "EXPORT", module = "PROBLEM_FEEDBACK", description = "导出问题反馈", riskLevel = "MEDIUM", critical = true)
     @GetMapping("/export")
     @PreAuthorize("hasRole('ROLE_ADMIN')")
     public void exportFeedbackData(HttpServletResponse response) {

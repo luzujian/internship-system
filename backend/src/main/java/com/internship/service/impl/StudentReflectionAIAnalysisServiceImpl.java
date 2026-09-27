@@ -191,7 +191,7 @@ public class StudentReflectionAIAnalysisServiceImpl implements StudentReflection
 
             CounselorAISettings settings = counselorAISettingsService.findByCounselorId(counselorId);
             String modelCode = (settings != null && settings.getAiModelCode() != null)
-                ? settings.getAiModelCode() : "deepseek-v4-flash";
+                ? settings.getAiModelCode() : "deepseek-flash";
 
             ChatClient chatClient = chatClientFactory.createChatClient(modelCode, SYSTEM_PROMPT);
 
@@ -200,7 +200,8 @@ public class StudentReflectionAIAnalysisServiceImpl implements StudentReflection
                     .call()
                     .content();
 
-            log.info("AI 分析响应（辅导员 ID: {}, 模型：{}）: {}", counselorId, modelCode, aiResponse);
+            log.debug("AI 分析响应已返回：counselorId={}, model={}, length={}",
+                    counselorId, modelCode, aiResponse != null ? aiResponse.length() : 0);
 
             // 【多层容错解析】解析 AI 响应，支持降级计算
             Map<String, Object> analysisData = parseAIResponse(aiResponse, scoringRules, counselorId);
@@ -656,7 +657,7 @@ public class StudentReflectionAIAnalysisServiceImpl implements StudentReflection
 
             CounselorAISettings settings = counselorAISettingsService.findByCounselorId(counselorId);
             String modelCode = (settings != null && settings.getAiModelCode() != null)
-                ? settings.getAiModelCode() : "deepseek-v4-flash";
+                ? settings.getAiModelCode() : "deepseek-flash";
 
             ChatClient chatClient = chatClientFactory.createChatClient(modelCode, SYSTEM_PROMPT);
 
@@ -665,7 +666,8 @@ public class StudentReflectionAIAnalysisServiceImpl implements StudentReflection
                     .call()
                     .content();
 
-            log.info("AI内容验证响应: {}", aiResponse);
+            log.debug("AI 内容验证响应已返回：length={}",
+                    aiResponse != null ? aiResponse.length() : 0);
 
             // 检查 AI 响应是否为空
             if (aiResponse == null || aiResponse.trim().isEmpty()) {

@@ -45,20 +45,21 @@ public class StudentQueryAgentService {
                     modelCode = defaultModel.getModelCode();
                     log.info("使用管理员默认模型: {}", modelCode);
                 } else {
-                    modelCode = "deepseek-chat";
+                    modelCode = "deepseek-flash";
                 }
             } catch (Exception e) {
-                log.warn("获取默认模型失败，使用deepseek-chat: {}", e.getMessage());
-                modelCode = "deepseek-chat";
+                log.warn("获取默认模型失败，使用deepseek-flash: {}", e.getMessage());
+                modelCode = "deepseek-flash";
             }
         } else if (model.equals("deepseek-reasoner")) {
             modelCode = "deepseek-reasoner";
-        } else if (model.equals("deepseek-v4-flash")) {
-            modelCode = "deepseek-v4-flash";
+        } else if (model.equals("deepseek-v4-flash") || model.equals("deepseek-flash")) {
+            // deepseek-v4-flash 已下线，统一使用 v4.1 (deepseek-flash)，旧配置值作为别名兼容
+            modelCode = "deepseek-flash";
         } else if (model.equals("deepseek-v4-pro")) {
             modelCode = "deepseek-v4-pro";
         } else {
-            modelCode = "deepseek-chat";
+            modelCode = "deepseek-flash";
         }
         return chatClientFactory.createChatClient(modelCode, SYSTEM_PROMPT);
     }
@@ -132,7 +133,8 @@ public class StudentQueryAgentService {
                     .call()
                     .content();
                     
-            log.info("AI响应原始内容: {}", aiResponse);
+            log.debug("AI 学生查询响应已返回：length={}",
+                    aiResponse != null ? aiResponse.length() : 0);
 
             // 解析AI返回的参数
             Map<String, Object> params = parseQueryParams(aiResponse);
@@ -147,12 +149,12 @@ public class StudentQueryAgentService {
                 // 只有当AI返回的删除参数无效时，才需要从用户查询中重建参数
                 if (isDeleteAction && hasValidDeleteStructure(params)) {
                     // AI返回了有效的删除参数，直接使用
-                    log.info("使用AI返回的有效删除参数: {}", params);
+                    log.info("使用 AI 返回的有效删除参数：fields={}", params.keySet());
                     deleteResult = handleDeleteOperation(params);
                 } else {
                     // AI没有返回有效的删除参数，从用户查询中重建
                     Map<String, Object> deleteParams = createDeleteParamsFromUserQuery(userQuery);
-                    log.info("从用户查询重构删除参数: {}", deleteParams);
+                    log.info("已从用户查询重构删除参数：fields={}", deleteParams.keySet());
                     deleteResult = handleDeleteOperation(deleteParams);
                 }
                 
@@ -398,7 +400,7 @@ public class StudentQueryAgentService {
     private Map<String, Object> handleDeleteOperation(Map<String, Object> params) {
         Map<String, Object> result = new HashMap<>();
         try {
-            log.info("开始处理删除操作，参数: {}", params);
+            log.info("开始处理删除操作：fields={}", params.keySet());
             
             // 检查是否有单个ID删除
             if (params.containsKey("id")) {
@@ -567,7 +569,8 @@ public class StudentQueryAgentService {
         Map<String, Object> params = new HashMap<>();
         
         try {
-            log.debug("开始解析AI响应: {}", aiResponse);
+            log.debug("开始解析 AI 响应：length={}",
+                    aiResponse != null ? aiResponse.length() : 0);
             
             // 首先尝试解析JSON格式响应
             if (aiResponse.trim().startsWith("{") && aiResponse.trim().endsWith("}")) {
@@ -591,7 +594,7 @@ public class StudentQueryAgentService {
                     // 使用简单的正则表达式提取JSON字段值
                     extractJSONFields(aiResponse, params);
                     if (!params.isEmpty()) {
-                        log.debug("从JSON响应中提取的参数: {}", params);
+                        log.debug("从 JSON 响应中提取参数：fields={}", params.keySet());
                         return params;
                     }
                 } catch (Exception e) {
@@ -623,7 +626,7 @@ public class StudentQueryAgentService {
             // 提取激活状态
             extractActiveStatus(aiResponse, lowerCaseResponse, params);
             
-            log.debug("最终提取的查询参数: {}", params);
+            log.debug("最终提取查询参数：fields={}", params.keySet());
         } catch (Exception e) {
             log.error("解析AI响应失败: {}", e.getMessage(), e);
         }

@@ -27,10 +27,11 @@ interface InterviewCreateData {
   positionName: string
   companyId: number
   companyName: string
-  interviewTime: string
-  interviewLocation: string
+  interviewTime?: string
+  interviewLocation?: string
   interviewMethod: string
   status: string
+  directHire?: boolean
 }
 
 // 面试状态更新消息类型
@@ -38,6 +39,7 @@ interface InterviewStatusUpdateData {
   interviewId: number
   status: string
   statusText: string
+  directHire?: boolean
 }
 
 // AI分析结果消息类型
@@ -51,11 +53,12 @@ interface AIAnalysisResultData {
 // 学生申请状态更新消息类型
 export interface ApplicationStatusUpdateData {
   studentId: number
-  studentName: string
+  studentName?: string
   positionName: string
   companyName: string
   status: string
   statusText: string
+  directHire?: boolean
 }
 
 // 企业待办更新消息类型
@@ -81,6 +84,12 @@ export interface GradePublishedData {
   message: string
 }
 
+// 学生首页最近动态更新
+export interface StudentRecentActivityChangedData {
+  activityId?: number
+  eventId?: number
+}
+
 // 新申请消息类型
 interface NewApplicationData {
   studentName: string
@@ -99,6 +108,14 @@ const applicationStatusUpdateListeners: Array<(data: ApplicationStatusUpdateData
 const confirmationResultUpdateListeners: Array<(data: ConfirmationResultUpdateData) => void> = []
 const teacherTodoUpdateListeners: Array<(data: TeacherTodoUpdateData) => void> = []
 const gradePublishedListeners: Array<(data: GradePublishedData) => void> = []
+const studentRecentActivityChangedListeners: Array<(data: StudentRecentActivityChangedData) => void> = []
+
+// 实习状态更新消息类型
+export interface InternshipStatusUpdateData {
+  currentStatus: number
+}
+const internshipStatusUpdateListeners: Array<(data: InternshipStatusUpdateData) => void> = []
+
 type ErrorHandler = (error: Event) => void
 
 interface WebSocketOptions {
@@ -148,8 +165,9 @@ class WebSocketClient {
 
     try {
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-      // 开发环境直连后端端口，避免 Vite WS 代理转发问题
-      const host = import.meta.env.DEV ? 'localhost:8080' : window.location.host
+      // 同源连接：开发环境由 vite 将 /ws 代理到实际后端，Cookie 域与页面一致；
+      // 生产构建由后端自身提供页面，同源即后端。避免写死后端端口导致异机/模拟器连不上。
+      const host = window.location.host
       const fullUrl = `${protocol}//${host}${this.options.url}`
       
       // 通过 Cookie 传递 Token，避免出现在 URL 和服务器日志中
@@ -434,6 +452,26 @@ export function initAnnouncementWebSocket(
           }
         })
         onMessage(data)
+      } else if (data.type === 'internship_status_update' && data.data) {
+        console.log('[WebSocket] 收到实习状态更新:', data.data)
+        internshipStatusUpdateListeners.forEach(callback => {
+          try {
+            callback(data.data as InternshipStatusUpdateData)
+          } catch (e) {
+            console.error('[WebSocket] 实习状态更新监听器执行失败:', e)
+          }
+        })
+        onMessage(data)
+      } else if (data.type === 'student_recent_activity_changed') {
+        logger.log('[WebSocket] 收到学生最近动态更新:', data.data)
+        studentRecentActivityChangedListeners.forEach(callback => {
+          try {
+            callback((data.data || {}) as StudentRecentActivityChangedData)
+          } catch (e) {
+            logger.error('[WebSocket] 学生最近动态监听器执行失败:', e)
+          }
+        })
+        onMessage(data)
       } else {
         onMessage(data)
       }
@@ -626,6 +664,36 @@ export function offGradePublished(callback: (data: GradePublishedData) => void):
   const index = gradePublishedListeners.indexOf(callback)
   if (index > -1) {
     gradePublishedListeners.splice(index, 1)
+  }
+}
+
+export function onInternshipStatusUpdate(callback: (data: InternshipStatusUpdateData) => void): void {
+  if (!internshipStatusUpdateListeners.includes(callback)) {
+    internshipStatusUpdateListeners.push(callback)
+  }
+}
+
+export function offInternshipStatusUpdate(callback: (data: InternshipStatusUpdateData) => void): void {
+  const index = internshipStatusUpdateListeners.indexOf(callback)
+  if (index > -1) {
+    internshipStatusUpdateListeners.splice(index, 1)
+  }
+}
+
+export function onStudentRecentActivityChanged(
+  callback: (data: StudentRecentActivityChangedData) => void
+): void {
+  if (!studentRecentActivityChangedListeners.includes(callback)) {
+    studentRecentActivityChangedListeners.push(callback)
+  }
+}
+
+export function offStudentRecentActivityChanged(
+  callback: (data: StudentRecentActivityChangedData) => void
+): void {
+  const index = studentRecentActivityChangedListeners.indexOf(callback)
+  if (index > -1) {
+    studentRecentActivityChangedListeners.splice(index, 1)
   }
 }
 

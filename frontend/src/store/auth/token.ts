@@ -6,6 +6,7 @@ import { CONFIG, ERROR_MESSAGES } from './config'
 import { getRoleStoragePrefix, getRefreshTokenKey, getAccessTokenKey } from './storage'
 import logger from '@/utils/logger'
 import request from '@/utils/request'
+import type { ApiResult } from '@/utils/request'
 import { ElMessage } from 'element-plus'
 
 interface TokenPayload {
@@ -107,20 +108,20 @@ export function validateToken(token: string): boolean {
 /**
  * 刷新访问令牌
  */
-export async function refreshAccessToken(currentRole: string): Promise<string | null> {
+export async function refreshAccessToken(currentRole: string, tabRefreshToken?: string | null, onRefreshToken?: (token: string) => void): Promise<string | null> {
   if (!currentRole) {
     logger.error('无法刷新令牌：未找到当前角色')
     return null
   }
 
   const rolePrefix = getRoleStoragePrefix(currentRole)
-  let refreshToken = localStorage.getItem(getRefreshTokenKey(currentRole))
+  let refreshToken = tabRefreshToken === undefined ? localStorage.getItem(getRefreshTokenKey(currentRole)) : tabRefreshToken
 
-  if (!refreshToken) {
+  if (!refreshToken && tabRefreshToken === undefined) {
     refreshToken = localStorage.getItem(rolePrefix + 'refreshToken')
   }
 
-  if (!refreshToken) {
+  if (!refreshToken && tabRefreshToken === undefined) {
     refreshToken = localStorage.getItem('refreshToken')
   }
 
@@ -137,7 +138,7 @@ export async function refreshAccessToken(currentRole: string): Promise<string | 
   const forceRefresh = localStorage.getItem(rolePrefix + 'forceRefresh_' + currentRole) === 'true'
   const hasError = localStorage.getItem(rolePrefix + 'hasError_' + currentRole) === 'true'
 
-  if (!forceRefresh && !hasError && now - parseInt(lastRefreshTime) < minRefreshInterval) {
+  if (tabRefreshToken === undefined && !forceRefresh && !hasError && now - parseInt(lastRefreshTime) < minRefreshInterval) {
     logger.warn('跳过刷新，距离上次刷新时间过短:', currentRole)
     return localStorage.getItem(getAccessTokenKey(currentRole))
   }
@@ -155,15 +156,18 @@ export async function refreshAccessToken(currentRole: string): Promise<string | 
       refreshToken: refreshToken
     })
 
-    if (response && response.status === 200 && response.code === 200 && response.data) {
-      const newAccessToken = response.data.accessToken
-      const newRefreshToken = response.data.refreshToken
+    const envelope = response as ApiResult<unknown> & { status?: number }
+    const tokens = response.data as { accessToken?: string; refreshToken?: string } | null | undefined
+    if (response && response.code === 200 && tokens?.accessToken) {
+      const newAccessToken = tokens.accessToken
+      const newRefreshToken = tokens.refreshToken
 
       localStorage.setItem(getAccessTokenKey(currentRole), newAccessToken)
 
       if (newRefreshToken) {
         localStorage.setItem(getRefreshTokenKey(currentRole), newRefreshToken)
       }
+      onRefreshToken?.(newRefreshToken || refreshToken)
 
       localStorage.setItem(rolePrefix + 'lastRefreshTime_' + currentRole, now.toString())
       localStorage.setItem(rolePrefix + 'refreshAttempts_' + currentRole, '0')

@@ -23,4 +23,7 @@ public interface TeacherPermissionService {
     TeacherRole getRoleByRoleCode(String roleCode);
     List<Map<String, Object>> getPermissionTree();
     void assignPermissions(Long roleId, List<Long> permissionIds, Map<Long, Integer> sortOrderMap);
+
+    /** 判断指定权限码是否被授予给任意一类教师角色 */
+    boolean isPermissionGrantedToAnyTeacherRole(String permissionCode);
 }

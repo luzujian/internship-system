@@ -32,6 +32,11 @@ public interface StudentApplicationMapper {
      * @return 学生申请
      */
     StudentApplication findByIdForUpdate(Long id);
+
+    Long lockStudent(@Param("studentId") Long studentId);
+
+    StudentApplication findPendingByStudentAndTypeForUpdate(@Param("studentId") Long studentId,
+                                                            @Param("applicationType") String applicationType);
     
     /**
      * 根据学生ID查询申请列表
@@ -46,6 +51,8 @@ public interface StudentApplicationMapper {
      * @return 更新的记录数
      */
     int update(StudentApplication application);
+
+    int resetForResubmit(StudentApplication application);
     
     /**
      * 删除学生申请
@@ -71,7 +78,9 @@ public interface StudentApplicationMapper {
     List<StudentApplication> list(@Param("applicationType") String applicationType,
                                    @Param("status") String status,
                                    @Param("studentName") String studentName,
-                                   @Param("studentUserId") String studentUserId);
+                                   @Param("studentUserId") String studentUserId,
+                                   @Param("classIds") java.util.List<Long> classIds,
+                                   @Param("studentIds") java.util.List<Long> studentIds);
     
     /**
      * 根据ID列表查询学生申请
@@ -107,7 +116,8 @@ public interface StudentApplicationMapper {
      * @param status 申请状态
      * @return 申请数量
      */
-    int countByTypeAndStatus(@Param("applicationType") String applicationType, @Param("status") String status);
+    int countByTypeAndStatus(@Param("applicationType") String applicationType, @Param("status") String status,
+                             @Param("classIds") java.util.List<Long> classIds);
     
     /**
      * 根据状态查询申请数量

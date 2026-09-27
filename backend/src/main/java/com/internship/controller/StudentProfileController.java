@@ -1,5 +1,6 @@
 package com.internship.controller;
 
+import com.internship.anno.Log;
 import com.internship.entity.Result;
 import com.internship.entity.StudentArchive;
 import com.internship.entity.StudentUser;
@@ -65,6 +66,7 @@ public class StudentProfileController {
      * 上传简历
      */
     @PostMapping("/upload/resume")
+    @Log(operationType = "UPLOAD", module = "STUDENT_MANAGEMENT", description = "上传简历", riskLevel = "MEDIUM")
     public Result uploadResume(@RequestParam("file") MultipartFile file) {
         try {
             Long studentId = getCurrentStudentId();
@@ -134,6 +136,7 @@ public class StudentProfileController {
      * 上传证书
      */
     @PostMapping("/upload/certificate")
+    @Log(operationType = "UPLOAD", module = "STUDENT_MANAGEMENT", description = "上传证书", riskLevel = "MEDIUM")
     public Result uploadCertificate(@RequestParam("file") MultipartFile file) {
         try {
             Long studentId = getCurrentStudentId();
@@ -198,6 +201,7 @@ public class StudentProfileController {
      * 上传头像
      */
     @PostMapping("/upload/avatar")
+    @Log(operationType = "UPLOAD", module = "STUDENT_MANAGEMENT", description = "上传头像", riskLevel = "LOW")
     public Result uploadAvatar(@RequestParam("file") MultipartFile file) {
         try {
             Long studentId = getCurrentStudentId();
@@ -211,7 +215,15 @@ public class StudentProfileController {
 
             // 验证文件类型（只允许图片）
             String contentType = file.getContentType();
-            if (contentType == null || !contentType.startsWith("image/")) {
+            String extension = switch (contentType == null ? "" : contentType) {
+                case "image/jpeg", "image/jpg" -> "jpg";
+                case "image/png" -> "png";
+                case "image/gif" -> "gif";
+                case "image/webp" -> "webp";
+                case "image/bmp" -> "bmp";
+                default -> null;
+            };
+            if (extension == null) {
                 return Result.error("头像只支持图片格式");
             }
 
@@ -221,15 +233,14 @@ public class StudentProfileController {
             }
 
             // 上传到 OSS
-            String originalFilename = file.getOriginalFilename();
-            String fileExtension = getFileExtension(originalFilename);
-            if (fileExtension.isEmpty()) {
-                fileExtension = "jpg";
+            byte[] content = file.getBytes();
+            if (!matchesAvatarSignature(content, contentType)) {
+                return Result.error("头像内容格式不正确");
             }
             String datePath = new java.text.SimpleDateFormat("yyyy/MM/dd").format(new Date());
-            String fileName = UUID.randomUUID().toString() + "." + fileExtension;
+            String fileName = UUID.randomUUID().toString() + "." + extension;
             String objectName = "student/avatar/" + studentId + "/" + datePath + "/" + fileName;
-            String fileUrl = aliyunOSSOperator.uploadWithObjectName(file.getBytes(), objectName);
+            String fileUrl = aliyunOSSOperator.uploadPublicMediaWithObjectName(content, objectName);
 
             log.info("头像上传成功：studentId={}, url={}", studentId, fileUrl);
 
@@ -258,6 +269,66 @@ public class StudentProfileController {
         } catch (Exception e) {
             log.error("头像上传异常：{}", e.getMessage(), e);
             return Result.error("头像上传异常");
+        }
+    }
+
+    private boolean matchesAvatarSignature(byte[] bytes, String contentType) {
+        if (bytes.length < 4) return false;
+        return switch (contentType) {
+            case "image/jpeg", "image/jpg" -> (bytes[0] & 0xff) == 0xff
+                    && (bytes[1] & 0xff) == 0xd8 && (bytes[2] & 0xff) == 0xff;
+            case "image/png" -> bytes.length >= 8 && (bytes[0] & 0xff) == 0x89
+                    && bytes[1] == 'P' && bytes[2] == 'N' && bytes[3] == 'G'
+                    && bytes[4] == 13 && bytes[5] == 10 && bytes[6] == 26 && bytes[7] == 10;
+            case "image/gif" -> bytes.length >= 6 && bytes[0] == 'G' && bytes[1] == 'I'
+                    && bytes[2] == 'F' && bytes[3] == '8' && (bytes[4] == '7' || bytes[4] == '9') && bytes[5] == 'a';
+            case "image/bmp" -> bytes[0] == 'B' && bytes[1] == 'M';
+            case "image/webp" -> bytes.length >= 12 && bytes[0] == 'R' && bytes[1] == 'I'
+                    && bytes[2] == 'F' && bytes[3] == 'F' && bytes[8] == 'W'
+                    && bytes[9] == 'E' && bytes[10] == 'B' && bytes[11] == 'P';
+            default -> false;
+        };
+    }
+
+    /**
+     * 绑定/更换手机号和邮箱（直接更新，无需验证码）
+     * phone、email 至少传一个；传空或缺失的字段保持不变
+     */
+    @PostMapping("/bind-phone")
+    @Log(operationType = "UPDATE", module = "STUDENT_MANAGEMENT", description = "绑定手机号和邮箱", riskLevel = "MEDIUM")
+    public Result bindPhone(@RequestBody Map<String, String> request) {
+        try {
+            Long studentId = getCurrentStudentId();
+            if (studentId == null) {
+                return Result.error("请先登录");
+            }
+            String phone = request.get("phone") == null ? "" : request.get("phone").trim();
+            String email = request.get("email") == null ? "" : request.get("email").trim();
+            if (phone.isEmpty() && email.isEmpty()) {
+                return Result.error("手机号和邮箱不能同时为空");
+            }
+            if (!phone.isEmpty() && !phone.matches("^1[3-9]\\d{9}$")) {
+                return Result.error("请输入正确的手机号码");
+            }
+            if (!email.isEmpty() && !email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$")) {
+                return Result.error("邮箱格式不正确");
+            }
+            StudentUser studentUser = studentUserService.findById(studentId);
+            if (studentUser == null) {
+                return Result.error("用户不存在");
+            }
+            if (!phone.isEmpty()) {
+                studentUser.setPhone(phone);
+            }
+            if (!email.isEmpty()) {
+                studentUser.setEmail(email);
+            }
+            studentUserService.update(studentUser);
+            log.info("学生 {} 更新手机号和邮箱成功", studentUser.getStudentId());
+            return Result.success("绑定成功");
+        } catch (Exception e) {
+            log.error("绑定失败: {}", e.getMessage(), e);
+            return Result.error("绑定失败");
         }
     }
 
@@ -331,6 +402,7 @@ public class StudentProfileController {
      * 删除简历
      */
     @DeleteMapping("/resume/{id}")
+    @Log(operationType = "DELETE", module = "STUDENT_MANAGEMENT", description = "删除简历", riskLevel = "MEDIUM")
     public Result deleteResume(@PathVariable Long id) {
         try {
             Long studentId = getCurrentStudentId();
@@ -368,6 +440,7 @@ public class StudentProfileController {
      * 删除证书
      */
     @DeleteMapping("/certificate/{id}")
+    @Log(operationType = "DELETE", module = "STUDENT_MANAGEMENT", description = "删除证书", riskLevel = "MEDIUM")
     public Result deleteCertificate(@PathVariable Long id) {
         try {
             Long studentId = getCurrentStudentId();
@@ -404,6 +477,7 @@ public class StudentProfileController {
     /**
      * 预览简历
      */
+    @Log(operationType = "DOWNLOAD", module = "STUDENT_MANAGEMENT", description = "下载学生简历", riskLevel = "MEDIUM")
     @GetMapping("/download/resume/{id}")
     public ResponseEntity<byte[]> downloadResume(@PathVariable Long id) {
         try {
@@ -441,6 +515,7 @@ public class StudentProfileController {
     /**
      * 预览简历 - 仅返回文件内容供前端 blob 预览
      */
+    @Log(operationType = "READ", module = "STUDENT_MANAGEMENT", description = "预览学生简历（敏感读取）", riskLevel = "MEDIUM")
     @GetMapping("/preview/resume/{id}")
     public ResponseEntity<byte[]> previewResume(@PathVariable Long id) {
         try {
@@ -475,6 +550,7 @@ public class StudentProfileController {
     /**
      * 预览证书
      */
+    @Log(operationType = "DOWNLOAD", module = "STUDENT_MANAGEMENT", description = "下载学生证书", riskLevel = "MEDIUM")
     @GetMapping("/download/certificate/{id}")
     public ResponseEntity<byte[]> downloadCertificate(@PathVariable Long id) {
         try {

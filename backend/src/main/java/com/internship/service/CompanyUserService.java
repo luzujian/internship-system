@@ -26,6 +26,8 @@ public interface CompanyUserService {
     List<CompanyUser> findByIds(List<Long> ids);
     
     int batchDelete(List<Long> ids);
+
+    int resetAllPasswords();
     
     Long count();
     
@@ -36,7 +38,9 @@ public interface CompanyUserService {
     PageResult<CompanyUser> findPage(Integer page, Integer pageSize, String companyName, Integer status, Integer recallStatus);
     
     PageResult<CompanyUser> findPage(Integer page, Integer pageSize, String companyName, Integer status, Integer recallStatus, String companyTag);
-    
+
+    PageResult<CompanyUser> findPage(Integer page, Integer pageSize, String companyName, Integer status, Integer recallStatus, String companyTag, String industry);
+
     PageResult<CompanyUser> findPendingAuditPage(Integer page, Integer pageSize);
     
     PageResult<CompanyUser> findPendingAuditPage(Integer page, Integer pageSize, String companyName, String contactPerson, String contactPhone, Integer status);

@@ -1,0 +1,75 @@
+[
+  {
+    "value": "industry_incorrect",
+    "label": "所属行业填写有误，需要修改",
+    "fields": [{ "label": "所属行业", "fragment": "label=\"所属行业\"" }]
+  },
+  {
+    "value": "scale_incorrect",
+    "label": "企业规模填写有误，需要修改",
+    "fields": [{ "label": "企业规模", "fragment": "label=\"企业规模\"" }]
+  },
+  {
+    "value": "contact_person_incorrect",
+    "label": "联系人信息填写有误，需要修改",
+    "fields": [{ "label": "联系人", "fragment": "label=\"联系人\"" }]
+  },
+  {
+    "value": "contact_phone_incorrect",
+    "label": "联系电话填写有误，需要修改",
+    "fields": [{ "label": "联系电话", "fragment": "label=\"联系电话\"" }]
+  },
+  {
+    "value": "address_incomplete",
+    "label": "企业地址填写有误或不完整，需要修改",
+    "fields": [{ "label": "企业地址", "fragment": "label=\"企业地址\"" }]
+  },
+  {
+    "value": "contact_email_incorrect",
+    "label": "联系邮箱填写有误，需要修改",
+    "fields": [{ "label": "联系邮箱", "fragment": "label=\"联系邮箱\"" }]
+  },
+  {
+    "value": "personal_email_incorrect",
+    "label": "个人邮箱填写有误，需要修改",
+    "fields": [{ "label": "个人邮箱", "fragment": "label=\"个人邮箱\"" }]
+  },
+  {
+    "value": "website_incorrect",
+    "label": "企业网站填写有误，需要修改",
+    "fields": [{ "label": "企业网站", "fragment": "label=\"企业网站\"" }]
+  },
+  {
+    "value": "introduction_incomplete",
+    "label": "企业简介填写不完整或需要更新",
+    "fields": [{ "label": "企业简介", "fragment": "label=\"企业简介\"" }]
+  },
+  {
+    "value": "internship_base_incorrect",
+    "label": "挂牌实习基地选择有误，需要修改",
+    "fields": [{ "label": "挂牌实习基地", "fragment": "label=\"挂牌实习基地\"" }]
+  },
+  {
+    "value": "accept_backup_incorrect",
+    "label": "接受兜底选择有误，需要修改",
+    "fields": [{ "label": "接受兜底", "fragment": "label=\"接受兜底\"" }]
+  },
+  {
+    "value": "alumni_unit_incorrect",
+    "label": "校友单位及校友信息填写有误，需要修改",
+    "fields": [
+      { "label": "是否校友单位", "fragment": "label=\"是否校友单位\"" },
+      { "label": "校友信息", "fragment": "label=\"校友信息\"" }
+    ]
+  },
+  {
+    "value": "training_base_agreement_incorrect",
+    "label": "实训基地协议选择有误，需要修改",
+    "fields": [{ "label": "是否与学校签署实训基地的协议", "fragment": "实训基地的协议" }]
+  },
+  {
+    "value": "other",
+    "label": "其他注册表单信息需要修改",
+    "fields": []
+  }
+]

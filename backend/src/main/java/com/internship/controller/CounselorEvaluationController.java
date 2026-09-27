@@ -3,11 +3,13 @@ package com.internship.controller;
 import com.internship.anno.Log;
 import com.internship.entity.Result;
 import com.internship.entity.StudentReflectionEvaluation;
+import com.internship.service.EvaluationAccessPolicy;
 import com.internship.service.StudentReflectionEvaluationService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
@@ -22,17 +24,24 @@ public class CounselorEvaluationController {
     @Autowired
     private StudentReflectionEvaluationService studentReflectionEvaluationService;
 
+    @Autowired
+    private EvaluationAccessPolicy evaluationAccessPolicy;
+
     @GetMapping("/reflection/{reflectionId}")
     @PreAuthorize("hasAnyRole('TEACHER_COUNSELOR', 'ADMIN')")
     @Log(module = "COUNSELOR_EVALUATION", operationType = "SELECT", description = "获取实习心得评分")
     public Result getEvaluationByReflectionId(@PathVariable Long reflectionId) {
         log.info("获取实习心得评分，心得ID: {}", reflectionId);
+        evaluationAccessPolicy.requireReflection(reflectionId, null, false);
         try {
             StudentReflectionEvaluation evaluation = studentReflectionEvaluationService.findByReflectionId(reflectionId);
             if (evaluation == null) {
                 return Result.success(null);
             }
+            evaluationAccessPolicy.requireEvaluation(evaluation, false);
             return Result.success(evaluation);
+        } catch (AccessDeniedException e) {
+            throw e;
         } catch (Exception e) {
             log.error("获取评分失败: {}", e.getMessage());
             return Result.error("获取评分失败: " + e.getMessage());
@@ -44,12 +53,16 @@ public class CounselorEvaluationController {
     @Log(module = "COUNSELOR_EVALUATION", operationType = "SELECT", description = "获取学生评分")
     public Result getEvaluationByStudentId(@PathVariable Long studentId) {
         log.info("获取学生评分，学生ID: {}", studentId);
+        evaluationAccessPolicy.requireStudent(studentId, false);
         try {
             StudentReflectionEvaluation evaluation = studentReflectionEvaluationService.findByStudentId(studentId);
             if (evaluation == null) {
                 return Result.success(null);
             }
+            evaluationAccessPolicy.requireEvaluation(evaluation, false);
             return Result.success(evaluation);
+        } catch (AccessDeniedException e) {
+            throw e;
         } catch (Exception e) {
             log.error("获取评分失败: {}", e.getMessage());
             return Result.error("获取评分失败: " + e.getMessage());
@@ -63,7 +76,7 @@ public class CounselorEvaluationController {
         log.info("获取辅导员所有评分，辅导员ID: {}", counselorId);
         try {
             List<StudentReflectionEvaluation> evaluations = studentReflectionEvaluationService.findByCounselorId(counselorId);
-            return Result.success(evaluations);
+            return Result.success(evaluationAccessPolicy.readableEvaluations(evaluations));
         } catch (Exception e) {
             log.error("获取评分列表失败: {}", e.getMessage());
             return Result.error("获取评分列表失败: " + e.getMessage());
@@ -74,7 +87,7 @@ public class CounselorEvaluationController {
     @PreAuthorize("hasAnyRole('TEACHER_COUNSELOR', 'ADMIN')")
     @Log(module = "COUNSELOR_EVALUATION", operationType = "INSERT", description = "保存评分")
     public Result saveEvaluation(@RequestBody Map<String, Object> params) {
-        log.info("保存评分，参数: {}", params);
+        log.info("收到辅导员评分保存请求");
         try {
             Long reflectionId = Long.parseLong(params.get("reflectionId").toString());
             Long counselorId = Long.parseLong(params.get("counselorId").toString());
@@ -82,12 +95,17 @@ public class CounselorEvaluationController {
             String grade = params.get("grade").toString();
             String scoreDetails = params.get("scoreDetails").toString();
 
+            Long studentId = evaluationAccessPolicy.requireReflection(reflectionId, null, false);
+            Long evaluatorId = evaluationAccessPolicy.evaluatorId(counselorId);
+
             StudentReflectionEvaluation evaluation = studentReflectionEvaluationService.findByReflectionId(reflectionId);
+            if (evaluation != null) evaluationAccessPolicy.requireEvaluation(evaluation, false);
             
             if (evaluation == null) {
                 evaluation = new StudentReflectionEvaluation();
                 evaluation.setReflectionId(reflectionId);
-                evaluation.setCounselorId(counselorId);
+                evaluation.setStudentId(studentId);
+                evaluation.setCounselorId(evaluatorId);
             }
 
             evaluation.setTotalScore(java.math.BigDecimal.valueOf(totalScore));
@@ -106,6 +124,8 @@ public class CounselorEvaluationController {
                 return Result.success("评分保存成功", evaluation);
             }
             return Result.error("评分保存失败");
+        } catch (AccessDeniedException e) {
+            throw e;
         } catch (Exception e) {
             log.error("保存评分失败: {}", e.getMessage());
             return Result.error("保存评分失败: " + e.getMessage());
@@ -122,6 +142,7 @@ public class CounselorEvaluationController {
             if (evaluation == null) {
                 return Result.error("评分记录不存在");
             }
+            evaluationAccessPolicy.requireEvaluation(evaluation, false);
 
             if (params.containsKey("totalScore")) {
                 evaluation.setTotalScore(java.math.BigDecimal.valueOf(Double.parseDouble(params.get("totalScore").toString())));
@@ -139,6 +160,8 @@ public class CounselorEvaluationController {
                 return Result.success("评分更新成功", evaluation);
             }
             return Result.error("评分更新失败");
+        } catch (AccessDeniedException e) {
+            throw e;
         } catch (Exception e) {
             log.error("更新评分失败: {}", e.getMessage());
             return Result.error("更新评分失败: " + e.getMessage());
@@ -150,6 +173,7 @@ public class CounselorEvaluationController {
     @Log(module = "COUNSELOR_EVALUATION", operationType = "DELETE", description = "删除评分")
     public Result deleteEvaluation(@PathVariable Long id) {
         log.info("删除评分，ID: {}", id);
+        evaluationAccessPolicy.requireEvaluation(studentReflectionEvaluationService.findById(id), false);
         try {
             int result = studentReflectionEvaluationService.deleteById(id);
             if (result > 0) {

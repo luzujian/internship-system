@@ -17,7 +17,6 @@
         <div v-for="announcement in announcements" :key="announcement.id" class="announcement-item" @click="viewAnnouncement(announcement)">
           <div class="announcement-header">
             <div class="announcement-title">
-              <el-tag v-if="announcement.priority === 'important'" type="warning" size="small" class="priority-tag">重要</el-tag>
               <span class="title-text">{{ announcement.title }}</span>
             </div>
             <div class="announcement-meta">
@@ -54,7 +53,7 @@
           <span class="meta-item">阅读次数: {{ currentAnnouncement.readCount || 0 }}</span>
         </div>
         <el-divider />
-        <div class="detail-content" v-html="currentAnnouncement.content"></div>
+        <div class="detail-content" v-html="sanitizeHTML(currentAnnouncement.content)"></div>
         <div v-if="currentAnnouncement.attachments && parseAttachments(currentAnnouncement.attachments).length > 0" class="attachments-section">
           <el-divider></el-divider>
           <div class="attachments-title">
@@ -85,6 +84,7 @@
       v-model="filePreviewVisible"
       :file-url="currentFileUrl"
       :file-name="currentFileName"
+      :authorized-url="currentAuthorizedUrl"
     />
   </div>
 </template>
@@ -93,13 +93,39 @@
 import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Refresh, Document, Paperclip, ZoomIn } from '@element-plus/icons-vue'
-import { getAnnouncementsForUser, createAnnouncementReadRecord } from '@/api/announcement'
+import { getAnnouncementsForUser, markAnnouncementRead } from '@/api/announcement'
 import { useAuthStore } from '@/store/auth'
 import FilePreviewDialog from '@/components/FilePreviewDialog.vue'
+import { announcementAttachmentByteUrl } from '@/utils/authorizedFileUrl'
+import { downloadAuthorizedFile } from '@/utils/authorizedFileDownload'
+import { sanitizeHTML } from '@/utils/sanitize'
 
 const authStore = useAuthStore()
 const loading = ref(false)
-const announcements = ref([])
+interface StudentAnnouncementRow {
+  id?: number
+  title?: string
+  content?: string
+  publisher?: string
+  publisherId?: number | string
+  publisherName?: string
+  publisherRole?: string
+  publishTime?: string
+  publish_time?: string
+  readCount?: number
+  isRead?: boolean
+  targetType?: string
+  targetValue?: string
+  attachments?: string | string[]
+  [key: string]: unknown
+}
+interface AnnouncementListInner {
+  code?: number
+  message?: string
+  msg?: string
+  data?: StudentAnnouncementRow[]
+}
+const announcements = ref<StudentAnnouncementRow[]>([])
 const viewDialogVisible = ref(false)
 const currentAnnouncement = ref(null)
 
@@ -107,6 +133,7 @@ const currentAnnouncement = ref(null)
 const filePreviewVisible = ref(false)
 const currentFileUrl = ref('')
 const currentFileName = ref('')
+const currentAuthorizedUrl = ref('')
 
 const getMajorId = () => {
   const user = authStore.user
@@ -118,9 +145,18 @@ const loadAnnouncements = async () => {
   loading.value = true
   try {
     const majorId = getMajorId()
-    const response = await getAnnouncementsForUser('STUDENT', majorId)
+    const userId = authStore.user?.id ? String(authStore.user.id) : undefined
+    const response = await getAnnouncementsForUser('STUDENT', majorId, userId)
     if (response && response.code === 200) {
-      announcements.value = response.data || []
+      const outerData: unknown = response.data
+      if (Array.isArray(outerData)) {
+        announcements.value = outerData as StudentAnnouncementRow[]
+      } else if (outerData !== null && typeof outerData === 'object' && 'data' in outerData) {
+        const inner = (outerData as AnnouncementListInner).data
+        announcements.value = Array.isArray(inner) ? inner : []
+      } else {
+        announcements.value = []
+      }
     } else {
       ElMessage.error(response?.message || '获取公告失败')
     }
@@ -140,12 +176,9 @@ const viewAnnouncement = async (announcement) => {
   currentAnnouncement.value = announcement
   
   try {
-    await createAnnouncementReadRecord({
-      announcementId: announcement.id,
-      userId: authStore.user?.id ? parseInt(String(authStore.user.id)) : 0,
-      userRole: 'STUDENT'
-    })
+    await markAnnouncementRead(Number(announcement.id))
     announcement.isRead = true
+    announcement.readCount = (announcement.readCount || 0) + 1
   } catch (error) {
     console.error('记录阅读状态失败:', error)
   }
@@ -177,29 +210,29 @@ const parseAttachments = (attachments) => {
   }
 }
 
-const downloadAttachment = (attachment) => {
-  if (!attachment.url) {
-    ElMessage.error('附件地址不存在')
+const downloadAttachment = async (attachment) => {
+  const authorizedUrl = announcementAttachmentByteUrl(currentAnnouncement.value?.id, attachment?.name)
+  if (!authorizedUrl) {
+    ElMessage.error('公告附件记录不完整')
     return
   }
-
-  const link = document.createElement('a')
-  link.href = attachment.url
-  link.download = attachment.name || '附件'
-  link.target = '_blank'
-  document.body.appendChild(link)
-  link.click()
-  document.body.removeChild(link)
+  try {
+    await downloadAuthorizedFile(authorizedUrl, attachment.name)
+  } catch (error) {
+    ElMessage.error('下载失败，请检查权限')
+  }
 }
 
 // 预览文件
 const previewFile = (attachment) => {
-  if (!attachment.url) {
-    ElMessage.error('附件地址不存在')
+  const authorizedUrl = announcementAttachmentByteUrl(currentAnnouncement.value?.id, attachment?.name)
+  if (!authorizedUrl) {
+    ElMessage.error('公告附件记录不完整')
     return
   }
-  currentFileUrl.value = attachment.url
+  currentFileUrl.value = typeof attachment.url === 'string' ? attachment.url : ''
   currentFileName.value = attachment.name
+  currentAuthorizedUrl.value = authorizedUrl
   filePreviewVisible.value = true
 }
 
@@ -312,10 +345,6 @@ onMounted(() => {
   align-items: center;
   gap: 8px;
   flex: 1;
-}
-
-.priority-tag {
-  flex-shrink: 0;
 }
 
 .title-text {

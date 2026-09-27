@@ -90,21 +90,23 @@
               <el-table-column label="操作" width="270" fixed="right" align="center">
                 <template #default="{ row }">
                   <div class="action-buttons">
-                    <el-tooltip v-if="authStore.hasPermission('backup:view')" content="下载备份文件" placement="top">
-                      <el-button type="primary" size="small" @click="handleDownload(row)" class="table-btn download">
-                        <el-icon><Download /></el-icon>
-                      </el-button>
-                    </el-tooltip>
-                    <el-tooltip v-if="authStore.hasPermission('backup:restore')" content="恢复数据" placement="top">
-                      <el-button type="warning" size="small" @click="handleRestore(row)" class="table-btn restore">
-                        <el-icon><Refresh /></el-icon>
-                      </el-button>
-                    </el-tooltip>
-                    <el-tooltip v-if="authStore.hasPermission('backup:delete')" content="删除备份" placement="top">
-                      <el-button type="danger" size="small" @click="handleDelete(row)" class="table-btn delete">
-                        <el-icon><Delete /></el-icon>
-                      </el-button>
-                    </el-tooltip>
+                    <MobileMoreActions>
+                      <el-tooltip v-if="authStore.hasPermission('backup:view')" content="下载备份文件" placement="top">
+                        <el-button type="primary" size="small" @click="handleDownload(row)" class="table-btn download">
+                          <el-icon><Download /></el-icon>
+                        </el-button>
+                      </el-tooltip>
+                      <el-tooltip v-if="authStore.hasPermission('backup:restore')" content="恢复数据" placement="top">
+                        <el-button type="warning" size="small" @click="handleRestore(row)" class="table-btn restore">
+                          <el-icon><Refresh /></el-icon>
+                        </el-button>
+                      </el-tooltip>
+                      <el-tooltip v-if="authStore.hasPermission('backup:delete')" content="删除备份" placement="top">
+                        <el-button type="danger" size="small" @click="handleDelete(row)" class="table-btn delete">
+                          <el-icon><Delete /></el-icon>
+                        </el-button>
+                      </el-tooltip>
+                    </MobileMoreActions>
                   </div>
                 </template>
               </el-table-column>
@@ -119,7 +121,7 @@
               <p class="schedule-description">配置系统自动备份策略</p>
             </div>
             
-            <el-form :model="scheduleForm" label-width="150px" class="schedule-form">
+            <el-form ref="scheduleFormRef" :model="scheduleForm" label-width="150px" class="schedule-form">
               <el-form-item label="启用自动备份">
                 <el-switch v-model="scheduleForm.enabled" class="schedule-switch" />
               </el-form-item>
@@ -156,11 +158,30 @@
 
 <script lang="ts" setup>
 import logger from '@/utils/logger'
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Download, Clock, Refresh, Delete } from '@element-plus/icons-vue'
 import request from '@/utils/request'
+import MobileMoreActions from '../../components/MobileMoreActions.vue'
 import { useAuthStore } from '@/store/auth'
+import type { FormFieldDescriptor } from '@/agent/types'
+import { useFormContext } from '@/agent/formContext'
+
+interface BackupRecordRow {
+  id?: number | string
+  backupName?: string
+  backup_name?: string
+  createTime?: string
+  [key: string]: unknown
+}
+interface BackupScheduleRow {
+  enabled?: boolean
+  frequency?: string
+  time?: string
+  retentionDays?: number
+  retention_days?: number
+  [key: string]: unknown
+}
 
 const authStore = useAuthStore()
 
@@ -169,7 +190,7 @@ const loading = ref(false)
 const backingUp = ref(false)
 const restoring = ref(false)
 const saving = ref(false)
-const backupRecords = ref([])
+const backupRecords = ref<BackupRecordRow[]>([])
 
 const showProgress = ref(false)
 const progressTitle = ref('')
@@ -184,6 +205,21 @@ const scheduleForm = ref({
   time: null,
   retentionDays: 30
 })
+
+// ===== 智能填表：备份计划页面表单（页面级常驻；启用开关 switch 与备份时间 timepicker 需手动设置，不声明） =====
+const formContext = useFormContext()
+const scheduleFormRef = ref(null)
+const scheduleFillFields: FormFieldDescriptor[] = [
+  { prop: 'frequency', label: '备份频率', type: 'select', required: true,
+    options: [
+      { label: '每天', value: 'daily' },
+      { label: '每周', value: 'weekly' },
+      { label: '每月', value: 'monthly' }
+    ],
+    patternHint: '启用开关与备份时间需手动设置' },
+  { prop: 'retentionDays', label: '保留天数', type: 'number', valueType: 'number' }
+]
+onUnmounted(() => formContext.unregister('admin:backup'))
 
 const startProgress = (title, tip) => {
   showProgress.value = true
@@ -226,9 +262,9 @@ const completeProgress = (success, message) => {
 const fetchBackupRecords = async () => {
   loading.value = true
   try {
-    const response = await request.get('/admin/backup/records')
+    const response = await request.get<BackupRecordRow[]>('/admin/backup/records')
     if (response.code === 200) {
-      backupRecords.value = response.data || []
+      backupRecords.value = Array.isArray(response.data) ? response.data : []
     } else {
       ElMessage.error(response.message || '获取备份记录失败')
     }
@@ -274,11 +310,12 @@ const handleManualBackup = async () => {
 
 const handleDownload = async (row) => {
   try {
-    const blob = await request.get(`/admin/backup/download/${row.id}`, {
+    const rawBlob = await request.get<Blob>(`/admin/backup/download/${row.id}`, {
       responseType: 'blob'
-    })
+    }) as unknown as Blob
+    const blobForUrl: Blob = rawBlob
     
-    const url = window.URL.createObjectURL(blob)
+    const url = window.URL.createObjectURL(blobForUrl)
     const link = document.createElement('a')
     link.href = url
     link.download = row.backupName
@@ -357,14 +394,17 @@ const handleDelete = async (row) => {
 
 const loadSchedule = async () => {
   try {
-    const response = await request.get('/admin/backup/schedule')
+    const response = await request.get<BackupScheduleRow>('/admin/backup/schedule')
     if (response.code === 200) {
       const data = response.data
-      scheduleForm.value = {
-        enabled: data.enabled,
-        frequency: data.frequency,
-        time: data.time ? parseTime(data.time) : null,
-        retentionDays: data.retentionDays
+      if (data !== null && typeof data === 'object') {
+        const scheduleData = data as BackupScheduleRow
+        scheduleForm.value = {
+          enabled: scheduleData.enabled ?? false,
+          frequency: scheduleData.frequency ?? 'daily',
+          time: scheduleData.time ? parseTime(scheduleData.time) : null,
+          retentionDays: scheduleData.retentionDays ?? scheduleData.retention_days ?? 30
+        }
       }
     }
   } catch (error) {
@@ -394,8 +434,10 @@ const saveSchedule = async () => {
       ...scheduleForm.value,
       time: formatTime(scheduleForm.value.time)
     }
+    const operation = formContext.beginFormOperation('admin:backup')
     const response = await request.put('/admin/backup/schedule', data)
     if (response.code === 200) {
+      operation.complete({ status: 'saved', label: '自动备份配置已保存', url: '/admin/backup' })
       ElMessage.success('保存成功')
     } else {
       ElMessage.error(response.message || '保存失败')
@@ -439,6 +481,14 @@ const formatTableList = (tableList) => {
 onMounted(() => {
   fetchBackupRecords()
   loadSchedule()
+  // 智能填表：备份计划表单注册到 AI 侧栏（只写响应式 model，不触发提交）
+  formContext.register({
+    formId: 'admin:backup',
+    title: '自动备份配置',
+    fields: scheduleFillFields,
+    getModel: () => scheduleForm.value,
+    getFormEl: () => scheduleFormRef.value
+  })
 })
 </script>
 

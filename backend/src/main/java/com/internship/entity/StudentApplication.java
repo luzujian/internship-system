@@ -35,14 +35,22 @@ public class StudentApplication {
     private String reason;
     
     private String company; // 自主实习申请：实习单位
-    
+
+    private String positionName; // 自主实习申请：实习岗位
+
+    private String companyCity; // 自主实习申请：单位所在城市
+
+    private String hrManagerName; // 自主实习申请：人事经理姓名
+
+    private String hrManagerPhone; // 自主实习申请：人事经理联系电话
+
     private String oldCompany; // 单位变更申请：原实习单位
     
     private String newCompany; // 单位变更申请：新实习单位
     
     private Map<String, String> materials; // 申请材料，JSON格式存储
     
-    private String status; // pending-待审核, approved-已通过, rejected-已驳回
+    private String status; // pending-待审核, approved-已通过, rejected-已驳回, withdrawn-学生已撤回
     
     private String rejectReason; // 驳回理由
     
@@ -62,4 +70,8 @@ public class StudentApplication {
     
     // 关联对象
     private StudentUser student; // 学生信息
+
+    // 查询时动态计算字段（不落库）：自主实习单位是否命中系统内有效的校企合作企业
+    private Boolean cooperativeCompany;
+    private Long cooperativeCompanyId;
 }

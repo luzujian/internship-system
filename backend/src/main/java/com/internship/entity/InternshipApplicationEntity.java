@@ -29,4 +29,7 @@ public class InternshipApplicationEntity {
     private String phone;
     private String email;
     private String positionName;
+    private Integer stageNo;
+    private Long stageAssignmentId;
+    private String sourceType;
 }

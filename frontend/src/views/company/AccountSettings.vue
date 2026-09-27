@@ -1,7 +1,9 @@
 <script setup>
-import { ref, computed, onMounted, watch, nextTick } from 'vue'
+import { useAgentPageContext } from '@/agent/useAgentPageContext'
+import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useFormContext } from '@/agent/formContext'
 import { useAuthStore } from '@/store/auth'
 import CompanyService from '@/api/CompanyService'
 import request from '@/utils/request'
@@ -11,28 +13,24 @@ const route = useRoute()
 const authStore = useAuthStore()
 
 const activeTab = ref('profile')
+useAgentPageContext(() => ({ title: '账号设置', view: activeTab.value, object: null, filters: {} }))
 const loading = ref(false)
 
 // 行业选项映射
 const industryMap = {
-  'internet': '互联网/IT',
-  'finance': '金融',
-  'education': '教育',
-  'medical': '医疗',
-  'manufacturing': '制造业',
-  'service': '服务业',
-  'realestate': '房地产',
-  'energy': '能源',
-  'other': '其他'
+  'it': 'IT企业',
+  'medical_equipment': '医疗设备企业',
+  'hospital': '医院',
+  'other': '其它'
 }
 
 // 企业规模选项映射
 const scaleMap = {
-  '1-50': '1-50 人',
-  '51-100': '51-100 人',
-  '101-500': '101-500 人',
-  '501-1000': '501-1000 人',
-  '1000+': '1000 人以上'
+  '1-50': '1-50人',
+  '51-100': '51-100人',
+  '101-500': '101-500人',
+  '501-1000': '501-1000人',
+  '1000+': '1000人以上'
 }
 
 // 获取显示的行业名称
@@ -97,6 +95,8 @@ onMounted(async () => {
     }
   }
   await loadProfile()
+  // 智能填表：资料页注册到 AI 侧栏（只写响应式 model，不触发提交）
+  if (activeTab.value === 'profile') registerProfileForm()
 })
 
 const loadProfile = async () => {
@@ -137,6 +137,23 @@ const passwordForm = ref({
 })
 
 const passwordFormRef = ref(null)
+const passwordTabKey = ref(0)
+
+// ===== 智能填表：资料页签（页面级常驻；companyName/industry/scale 只读 disabled，不声明） =====
+const formContext = useFormContext()
+const profileFormRef = ref(null)
+const profileFillFields = [
+  { prop: 'username', label: '用户名', type: 'input' },
+  { prop: 'phone', label: '手机号', type: 'input' },
+  { prop: 'email', label: '邮箱', type: 'input' }
+]
+const registerProfileForm = () => formContext.register({
+  formId: 'company:account', title: '企业资料', fields: profileFillFields,
+  getModel: () => profileForm.value, getFormEl: () => profileFormRef.value,
+  getObject: () => authStore.user?.id ? { type: 'company', id: String(authStore.user.id) } : null,
+  getValidationSummary: () => ({ missingFields: [], validationErrors: profileForm.value.email && !/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(profileForm.value.email.trim()) ? ['邮箱格式不正确'] : [] }),
+})
+onUnmounted(() => formContext.unregister('company:account'))
 
 // 密码规则
 const passwordRulesData = ref({
@@ -208,6 +225,8 @@ const updatePasswordRules = () => {
 
 // 监听标签页变化，加载密码规则
 watch(activeTab, async (newVal) => {
+  if (newVal === 'profile') registerProfileForm()
+  else formContext.unregister('company:account')
   if (newVal === 'password') {
     passwordTabKey.value++
     passwordForm.value = {
@@ -224,6 +243,15 @@ watch(activeTab, async (newVal) => {
 })
 
 const handleSaveProfile = async () => {
+  if (loading.value) return
+  const fillInstance = formContext.currentForm.value?.instanceId
+  const savedValues = formContext.captureValues('company:account')
+  // 邮箱格式校验（直接保存、无验证码；为空表示未绑定，允许保存）
+  const email = (profileForm.value.email || '').trim()
+  if (email && !/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(email)) {
+    ElMessage.error('请输入正确的邮箱格式')
+    return
+  }
   loading.value = true
   try {
     const response = await CompanyService.updateProfile({
@@ -233,6 +261,7 @@ const handleSaveProfile = async () => {
     })
     if (response.code === 200) {
       ElMessage.success('个人信息保存成功')
+      formContext.reportFormOutcome('company:account', { status: 'saved', label: '企业账号资料已保存', url: '/company/settings' }, fillInstance, savedValues)
       // 更新store中的用户信息
       if (authStore.user) {
         authStore.user.username = profileForm.value.username
@@ -250,6 +279,13 @@ const handleSaveProfile = async () => {
 
 const handleChangePassword = async () => {
   if (!passwordFormRef.value) return
+
+  // 只允许绑定了邮箱的企业修改密码
+  if (!profileForm.value.email || !profileForm.value.email.trim()) {
+    ElMessage.warning('请先在个人信息中绑定邮箱后再修改密码')
+    activeTab.value = 'profile'
+    return
+  }
 
   // 清空之前的验证错误
   passwordFormRef.value.clearValidate()
@@ -357,7 +393,7 @@ const handleLogout = async () => {
     <el-tabs v-model="activeTab" class="settings-tabs" v-loading="loading">
       <el-tab-pane label="个人信息" name="profile">
         <div class="form-card">
-          <el-form :model="profileForm" label-width="120px" label-position="left">
+          <el-form ref="profileFormRef" :model="profileForm" label-width="120px" label-position="left">
             <el-form-item label="用户名">
               <el-input v-model="profileForm.username" placeholder="请输入用户名" />
             </el-form-item>
@@ -396,6 +432,7 @@ const handleLogout = async () => {
             ref="passwordFormRef"
             :model="passwordForm"
             :rules="passwordRules"
+            :validate-on-rule-change="false"
             label-width="120px"
             label-position="left"
           >

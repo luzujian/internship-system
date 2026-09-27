@@ -1,5 +1,6 @@
 package com.internship.service;
 
+import com.internship.agent.business.AgentResponseStandard;
 import com.internship.config.DynamicChatClientFactory;
 import com.internship.entity.LearningResource;
 import org.springframework.ai.chat.client.ChatClient;
@@ -29,7 +30,7 @@ public class EnhancedDeepSeekService {
     @Autowired
     private DynamicChatClientFactory chatClientFactory;
     
-    private static final String SYSTEM_PROMPT = "你是实习管理系统的资源助手，基于学习资源回答用户问题。";
+    private static final String SYSTEM_PROMPT = "你是实习管理系统的资源助手，基于学习资源回答用户问题。" + AgentResponseStandard.PROMPT;
 
     /**
      * 基于资源库的AI对话增强功能
@@ -170,7 +171,7 @@ public class EnhancedDeepSeekService {
         // 构建系统提示
         String systemPrompt = "你是一个基于实习管理系统的智能助手。请利用提供的资源信息回答用户问题。" +
                 "如果资源中有相关信息，请引用；如果没有，请根据你的知识回答，但要说明信息来源。" +
-                "回答应当简洁、准确，适合实习管理环境使用。";
+                AgentResponseStandard.PROMPT;
         
         // 构建用户消息
         String userMessage = String.format("问题：%s\n\n上下文：%s", question, context);

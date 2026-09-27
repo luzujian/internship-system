@@ -95,7 +95,7 @@
         SELECT COUNT(*) FROM student_users su
         INNER JOIN major m ON su.major_id = m.id
         LEFT JOIN student_internship_status sis ON su.id = sis.student_id
-        WHERE m.department_id = #{departmentId} AND (sis.status = 0 OR sis.status IS NULL)
+        WHERE m.department_id = #{departmentId} AND <include refid="com.internship.mapper.JobSearchStatusMapper.effectiveNumericStatus"/> = 0
     </select>
     
     <!-- 根据院系ID查询有Offer未确定的学生数 -->

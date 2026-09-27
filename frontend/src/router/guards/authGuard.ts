@@ -7,6 +7,7 @@ import { CONFIG, STORAGE_KEYS, Roles } from '@/store/auth/config'
 import { extractRoleFromPath, checkPathRoleConsistency, isTeacherRole } from '@/store/auth/roles'
 import { isTokenExpired as checkTokenExpired } from '@/store/auth/token'
 import logger from '@/utils/logger'
+import { readTabSession } from '@/store/auth/tabSession.mjs'
 import type { NavigationGuardNext, RouteLocationNormalized } from 'vue-router'
 
 interface RoleConsistencyResult {
@@ -37,11 +38,11 @@ export async function authGuard(
     }
 
     // 检查是否需要恢复认证状态
-    const currentRole = localStorage.getItem(STORAGE_KEYS.CURRENT_ROLE)
+    const currentRole = authStore.role || readTabSession()?.role || localStorage.getItem(STORAGE_KEYS.CURRENT_ROLE)
     const pathRole = extractRoleFromPath(to.path)
 
     // 处理路径角色与当前角色的一致性
-    handleRoleConsistency(pathRole, currentRole)
+    if (!authStore.isAuthenticated && !readTabSession()) handleRoleConsistency(pathRole, currentRole)
 
     // 如果是刚登录的状态，跳过状态恢复（已经在登录时完成）
     // 但仍然需要进行权限验证

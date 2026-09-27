@@ -13,6 +13,10 @@ public interface InternshipReflectionMapper {
 
     int updateById(InternshipReflection internshipReflection);
 
+    int withdrawSubmitted(@Param("id") Long id,
+                          @Param("studentId") Long studentId,
+                          @Param("updateTime") java.util.Date updateTime);
+
     int deleteById(Long id);
 
     InternshipReflection findById(Long id);

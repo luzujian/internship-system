@@ -7,6 +7,7 @@ import com.internship.service.AnnouncementReadRecordService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -24,6 +25,20 @@ public class AnnouncementReadRecordController {
     @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_TEACHER', 'ROLE_TEACHER_COLLEGE', 'ROLE_TEACHER_DEPARTMENT', 'ROLE_TEACHER_COUNSELOR', 'ROLE_STUDENT')")
     @Log(operationType = "INSERT", module = "ANNOUNCEMENT_MANAGEMENT", description = "创建公告阅读记录")
     public Result createReadRecord(@RequestBody AnnouncementReadRecord record) {
+        com.internship.entity.User actor = com.internship.utils.CurrentHolder.getUser();
+        if (actor == null || actor.getId() == null || actor.getRole() == null) {
+            throw new AccessDeniedException("公告阅读身份不可用");
+        }
+        String role = actor.getRole();
+        String userType = role.startsWith("ROLE_ADMIN") ? "ADMIN"
+                : role.startsWith("ROLE_TEACHER") ? "TEACHER"
+                : role.startsWith("ROLE_STUDENT") ? "STUDENT"
+                : role.startsWith("ROLE_COMPANY") ? "ENTERPRISE" : null;
+        if (userType == null) {
+            throw new AccessDeniedException("公告阅读身份不可用");
+        }
+        record.setUserId(String.valueOf(actor.getId()));
+        record.setUserType(userType);
         log.info("创建公告阅读记录，公告ID: {}, 用户ID: {}", record.getAnnouncementId(), record.getUserId());
         try {
             int result = announcementReadRecordService.insert(record);

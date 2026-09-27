@@ -1,16 +1,20 @@
 <script setup lang="ts">
+import { useAgentPageContext } from '@/agent/useAgentPageContext'
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Download } from '@element-plus/icons-vue'
 import { usePositionStore } from '../../store/position'
 import { useAuthStore } from '@/store/auth'
+import internshipStatusApi from '../../api/InternshipStatusService'
 import { exportToExcel } from '../../utils/xlsx'
 import emitter from '@/utils/event-bus'
 import { onCompanyTodoUpdate, offCompanyTodoUpdate } from '@/utils/websocket'
 import type { CompanyTodoUpdateData } from '@/utils/websocket'
+import { useIsMobile } from '@/composables/useIsMobile'
 
 const positionStore = usePositionStore()
 const authStore = useAuthStore()
+const isMobile = useIsMobile()
 
 const companyId = computed(() => {
   if (authStore.user?.id) {
@@ -27,6 +31,20 @@ const companyId = computed(() => {
 })
 
 const exporting = ref(false)
+const confirmationRecords = ref<any[]>([])
+
+const loadConfirmationRecords = async () => {
+  if (!companyId.value) return
+  const response: any = await internshipStatusApi.getConfirmationRecords(companyId.value)
+  confirmationRecords.value = Array.isArray(response?.data)
+    ? response.data.map((item: any) => ({
+        ...item,
+        // 企业确认页以确认记录为唯一主数据，id 即 confirmation record id。
+        companyConfirmStatus: Number(item.status),
+        majorName: item.majorName || item.major || ''
+      }))
+    : []
+}
 
 const searchForm = ref({
   keyword: '',
@@ -40,7 +58,10 @@ onMounted(() => {
     return
   }
   positionStore.fetchPositions(companyId.value)
-  positionStore.fetchInternshipStatuses(companyId.value)
+  loadConfirmationRecords().catch(error => {
+    console.error('加载实习确认记录失败:', error)
+    ElMessage.error(error?.message || '加载实习确认记录失败')
+  })
   // 注册企业待办更新监听器
   onCompanyTodoUpdate(handleCompanyTodoUpdate)
 })
@@ -54,7 +75,7 @@ const handleCompanyTodoUpdate = (data: CompanyTodoUpdateData) => {
   console.log('实习确认页面收到待办数据更新:', data)
   if (companyId.value) {
     positionStore.fetchPositions(companyId.value)
-    positionStore.fetchInternshipStatuses(companyId.value)
+    loadConfirmationRecords().catch(error => console.error('刷新实习确认记录失败:', error))
   }
 }
 
@@ -80,11 +101,20 @@ const companyConfirmStatusMap = {
 }
 
 const positionOptions = computed(() => {
-  return positionStore.positions.map(pos => ({ label: pos.positionName, value: pos.positionName }))
+  return [...new Set(positionStore.positions.map(pos => pos.positionName).filter(Boolean))]
+    .map(name => ({ label: name, value: name }))
 })
 
 const positionStats = computed(() => {
-  const stats = {}
+  interface PositionStatRow {
+    position: string
+    total: number
+    pending: number
+    confirmed: number
+    rejected: number
+    status?: string | number
+  }
+  const stats: Record<string, PositionStatRow> = {}
   
   // 只从当前岗位列表初始化岗位（不包含历史岗位）
   if (positionStore.positions && Array.isArray(positionStore.positions)) {
@@ -103,8 +133,8 @@ const positionStats = computed(() => {
   }
   
   // 遍历实习状态数据，只统计当前存在的岗位
-  if (positionStore.internshipStatuses && Array.isArray(positionStore.internshipStatuses)) {
-    positionStore.internshipStatuses.forEach(item => {
+  if (Array.isArray(confirmationRecords.value)) {
+    confirmationRecords.value.forEach(item => {
       if (item.positionName && stats[item.positionName]) {
         stats[item.positionName].total++
         if (item.companyConfirmStatus !== undefined) {
@@ -130,11 +160,11 @@ const currentPage = ref(1)
 const pageSize = ref(10)
 
 const filteredTableData = computed(() => {
-  if (!positionStore.internshipStatuses || !Array.isArray(positionStore.internshipStatuses)) {
+  if (!Array.isArray(confirmationRecords.value)) {
     return []
   }
   
-  let result = [...positionStore.internshipStatuses]
+  let result = [...confirmationRecords.value]
   
   if (searchForm.value.keyword) {
     const keyword = searchForm.value.keyword.toLowerCase()
@@ -153,11 +183,13 @@ const filteredTableData = computed(() => {
   }
   
   result.sort((a, b) => {
-    const statusOrder = { 0: 0, 1: 1, 2: 2 }
-    const statusDiff = statusOrder[a.companyConfirmStatus] - statusOrder[b.companyConfirmStatus]
+    const statusOrder: Record<number, number> = { 0: 0, 1: 1, 2: 2 }
+    const statusA = typeof a.companyConfirmStatus === 'number' ? a.companyConfirmStatus : Number(a.companyConfirmStatus)
+    const statusB = typeof b.companyConfirmStatus === 'number' ? b.companyConfirmStatus : Number(b.companyConfirmStatus)
+    const statusDiff = (statusOrder[statusA] ?? 99) - (statusOrder[statusB] ?? 99)
     if (statusDiff !== 0) return statusDiff
     
-    return new Date(b.createTime) - new Date(a.createTime)
+    return new Date(String(b.createTime ?? '')).getTime() - new Date(String(a.createTime ?? '')).getTime()
   })
   
   return result
@@ -185,46 +217,36 @@ const handleReset = () => {
 
 const handleConfirm = async (row) => {
   try {
-    const position = positionStore.positions.find(p => p.positionName === row.positionName)
+    const position = positionStore.positions.find(p => p.id === row.positionId)
     const isFull = position && position.remainingQuota <= 0
-    
-    let confirmMessage = `确认接收 ${row.studentName}(${row.studentUserId}) 来公司实习吗？`
-    let confirmButtonText = '确认'
-    
+
     if (isFull) {
-      confirmMessage = `该岗位已招满（已确认 ${position.recruitedCount} 人/计划 ${position.plannedRecruit} 人），是否继续确认 ${row.studentName}(${row.studentUserId})？`
-      confirmButtonText = '继续确认'
-    } else {
-      confirmMessage += '确认后该岗位招聘人数将减一。'
+      ElMessage.warning('该岗位当前没有可确认名额，请先调整计划招聘人数或等待名额释放')
+      return
     }
-    
+
     await ElMessageBox.confirm(
-      confirmMessage,
+      `确认接收 ${row.studentName}(${row.studentUserId}) 来公司实习吗？确认后占用 1 个岗位名额。`,
       '实习确认',
       {
-        confirmButtonText: confirmButtonText,
+        confirmButtonText: '确认接收',
         cancelButtonText: '取消',
-        type: isFull ? 'warning' : 'warning',
+        type: 'warning',
         center: true,
         distinguishCancelAndClose: true
       }
     )
-    
-    await positionStore.approveInternshipStatus(row.id)
+
+    await internshipStatusApi.confirmRecord(row.id)
     await positionStore.fetchPositions(companyId.value)
-    await positionStore.fetchInternshipStatuses(companyId.value)
-    
-    if (isFull) {
-      ElMessage.warning(`已确认 ${row.studentName} 的实习申请（该岗位已超额招聘）`)
-    } else {
-      ElMessage.success(`已确认 ${row.studentName} 的实习申请`)
-    }
+    await loadConfirmationRecords()
+    ElMessage.success(`已确认 ${row.studentName} 的实习申请`)
     
     console.log('触发通知刷新事件')
     emitter.emit('notification-refresh')
-  } catch (error) {
-    if (error !== 'cancel') {
-      ElMessage.error('操作失败，请稍后重试')
+  } catch (error: any) {
+    if (error !== 'cancel' && error !== 'close') {
+      ElMessage.error(error?.message || '操作失败，请稍后重试')
     }
   }
 }
@@ -250,12 +272,12 @@ const handleReject = async (row) => {
       return
     }
 
-    await positionStore.rejectInternshipStatus(row.id, value.trim())
-    await positionStore.fetchInternshipStatuses(companyId.value)
+    await internshipStatusApi.rejectRecord(row.id, value.trim())
+    await loadConfirmationRecords()
     ElMessage.success(`已拒绝 ${row.studentName} 的实习确认申请`)
-  } catch (error) {
+  } catch (error: any) {
     if (error !== 'cancel' && error !== 'close') {
-      ElMessage.error('操作失败，请稍后重试')
+      ElMessage.error(error?.message || '操作失败，请稍后重试')
     }
   }
 }
@@ -290,7 +312,7 @@ const calculateInternshipDuration = (startTime, endTime) => {
     return '待确认'
   }
   
-  const diffTime = Math.abs(end - start)
+  const diffTime = Math.abs(end.getTime() - start.getTime())
   const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
   
   return `${diffDays} 天`
@@ -307,21 +329,17 @@ const handleExport = async () => {
   try {
     const sortedData = [...filteredTableData.value].sort((a, b) => {
       if (a.positionName !== b.positionName) {
-        return a.positionName.localeCompare(b.positionName, 'zh-CN')
+        return String(a.positionName ?? '').localeCompare(String(b.positionName ?? ''), 'zh-CN')
       }
-      return new Date(b.createTime) - new Date(a.createTime)
+      return new Date(String(b.createTime ?? '')).getTime() - new Date(String(a.createTime ?? '')).getTime()
     })
 
     const exportData = sortedData.map(item => ({
       '应聘岗位': item.positionName,
       '学生姓名': item.studentName,
       '学号': item.studentUserId,
-      '性别': item.gender === 1 ? '男' : '女',
       '年级': item.grade,
       '申请日期': formatDate(item.createTime),
-      '实习开始时间': formatDate(item.internshipStartTime),
-      '实习结束时间': formatDate(item.internshipEndTime),
-      '实习时长': item.internshipDuration ? `${item.internshipDuration}天` : '待确认',
       '确认状态': companyConfirmStatusMap[item.companyConfirmStatus],
       '备注': item.remark || ''
     }))
@@ -336,13 +354,25 @@ const handleExport = async () => {
     exporting.value = false
   }
 }
+
+useAgentPageContext(() => {
+  const positions = positionStore.positions.filter(position => position.positionName === searchForm.value.position)
+  return {
+  title: '实习确认',
+  view: detailDialogVisible.value ? 'confirmation-detail' : 'page',
+  object: (detailDialogVisible.value && (currentStudent.value as any)?.id) ? { type: 'confirmation', id: String((currentStudent.value as any).id) } : null,
+  filters: { keyword: searchForm.value.keyword, status: searchForm.value.status,
+    positionId: positions.length === 1 ? String(positions[0].id) : '',
+    visibleIds: paginatedTableData.value.slice(0, 20).map(row => String(row.id)) }
+  }
+})
 </script>
 
 <template>
   <div class="internship-confirm">
     <div class="page-header">
       <h2>实习确认</h2>
-      <p>确认学生来本公司实习，确认后该岗位的招聘人数将相应减一</p>
+      <p>处理学生提交的实习确认表；确认后占用岗位名额，学生原实习自动转为历史记录</p>
     </div>
 
     <div class="search-card">
@@ -422,6 +452,7 @@ const handleExport = async () => {
 
     <div class="table-card">
       <el-table
+        v-if="!isMobile"
         :data="paginatedTableData"
         border
         style="width: 100%"
@@ -434,7 +465,7 @@ const handleExport = async () => {
             {{ row.grade }}级 {{ row.majorName || '' }}
           </template>
         </el-table-column>
-        <el-table-column prop="createTime" label="申请日期" width="110" align="center">
+        <el-table-column prop="createTime" label="确认表提交日期" width="130" align="center">
           <template #default="{ row }">
             {{ formatDate(row.createTime) }}
           </template>
@@ -475,6 +506,63 @@ const handleExport = async () => {
         </el-table-column>
       </el-table>
 
+      <!-- 手机端卡片列表 -->
+      <div v-else class="mobile-card-list">
+        <el-empty v-if="paginatedTableData.length === 0" description="暂无数据" />
+        <div
+          v-for="row in paginatedTableData"
+          :key="row.id"
+          class="mobile-card"
+        >
+          <div class="mobile-card-header">
+            <span class="mobile-card-title">{{ row.positionName || '-' }}</span>
+            <el-tag :type="statusTypeMap[row.companyConfirmStatus]" size="small">
+              {{ statusMap[row.companyConfirmStatus] }}
+            </el-tag>
+          </div>
+          <div class="mobile-card-body">
+            <div class="mobile-card-row">
+              <span class="mobile-card-label">学生姓名</span>
+              <span class="mobile-card-value">{{ row.studentName || '-' }}</span>
+            </div>
+            <div class="mobile-card-row">
+              <span class="mobile-card-label">学号</span>
+              <span class="mobile-card-value">{{ row.studentUserId || '-' }}</span>
+            </div>
+            <div class="mobile-card-row">
+              <span class="mobile-card-label">年级专业</span>
+              <span class="mobile-card-value">{{ row.grade }}级 {{ row.majorName || '' }}</span>
+            </div>
+            <div class="mobile-card-row">
+              <span class="mobile-card-label">提交日期</span>
+              <span class="mobile-card-value">{{ formatDate(row.createTime) }}</span>
+            </div>
+          </div>
+          <div class="mobile-card-actions">
+            <el-button
+              v-if="row.companyConfirmStatus === 0"
+              type="success"
+              @click="handleConfirm(row)"
+            >
+              确认
+            </el-button>
+            <el-button
+              v-if="row.companyConfirmStatus === 0"
+              type="danger"
+              @click="handleReject(row)"
+            >
+              拒绝
+            </el-button>
+            <el-button
+              type="primary"
+              @click="handleViewDetail(row)"
+            >
+              查看详情
+            </el-button>
+          </div>
+        </div>
+      </div>
+
       <div class="pagination">
         <el-pagination
           v-model:current-page="currentPage"
@@ -499,36 +587,21 @@ const handleExport = async () => {
           <el-descriptions :column="2" border>
             <el-descriptions-item label="姓名">{{ currentStudent.studentName || '-' }}</el-descriptions-item>
             <el-descriptions-item label="学号">{{ currentStudent.studentUserId || '-' }}</el-descriptions-item>
-            <el-descriptions-item label="性别">{{ formatGender(currentStudent.gender) }}</el-descriptions-item>
             <el-descriptions-item label="年级">{{ currentStudent.grade ? currentStudent.grade + '级' : '-' }}</el-descriptions-item>
             <el-descriptions-item label="专业">{{ currentStudent.majorName || currentStudent.major || '-' }}</el-descriptions-item>
             <el-descriptions-item label="班级">{{ currentStudent.className || '-' }}</el-descriptions-item>
             <el-descriptions-item label="联系电话">{{ currentStudent.contactPhone || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="邮箱">{{ currentStudent.email || '未填写' }}</el-descriptions-item>
           </el-descriptions>
         </div>
 
         <div class="detail-section">
           <h3 class="section-title">实习信息</h3>
-          <el-descriptions :column="2" border>
+          <el-descriptions :column="isMobile ? 1 : 2" border>
             <el-descriptions-item label="实习企业">{{ currentStudent.companyName || '-' }}</el-descriptions-item>
             <el-descriptions-item label="实习岗位">{{ currentStudent.positionName || '-' }}</el-descriptions-item>
             <el-descriptions-item label="企业地址">{{ currentStudent.companyAddress || '-' }}</el-descriptions-item>
             <el-descriptions-item label="企业电话">{{ currentStudent.companyPhone || '-' }}</el-descriptions-item>
-          </el-descriptions>
-        </div>
-
-        <div class="detail-section">
-          <h3 class="section-title">实习时间</h3>
-          <el-descriptions :column="2" border>
-            <el-descriptions-item label="开始日期">
-              {{ formatDate(currentStudent.internshipStartTime) || '待确认' }}
-            </el-descriptions-item>
-            <el-descriptions-item label="结束日期">
-              {{ formatDate(currentStudent.internshipEndTime) || '待确认' }}
-            </el-descriptions-item>
-            <el-descriptions-item label="实习时长" :span="2">
-              {{ currentStudent.internshipDuration ? `${currentStudent.internshipDuration}天` : '待确认' }}
-            </el-descriptions-item>
           </el-descriptions>
         </div>
 
@@ -883,5 +956,78 @@ const handleExport = async () => {
   display: flex;
   justify-content: flex-end;
   gap: 12px;
+}
+
+@media (max-width: 768px) {
+  .page-header {
+    padding: 18px 20px;
+    margin-bottom: 16px;
+  }
+
+  .page-header h2 {
+    font-size: 22px;
+  }
+
+  .search-card {
+    padding: 16px 18px;
+  }
+
+  .search-form :deep(.el-form-item) {
+    width: 100%;
+    margin-right: 0;
+  }
+
+  .search-form :deep(.el-form-item__content) {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .search-form :deep(.el-input),
+  .search-form :deep(.el-select) {
+    width: 100% !important;
+  }
+
+  .search-form :deep(.el-button) {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .stats-cards {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+  }
+
+  .stat-card {
+    padding: 12px;
+  }
+
+  .stat-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+
+  .stat-details {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .table-card {
+    padding: 12px;
+  }
+
+  .pagination {
+    justify-content: center;
+  }
+
+  .dialog-footer {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .dialog-footer :deep(.el-button) {
+    width: 100%;
+    margin-left: 0;
+  }
 }
 </style>

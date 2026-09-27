@@ -11,6 +11,7 @@ import com.internship.service.ResourceService;
 import com.internship.service.UserService;
 import com.internship.utils.JwtUtils;
 import com.internship.utils.PasswordValidator;
+import com.internship.utils.UserCredentialDefaults;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import lombok.extern.slf4j.Slf4j;
@@ -25,7 +26,6 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 
 /**
  * 管理员控制器
@@ -205,7 +205,7 @@ public class AdminController {
     }
 
     // 批量删除用户
-    @Log(operationType = "DELETE", module = "USER_MANAGEMENT", description = "批量删除用户")
+    @Log(operationType = "DELETE", module = "USER_MANAGEMENT", description = "批量删除用户", riskLevel = "HIGH", critical = true)
     @DeleteMapping("/users/batch")
     @PreAuthorize("hasRole('ADMIN')")
     public Result batchDeleteUsers(@RequestBody List<Long> ids) {
@@ -235,6 +235,7 @@ public class AdminController {
      */
     @PostMapping("/users/{id}/reset-password")
     @PreAuthorize("hasRole('ADMIN')")
+    @Log(operationType = "RESET_PASSWORD", module = "USER_MANAGEMENT", description = "重置用户密码", riskLevel = "HIGH", targetType = "USER", critical = true)
     public Result resetUserPassword(@PathVariable Long id, @RequestBody Map<String, String> passwordDTO) {
         log.info("重置用户ID: {} 的密码", id);
         try {
@@ -242,17 +243,8 @@ public class AdminController {
             if (user == null) {
                 return Result.error("用户不存在");
             }
-
-            String newPassword = passwordDTO.get("password");
-            if (StringUtils.isBlank(newPassword)) {
-                newPassword = UUID.randomUUID().toString().substring(0, 8);
-            }
-
-            PasswordValidator.ValidationResult validationResult = PasswordValidator.validatePassword(newPassword);
-            if (!validationResult.isValid()) {
-                log.warn("重置用户密码失败：新密码不符合复杂度要求 - {}", validationResult.getMessage());
-                return Result.error(validationResult.getMessage());
-            }
+            // 管理员端统一重置口令，服务端固定生效，不信任前端传值。
+            String newPassword = UserCredentialDefaults.PASSWORD;
 
             user.setPassword(newPassword);
             userService.update(user);
@@ -276,6 +268,7 @@ public class AdminController {
      */
     @PutMapping("/users/{id}/status")
     @PreAuthorize("hasRole('ADMIN')")
+    @Log(operationType = "UPDATE", module = "USER_MANAGEMENT", description = "更新用户状态", riskLevel = "MEDIUM")
     public Result updateUserStatus(@PathVariable Long id, @RequestBody Map<String, String> statusDTO) {
         log.info("更新用户ID: {} 的状态", id);
         try {
@@ -389,6 +382,7 @@ public class AdminController {
      */
     @PostMapping("/cache/clear")
     @PreAuthorize("hasRole('ADMIN')")
+    @Log(operationType = "UPDATE", module = "SYSTEM_SETTINGS", description = "清除系统缓存", riskLevel = "MEDIUM")
     public Result clearCache() {
         log.info("清除用户缓存");
         try {

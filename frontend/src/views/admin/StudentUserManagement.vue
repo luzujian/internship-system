@@ -1,18 +1,107 @@
 <script setup lang="ts">
+import { useAgentPageContext } from '@/agent/useAgentPageContext'
+import { useFormContext } from '@/agent/formContext'
 import logger from '@/utils/logger'
-import { ref, onMounted, nextTick, h, computed } from 'vue'
+import { ref, onMounted, onUnmounted, nextTick, h, computed, watch } from 'vue'
 import { ElMessage, ElMessageBox, ElDialog, ElTable, ElTableColumn, ElCheckbox, ElForm } from 'element-plus'
-import { Search, Refresh, Plus, Delete, Upload, Download, View, Edit, Switch, ArrowDown } from '@element-plus/icons-vue'
-import StudentUserService, { queryPageApi, addApi, queryInfoApi, updateApi, deleteApi, resetPasswordApi, batchDeleteApi, importExcelApi, updateStatusApi, exportStudentDataApi } from '../../api/StudentUserService'
+import { Search, Refresh, Key, Plus, Delete, Upload, Download, View, Edit, Switch, ArrowDown } from '@element-plus/icons-vue'
+import StudentUserService, { queryPageApi, addApi, queryInfoApi, updateApi, deleteApi, resetPasswordApi, resetAllPasswordsApi, batchDeleteApi, importExcelApi, updateStatusApi, exportStudentDataApi } from '../../api/StudentUserService'
 import MajorService from '../../api/major'
 import ClassService from '../../api/class'
 import DepartmentService from '../../api/department'
 import { useSystemSettingsStore } from '../../store/systemSettings'
 import { useAuthStore } from '../../store/auth'
 import { createGradeValidator, createRequiredValidator } from '@/utils/validation'
+import { readInitialCredentials } from '@/utils/initialCredentialPayload'
+import { showInitialCredentials } from '@/utils/initialCredentialDialog'
 import type { StudentUser, PageParams, PaginationState, DialogState, Class, Major } from '@/types/admin'
+import type { FormFieldDescriptor } from '@/agent/types'
+// 学生行精确局部接口：覆盖后端驼峰/snake两种形态与模板实际使用的全部字段（含 department 别名、
+// createdTime/updatedTime 别名、classId/className 别名），均可选，不改 api 文件
+interface StudentRow {
+  id?: string | number
+  studentId?: string | number
+  username?: string
+  name?: string
+  gender?: number | string
+  grade?: string | number
+  majorId?: string | number | null
+  major_id?: string | number
+  majorName?: string
+  classId?: string | number | null
+  class_id?: string | number
+  className?: string
+  phone?: string
+  email?: string
+  department?: string | number | null
+  departmentId?: string | number
+  departmentName?: string
+  status?: number | string | null
+  createTime?: string
+  createdTime?: string
+  create_time?: string
+  updateTime?: string
+  updatedTime?: string
+  update_time?: string
+}
+// 院系/专业/班级下拉选项：含模板使用的 value 字段
+interface DeptOption {
+  id?: string | number
+  value?: string | number
+  name: string
+  departmentId?: string | number
+  departmentName?: string
+  createTime?: string
+  updateTime?: string
+}
+interface MajorOption {
+  id?: string | number
+  value?: string | number
+  name: string
+  majorId?: string | number
+  majorName?: string
+  departmentId?: string | number
+  departmentName?: string
+  divisionId?: string | number
+  divisionName?: string
+  createTime?: string
+  updateTime?: string
+}
+interface ClassOption {
+  id?: string | number
+  value?: string | number
+  name: string
+  classId?: string | number
+  className?: string
+  majorId?: string | number
+  majorName?: string
+  grade?: string | number
+  createTime?: string
+  updateTime?: string
+}
+// 表格实例最小接口（仅使用 toggleRowSelection）
+interface StudentTableInstance {
+  toggleRowSelection: (row: StudentRow, selected: boolean) => void
+}
+// 表单实例最小接口（resetFields/clearValidate/validate/resetFields）
+interface StudentFormInstance {
+  resetFields: () => void
+  clearValidate?: () => void
+  validate?: () => Promise<void>
+}
+// 导入结果
+interface StudentImportData {
+  successCount?: unknown
+  failCount?: unknown
+  failList?: unknown
+}
+interface StudentImportFailItem {
+  rowNum?: unknown
+  errorMsg?: unknown
+}
 
 import request from '../../utils/request'
+import MobileMoreActions from '../../components/MobileMoreActions.vue'
 
 const systemSettingsStore = useSystemSettingsStore()
 const authStore = useAuthStore()
@@ -63,22 +152,22 @@ const formatDepartmentName = (_row: unknown, _column: unknown, cellValue: string
   return dept ? dept.name : String(cellValue)
 }
 
-// 搜索表单对象
-let searchForm = ref<Partial<StudentUser>>({ studentId: '', name: '', gender: '', grade: '', majorId: '', classId: '', status: '', department: '' })
+// 搜索表单对象（含 department 别名，查询参数透传用）
+let searchForm = ref<StudentRow>({ studentId: '', name: '', gender: '', grade: '', majorId: '', classId: '', status: '', department: '' })
 
 // 列表展示数据
-let tableData = ref<StudentUser[]>([])
+let tableData = ref<StudentRow[]>([])
 // 加载状态
 let loading = ref(false)
 
 // 专业列表数据
-let majors = ref<Major[]>([])
+let majors = ref<MajorOption[]>([])
 
 // 院系列表数据
-let departments = ref<{ value: string; name: string }[]>([])
+let departments = ref<DeptOption[]>([])
 
 // 班级列表数据
-let classes = ref<Class[]>([])
+let classes = ref<ClassOption[]>([])
 
 // 分页数据
 let pagination = ref<PaginationState>({
@@ -87,17 +176,17 @@ let pagination = ref<PaginationState>({
   total: 0
 })
 
-// 表格引用
-let studentTable = ref<InstanceType<typeof ElTable> | null>(null)
+// 表格引用（仅使用 toggleRowSelection，用最小接口避免 InstanceType 约束错误）
+let studentTable = ref<StudentTableInstance | null>(null)
 
 // 为新增和编辑操作创建独立的表单数据和引用，避免数据相互干扰
-// 新增学生表单引用
-let addStudentFormRef = ref<InstanceType<typeof ElForm> | null>(null)
+// 新增学生表单引用（最小接口：仅使用 resetFields/clearValidate/validate）
+let addStudentFormRef = ref<StudentFormInstance | null>(null)
 // 编辑学生表单引用
-let editStudentFormRef = ref<InstanceType<typeof ElForm> | null>(null)
+let editStudentFormRef = ref<StudentFormInstance | null>(null)
 
 // 新增学生表单数据
-let addStudent = ref<Partial<StudentUser>>({
+let addStudent = ref<StudentRow>({
   id: '',
   studentId: '',
   name: '',
@@ -111,7 +200,7 @@ let addStudent = ref<Partial<StudentUser>>({
 })
 
 // 编辑学生表单数据
-let editStudent = ref<Partial<StudentUser>>({
+let editStudent = ref<StudentRow>({
   id: '',
   studentId: '',
   name: '',
@@ -133,7 +222,7 @@ let labelWidth = ref('100px')
 let enableCascadeDelete = false
 
 // 学生课程相关状态
-let selectedStudent = ref<StudentUser | null>(null)
+let selectedStudent = ref<StudentRow | null>(null)
 let studentCourses = ref<unknown[]>([])
 let viewCoursesDialogVisible = ref(false)
 
@@ -146,7 +235,7 @@ let importDialogVisible = ref(false)
 let importLoading = ref(false)
 let selectedFile = ref<File | null>(null)
 // 添加ref引用文件输入元素
-let excelFileInput = ref<HTMLElement | null>(null)
+let excelFileInput = ref<HTMLInputElement | null>(null)
 
 // 表单规则
 const rules = {
@@ -156,16 +245,21 @@ const rules = {
   department: [{ required: true, message: '请选择院系', trigger: 'change' }],
   majorId: [{ required: true, message: '请选择专业', trigger: 'change' }],
   classId: [{ required: true, message: '请选择班级', trigger: 'change' }],
-  phone: [{ required: true, message: '请输入手机号', trigger: 'blur' }]
+  phone: [{ validator: (rule, value, callback) => {
+    if (!value) return callback()
+    if (!/^1[3-9]\d{9}$/.test(value)) return callback(new Error('请输入正确的手机号码'))
+    callback()
+  }, trigger: 'blur' }],
+  email: [{ type: 'email', message: '请输入正确的邮箱格式', trigger: 'blur' }]
 }
 
 // 处理复选框选中变化
-const handleSelectionChange = (selection: unknown[]) => {
-  selectIds.value = selection.map(item => item.id)
+const handleSelectionChange = (selection: StudentRow[]) => {
+  selectIds.value = selection.map(item => item.id).filter((id): id is string | number => id !== undefined)
 }
 
-// 复选框选中数据
-let selectIds = ref<string[]>([])
+// 复选框选中数据（行 id 为 string|number，后端批量删除要 number，调用处 Number 转换）
+let selectIds = ref<(string | number)[]>([])
 
 // 分页处理函数
 const handleSizeChange = (newSize: number) => {
@@ -183,12 +277,19 @@ const queryPage = async (): Promise<void> => {
   loading.value = true
   try {
     logger.log('开始查询学生列表...')
-    //构建查询参数
-    const params = {
-      ...searchForm.value,
+    //构建查询参数（只透传后端识别的字段；空串/空值省略，后端对空串与缺省同等忽略，与原全量 spread 可达语义等价）
+    const sf = searchForm.value
+    const params: Parameters<typeof queryPageApi>[0] = {
       pageNum: pagination.value.currentPage,
       pageSize: pagination.value.pageSize
     }
+    if (sf.studentId) params.studentId = sf.studentId
+    if (sf.name) params.name = sf.name
+    if (sf.grade) params.grade = sf.grade
+    if (sf.majorId) params.majorId = sf.majorId
+    if (sf.classId) params.classId = sf.classId
+    if (sf.status !== null && sf.status !== undefined && sf.status !== '') params.status = Number(sf.status)
+    if (sf.gender !== null && sf.gender !== undefined && sf.gender !== '') params.gender = Number(sf.gender)
 
     logger.log('查询参数:', params)
     const response = await queryPageApi(params)
@@ -200,32 +301,35 @@ const queryPage = async (): Promise<void> => {
       const dataList = response.data.rows || []
       const totalCount = response.data.total || 0
 
-      //添加专业名称和班级名称到数据中
-      const enhancedData = dataList.map(student => {
-        logger.log(`处理学生: ${student.name}, majorId: ${student.majorId} (类型: ${typeof student.majorId})`)
+      //添加专业名称和班级名称到数据中（api 行转本地 StudentRow，兼容 createdTime/createTime 等别名）
+      const enhancedData: StudentRow[] = dataList.map(student => {
+        const s = student as unknown as StudentRow
+        logger.log(`处理学生: ${s.name}, majorId: ${s.majorId} (类型: ${typeof s.majorId})`)
         logger.log(`可用专业列表:`, majors.value)
         //找到对应的专业，确保类型一致
-        const major = majors.value.find(m => m.value === String(student.majorId))
+        const major = majors.value.find(m => m.value === String(s.majorId))
         logger.log(`找到的专业:`, major)
         //找到对应的班级，确保类型一致
-        const classItem = classes.value.find(c => c.id === String(student.classId))
+        const classItem = classes.value.find(c => c.id === String(s.classId ?? s.class_id))
         //找到对应的院系，确保类型一致
-        const dept = departments.value.find(d => d.value === String(student.department))
+        const dept = departments.value.find(d => d.value === String(s.department ?? s.departmentId))
+        const createdTime = s.createdTime ? s.createdTime : s.createTime
+        const updatedTime = s.updatedTime ? s.updatedTime : s.updateTime
         return {
-          ...student,
+          ...s,
           majorName: major ? major.name : '未知专业',
-          className: classItem ? classItem.name : '未知班级',
+          className: classItem ? String(classItem.name ?? classItem.className) : '未知班级',
           departmentName: dept ? dept.name : '未知院系',
           // 确保日期字段名称与表格中使用的一致
-          createdTime: student.createdTime || student.createTime,
-          updatedTime: student.updatedTime || student.updateTime
+          createdTime: createdTime,
+          updatedTime: updatedTime
         }
       })
 
       tableData.value = enhancedData
       pagination.value.total = totalCount
       logger.log('处理后的数据列表:', tableData.value)
-      
+
       // 在下一个tick中，根据selectIds恢复选中状态
       nextTick(() => {
         if (tableData.value && tableData.value.length > 0) {
@@ -241,7 +345,7 @@ const queryPage = async (): Promise<void> => {
       pagination.value.total = 0
       logger.log('无数据或响应格式不正确')
     }
-    
+
     // 不再需要应用本地存储的状态，使用后端返回的真实状态
   } catch (error) {
     logger.error('查询学生列表失败:', error)
@@ -267,11 +371,12 @@ const clear = (): void => {
   pagination.value.currentPage = 1
 }
 
-// 重置表单
-const resetForm = (formRef: InstanceType<typeof ElForm> | null): void => {
+// 重置表单（入参为 el-form 的 Ref 包裹，与调用处一致）
+const resetForm = (formRef: { value: StudentFormInstance | null } | null): void => {
   if (formRef && formRef.value) {
+    const inst = formRef.value
     setTimeout(() => {
-      formRef.value.resetFields()
+      inst.resetFields()
     }, 0)
   }
 }
@@ -312,13 +417,13 @@ const clearEditStudentForm = () => {
 const handleCancel = () => {
   // 重要：先关闭对话框
   dialogFormVisible.value = false
-  
+
   // 使用nextTick确保DOM已经更新，然后再执行清空操作
   nextTick(() => {
     // 1. 完全清空所有表单数据对象
     clearAddStudentForm()
     clearEditStudentForm()
-    
+
     // 2. 额外的保险措施：手动重置每个字段
     // 针对编辑表单数据的额外清空
     if (editStudent.value) {
@@ -329,7 +434,7 @@ const handleCancel = () => {
       editStudent.value.majorId = null
       editStudent.value.classId = null
     }
-    
+
     // 3. 重置表单状态和校验
     if (addStudentFormRef && addStudentFormRef.value) {
       try {
@@ -338,7 +443,7 @@ const handleCancel = () => {
         logger.warn('重置新增表单失败:', error)
       }
     }
-    
+
     if (editStudentFormRef && editStudentFormRef.value) {
       try {
         editStudentFormRef.value.resetFields()
@@ -346,7 +451,7 @@ const handleCancel = () => {
         logger.warn('重置编辑表单失败:', error)
       }
     }
-    
+
     logger.log('编辑框已关闭并完全清空数据')
   })
 }
@@ -359,6 +464,7 @@ const handleAddStudent = () => {
   nextTick(() => {
     resetForm(addStudentFormRef)
     dialogFormVisible.value = true
+    registerStudentForm('新增学生')
   })
 }
 
@@ -366,11 +472,11 @@ const handleAddStudent = () => {
 const handleUpdateStudent = async (id) => {
   try {
     logger.log('开始获取学生详情，ID:', id)
-    
+
     // 1. 第一步：完全重置所有相关状态
     // 立即关闭对话框
     dialogFormVisible.value = false
-    
+
     // 强制清空表单数据对象，创建一个全新的对象
     editStudent.value = {
       id: '',
@@ -380,7 +486,7 @@ const handleUpdateStudent = async (id) => {
       majorId: null,
       classId: null
     }
-    
+
     // 重置表单引用状态
     if (editStudentFormRef.value) {
       try {
@@ -389,44 +495,48 @@ const handleUpdateStudent = async (id) => {
         logger.warn('重置表单失败，但继续操作:', error)
       }
     }
-    
+
     // 2. 等待DOM更新完成
     await nextTick()
-    
+
     // 3. 获取新的学生数据
     const response = await queryInfoApi(id)
     logger.log('学生详情响应:', response)
 
     if (response && response.code === 200 && response.data) {
-      const studentData = response.data
+      const studentData = response.data as StudentRow
       formTitle.value = '编辑学生'
-      
+
       logger.log('准备设置新的学生数据:', studentData)
-      
+
       // 4. 使用强制更新的方式设置数据
       // 强制替换整个对象，确保Vue能检测到变化
-      // 注意：将majorId和classId转换为字符串，以匹配下拉选项的value类型
+      // 注意：将majorId和classId转换为字符串，以匹配下拉选项的value类型（保持原语义）
+      const majorRaw: unknown = studentData.majorId
+      const classRaw: unknown = studentData.classId
+      const deptRaw: unknown = studentData.department
       Object.assign(editStudent.value, {
-        id: studentData.id || '',
-        studentId: studentData.studentId || '',
-        name: studentData.name || '',
+        id: studentData.id ? studentData.id : '',
+        studentId: studentData.studentId ? studentData.studentId : '',
+        name: studentData.name ? studentData.name : '',
         gender: studentData.gender !== undefined ? studentData.gender : 1,
-        grade: studentData.grade || '',
-        majorId: studentData.majorId !== undefined ? String(studentData.majorId) : null,
-        classId: studentData.classId !== undefined ? String(studentData.classId) : null,
-        phone: studentData.phone || '',
-        department: studentData.department || '',
-        email: studentData.email || ''
+        grade: studentData.grade ? studentData.grade : '',
+        majorId: majorRaw !== undefined ? String(majorRaw) : null,
+        classId: classRaw !== undefined ? String(classRaw) : null,
+        phone: studentData.phone ? studentData.phone : '',
+        department: deptRaw ? String(deptRaw) : '',
+        email: studentData.email ? studentData.email : ''
       })
-      
+
       // 5. 再次等待DOM更新
       await nextTick()
-      
+
       logger.log('设置后的editStudent数据:', editStudent.value)
-      
+
       // 6. 最后显示对话框
       dialogFormVisible.value = true
-      
+      registerStudentForm('编辑学生')
+
       // 7. 对话框显示后再次确保数据正确绑定
       nextTick(() => {
         logger.log('对话框已显示，最终绑定的数据:', editStudent.value)
@@ -446,51 +556,58 @@ const handleUpdateStudent = async (id) => {
 const saveStudent = async () => {
   try {
     let formData, formRef, api
-    
+
     // 根据表单标题判断是新增还是编辑操作
     if (formTitle.value === '新增学生') {
       formData = addStudent.value
       formRef = addStudentFormRef
-      //新增操作 - 添加默认密码
-      api = addApi({ ...formData, password: '123456' })
+      // 初始密码由服务端生成，不能由前端指定。
+      api = () => addApi({ ...formData })
     } else {
       formData = editStudent.value
       formRef = editStudentFormRef
       // 更新操作
-      api = updateApi(formData)
+      api = () => updateApi(formData)
     }
-    
+
     // 增加更健壮的表单引用检查和处理
     if (!formRef) {
       logger.error('表单引用未定义', { formRef });
       ElMessage.error('表单引用不存在')
       return
     }
-    
+
     // 使用nextTick确保DOM已经更新
     await nextTick();
-    
+
     // 检查表单实例是否存在
     if (!formRef.value) {
       logger.error('表单组件未挂载', { formRef });
       ElMessage.error('表单组件尚未加载完成，请稍候重试')
       return
     }
-    
+
     // 执行表单验证
     await formRef.value.validate();
 
     logger.log('提交的学生数据:', formData)
-    const response = await api
+    const operation = formContext.beginFormOperation('admin:student')
+    const response = await api()
 
     if (response && response.code === 200) {
-      ElMessage.success(formTitle.value === '编辑学生' ? '更新成功' : '新增成功，默认密码为123456')
+      operation.complete({ status: 'saved', label: '学生信息已保存', url: '/admin/student-users' })
+
       dialogFormVisible.value = false
       sessionStorage.removeItem('majors_cache')
       sessionStorage.removeItem('majors_cache_time')
       sessionStorage.removeItem('classes_cache')
       sessionStorage.removeItem('classes_cache_time')
       queryPage() //重新加载列表
+      if (formTitle.value === '编辑学生') {
+        ElMessage.success('更新成功')
+      } else {
+        ElMessage.success('新增成功')
+      }
     } else {
       ElMessage.error(response?.msg || (formTitle.value === '编辑学生' ? '更新失败' : '新增失败'))
     }
@@ -616,7 +733,8 @@ const delByIds = async () => {
       }
     )
 
-    const response = await batchDeleteApi(selectIds.value)
+    // 后端批量删除要 number[]，行 id 为 string|number，Number 转换后透传
+    const response = await batchDeleteApi(selectIds.value.map(id => Number(id)))
 
     if (response && response.code === 200) {
       ElMessage.success(`成功删除 ${selectIds.value.length} 名学生！`)
@@ -633,7 +751,30 @@ const delByIds = async () => {
   }
 }
 
-// 显示重置密码对话框
+// 一键重置全部学生用户密码
+const resetAllStudentPasswords = async (): Promise<void> => {
+  try {
+    await ElMessageBox.confirm(
+      '将把全部学生用户的登录密码统一重置为 123456，确定继续吗？',
+      '一键重置全部学生密码',
+      { type: 'warning', confirmButtonText: '确认重置', cancelButtonText: '取消' }
+    )
+    const response = await resetAllPasswordsApi()
+    if (response.code === 200) {
+      ElMessage.success('全部学生用户密码已重置为 123456')
+      queryPage()
+    } else {
+      ElMessage.error(response.msg || '一键重置全部学生用户密码失败')
+    }
+  } catch (error) {
+    if (error !== 'cancel') {
+      logger.error('一键重置全部学生用户密码失败:', error)
+      ElMessage.error('一键重置全部学生用户密码失败')
+    }
+  }
+}
+
+// 显示单个学生重置密码对话框
 const showResetPasswordDialog = (row) => {
   resetPasswordUserId.value = row.id
   resetPasswordDialogVisible.value = true
@@ -642,11 +783,15 @@ const showResetPasswordDialog = (row) => {
 // 重置密码
 const resetUserPassword = async () => {
   try {
-    const response = await resetPasswordApi(resetPasswordUserId.value)
+    if (resetPasswordUserId.value === null || resetPasswordUserId.value === undefined) {
+      ElMessage.error('重置密码失败: 无效的用户ID')
+      return
+    }
+    const response = await resetPasswordApi(Number(resetPasswordUserId.value))
 
     if (response && response.code === 200) {
-      ElMessage.success('密码重置成功，新密码为123456')
       resetPasswordDialogVisible.value = false
+      ElMessage.success('学生密码已重置为 123456')
     } else {
       ElMessage.error('密码重置失败: ' + (response?.msg || '未知错误'))
     }
@@ -660,20 +805,20 @@ const resetUserPassword = async () => {
 const handleToggleStatus = async (id, currentStatus) => {
   const newStatus = currentStatus === 1 ? 0 : 1
   const statusText = newStatus === 1 ? '启用' : '禁用'
-  
+
   try {
     await ElMessageBox.confirm(`确定要${statusText}该学生账户吗？`, '确认操作', {
       confirmButtonText: '确定',
       cancelButtonText: '取消',
       type: 'warning'
     })
-    
+
     // 调用真实的后端API更新状态
     const response = await updateStatusApi(id, newStatus)
-    
+
     if (response && response.code === 200) {
       ElMessage.success(`${statusText}成功`)
-      
+
         // 后端已实现状态更新，重新加载列表确保数据与后端同步
       queryPage()
     } else {
@@ -753,6 +898,69 @@ const filteredMajorsForSearch = computed(() => {
   return majors.value.filter(m => String(m.departmentId) === String(searchForm.value.department))
 })
 
+// ===== 智能填表：学生新增/编辑弹窗（共用 formId，后注册覆盖，单例语义；只写响应式 model，不触发提交） =====
+const formContext = useFormContext()
+const studentFillFields = (): FormFieldDescriptor[] => {
+  const editing = formTitle.value === '编辑学生'
+  const deptOptions = departments.value.map(d => ({ label: d.name, value: d.value }))
+  const majorSource = editing ? filteredMajorsForEdit.value : filteredMajorsForAdd.value
+  const majorOptions = majorSource.map(m => ({ label: m.name, value: m.value }))
+  const majorId = editing ? editStudent.value.majorId : addStudent.value.majorId
+  const classOptions = (majorId ? classes.value.filter(c => String(c.majorId) === String(majorId)) : classes.value)
+    .map(c => ({ label: c.name, value: c.id }))
+  return [
+    { prop: 'studentId', label: '学号', type: 'input', required: true },
+    { prop: 'name', label: '姓名', type: 'input', required: true },
+    { prop: 'gender', label: '性别', type: 'radio', valueType: 'number',
+      options: [{ label: '男', value: 1 }, { label: '女', value: 2 }] },
+    { prop: 'grade', label: '年级', type: 'input' },
+    { prop: 'department', label: '院系', type: 'select', required: true, options: deptOptions },
+    { prop: 'majorId', label: '专业', type: 'select', required: true, options: majorOptions },
+    { prop: 'classId', label: '班级', type: 'select', required: true, options: classOptions },
+    { prop: 'phone', label: '手机号', type: 'input' },
+    { prop: 'email', label: '邮箱', type: 'input' }
+  ]
+}
+const registerStudentForm = (title: string) => {
+  formContext.register({
+    formId: 'admin:student',
+    title,
+    fields: studentFillFields(),
+    getFields: studentFillFields,
+    getModel: () => (formTitle.value === '编辑学生' ? editStudent.value : addStudent.value),
+    getFormEl: () => (formTitle.value === '编辑学生' ? editStudentFormRef.value : addStudentFormRef.value)
+  })
+}
+// AI 填入院系/专业后联动（沿用原联动函数；下级值与新上级一致时跳过，避免覆盖 AI 已填有效值，幂等）
+watch(() => addStudent.value.department, (v, old) => {
+  if (!v || v === old || !dialogFormVisible.value || formTitle.value !== '新增学生') return
+  const cur = addStudent.value.majorId
+  const consistent = !cur || majors.value.some(m => String(m.value) === String(cur) && String(m.departmentId) === String(v))
+  if (!consistent) handleDialogDepartmentChange(v)
+})
+watch(() => addStudent.value.majorId, (v, old) => {
+  if (!v || v === old || !dialogFormVisible.value || formTitle.value !== '新增学生') return
+  const cur = addStudent.value.classId
+  const consistent = !cur || classes.value.some(c => String(c.id) === String(cur) && String(c.majorId) === String(v))
+  if (!consistent) handleDialogMajorChange(v)
+})
+watch(() => editStudent.value.department, (v, old) => {
+  if (!v || v === old || !dialogFormVisible.value || formTitle.value !== '编辑学生') return
+  const cur = editStudent.value.majorId
+  const consistent = !cur || majors.value.some(m => String(m.value) === String(cur) && String(m.departmentId) === String(v))
+  if (!consistent) handleDialogDepartmentChange(v)
+})
+watch(() => editStudent.value.majorId, (v, old) => {
+  if (!v || v === old || !dialogFormVisible.value || formTitle.value !== '编辑学生') return
+  const cur = editStudent.value.classId
+  const consistent = !cur || classes.value.some(c => String(c.id) === String(cur) && String(c.majorId) === String(v))
+  if (!consistent) handleDialogMajorChange(v)
+})
+watch(dialogFormVisible, (open) => {
+  if (!open) formContext.unregister('admin:student')
+})
+onUnmounted(() => formContext.unregister('admin:student'))
+
 // 获取院系列表
 const getDepartmentList = async () => {
   try {
@@ -791,11 +999,11 @@ const getDepartmentList = async () => {
 const getMajorList = async () => {
   try {
     logger.log('开始获取专业列表...')
-    
+
     // 先从缓存读取
     const cached = sessionStorage.getItem('majors_cache')
     const cachedTime = sessionStorage.getItem('majors_cache_time')
-    
+
     if (cached && cachedTime) {
       const age = Date.now() - parseInt(cachedTime)
       // 检查缓存数据是否有 departmentId 字段，如果没有则重新获取
@@ -807,7 +1015,7 @@ const getMajorList = async () => {
         return
       }
     }
-    
+
     // 缓存过期或不存在，重新请求
     const response = await MajorService.getMajors()
     logger.log('专业列表响应:', response)
@@ -842,7 +1050,7 @@ const getMajorList = async () => {
     }).filter(major => major.value !== 'NaN' && major.value !== '') // 过滤无效数据
 
     logger.log('转换后的专业列表:', majors.value)
-    
+
     // 存入缓存
     sessionStorage.setItem('majors_cache', JSON.stringify(majors.value))
     sessionStorage.setItem('majors_cache_time', Date.now().toString())
@@ -857,11 +1065,11 @@ const getMajorList = async () => {
 const getClassList = async () => {
   try {
     logger.log('开始获取班级列表...')
-    
+
     // 先从缓存读取
     const cached = sessionStorage.getItem('classes_cache')
     const cachedTime = sessionStorage.getItem('classes_cache_time')
-    
+
     if (cached && cachedTime) {
       const age = Date.now() - parseInt(cachedTime)
       if (age < 5 * 60 * 1000) {
@@ -871,18 +1079,19 @@ const getClassList = async () => {
         return
       }
     }
-    
+
     // 缓存过期或不存在，重新请求
     const response = await ClassService.getClasses()
     logger.log('班级列表响应:', response)
 
-    //增强数据结构兼容性处理
-    if (response && response.data) {
-      if (Array.isArray(response.data)) {
-        classes.value = response.data
-      } else if (response.code === 200 && response.data) {
+    //增强数据结构兼容性处理（getClasses 返回体为后端业务包 { code, data }，类型声明为 AxiosResponse 形态，用 unknown 收窄保持原分支语义）
+    const classRes = response as unknown as { code?: unknown; data?: unknown }
+    if (classRes && classRes.data) {
+      if (Array.isArray(classRes.data)) {
+        classes.value = classRes.data as ClassOption[]
+      } else if (classRes.code === 200 && classRes.data) {
         //处理带code和data的响应格式
-        classes.value = Array.isArray(response.data) ? response.data : []
+        classes.value = Array.isArray(classRes.data) ? (classRes.data as ClassOption[]) : []
       } else {
         classes.value = []
       }
@@ -901,7 +1110,7 @@ const getClassList = async () => {
         majorId: String(classItem.majorId || '')
       }))
     }
-    
+
     // 存入缓存
     sessionStorage.setItem('classes_cache', JSON.stringify(classes.value))
     sessionStorage.setItem('classes_cache_time', Date.now().toString())
@@ -967,7 +1176,7 @@ const getStudentCourses = async (studentId) => {
     logger.log(`获取学生 ${studentId} 的课程列表...`)
     const response = await StudentUserService.getStudentCourses(studentId)
     logger.log('学生课程列表响应:', response)
-    
+
     // 处理不同的响应格式
     if (response && response.code === 200 && response.data) {
       const courses = Array.isArray(response.data) ? response.data : []
@@ -986,7 +1195,7 @@ const getStudentCourses = async (studentId) => {
   } catch (error) {
     logger.error('获取学生课程失败:', error)
     ElMessage.error('获取学生课程失败，请稍后重试')
-    
+
     // API调用失败时返回空数组，不使用模拟数据
     return []
   }
@@ -996,7 +1205,7 @@ const getStudentCourses = async (studentId) => {
 const showImportDialog = () => {
   selectedFile.value = null
   importDialogVisible.value = true
-  
+
   // 不要在对话框刚显示时自动触发文件选择，让用户手动点击按钮
 }
 
@@ -1012,17 +1221,17 @@ const handleChooseFile = () => {
 // 处理原生input文件选择
 const handleNativeFileChange = (e) => {
   logger.log('handleNativeFileChange called with:', e)
-  
+
   if (e.target && e.target.files && e.target.files.length > 0) {
     const file = e.target.files[0]
     const fileName = file.name.toLowerCase()
-    
+
     if (!fileName.endsWith('.xlsx') && !fileName.endsWith('.xls')) {
       ElMessage.error('请选择Excel文件(.xlsx或.xls格式)')
       e.target.value = ''
       return
     }
-    
+
     logger.log('Native selected file:', file)
     selectedFile.value = file
     logger.log('selectedFile after native selection:', selectedFile.value)
@@ -1035,9 +1244,9 @@ const handleNativeFileChange = (e) => {
 const closeImportDialog = () => {
   selectedFile.value = null
   importDialogVisible.value = false
-  // 重置文件输入框
+  // 重置文件输入框（narrowing：仅 HTMLInputElement 有 value）
   const fileInput = document.querySelector('#excel-file')
-  if (fileInput) {
+  if (fileInput instanceof HTMLInputElement) {
     fileInput.value = ''
   }
 }
@@ -1045,10 +1254,10 @@ const closeImportDialog = () => {
 // 下载导入模板
 const downloadTemplate = async (): Promise<void> => {
   try {
-    // 响应拦截器已返回 Blob
-    const blob = await request.get('/admin/students/import-template', {
+    // 响应拦截器已返回 Blob（类型声明为 ApiResult，运行时即 Blob，用断言保持运行时一致）
+    const blob = await request.get<Blob>('/admin/students/import-template', {
       responseType: 'blob'
-    })
+    }) as unknown as Blob
 
     // 创建下载链接
     const url = window.URL.createObjectURL(blob)
@@ -1079,42 +1288,54 @@ const importExcel = async () => {
     // 简化导入流程，直接构建FormData并发送请求
     const formData = new FormData()
     formData.append('file', selectedFile.value)
-    
+
     // 发送请求到后端
     const response = await importExcelApi(formData)
-    
+
     if (response && response.code === 200) {
-      // 获取导入结果数据
-      const importResult = response.data || {}
-      const successCount = importResult.successCount || 0
-      const failCount = importResult.failCount || 0
-      const failList = importResult.failList || []
-      
+      // 获取导入结果数据（data 为 unknown，用精确接口收窄；保持原 `||` 回退语义）
+      const rawImport: unknown = response.data
+      const importResult = (rawImport ? (rawImport as StudentImportData) : {}) as StudentImportData
+      const successRaw: unknown = importResult.successCount
+      const failRaw: unknown = importResult.failCount
+      const listRaw: unknown = importResult.failList
+      const successCount = successRaw ? Number(successRaw) : 0
+      const failCount = failRaw ? Number(failRaw) : 0
+      const failList: StudentImportFailItem[] = Array.isArray(listRaw)
+        ? (listRaw as unknown as StudentImportFailItem[])
+        : []
+
+      importDialogVisible.value = false
+      queryPage()
+      const credentials = readInitialCredentials(response.data)
+      if (credentials.length > 0) {
+        await showInitialCredentials(credentials)
+      }
+      if (successCount > credentials.length) {
+        ElMessage.warning('部分成功账号未返回初始凭据，请通过重置密码流程处理')
+      }
+
       // 构建导入结果消息
       let message = `导入完成，成功: ${successCount} 条，失败: ${failCount} 条`
-      
+
       // 如果有失败记录，显示失败详情
       if (failList.length > 0) {
         let errorDetails = '\n失败详情:\n'
         failList.forEach((fail, index) => {
-          errorDetails += `${index + 1}. 第${fail.rowNum}行: ${fail.errorMsg || '未知错误'}\n`
+          const rowNum: unknown = fail.rowNum
+          const errMsg: unknown = fail.errorMsg
+          errorDetails += `${index + 1}. 第${rowNum}行: ${errMsg ? String(errMsg) : '未知错误'}\n`
         })
-        
+
         // 显示包含详细信息的消息框
-        ElMessageBox.alert(message + errorDetails, '导入结果', {
+        await ElMessageBox.alert(message + errorDetails, '导入结果', {
           type: failCount > 0 ? 'warning' : 'success',
           confirmButtonText: '确定',
-          dangerouslyUseHTMLString: false,
-          callback: () => {
-            importDialogVisible.value = false
-            queryPage() // 重新加载列表
-          }
-        })
+          dangerouslyUseHTMLString: false
+        }).catch(() => undefined)
       } else {
         // 如果全部成功，显示成功消息
         ElMessage.success(message)
-        importDialogVisible.value = false
-        queryPage() // 重新加载列表
       }
     } else {
       // 显示后端返回的具体错误信息
@@ -1135,8 +1356,8 @@ const handleExportToExcel = async () => {
   try {
     ElMessage({ message: '正在准备导出数据...', type: 'info' })
 
-    // 响应拦截器已返回 Blob
-    const blob = await exportStudentDataApi()
+    // 响应拦截器已返回 Blob（类型声明为 ApiResult，运行时即 Blob，用断言保持运行时一致）
+    const blob = await exportStudentDataApi() as unknown as Blob
 
     const url = window.URL.createObjectURL(blob)
     const link = document.createElement('a')
@@ -1169,6 +1390,16 @@ onMounted(async () => {
   }
   logger.log('数据加载完成')
 })
+
+useAgentPageContext(() => ({
+  title: '学生管理',
+  view: dialogFormVisible.value ? 'student-form' : 'page',
+  object: dialogFormVisible.value && formTitle.value === '编辑学生' && editStudent.value.id ? { type: 'student', id: String(editStudent.value.id) } : null,
+  selectedObjects: (selectIds.value || []).slice(0, 20).map((id: string) => ({ type: 'student', id: String(id) })),
+  filters: { keyword: searchForm.value.name || '', status: searchForm.value.status || '', grade: searchForm.value.grade || '',
+    major: majors.value.find(item => item.value === String(searchForm.value.majorId))?.name || '', classId: String(searchForm.value.classId || ''),
+    visibleIds: tableData.value.slice(0, 20).map(row => String(row.id)) }
+}))
 </script>
 
 <template>
@@ -1261,11 +1492,14 @@ onMounted(async () => {
     <el-card class="actions-card" shadow="never">
       <div class="actions-container">
         <div class="primary-actions">
-          <el-button v-if="authStore.hasPermission('user:student:add')" type="primary" @click="handleAddStudent()" class="action-btn primary">
+          <el-button v-if="authStore.hasPermission('user:student:add')" type="primary" data-agent-open @click="handleAddStudent()" class="action-btn primary">
             <el-icon><Plus /></el-icon>&nbsp;新增学生
           </el-button>
           <el-button v-if="authStore.hasPermission('user:student:delete')" type="danger" @click="delByIds" class="action-btn danger">
             <el-icon><Delete /></el-icon>&nbsp;批量删除
+          </el-button>
+          <el-button v-if="authStore.hasPermission('user:student:reset')" type="warning" @click="resetAllStudentPasswords" class="action-btn warning">
+            <el-icon><Key /></el-icon>&nbsp;一键重置全部密码
           </el-button>
         </div>
         <div class="secondary-actions">
@@ -1310,6 +1544,7 @@ onMounted(async () => {
         <el-table-column prop="department" label="学院" width="140" align="center" :formatter="formatDepartmentName" />
         <el-table-column prop="className" label="班级" width="120" align="center" />
         <el-table-column prop="phone" label="手机号" width="130" align="center" />
+        <el-table-column prop="email" label="邮箱" width="200" align="center" show-overflow-tooltip />
         <el-table-column prop="status" label="状态" width="100" align="center">
           <template #default="scope">
             <el-tag :type="scope.row.status === 1 ? 'success' : 'danger'" size="small" class="status-tag">
@@ -1321,7 +1556,7 @@ onMounted(async () => {
         <el-table-column prop="createdTime" label="创建时间" width="180" align="center" :formatter="formatDate" />    
         <el-table-column label="操作" align="center" width="270" fixed="right">
           <template #default="scope">
-            <div class="action-buttons">
+            <MobileMoreActions>
               <el-tooltip v-if="authStore.hasPermission('user:student:edit')" content="编辑" placement="top">
                 <el-button type="primary" size="small" @click="handleUpdateStudent(scope.row.id)" class="table-btn edit">
                   <el-icon><Edit /></el-icon>
@@ -1332,7 +1567,7 @@ onMounted(async () => {
                   <el-icon><Delete /></el-icon>
                 </el-button>
               </el-tooltip>
-              <el-tooltip v-if="authStore.hasPermission('user:student:reset')" content="重置密码" placement="top">
+              <el-tooltip v-if="authStore.hasPermission('user:student:reset')" content="重置该学生密码" placement="top">
                 <el-button type="warning" size="small" @click="showResetPasswordDialog(scope.row)" class="table-btn reset">
                   <el-icon><Refresh /></el-icon>
                 </el-button>
@@ -1347,7 +1582,7 @@ onMounted(async () => {
                   <el-icon><Switch /></el-icon>
                 </el-button>
               </el-tooltip>
-            </div>
+            </MobileMoreActions>
           </template>
         </el-table-column>
       </el-table>
@@ -1410,10 +1645,13 @@ onMounted(async () => {
             </el-select>
           </el-form-item>
           <el-form-item label="手机号" prop="phone">
-            <el-input v-model="addStudent.phone" placeholder="请输入手机号"></el-input>
+            <el-input v-model="addStudent.phone" placeholder="请输入手机号（选填）"></el-input>
+          </el-form-item>
+          <el-form-item label="邮箱" prop="email">
+            <el-input v-model="addStudent.email" placeholder="请输入邮箱（选填）"></el-input>
           </el-form-item>
           <div class="form-tip">
-            提示：密码将自动设置为123456，无需手动输入
+            提示：初始密码默认为 123456
           </div>
         </el-form>
       </template>
@@ -1459,17 +1697,17 @@ onMounted(async () => {
             </el-select>
           </el-form-item>
           <el-form-item label="手机号" prop="phone">
-            <el-input v-model="editStudent.phone" placeholder="请输入手机号"></el-input>
+            <el-input v-model="editStudent.phone" placeholder="请输入手机号（选填）"></el-input>
           </el-form-item>
           <el-form-item label="邮箱" prop="email">
-            <el-input v-model="editStudent.email" placeholder="请输入邮箱"></el-input>
+            <el-input v-model="editStudent.email" placeholder="请输入邮箱（选填）"></el-input>
           </el-form-item>
           <div class="form-tip">
-            提示：密码将自动设置为123456，无需手动输入
+            提示：编辑资料不会修改登录密码
           </div>
         </el-form>
       </template>
-      
+
       <template #footer>
         <span class="dialog-footer">
           <el-button @click="handleCancel()" class="cancel-btn">取消</el-button>
@@ -1481,7 +1719,7 @@ onMounted(async () => {
     <!-- 重置密码对话框 -->
     <el-dialog v-model="resetPasswordDialogVisible" title="重置密码" width="400px" class="reset-dialog">
       <div class="reset-content">
-        <p>密码将被重置为: <span class="password-text">123456</span></p>
+        <p>密码将统一重置为 123456。</p>
         <p class="reset-tip">请确认是否继续重置密码</p>
       </div>
       <template #footer>
@@ -1517,7 +1755,7 @@ onMounted(async () => {
         <el-button type="primary" @click="importExcel" :loading="importLoading" class="confirm-btn">导入</el-button>
       </template>
     </el-dialog>
-    
+
     <!-- 查看学生课程对话框 -->
     <el-dialog 
       v-model="viewCoursesDialogVisible" 
@@ -1903,7 +2141,7 @@ onMounted(async () => {
   .search-row {
     flex-wrap: wrap;
   }
-  
+
   .search-actions {
     margin-left: 0;
     width: 100%;
@@ -1915,38 +2153,38 @@ onMounted(async () => {
   .student-management-container {
     padding: 15px;
   }
-  
+
   .page-header {
     flex-direction: column;
     text-align: center;
     padding: 20px;
   }
-  
+
   .header-illustration {
     margin-top: 15px;
   }
-  
+
   .actions-container {
     flex-direction: column;
     gap: 12px;
     align-items: stretch;
   }
-  
+
   .primary-actions,
   .secondary-actions {
     justify-content: center;
   }
-  
+
   .action-buttons {
     flex-wrap: wrap;
     justify-content: center;
   }
-  
+
   .search-row {
     flex-direction: column;
     gap: 12px;
   }
-  
+
   .search-actions {
     width: 100%;
     justify-content: center;

@@ -179,7 +179,7 @@ public class ScoringRuleController {
     @PreAuthorize("hasRole('ADMIN')")
     @Log(module = "SCORING_RULE", operationType = "INSERT", description = "批量创建评分规则并生成AI描述")
     public Result batchCreateWithAIDescription(@RequestBody Map<String, String> request) {
-        log.info("批量创建评分规则并生成AI描述: {}", request);
+        log.info("收到批量创建评分规则请求");
         try {
             String categoryName = request.get("categoryName");
             int result = scoringRuleService.batchCreateWithAIDescription(categoryName);

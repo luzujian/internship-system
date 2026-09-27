@@ -1,1852 +1,1032 @@
 <template>
-  <div class="internship-confirmation-form-container">
-    <div class="page-header">
-      <h2>实习确认表</h2>
-      <p>请确认以下实习信息，如有疑问请联系企业或指导老师</p>
-    </div>
-
-    <!-- 待确认表单（仅当有待确认的面试时显示） -->
-    <div v-if="hasPendingConfirmation" class="confirmation-content">
-      <el-card class="info-card" shadow="never">
-        <template #header>
-          <div class="card-header">
-            <el-icon class="header-icon"><InfoFilled /></el-icon>
-            <span>请仔细核对以下信息，确认无误后提交</span>
-          </div>
-        </template>
-
-        <!-- 学生信息区域 -->
-        <div class="info-section">
-          <div class="section-title">
-            <el-icon><User /></el-icon>
-            <span>学生信息</span>
-          </div>
-          <div class="info-grid">
-            <div class="info-item">
-              <span class="info-label">姓名</span>
-              <span class="info-value">{{ confirmationData.studentName }}</span>
-            </div>
-            <div class="info-item">
-              <span class="info-label">学号</span>
-              <span class="info-value">{{ confirmationData.studentNumber }}</span>
-            </div>
-            <div class="info-item">
-              <span class="info-label">性别</span>
-              <span class="info-value">{{ confirmationData.gender }}</span>
-            </div>
-            <div class="info-item">
-              <span class="info-label">年级</span>
-              <span class="info-value">{{ confirmationData.grade }}</span>
-            </div>
-            <div class="info-item">
-              <span class="info-label">专业</span>
-              <span class="info-value">{{ confirmationData.major }}</span>
-            </div>
-            <div class="info-item">
-              <span class="info-label">班级</span>
-              <span class="info-value">{{ confirmationData.className }}</span>
-            </div>
-            <div class="info-item">
-              <span class="info-label">联系电话</span>
-              <span class="info-value">{{ confirmationData.contactPhone }}</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- 实习信息区域 -->
-        <div class="info-section">
-          <div class="section-title">
-            <el-icon><OfficeBuilding /></el-icon>
-            <span>实习信息</span>
-          </div>
-          <div class="info-grid">
-            <div class="info-item">
-              <span class="info-label">实习企业</span>
-              <el-select
-                v-model="selectedCompanyId"
-                placeholder="请选择企业"
-                class="info-select"
-                @change="handleCompanyChange"
-              >
-                <el-option
-                  v-for="item in companyOptions"
-                  :key="item.value"
-                  :label="item.label"
-                  :value="item.value"
-                />
-              </el-select>
-            </div>
-            <div class="info-item">
-              <span class="info-label">实习岗位</span>
-              <el-select
-                v-model="selectedPositionId"
-                placeholder="请选择岗位"
-                class="info-select"
-                :disabled="!selectedCompanyId"
-                @change="handlePositionChange"
-              >
-                <el-option
-                  v-for="item in positionOptions"
-                  :key="item.value"
-                  :label="item.label"
-                  :value="item.value"
-                />
-              </el-select>
-            </div>
-            <div class="info-item">
-              <span class="info-label">企业地址</span>
-              <span class="info-value">{{ confirmationData.companyAddress }}</span>
-            </div>
-            <div class="info-item">
-              <span class="info-label">企业电话</span>
-              <span class="info-value">{{ confirmationData.companyPhone }}</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- 实习时间区域 -->
-        <div class="info-section">
-          <div class="section-title">
-            <el-icon><Clock /></el-icon>
-            <span>实习时间（统一安排）</span>
-          </div>
-          <div class="info-grid">
-            <div class="info-item">
-              <span class="info-label">开始日期</span>
-              <span class="info-value date">{{ confirmationData.internshipStartTime }}</span>
-            </div>
-            <div class="info-item">
-              <span class="info-label">结束日期</span>
-              <span class="info-value date">{{ confirmationData.internshipEndTime }}</span>
-            </div>
-            <div class="info-item">
-              <span class="info-label">实习时长</span>
-              <span class="info-value duration">{{ confirmationData.internshipDuration }} 天</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- 备注区域 -->
-        <div class="info-section remark-section">
-          <div class="section-title">
-            <el-icon><ChatDotRound /></el-icon>
-            <span>备注信息</span>
-            <span class="optional-tag">选填</span>
-          </div>
-          <el-input
-            v-model="confirmationData.remark"
-            type="textarea"
-            :rows="3"
-            placeholder="如有疑问或需要说明的情况，请在此填写（选填）"
-            maxlength="500"
-            show-word-limit
-          />
-        </div>
-
-        <!-- 提交按钮 -->
-        <div class="submit-section">
-          <div class="submit-tip">
-            <el-icon><CircleCheckFilled /></el-icon>
-            <span>确认提交后，您的实习信息将发送给企业进行最终确认</span>
-          </div>
-          <el-button type="primary" size="large" @click="submitConfirmation" :loading="submitting" class="submit-btn">
-            确认提交
-          </el-button>
-        </div>
-      </el-card>
-    </div>
-
-    <!-- 确认记录列表 -->
-    <div class="history-section">
-      <div class="history-header">
-        <div class="header-left">
-          <el-icon class="header-icon"><Document /></el-icon>
-          <span>确认记录</span>
-        </div>
-        <el-tag type="info" size="small">共 {{ historyList.length }} 条</el-tag>
+  <div class="confirmation-page">
+    <header class="page-header">
+      <div>
+        <h2>实习确认</h2>
+        <p>选择并确认适合自己的实习岗位，系统将保留完整的实习记录</p>
       </div>
+    </header>
 
-      <div class="history-body">
-        <!-- 拒绝原因提示 -->
-        <div v-if="rejectionReason" class="rejection-alert">
-          <el-alert type="warning" :closable="false" show-icon>
-            <template #title>
-              <span>企业撤回原因：{{ rejectionReason }}</span>
-            </template>
-          </el-alert>
-        </div>
-
-        <div v-if="historyList.length > 0" class="history-list">
-        <div v-for="item in historyList" :key="item.id" class="history-item">
-          <div class="history-main">
-            <div class="history-company">{{ item.companyName || '未指定' }}</div>
-            <div class="history-position">{{ item.positionName || '未指定' }}</div>
-            <div class="history-phone">
-              <el-icon><Phone /></el-icon>
-              {{ item.companyPhone || '未提供' }}
-            </div>
-            <div class="history-time">
-              <el-icon><Clock /></el-icon>
-              {{ item.internshipStartTime || '待定' }} ~ {{ item.internshipEndTime || '待定' }}
-            </div>
-            <div class="history-confirm-time" v-if="item.createTime">
-              <el-icon><Calendar /></el-icon>
-              确认时间：{{ formatDate(item.createTime) }}
-            </div>
-            <!-- 拒绝原因显示 -->
-            <div class="history-rejection" v-if="item.status === 2 && item.rejectionReason">
-              <el-icon><Warning /></el-icon>
-              撤回原因：{{ item.rejectionReason }}
-            </div>
-          </div>
-          <div class="history-actions">
-            <el-tag :type="getStatusType(item.status, item.internshipStatus)" size="small">
-              {{ getStatusText(item.status, item.internshipStatus) }}
-            </el-tag>
-            <button class="action-button view" @click="viewHistory(item)">
-              <el-icon><View /></el-icon>
-              查看
-            </button>
-            <!-- 撤回按钮：仅 status=0 待确认且未在撤回处理中时可显示 -->
-            <button v-if="item.status === 0 && item.recallStatus !== 2" class="action-button recall" @click="openRecallDialog(item)">
-              <el-icon><RefreshLeft /></el-icon>
-              撤回
-            </button>
-            <button v-if="item.status === 2" class="action-button edit" @click="editRejectedRecord(item)">
-              <el-icon><Edit /></el-icon>
-              修改
-            </button>
-            <!-- 单位变更按钮 -->
-            <template v-if="canApplyUnitChange(item)">
-              <button v-if="unitChangeStatus.hasPendingApplication" class="action-button pending" disabled>
-                <el-icon><Clock /></el-icon>
-                审核中
-              </button>
-              <button v-else-if="unitChangeStatus.hasRejectedApplication" class="action-button reapply" @click="openUnitChangeDialog(true)">
-                <el-icon><Refresh /></el-icon>
-                再次申请
-              </button>
-              <button v-else class="action-button change" @click="openUnitChangeDialog(false)">
-                <el-icon><Refresh /></el-icon>
-                申请变更
-              </button>
-            </template>
-          </div>
+    <!-- 待企业确认状态提示 -->
+    <section v-if="pendingConfirmation" class="pending-card">
+      <div class="pending-icon">
+        <el-icon :size="24"><Clock /></el-icon>
+      </div>
+      <div class="pending-content">
+        <h3>等待企业确认中</h3>
+        <p>您已提交「{{ pendingConfirmation.companyName }} · {{ pendingConfirmation.positionName }}」的实习确认，企业将在审核通过后为您生效</p>
+        <div v-if="pendingConfirmation.submitTime" class="pending-meta">
+          提交时间：{{ formatDateTime(pendingConfirmation.submitTime) }}
         </div>
       </div>
-        <div v-else class="empty-history">
-          <el-icon class="empty-icon"><Document /></el-icon>
-          <div class="empty-text">暂无确认记录</div>
+      <el-button type="danger" plain size="small" @click="openRecallDialog(pendingConfirmation)">撤回申请</el-button>
+    </section>
+
+    <section v-if="!pendingConfirmation" class="offer-card">
+      <div class="section-heading">
+        <div>
+          <h3>可确认的实习</h3>
+          <p v-if="!offersLoading && offers.length === 0">暂无待确认的 Offer，请前往职位浏览页面申请岗位</p>
         </div>
+        <el-tag v-if="!offersLoading" type="info" effect="plain">共 {{ offers.length }} 个</el-tag>
       </div>
-    </div>
 
-    <!-- 成功提示对话框 -->
-    <el-dialog
-      v-model="showSuccessDialog"
-      title=""
-      width="400px"
-      :show-close="false"
-      :close-on-click-modal="false"
-      :close-on-press-escape="false"
-      class="success-dialog"
-    >
-      <div class="success-content">
-        <div class="success-icon">
-          <el-icon><CircleCheckFilled /></el-icon>
-        </div>
-        <div class="success-title">提交成功</div>
-        <div class="success-desc">您的实习确认表已提交，等待企业确认</div>
+      <div v-if="offersLoading" class="loading-state">
+        <el-icon class="is-loading" :size="24"><Loading /></el-icon>
+        <span>正在加载 Offer 列表...</span>
       </div>
-      <template #footer>
-        <el-button type="primary" @click="showSuccessDialog = false; hasPendingConfirmation = false" class="success-btn">
-          我知道了
-        </el-button>
-      </template>
-    </el-dialog>
 
-    <!-- 撤回确认申请对话框 -->
-    <el-dialog
-      v-model="recallDialogVisible"
-      title="撤回确认申请"
-      width="500px"
-    >
-      <el-alert
-        title="撤回说明"
-        type="info"
-        :closable="false"
-        show-icon
-        class="recall-notice"
-      >
-        <template #default>
-          <p>• 撤回后将取消当前的确认申请</p>
-          <p>• 企业尚未确认，可以撤回</p>
-          <p>• 请选择撤回原因</p>
-        </template>
-      </el-alert>
+      <div v-else-if="offers.length === 0" class="empty-state">
+        <el-icon :size="48"><Document /></el-icon>
+        <p>当前没有可确认的 Offer</p>
+        <el-button type="primary" @click="browseJobs">去申请岗位</el-button>
+      </div>
 
-      <el-form :model="recallForm" label-width="100px" class="recall-form">
-        <el-form-item label="撤回原因" required>
-          <el-select
-            v-model="recallForm.reason"
-            placeholder="请选择撤回原因"
-            style="width: 100%"
-          >
-            <el-option label="信息填写错误" value="information_error" />
-            <el-option label="企业信息有误" value="company_info_error" />
-            <el-option label="岗位不符合预期" value="position_not_expected" />
-            <el-option label="实习时间变更" value="time_changed" />
-            <el-option label="其他原因" value="other" />
-          </el-select>
-        </el-form-item>
-
-        <el-form-item
-          v-if="recallForm.reason === 'other'"
-          label="详细说明"
-          required
+      <div v-else class="offer-grid">
+        <button
+          v-for="offer in offers"
+          :key="offer.offerId"
+          type="button"
+          :class="['offer-item', { selected: String(offer.offerId) === selectedOfferId }]"
+          @click="selectedOfferId = String(offer.offerId)"
         >
-          <el-input
-            v-model="recallForm.otherReason"
-            type="textarea"
-            :rows="3"
-            placeholder="请详细说明撤回原因"
-            maxlength="500"
-            show-word-limit
-          />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="recallDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="submitRecall" :loading="recallSubmitting">确认撤回</el-button>
-      </template>
-    </el-dialog>
-
-    <!-- 查看历史记录对话框（只读） -->
-    <el-dialog
-      v-model="viewingConfirmation"
-      title="确认记录详情"
-      width="600px"
-      class="view-dialog"
-    >
-      <div v-if="viewingRecord" class="view-content">
-        <el-descriptions :column="2" border>
-          <el-descriptions-item label="学生姓名">
-            {{ viewingRecord.studentName }}
-          </el-descriptions-item>
-          <el-descriptions-item label="学号">
-            {{ viewingRecord.studentNumber }}
-          </el-descriptions-item>
-          <el-descriptions-item label="实习企业">
-            {{ viewingRecord.companyName }}
-          </el-descriptions-item>
-          <el-descriptions-item label="实习岗位">
-            {{ viewingRecord.positionName }}
-          </el-descriptions-item>
-          <el-descriptions-item label="企业地址" :span="2">
-            {{ viewingRecord.companyAddress }}
-          </el-descriptions-item>
-          <el-descriptions-item label="联系电话">
-            {{ viewingRecord.companyPhone }}
-          </el-descriptions-item>
-          <el-descriptions-item label="实习时间">
-            {{ viewingRecord.internshipStartTime }} ~ {{ viewingRecord.internshipEndTime }}
-          </el-descriptions-item>
-          <el-descriptions-item label="状态">
-            <el-tag :type="getStatusType(viewingRecord.status, viewingRecord.internshipStatus)" size="small">
-              {{ getStatusText(viewingRecord.status, viewingRecord.internshipStatus) }}
-            </el-tag>
-          </el-descriptions-item>
-          <el-descriptions-item label="确认时间">
-            {{ formatDate(viewingRecord.createTime) }}
-          </el-descriptions-item>
-          <el-descriptions-item v-if="viewingRecord.remark" label="备注" :span="2">
-            {{ viewingRecord.remark }}
-          </el-descriptions-item>
-          <el-descriptions-item v-if="viewingRecord.status === 2 && viewingRecord.rejectionReason" label="撤回原因" :span="2">
-            <span class="rejection-text">{{ viewingRecord.rejectionReason }}</span>
-          </el-descriptions-item>
-        </el-descriptions>
+          <span class="offer-radio" aria-hidden="true"></span>
+          <span class="offer-copy">
+            <strong>{{ offer.companyName || '未命名企业' }}</strong>
+            <span>{{ offer.positionName || '未命名岗位' }}</span>
+            <small v-if="offer.companyAddress">📍 {{ offer.companyAddress }}</small>
+            <small v-if="offer.offerTime">📅 Offer时间：{{ formatDate(offer.offerTime) }}</small>
+          </span>
+          <el-tag v-if="offer.directHire" type="warning" size="small" effect="dark">直签</el-tag>
+          <el-tag v-else-if="offer.interviewTime" type="success" size="small">面试通过</el-tag>
+          <el-tag v-else type="info" size="small">可确认</el-tag>
+        </button>
       </div>
-      <template #footer>
-        <el-button @click="closeViewing">关闭</el-button>
-      </template>
-    </el-dialog>
 
-    <!-- 变更申请表单对话框 -->
-    <el-dialog
-      v-model="showUnitChangeDialog"
-      title="实习单位变更申请"
-      width="700px"
-      class="unit-change-dialog"
-    >
-      <div v-if="unitChangeForm" class="unit-change-form">
-        <!-- 学生信息（只读） -->
-        <div class="info-section">
-          <div class="section-title">
-            <el-icon><User /></el-icon>
-            <span>学生信息</span>
-          </div>
-          <div class="info-grid">
-            <div class="info-item">
-              <span class="info-label">姓名</span>
-              <span class="info-value">{{ unitChangeForm.studentName }}</span>
-            </div>
-            <div class="info-item">
-              <span class="info-label">学号</span>
-              <span class="info-value">{{ unitChangeForm.studentNumber }}</span>
-            </div>
-            <div class="info-item">
-              <span class="info-label">性别</span>
-              <span class="info-value">{{ unitChangeForm.gender }}</span>
-            </div>
-            <div class="info-item">
-              <span class="info-label">年级</span>
-              <span class="info-value">{{ unitChangeForm.grade }}</span>
-            </div>
-            <div class="info-item">
-              <span class="info-label">专业</span>
-              <span class="info-value">{{ unitChangeForm.major }}</span>
-            </div>
-            <div class="info-item">
-              <span class="info-label">班级</span>
-              <span class="info-value">{{ unitChangeForm.className }}</span>
-            </div>
-          </div>
+      <div v-if="selectedOffer" class="confirmation-box">
+        <div class="selected-summary">
+          <span>已选择</span>
+          <strong>{{ selectedOffer.companyName }} · {{ selectedOffer.positionName }}</strong>
         </div>
+        <el-input
+          v-model="confirmationRemark"
+          type="textarea"
+          :rows="3"
+          maxlength="500"
+          show-word-limit
+          placeholder="可填写补充说明（选填）"
+        />
+        <el-button type="primary" :loading="submitting" @click="confirmSelectedOffer">
+          确认该实习
+        </el-button>
+      </div>
+    </section>
 
-        <!-- 原实习单位（只读） -->
-        <div class="info-section">
-          <div class="section-title">
-            <el-icon><OfficeBuilding /></el-icon>
-            <span>原实习单位</span>
-          </div>
-          <div class="info-grid">
-            <div class="info-item full-width">
-              <span class="info-label">原实习单位</span>
-              <span class="info-value highlight">{{ unitChangeForm.oldCompany }}</span>
-            </div>
-          </div>
+    <section class="current-card">
+      <div class="section-heading">
+        <div>
+          <h3>当前实习</h3>
         </div>
-
-        <!-- 驳回原因提示（仅再次申请时显示） -->
-        <div v-if="unitChangeForm.rejectReason" class="reject-alert">
-          <el-alert type="error" :closable="false" show-icon>
-            <template #title>
-              <span>驳回原因：{{ unitChangeForm.rejectReason }}</span>
-            </template>
-          </el-alert>
+        <el-tag v-if="currentPlacement" :type="currentStatusTagType(currentPlacement)" effect="dark">
+          {{ placementStatusText(currentPlacement) }}
+        </el-tag>
+        <el-tag v-else type="info" effect="plain">暂无</el-tag>
+      </div>
+      <div v-if="currentPlacement" class="current-content">
+        <img
+          v-if="currentPlacement.companyLogo"
+          :src="currentPlacement.companyLogo"
+          class="company-mark company-logo"
+          alt="企业Logo"
+          @error="handleCompanyLogoError"
+        />
+        <div v-else class="company-mark">{{ companyInitial(currentPlacement.companyName) }}</div>
+        <div class="placement-main">
+          <strong>{{ currentPlacement.companyName || '未命名企业' }}</strong>
+          <span>{{ currentPlacement.positionName || '未命名岗位' }}</span>
         </div>
+      </div>
+      <div v-else class="empty-current">
+        <el-icon :size="36"><OfficeBuilding /></el-icon>
+        <p>您目前没有进行中的实习</p>
+      </div>
+    </section>
 
-        <!-- 申请信息（可编辑） -->
-        <div class="info-section">
-          <div class="section-title">
-            <el-icon><Edit /></el-icon>
-            <span>变更信息</span>
-          </div>
-
-          <div class="form-item">
-            <label>申请理由<span class="required">*</span></label>
-            <el-input
-              v-model="unitChangeForm.reason"
-              type="textarea"
-              :rows="3"
-              placeholder="请填写申请变更的理由"
-              maxlength="500"
-              show-word-limit
-            />
-          </div>
-
+    <section class="history-card">
+      <div class="section-heading">
+        <div>
+          <h3>实习确认记录</h3>
         </div>
+        <el-tag v-if="history.length" type="info" effect="plain">共 {{ history.length }} 条</el-tag>
+      </div>
 
-        <!-- 上传资料 -->
-        <div class="info-section">
-          <div class="section-title">
-            <el-icon><DocumentCopy /></el-icon>
-            <span>上传资料</span>
-          </div>
+      <div v-if="historyLoading" class="loading-state">
+        <el-icon class="is-loading" :size="20"><Loading /></el-icon>
+        <span>加载记录中...</span>
+      </div>
 
-          <div class="upload-items">
-            <div class="upload-item">
-              <label>个人申请书<span class="required">*</span></label>
-              <p class="upload-hint">手写或打印一份说明，内容包括：姓名、学号、当前实习单位、申请变更的原因，签字后拍照或扫描上传</p>
-              <el-upload
-                :action="uploadUrl"
-                :headers="uploadHeaders"
-                :on-success="(res) => handleUploadSuccess(res, '个人申请书')"
-                :before-upload="beforeUpload"
-                accept="image/*,.pdf"
-                :show-file-list="false"
-              >
-                <el-button type="primary" plain>上传个人申请书</el-button>
-              </el-upload>
-              <span class="upload-format-hint">支持 jpg、png、pdf 格式</span>
-              <div v-if="unitChangeForm.materials?.['个人申请书']" class="uploaded-file">
-                <img :src="unitChangeForm.materials['个人申请书']" class="preview-image" @click="previewImage(unitChangeForm.materials['个人申请书'])" />
+      <div v-else-if="history.length === 0" class="empty-state small">
+        <el-icon :size="36"><Document /></el-icon>
+        <p>暂无实习确认记录</p>
+      </div>
+
+      <div v-else class="timeline">
+        <article
+          v-for="record in history"
+          :key="record.id"
+          :data-confirmation-id="record.id"
+          :class="['timeline-item', { highlighted: String(record.id) === highlightedConfirmationId }]"
+        >
+          <div class="timeline-dot" :class="timelineDotClass(record)"></div>
+          <div class="timeline-content">
+            <div class="timeline-header">
+              <div>
+                <strong>{{ record.companyName || '未命名企业' }}</strong>
+                <span>{{ record.positionName || '未命名岗位' }}</span>
               </div>
+              <el-tag :type="historyStatusType(record)" size="small">{{ historyStatusText(record) }}</el-tag>
             </div>
+            <div class="timeline-meta">
+              <span>确认时间：{{ formatDateTime(record.createTime) }}</span>
+            </div>
+            <p v-if="record.endReason || record.rejectionReason || record.recallReason" class="record-reason">
+              {{ record.endReason || record.rejectionReason || record.recallReason }}
+            </p>
           </div>
-        </div>
+        </article>
       </div>
+    </section>
 
+    <!-- 撤回确认对话框 -->
+    <el-dialog
+      v-model="showRecallDialog"
+      title="撤回实习确认"
+      width="480px"
+      :close-on-click-modal="false"
+    >
+      <div v-if="recallTarget" class="recall-content">
+        <el-alert type="warning" :closable="false" show-icon>
+          <template #title>
+            确认撤回「{{ recallTarget.companyName }} · {{ recallTarget.positionName }}」的实习确认申请？
+          </template>
+        </el-alert>
+        <el-input
+          v-model="recallReason"
+          type="textarea"
+          :rows="3"
+          maxlength="200"
+          show-word-limit
+          placeholder="请填写撤回原因（必填）"
+          style="margin-top: 16px"
+        />
+      </div>
       <template #footer>
-        <el-button @click="showUnitChangeDialog = false">取消</el-button>
-        <el-button type="primary" @click="submitUnitChangeApp" :loading="submittingChange">提交申请</el-button>
+        <el-button @click="showRecallDialog = false">取消</el-button>
+        <el-button type="danger" :loading="recalling" @click="submitRecall">确认撤回</el-button>
       </template>
     </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, onUnmounted, computed } from "vue";
-import { ElMessage } from "element-plus";
+import { useAgentPageContext } from '@/agent/useAgentPageContext'
+import { useFormContext } from '@/agent/formContext'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
+import { ElMessageBox } from 'element-plus'
 import {
-  User,
-  OfficeBuilding,
   Clock,
-  ChatDotRound,
+  Loading,
   Document,
-  InfoFilled,
-  CircleCheckFilled,
-  Phone,
-  Calendar,
-  View,
-  Warning,
-  Edit,
-  Refresh,
-  DocumentCopy,
-  RefreshLeft
-} from "@element-plus/icons-vue";
+  OfficeBuilding
+} from '@element-plus/icons-vue'
+import request from '@/utils/request'
 
-import request from '@/utils/request';
-import { useAuthStore } from '@/store/auth';
-import { getInternshipTimeSettings } from '@/api/teacherSettings';
-import { getUnitChangeStatus, submitUnitChange, resubmitUnitChange } from '@/api/studentInternship';
-import emitter from '@/utils/event-bus';
+interface InternshipOffer {
+  offerId: string | number
+  invitationId?: string | number | null
+  applicationId?: string | number | null
+  companyId?: string | number | null
+  positionId?: string | number | null
+  companyName?: string
+  positionName?: string
+  companyAddress?: string
+  companyPhone?: string
+  interviewTime?: string
+  offerTime?: string
+  directHire?: boolean
+}
 
-const authStore = useAuthStore()
+interface PlacementRecord {
+  id?: string | number
+  placementId?: string | number
+  companyName?: string
+  companyLogo?: string
+  positionName?: string
+  internshipStartTime?: string
+  internshipEndTime?: string
+  lifecycleStatus?: string
+  status?: string | number
+  statusText?: string
+  confirmationStatus?: string
+  isCurrent?: boolean
+  confirmedAt?: string
+  createTime?: string
+  updateTime?: string
+  endReason?: string
+  rejectionReason?: string
+  recallReason?: string
+  recallStatus?: number
+  submitTime?: string
+}
 
+const route = useRoute()
+const router = useRouter()
+const offers = ref<InternshipOffer[]>([])
+const history = ref<PlacementRecord[]>([])
+const currentPlacement = ref<PlacementRecord | null>(null)
+const pendingConfirmation = ref<PlacementRecord | null>(null)
+const selectedOfferId = ref('')
+const confirmationRemark = ref('')
 const submitting = ref(false)
-const showSuccessDialog = ref(false)
-const hasPendingConfirmation = ref(false)
-const justSubmitted = ref(false) // 标记是否刚刚提交过，用于防止重复显示表单
-const historyList = ref([])
+const highlightedConfirmationId = ref('')
+const offersLoading = ref(false)
+const historyLoading = ref(false)
 
-// 查看模式：用于只读查看历史记录
-const viewingConfirmation = ref(false)
-const viewingRecord = ref<any>(null)
+// 撤回相关
+const showRecallDialog = ref(false)
+const recallReason = ref('')
+const recalling = ref(false)
+const recallTarget = ref<PlacementRecord | null>(null)
 
-// 编辑被拒绝的记录模式
-const editingRejectedRecord = ref(false)
+const selectedOffer = computed(() => (
+  offers.value.find(offer => String(offer.offerId) === selectedOfferId.value) || null
+))
 
-// 撤回相关状态
-const recallDialogVisible = ref(false)
-const recallSubmitting = ref(false)
-const recallForm = reactive({
-  reason: '',
-  otherReason: ''
-})
-const currentRecallRecord = ref<any>(null)
-
-const recallReasonMap: Record<string, string> = {
-  'information_error': '信息填写错误',
-  'company_info_error': '企业信息有误',
-  'position_not_expected': '岗位不符合预期',
-  'time_changed': '实习时间变更'
+const formatDate = (value?: string | null, emptyText = '未设置') => {
+  if (!value) return emptyText
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return String(value).slice(0, 10) || emptyText
+  return date.toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' })
 }
 
-// 单位变更相关状态
-const showUnitChangeDialog = ref(false)
-const submittingChange = ref(false)
-const unitChangeStatus = ref({
-  hasPendingApplication: false,
-  hasRejectedApplication: false,
-  currentApplicationId: null,
-  application: null
-})
-
-const unitChangeForm = ref({
-  studentName: '',
-  studentNumber: '',
-  gender: '',
-  grade: '',
-  major: '',
-  className: '',
-  oldCompany: '',
-  reason: '',
-  materials: {
-    '个人申请书': ''
-  },
-  rejectReason: ''
-})
-
-// 应聘时间段状态（null = 加载中，避免按钮闪现）
-const applicationPeriod = ref(null)
-
-// 上传配置
-const uploadUrl = '/api/upload'
-const uploadHeaders = {}
-
-// 拒绝原因的显示
-const rejectionReason = ref('')
-
-const confirmationData = reactive({
-  studentName: '',
-  studentNumber: '',
-  gender: '',
-  grade: '',
-  major: '',
-  className: '',
-  contactPhone: '',
-  email: '',
-  companyName: '',
-  positionName: '',
-  companyAddress: '',
-  companyPhone: '',
-  internshipStartTime: '',
-  internshipEndTime: '',
-  internshipDuration: 0,
-  remark: '',
-  status: 0,
-  statusId: null
-})
-
-// 面试通过的企业和岗位数据
-const approvedCompanies = ref<Array<{companyId: number, companyName: string}>>([])
-const approvedPositions = ref<Array<{positionId: number, positionName: string, companyId: number, companyPhone?: string, companyAddress?: string}>>([])
-const selectedCompanyId = ref<number | null>(null)
-const selectedPositionId = ref<number | null>(null)
-const approvedInterviewsData = ref<any[]>([]) // 保存完整的面试通过数据
-
-// 获取面试通过的记录
-const fetchApprovedInterviews = async () => {
-  try {
-    const response = await request.get('/student/interviews')
-    if (response.code === 200 && response.data) {
-      const approved = response.data.filter((item: any) => item.status === 'interview_passed')
-      approvedInterviewsData.value = approved // 保存完整数据
-      approvedCompanies.value = approved.map((item: any) => ({
-        companyId: item.companyId,
-        companyName: item.companyName
-      }))
-      approvedPositions.value = approved.map((item: any) => ({
-        positionId: item.positionId,
-        positionName: item.positionName,
-        companyId: item.companyId,
-        companyPhone: item.contactPhone || '',
-        companyAddress: item.companyAddress || ''
-      }))
-    }
-  } catch (error) {
-    console.error('获取面试通过记录失败:', error)
-  }
-}
-
-// 企业选项计算属性
-const companyOptions = computed(() => {
-  const map = new Map()
-  approvedCompanies.value.forEach(item => {
-    if (!map.has(item.companyId)) {
-      map.set(item.companyId, item.companyName)
-    }
+const formatDateTime = (value?: string | null) => {
+  if (!value) return '未记录'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return String(value)
+  return date.toLocaleString('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit'
   })
-  return Array.from(map, ([id, name]) => ({ value: id, label: name }))
-})
-
-// 岗位选项计算属性
-const positionOptions = computed(() => {
-  if (!selectedCompanyId.value) return []
-  return approvedPositions.value
-    .filter(item => item.companyId === selectedCompanyId.value)
-    .map(item => ({ value: item.positionId, label: item.positionName }))
-})
-
-// 企业变更处理
-const handleCompanyChange = () => {
-  // 根据选中的企业ID获取企业名称
-  const company = approvedCompanies.value.find(item => item.companyId === selectedCompanyId.value)
-  confirmationData.companyName = company?.companyName || ''
-  selectedPositionId.value = null
-  confirmationData.positionName = ''
-  confirmationData.companyPhone = ''
-  confirmationData.companyAddress = ''
 }
 
-// 岗位变更处理
-const handlePositionChange = () => {
-  if (!selectedPositionId.value) return
-  const position = approvedPositions.value.find(item => item.positionId === selectedPositionId.value)
-  if (position) {
-    confirmationData.positionName = position.positionName || ''
-    confirmationData.companyPhone = position.companyPhone || ''
-    confirmationData.companyAddress = position.companyAddress || ''
-  }
+const companyInitial = (name?: string) => (name || '企').trim().slice(0, 1)
+
+// 企业Logo加载失败时回退到默认首字头像
+const handleCompanyLogoError = () => {
+  if (currentPlacement.value) currentPlacement.value.companyLogo = ''
 }
 
-// 获取状态类型
-const getStatusType = (status, internshipStatus) => {
-  // 如果学生实习状态为已中断（5），显示警告状态
-  if (internshipStatus === 5) {
-    return 'warning'
-  }
-  const typeMap = {
-    0: 'info',     // 待企业确认
-    1: 'success',  // 企业已确认
-    2: 'danger'    // 企业已拒绝
-  }
-  return typeMap[status] || 'info'
+const lifecycleText: Record<string, string> = {
+  DRAFT: '草稿',
+  PENDING_CONFIRMATION: '待企业确认',
+  CONFIRMED: '已确认',
+  IN_PROGRESS: '实习中',
+  COMPLETED: '已结束',
+  REPLACED: '已更换岗位',
+  ENDED: '已结束',
+  INTERRUPTED: '已中断',
+  REJECTED: '企业已拒绝',
+  RECALLED: '已撤回',
+  WITHDRAWN: '学生已撤回',
+  HISTORICAL: '历史记录'
 }
 
-// 获取状态文本
-const getStatusText = (status, internshipStatus) => {
-  // 如果学生实习状态为已中断（5），显示已中断
-  if (internshipStatus === 5) {
-    return '已中断'
-  }
-  const textMap = {
-    0: '待企业确认',
-    1: '已确认',
-    2: '已拒绝'
-  }
-  return textMap[status] || '未知'
+const placementStatusText = (record: PlacementRecord) => {
+  const status = String(record.lifecycleStatus || record.status || '').toUpperCase()
+  return record.statusText || lifecycleText[status] || '当前实习'
 }
 
-// 格式化日期
-const formatDate = (date) => {
-  if (!date) return ''
-  const d = new Date(date)
-  const year = d.getFullYear()
-  const month = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
+const currentStatusTagType = (record: PlacementRecord) => {
+  const status = String(record.lifecycleStatus || record.status || '').toUpperCase()
+  if (['IN_PROGRESS', 'CURRENT'].includes(status)) return 'success'
+  if (['COMPLETED', 'ENDED'].includes(status)) return 'info'
+  if (['INTERRUPTED', 'REJECTED'].includes(status)) return 'danger'
+  return 'warning'
 }
 
-// 性别数字转中文
-const genderToText = (gender) => {
-  if (gender === 1 || gender === '1' || gender === '男') return '男'
-  if (gender === 0 || gender === '0' || gender === '女') return '女'
-  return gender || ''
+const historyStatusText = (record: PlacementRecord) => {
+  if (record.statusText) return record.statusText
+  if (record.recallStatus === 2) return '已撤回'
+  const lifecycle = String(record.lifecycleStatus || '').toUpperCase()
+  if (lifecycleText[lifecycle]) return lifecycleText[lifecycle]
+  const confirmation = String(record.confirmationStatus || '').toUpperCase()
+  if (lifecycleText[confirmation]) return lifecycleText[confirmation]
+  if (Number(record.status) === 0) return '待确认'
+  if (Number(record.status) === 1) return record.isCurrent ? '当前实习' : '已确认'
+  if (Number(record.status) === 2) return '已驳回'
+  return '已记录'
 }
 
-// 年级格式化
-const formatGrade = (grade) => {
-  if (!grade) return ''
-  return String(grade) + '级'
+const historyStatusType = (record: PlacementRecord) => {
+  const text = historyStatusText(record)
+  if (text.includes('当前') || text.includes('实习中') || text.includes('已确认')) return 'success'
+  if (text.includes('驳回') || text.includes('拒绝') || text.includes('中断')) return 'danger'
+  if (text.includes('待') || text.includes('撤回')) return 'warning'
+  return 'info'
 }
 
-// 获取系统统一设置的实习时间
-const fetchInternshipTimeSettings = async () => {
+const timelineDotClass = (record: PlacementRecord) => {
+  const text = historyStatusText(record)
+  if (text.includes('当前') || text.includes('实习中') || text.includes('已确认')) return 'dot-success'
+  if (text.includes('驳回') || text.includes('拒绝')) return 'dot-danger'
+  if (text.includes('撤回')) return 'dot-warning'
+  return ''
+}
+
+const fetchOffers = async () => {
+  offersLoading.value = true
   try {
-    const response = await getInternshipTimeSettings()
-    if (response.code === 200 && response.data) {
-      confirmationData.internshipStartTime = response.data.startDate || ''
-      confirmationData.internshipEndTime = response.data.endDate || ''
-      // 计算时长
-      if (response.data.startDate && response.data.endDate) {
-        const start = new Date(response.data.startDate)
-        const end = new Date(response.data.endDate)
-        const diffTime = Math.abs(end - start)
-        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
-        confirmationData.internshipDuration = diffDays
-      }
-    }
+    const response: any = await request.get('/student/internship-confirmation/offers')
+    const data = response?.data?.offers ?? response?.data ?? []
+    offers.value = Array.isArray(data)
+      ? data.filter((offer: InternshipOffer) => offer?.offerId !== null && offer?.offerId !== undefined)
+      : []
   } catch (error) {
-    console.error('获取实习时间设置失败:', error)
+    console.error('获取待确认 offer 失败:', error)
+    offers.value = []
+    ElMessage.error('获取 Offer 列表失败，请刷新重试')
+  } finally {
+    offersLoading.value = false
   }
 }
 
-// 获取应聘时间窗口设置
-const fetchApplicationPeriod = async () => {
+const fetchHistory = async () => {
+  historyLoading.value = true
   try {
-    // 从 getInternshipNodes 获取完整的应聘时间设置
-    const response = await request.get('/settings/internship-nodes')
-    if (response.code === 200 && response.data) {
-      return {
-        applicationStartTime: response.data.applicationStartTime,
-        applicationEndTime: response.data.applicationEndTime
-      }
-    }
+    const response: any = await request.get('/student/internship-confirmation/history')
+    const records = Array.isArray(response?.data) ? response.data : []
+    history.value = [...records].sort((left, right) => {
+      const leftTime = new Date(left.createTime || 0).getTime()
+      const rightTime = new Date(right.createTime || 0).getTime()
+      return rightTime - leftTime
+    })
   } catch (error) {
-    console.error('获取应聘时间设置失败:', error)
+    console.error('获取实习确认记录失败:', error)
+    history.value = []
+  } finally {
+    historyLoading.value = false
   }
-  return { applicationStartTime: null, applicationEndTime: null }
 }
 
-// 判断当前时间是否在应聘期间内
-const isWithinApplicationPeriod = (startDate: string, endDate: string) => {
-  if (!startDate || !endDate) return false
-  const now = new Date()
-  const start = new Date(startDate)
-  const end = new Date(endDate)
-  // 设置时间为当天的开始和结束
-  start.setHours(0, 0, 0, 0)
-  end.setHours(23, 59, 59, 999)
-  return now >= start && now <= end
-}
-
-// 获取待确认的实习信息（从已通过状态的申请中获取）
-const fetchPendingConfirmation = async () => {
-  // 如果刚刚提交过，不重复显示表单
-  if (justSubmitted.value) {
-    return
-  }
+const fetchCurrentPlacement = async () => {
   try {
-    // 获取应聘时间窗口
-    const period = await fetchApplicationPeriod()
-
-    // 如果当前时间不在应聘期间内，不显示表单（只能等下一学期）
-    if (period.applicationStartTime && period.applicationEndTime) {
-      if (!isWithinApplicationPeriod(period.applicationStartTime, period.applicationEndTime)) {
-        hasPendingConfirmation.value = false
-        return
-      }
+    const response: any = await request.get('/student/internship-confirmation')
+    if (response?.code !== 200) {
+      currentPlacement.value = null
+      pendingConfirmation.value = null
+      return
     }
+    const data = response.data
+    currentPlacement.value = data && (data.companyId || data.positionId || data.companyName)
+      ? { ...data, lifecycleStatus: 'IN_PROGRESS' }
+      : null
 
-    // 获取学生的岗位申请列表（面试通过的数据）
-    let approvedApp = null
-
-    // 同时检查两个API
-    const [jobAppResponse, applicationsResponse] = await Promise.all([
-      request.get('/student/job-applications'),
-      request.get('/student/applications')
-    ])
-
-    // 从岗位申请中找面试通过的
-    if (jobAppResponse.code === 200 && jobAppResponse.data) {
-      approvedApp = jobAppResponse.data.find((app: any) => app.status === 'interview_passed')
-    }
-
-    // 如果岗位申请没有面试通过的，检查单位变更等申请
-    if (!approvedApp && applicationsResponse.code === 200 && applicationsResponse.data) {
-      const applications = applicationsResponse.data
-      // 找到状态为"approved"的申请（表示企业同意面试通过）
-      approvedApp = applications.find((app: any) => app.status === 'approved' || app.status === 1)
-    }
-
-    if (approvedApp) {
-      // 检查学生当前实习状态
-      // internshipStatus: 0=无offer, 1=待确认, 2=已确定, 3=实习中, 5=已中断
-      const currentStatus = historyList.value.length > 0 ? historyList.value[0].internshipStatus : null
-      // 检查确认记录状态：0=待企业确认, 1=已确认, 2=已拒绝
-      const confirmationStatus = historyList.value.length > 0 ? historyList.value[0].status : null
-
-      // 如果学生当前正在实习中（internshipStatus=2已确定 或 internshipStatus=3实习中），不允许再次填写
-      if (currentStatus === 2 || currentStatus === 3) {
-        hasPendingConfirmation.value = false
-        return
-      }
-
-      // 如果已有待确认或已确认的记录，不允许再次填写
-      if (confirmationStatus === 0 || confirmationStatus === 1) {
-        hasPendingConfirmation.value = false
-        return
-      }
-
-      // 只有状态为 0（无offer）、5（已中断）或 status=2（已拒绝）时才允许填写
-      hasPendingConfirmation.value = true
-      // 填充学生信息（从当前用户信息）
-      const user = authStore.user
-      confirmationData.studentName = user?.name || ''
-      confirmationData.studentNumber = user?.studentId || ''
-      confirmationData.gender = genderToText(user?.gender)
-      confirmationData.grade = formatGrade(user?.grade)
-      confirmationData.major = user?.major || ''
-      confirmationData.className = user?.class || ''
-      confirmationData.contactPhone = user?.phone || ''
-      confirmationData.email = user?.email || ''
-
-      // 填充企业信息
-      confirmationData.companyName = approvedApp.companyName || approvedApp.company || ''
-      confirmationData.positionName = approvedApp.positionName || approvedApp.jobTitle || ''
-
-      // 设置企业ID和岗位ID（用于提交到后端）
-      selectedCompanyId.value = approvedApp.companyId || null
-      selectedPositionId.value = approvedApp.positionId || null
-
-      // 从面试通过数据中获取公司地址和电话
-      const interviewData = approvedPositions.value.find(
-        item => item.companyId === selectedCompanyId.value && item.positionId === selectedPositionId.value
-      )
-      if (interviewData) {
-        confirmationData.companyPhone = interviewData.companyPhone || ''
-        confirmationData.companyAddress = interviewData.companyAddress || ''
-      }
-
-      // 实习时间从系统设置获取
-      await fetchInternshipTimeSettings()
-    } else {
-      hasPendingConfirmation.value = false
-    }
-  } catch (error) {
-    console.error('获取待确认实习信息失败:', error)
-    hasPendingConfirmation.value = false
-  }
-}
-
-// 获取历史确认记录
-const fetchConfirmationHistory = async () => {
-  try {
-    const response = await request.get('/student/internship-confirmation/history')
-    if (response.code === 200 && response.data) {
-      // 过滤掉已撤回的记录（recallStatus=2），只保留给学生查看的记录
-      historyList.value = (response.data || []).filter((item: any) => item.recallStatus !== 2)
-      // 如果当前正在编辑被拒绝的记录，则不自动触发编辑模式
-      // 只有在首次加载时检查是否有被拒绝的记录需要处理
-      if (!editingRejectedRecord.value && !viewingConfirmation.value) {
-        // 检查是否有被拒绝的记录，如果有则自动显示编辑表单
-        const rejectedRecord = historyList.value.find((item: any) => item.status === 2)
-        if (rejectedRecord) {
-          editRejectedRecord(rejectedRecord)
+    // 检查是否有待企业确认的记录，从历史记录或offer列表中获取名称
+    if (data?.pendingConfirmationId) {
+      const pendingId = String(data.pendingConfirmationId)
+      // 优先从历史记录中查找
+      const historyRecord = history.value.find(h => String(h.id) === pendingId)
+      if (historyRecord) {
+        pendingConfirmation.value = {
+          id: historyRecord.id,
+          companyName: historyRecord.companyName || '未知企业',
+          positionName: historyRecord.positionName || '未知岗位',
+          submitTime: historyRecord.createTime
+        }
+      } else {
+        // 从offer列表中根据companyId和positionId查找
+        const matchedOffer = offers.value.find(o =>
+          String(o.companyId) === String(data.pendingCompanyId) &&
+          String(o.positionId) === String(data.pendingPositionId)
+        )
+        pendingConfirmation.value = {
+          id: data.pendingConfirmationId,
+          companyName: matchedOffer?.companyName || '未知企业',
+          positionName: matchedOffer?.positionName || '未知岗位',
+          submitTime: null
         }
       }
-    }
-  } catch (error) {
-    console.error('获取确认历史失败:', error)
-  }
-}
-
-// 获取单位变更申请状态
-const fetchUnitChangeStatus = async () => {
-  try {
-    const response = await getUnitChangeStatus()
-    if (response.code === 200 && response.data) {
-      unitChangeStatus.value = response.data
-    }
-  } catch (error) {
-    console.error('获取单位变更申请状态失败:', error)
-  }
-}
-
-// 判断是否可以申请单位变更
-const canApplyUnitChange = (item) => {
-  // 已中断状态不允许申请单位变更
-  if (item.internshipStatus === 5) return false
-  // 必须是已确认状态且实习状态为已确定或实习中
-  if (item.status !== 1) return false
-  if (item.internshipStatus !== 2 && item.internshipStatus !== 3) return false
-  // 需要在应聘时间段内（null 表示尚未加载，暂不显示按钮避免闪现）
-  if (!applicationPeriod.value) return false
-  if (applicationPeriod.value.applicationStartTime && applicationPeriod.value.applicationEndTime) {
-    if (!isWithinApplicationPeriod(applicationPeriod.value.applicationStartTime, applicationPeriod.value.applicationEndTime)) {
-      return false
-    }
-  }
-  return true
-}
-
-// 打开变更申请对话框
-const openUnitChangeDialog = (isReapply = false) => {
-  // 填充学生信息
-  const user = authStore.user
-  const historyRecord = historyList.value.find(item => item.status === 1)
-
-  unitChangeForm.value = {
-    studentName: user?.name || '',
-    studentNumber: user?.studentId || '',
-    gender: genderToText(user?.gender),
-    grade: formatGrade(user?.grade),
-    major: user?.major || '',
-    className: user?.class || '',
-    oldCompany: historyRecord?.companyName || '',
-    reason: '',
-    materials: {
-      '个人申请书': ''
-    },
-    rejectReason: ''
-  }
-
-  // 如果是再次申请，回显数据
-  if (isReapply && unitChangeStatus.value.application) {
-    const app = unitChangeStatus.value.application
-    unitChangeForm.value.reason = app.reason || ''
-    if (app.materials) {
-      unitChangeForm.value.materials = app.materials
-    }
-    unitChangeForm.value.rejectReason = app.rejectReason || ''
-  }
-
-  showUnitChangeDialog.value = true
-}
-
-// 处理上传成功
-const handleUploadSuccess = (response, field) => {
-  if (response.code === 200 && response.data) {
-    unitChangeForm.value.materials[field] = response.data
-  }
-}
-
-// 预览图片
-const previewImage = (url) => {
-  window.open(url)
-}
-
-// 上传前校验
-const beforeUpload = (file) => {
-  const isImage = file.type.startsWith('image/')
-  const isPdf = file.type === 'application/pdf'
-  const isLt5M = file.size / 1024 / 1024 < 5
-
-  if (!isImage && !isPdf) {
-    ElMessage.error('只能上传图片或PDF文件')
-    return false
-  }
-  if (!isLt5M) {
-    ElMessage.error('文件大小不能超过5MB')
-    return false
-  }
-  return true
-}
-
-// 提交单位变更申请
-const submitUnitChangeApp = async () => {
-  if (!unitChangeForm.value.reason) {
-    ElMessage.warning('请填写申请理由')
-    return
-  }
-
-  submittingChange.value = true
-  try {
-    const data = {
-      reason: unitChangeForm.value.reason,
-      materials: unitChangeForm.value.materials
-    }
-
-    let response
-    if (unitChangeStatus.value.hasRejectedApplication && unitChangeStatus.value.currentApplicationId) {
-      // 再次申请
-      response = await resubmitUnitChange(unitChangeStatus.value.currentApplicationId, data)
     } else {
-      // 新申请
-      response = await submitUnitChange(data)
-    }
-
-    if (response.code === 200) {
-      ElMessage.success('提交成功')
-      showUnitChangeDialog.value = false
-      await fetchUnitChangeStatus()
-      await fetchConfirmationHistory()
-    } else {
-      ElMessage.error(response.message || '提交失败')
+      pendingConfirmation.value = null
     }
   } catch (error) {
-    console.error('提交失败:', error)
-    ElMessage.error('提交失败，请稍后重试')
-  } finally {
-    submittingChange.value = false
+    console.error('获取当前实习失败:', error)
+    currentPlacement.value = null
+    pendingConfirmation.value = null
   }
 }
 
-// 打开撤回对话框
-const openRecallDialog = (record: any) => {
-  currentRecallRecord.value = record
-  recallForm.reason = ''
-  recallForm.otherReason = ''
-  recallDialogVisible.value = true
+const browseJobs = () => router.push('/student/jobs')
+
+const clearQuery = async (key: string) => {
+  const query = { ...route.query }
+  delete query[key]
+  await router.replace({ path: route.path, query })
 }
 
-// 提交撤回申请
-const submitRecall = async () => {
-  if (!recallForm.reason) {
-    ElMessage.warning('请选择撤回原因')
-    return
-  }
-  if (recallForm.reason === 'other' && !recallForm.otherReason) {
-    ElMessage.warning('请输入详细说明')
-    return
-  }
-
-  recallSubmitting.value = true
-  try {
-    const reason = recallForm.reason === 'other'
-      ? recallForm.otherReason
-      : recallReasonMap[recallForm.reason] || recallForm.reason
-
-    const response = await request.post(`/student/internship-confirmation/${currentRecallRecord.value.id}/recall`, {
-      recallReason: reason
-    })
-
-    if (response.code === 200) {
-      ElMessage.success('撤回成功')
-      recallDialogVisible.value = false
-      await fetchConfirmationHistory()
-      await fetchPendingConfirmation()
+const handleDeepLinks = async () => {
+  const offerId = Array.isArray(route.query.offerId) ? route.query.offerId[0] : route.query.offerId
+  if (offerId) {
+    const matched = offers.value.find(offer => String(offer.offerId) === String(offerId))
+    if (matched) {
+      selectedOfferId.value = String(matched.offerId)
     } else {
-      ElMessage.error(response.message || '撤回失败')
+      ElMessage.warning('该 Offer 已不可确认，已为您显示当前可选列表')
+      await clearQuery('offerId')
     }
-  } catch (error) {
-    console.error('撤回失败:', error)
-    ElMessage.error('撤回失败，请稍后重试')
-  } finally {
-    recallSubmitting.value = false
   }
-}
 
-// 查看历史记录详情（只读模式）
-const viewHistory = (record: any) => {
-  // 查看记录时隐藏编辑表单
-  hasPendingConfirmation.value = false
-  viewingRecord.value = record
-  viewingConfirmation.value = true
-}
-
-// 关闭查看模式
-const closeViewing = () => {
-  viewingConfirmation.value = false
-  viewingRecord.value = null
-}
-
-// 编辑被拒绝的记录（可修改后重新提交）
-const editRejectedRecord = (record: any) => {
-  rejectionReason.value = record.rejectionReason || ''
-
-  // 设置下拉框选中值
-  selectedCompanyId.value = record.companyId || null
-  selectedPositionId.value = record.positionId || null
-
-  // 将被拒绝记录的数据填充到表单中
-  confirmationData.studentName = record.studentName || ''
-  confirmationData.studentNumber = record.studentNumber || ''
-  confirmationData.gender = record.gender || ''
-  confirmationData.grade = record.grade || ''
-  confirmationData.major = record.major || ''
-  confirmationData.className = record.className || ''
-  confirmationData.contactPhone = record.contactPhone || ''
-  confirmationData.email = record.email || ''
-  confirmationData.companyName = record.companyName || ''
-  confirmationData.positionName = record.positionName || ''
-  confirmationData.companyAddress = record.companyAddress || ''
-  confirmationData.companyPhone = record.companyPhone || ''
-  confirmationData.internshipStartTime = record.internshipStartTime || ''
-  confirmationData.internshipEndTime = record.internshipEndTime || ''
-  confirmationData.internshipDuration = record.internshipDuration || 0
-  confirmationData.remark = record.remark || ''
-
-  editingRejectedRecord.value = true
-  hasPendingConfirmation.value = true
-}
-
-// 提交确认
-const submitConfirmation = async () => {
-  submitting.value = true
-  try {
-    // 先保存企业信息，获取返回的recordId
-    const saveResponse = await request.post('/student/internship-confirmation/save', {
-      studentName: confirmationData.studentName,
-      studentNumber: confirmationData.studentNumber,
-      gender: confirmationData.gender,
-      grade: confirmationData.grade,
-      major: confirmationData.major,
-      className: confirmationData.className,
-      contactPhone: confirmationData.contactPhone,
-      email: confirmationData.email,
-      companyName: confirmationData.companyName,
-      companyAddress: confirmationData.companyAddress,
-      companyPhone: confirmationData.companyPhone,
-      companyId: selectedCompanyId.value,
-      positionName: confirmationData.positionName,
-      positionId: selectedPositionId.value,
-      internshipStartTime: confirmationData.internshipStartTime,
-      internshipEndTime: confirmationData.internshipEndTime,
-      internshipDuration: confirmationData.internshipDuration,
-      remark: confirmationData.remark
-    })
-
-    if (saveResponse.code !== 200) {
-      ElMessage.error(saveResponse.message || '保存失败')
-      submitting.value = false
+  const confirmationId = Array.isArray(route.query.confirmationId)
+    ? route.query.confirmationId[0]
+    : route.query.confirmationId
+  if (confirmationId) {
+    const record = history.value.find(item => String(item.id) === String(confirmationId))
+    if (!record) {
+      ElMessage.warning('未找到该确认记录，已为您显示完整历史')
+      await clearQuery('confirmationId')
       return
     }
+    highlightedConfirmationId.value = String(record.id)
+    await nextTick()
+    document.querySelector(`[data-confirmation-id="${String(record.id)}"]`)
+      ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }
+}
 
-    // 从保存响应中获取recordId
-    const recordId = saveResponse.data?.id || saveResponse.data
-    if (!recordId) {
-      ElMessage.error('保存记录ID获取失败')
-      submitting.value = false
-      return
-    }
-
-    // 再提交确认，传递recordId
-    const response = await request.post('/student/internship-confirmation/submit', {
-      recordId: recordId,
-      remark: confirmationData.remark
+const confirmSelectedOffer = async () => {
+  const offer = selectedOffer.value
+  if (!offer) {
+    ElMessage.warning('请先选择要确认的 Offer')
+    return
+  }
+  if (pendingConfirmation.value) {
+    ElMessage.warning('您已有待企业确认的申请，请先等待企业处理或撤回后再提交新的确认')
+    return
+  }
+  try {
+    await ElMessageBox.confirm(
+      `确认选择「${offer.companyName || '该企业'} · ${offer.positionName || '该岗位'}」作为新的实习吗？`,
+      '确认实习',
+      {
+        confirmButtonText: '确认提交',
+        cancelButtonText: '再看看',
+        type: 'warning'
+      }
+    )
+    submitting.value = true
+    const operation = formContext.beginFormOperation('confirmation:remark')
+    const response: any = await request.post('/student/internship-confirmation', {
+      offerId: offer.offerId,
+      remark: confirmationRemark.value.trim()
     })
-
-    if (response.code === 200) {
-      // 标记刚刚提交过，防止fetchPendingConfirmation重新显示表单
-      justSubmitted.value = true
-      // 立即隐藏表单
-      hasPendingConfirmation.value = false
-      showSuccessDialog.value = true
-      await fetchConfirmationHistory()
-      // 重置提交标志
-      justSubmitted.value = false
-    } else {
-      ElMessage.error(response.message || '提交失败')
-    }
-  } catch (error) {
-    console.error('提交确认失败:', error)
-    ElMessage.error('提交失败，请稍后重试')
+    if (response.code !== 200) throw new Error(response.message || '确认失败')
+    operation.complete({ status: 'submitted', label: '实习确认已提交，等待企业审核', url: '/student/internship-confirmation-form' })
+    ElMessage.success('实习确认已提交，等待企业审核')
+    selectedOfferId.value = ''
+    confirmationRemark.value = ''
+    if (route.query.offerId) await clearQuery('offerId')
+    await Promise.all([fetchOffers(), fetchHistory()])
+    await fetchCurrentPlacement()
+  } catch (error: any) {
+    if (error === 'cancel' || error === 'close') return
+    ElMessage.error(error?.message || '实习确认失败，请稍后重试')
   } finally {
     submitting.value = false
   }
 }
 
-// 处理实习确认结果更新（企业确认/拒绝后实时刷新）
-const handleConfirmationResultUpdate = (data: { confirmationStatus: number; companyName: string; positionName: string }) => {
-  console.log('收到实习确认结果更新:', data)
-  // 刷新确认记录列表
-  fetchConfirmationHistory()
-  // 如果有待确认的表单，刷新待确认状态
-  if (hasPendingConfirmation.value) {
-    fetchPendingConfirmation()
+const openRecallDialog = (record: PlacementRecord) => {
+  recallTarget.value = record
+  recallReason.value = ''
+  showRecallDialog.value = true
+}
+
+const submitRecall = async () => {
+  if (!recallReason.value.trim()) {
+    ElMessage.warning('请填写撤回原因')
+    return
+  }
+  if (!recallTarget.value?.id) {
+    ElMessage.error('记录不存在')
+    return
+  }
+  try {
+    recalling.value = true
+    const operation = formContext.beginFormOperation('confirmation:recall')
+    const response: any = await request.post(
+      `/student/internship-confirmation/${recallTarget.value.id}/recall`,
+      { recallReason: recallReason.value.trim() }
+    )
+    if (response.code !== 200) throw new Error(response.message || '撤回失败')
+    operation.complete({ status: 'submitted', label: '实习确认申请已撤回', url: '/student/internship-confirmation-form' })
+    ElMessage.success('已成功撤回实习确认申请')
+    showRecallDialog.value = false
+    recallTarget.value = null
+    recallReason.value = ''
+    pendingConfirmation.value = null
+    await Promise.all([fetchOffers(), fetchHistory()])
+    // 撤回的只是待确认申请；重新读取真实当前实习，不能清空已有的自主实习岗位。
+    await fetchCurrentPlacement()
+
+  } catch (error: any) {
+    ElMessage.error(error?.message || '撤回失败，请稍后重试')
+  } finally {
+    recalling.value = false
   }
 }
 
-// 监听企业确认结果事件（通过 event-bus 触发）
-const onConfirmationResultEvent = (data: any) => {
-  handleConfirmationResultUpdate(data)
-}
-
 onMounted(async () => {
-  // 先获取面试通过的数据（用于下拉框）
-  await fetchApprovedInterviews()
-  // 获取历史记录，确保判断状态时有完整数据
-  await fetchConfirmationHistory()
-  await fetchPendingConfirmation()
-  // 获取单位变更申请状态
-  await fetchUnitChangeStatus()
-  // 获取应聘时间段
-  const period = await fetchApplicationPeriod()
-  applicationPeriod.value = period
-
-  // 注册实习确认结果更新事件监听
-  emitter.on('confirmation-result-update', onConfirmationResultEvent)
+  await Promise.all([fetchOffers(), fetchHistory()])
+  await fetchCurrentPlacement()
+  await handleDeepLinks()
 })
 
-onUnmounted(() => {
-  // 移除实习确认结果更新事件监听
-  emitter.off('confirmation-result-update', onConfirmationResultEvent)
+watch(
+  () => [route.query.offerId, route.query.confirmationId],
+  () => handleDeepLinks()
+)
+
+useAgentPageContext(() => ({
+  title: '实习确认',
+  view: showRecallDialog.value && recallTarget.value ? 'recall-dialog' : pendingConfirmation.value ? 'pending-confirmation' : 'page',
+  object: showRecallDialog.value && recallTarget.value?.id ? { type: 'confirmation', id: String(recallTarget.value.id) }
+    : pendingConfirmation.value?.id ? { type: 'confirmation', id: String(pendingConfirmation.value.id) }
+    : selectedOfferId.value ? { type: 'offer', id: selectedOfferId.value } : null,
+  filters: {}
+}))
+
+// ===== 智能填表：补充说明（页面）与撤回原因（弹窗）注册到 AI 侧栏 =====
+// 单例同一时刻只关联一个表单：撤回弹窗打开时优先注册撤回原因；关闭后若已选 Offer 则注册补充说明
+const formContext = useFormContext()
+const confirmProxy = {
+  get remark() { return confirmationRemark.value },
+  set remark(v: unknown) { confirmationRemark.value = String(v ?? '') }
+}
+const recallProxy = {
+  get recallReason() { return recallReason.value },
+  set recallReason(v: unknown) { recallReason.value = String(v ?? '') }
+}
+watch([showRecallDialog, selectedOfferId], ([recallOpen, offerId]) => {
+  if (recallOpen) {
+    formContext.register({
+      formId: 'confirmation:recall',
+      title: '撤回实习确认',
+      fields: [{ prop: 'recallReason', label: '撤回原因', type: 'textarea', required: true }],
+      getModel: () => recallProxy,
+      getObject: () => recallTarget.value?.id ? { type: 'confirmation', id: String(recallTarget.value.id) } : null,
+      getValidationSummary: () => ({ missingFields: [], validationErrors: recallTarget.value?.id ? [] : ['待撤回的确认记录不存在'] })
+    })
+  } else if (offerId) {
+    formContext.register({
+      formId: 'confirmation:remark',
+      title: '实习确认补充说明',
+      fields: [{ prop: 'remark', label: '补充说明', type: 'textarea' }],
+      getModel: () => confirmProxy,
+      getObject: () => selectedOfferId.value ? { type: 'offer', id: selectedOfferId.value } : null,
+      getValidationSummary: () => ({ missingFields: selectedOffer.value ? [] : ['待确认的Offer'], validationErrors: pendingConfirmation.value ? ['已有待企业确认的申请，请先等待企业处理或撤回后再提交'] : [] })
+    })
+  } else {
+    formContext.unregister('confirmation:recall')
+    formContext.unregister('confirmation:remark')
+  }
 })
+onUnmounted(() => { formContext.unregister('confirmation:recall'); formContext.unregister('confirmation:remark') })
 </script>
 
 <style scoped>
-.internship-confirmation-form-container {
+.confirmation-page {
+  display: grid;
+  gap: 20px;
   width: 100%;
-  min-height: 100%;
-  background: #f1f5f9;
-  overflow-y: auto;
-  padding: 24px;
+  color: #1e293b;
+}
+
+.page-header,
+.current-card,
+.offer-card,
+.history-card,
+.pending-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  background: #ffffff;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.06);
 }
 
 .page-header {
-  background: linear-gradient(135deg, #409EFF 0%, #67C23A 100%);
-  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
   padding: 24px 32px;
-  margin-bottom: 24px;
+  overflow: hidden;
+  position: relative;
+  color: #ffffff;
+  border: 0;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #409eff 0%, #67c23a 100%);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+}
+
+.page-header::before {
+  content: '';
+  position: absolute;
+  top: -50%;
+  right: -10%;
+  width: 300px;
+  height: 300px;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.1) 0%, transparent 70%);
+  border-radius: 50%;
+}
+
+.page-header > * {
+  position: relative;
+  z-index: 1;
+}
+
+.page-header h2,
+.section-heading h3 {
+  margin: 0;
 }
 
 .page-header h2 {
   font-size: 28px;
   font-weight: 700;
-  color: white;
+  color: #ffffff;
   margin: 0 0 8px 0;
+  position: relative;
+  z-index: 1;
+}
+
+.page-header p,
+.section-heading p {
+  margin: 7px 0 0;
 }
 
 .page-header p {
-  font-size: 14px;
   color: rgba(255, 255, 255, 0.9);
-  margin: 0;
+  font-size: 14px;
 }
 
-/* 空状态 */
+.pending-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 18px 20px;
+  border-color: #f59e0b;
+  background: linear-gradient(135deg, #fffbeb 0%, #fff7ed 100%);
+  border-radius: 12px;
+}
+
+.pending-icon {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  background: #fef3c7;
+  color: #f59e0b;
+  flex-shrink: 0;
+}
+
+.pending-content {
+  flex: 1;
+}
+
+.pending-content h3 {
+  margin: 0 0 4px;
+  font-size: 16px;
+  color: #92400e;
+}
+
+.pending-content p {
+  margin: 0;
+  color: #78350f;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.pending-meta {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #92400e;
+}
+
+.current-card,
+.offer-card,
+.history-card {
+  padding: 22px 24px;
+}
+
+.section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.section-heading h3 {
+  font-size: 18px;
+  color: #1e293b;
+}
+
+.section-heading p {
+  color: #64748b;
+  font-size: 13px;
+}
+
+.loading-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 40px 20px;
+  color: #64748b;
+  font-size: 14px;
+}
+
 .empty-state {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  padding: 80px 24px;
-  background: white;
-  border-radius: 12px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
-}
-
-.empty-state .empty-icon {
-  font-size: 64px;
-  color: #cbd5e1;
-  margin-bottom: 16px;
-}
-
-.empty-state .empty-title {
-  font-size: 18px;
-  font-weight: 600;
+  gap: 12px;
+  padding: 40px 20px;
   color: #64748b;
-  margin-bottom: 8px;
 }
 
-.empty-state .empty-desc {
+.empty-state.small {
+  padding: 24px 20px;
+}
+
+.empty-state p {
+  margin: 0;
   font-size: 14px;
-  color: #94a3b8;
-  text-align: center;
 }
 
-/* 信息卡片 */
-.info-card {
-  margin-bottom: 24px;
+.empty-current {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 24px 20px;
+  color: #94a3b8;
+}
+
+.empty-current p {
+  margin: 0;
+  font-size: 14px;
+}
+
+.current-content {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 18px;
+  border: 1px solid #bbf7d0;
   border-radius: 12px;
+  background: #f0fdf4;
 }
 
-.info-card :deep(.el-card__header) {
-  background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
-  border-bottom: none;
-  padding: 16px 20px;
-}
-
-.card-header {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 15px;
-  font-weight: 500;
-  color: #1e293b;
-}
-
-.header-icon {
-  font-size: 20px;
-  color: #409eff;
-}
-
-/* 信息区域 */
-.info-section {
-  padding: 20px 0;
-  border-bottom: 1px solid #f1f5f9;
-}
-
-.info-section:last-of-type {
-  border-bottom: none;
-}
-
-.section-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 16px;
-  font-weight: 600;
-  color: #1e293b;
-  margin-bottom: 16px;
-}
-
-.section-title .el-icon {
-  font-size: 18px;
-  color: #409eff;
-}
-
-.optional-tag {
-  font-size: 12px;
-  font-weight: 400;
-  color: #94a3b8;
-  margin-left: 8px;
-}
-
-/* 信息网格 */
-.info-grid {
+.company-mark {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 16px;
-}
-
-.info-item {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.info-label {
-  font-size: 13px;
-  color: #64748b;
-}
-
-.info-value {
-  font-size: 15px;
-  font-weight: 500;
-  color: #1e293b;
-}
-
-.info-select {
-  width: 100%;
-}
-
-.info-value.date {
-  color: #1e293b;
-}
-
-.info-value.duration {
-  color: #67C23A;
-  font-weight: 600;
-}
-
-/* 备注区域 */
-.remark-section {
-  padding-top: 20px;
-}
-
-.remark-section :deep(.el-textarea__inner) {
-  border-radius: 8px;
-  padding: 12px 16px;
-}
-
-/* 提交区域 */
-.submit-section {
-  padding: 24px 0 0 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 16px;
-}
-
-.submit-tip {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
-  color: #64748b;
-  background: #f8fafc;
-  padding: 10px 16px;
-  border-radius: 8px;
-}
-
-.submit-tip .el-icon {
-  color: #67C23A;
-}
-
-.submit-btn {
-  padding: 12px 48px;
-  font-size: 16px;
-  border-radius: 8px;
-  background: linear-gradient(135deg, #409EFF 0%, #67C23A 100%);
-  border: none;
-}
-
-.submit-btn:hover {
-  background: linear-gradient(135deg, #337ECC 0%, #5DAF34 100%);
-}
-
-/* 历史记录区域 */
-.history-section {
-  background: white;
+  flex: 0 0 46px;
+  width: 46px;
+  height: 46px;
+  place-items: center;
+  color: #ffffff;
   border-radius: 12px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
-  overflow: hidden;
-}
-
-.history-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 16px 20px;
-  background: linear-gradient(135deg, #fafbfc 0%, #f5f7fa 100%);
-  border-bottom: 1px solid #f1f5f9;
-}
-
-.history-header .header-left {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 15px;
-  font-weight: 500;
-  color: #1e293b;
-}
-
-.history-body {
-  padding: 16px 20px;
-}
-
-.history-list {
-  display: flex;
-  flex-direction: column;
-}
-
-.history-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 14px 0;
-  border-bottom: 1px solid #f1f5f9;
-  transition: background 0.2s ease;
-}
-
-.history-item:last-child {
-  border-bottom: none;
-}
-
-.history-item:hover {
-  background: #fafbfc;
-}
-
-.history-main {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.history-company {
-  font-size: 15px;
-  font-weight: 600;
-  color: #1e293b;
-}
-
-.history-position {
-  font-size: 13px;
-  color: #64748b;
-}
-
-.history-time {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 12px;
-  color: #94a3b8;
-  margin-top: 4px;
-}
-
-.history-time .el-icon {
-  font-size: 14px;
-}
-
-.history-phone {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 12px;
-  color: #64748b;
-  margin-top: 4px;
-}
-
-.history-phone .el-icon {
-  font-size: 14px;
-}
-
-.history-confirm-time {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 12px;
-  color: #52c41a;
-  margin-top: 4px;
-  font-weight: 500;
-}
-
-.history-confirm-time .el-icon {
-  font-size: 14px;
-}
-
-.empty-history {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 40px;
-}
-
-.empty-history .empty-icon {
-  font-size: 48px;
-  color: #cbd5e1;
-  margin-bottom: 12px;
-}
-
-.empty-history .empty-text {
-  font-size: 14px;
-  color: #94a3b8;
-}
-
-/* 成功对话框 */
-.success-content {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 32px 20px 24px;
-}
-
-.success-icon {
-  width: 64px;
-  height: 64px;
-  background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-bottom: 16px;
-}
-
-.success-icon .el-icon {
-  font-size: 36px;
-  color: #67C23A;
-}
-
-.success-title {
+  background: #16a34a;
   font-size: 20px;
-  font-weight: 600;
-  color: #1e293b;
-  margin-bottom: 8px;
+  font-weight: 700;
 }
 
-.success-desc {
-  font-size: 14px;
-  color: #64748b;
-  text-align: center;
+.company-logo {
+  object-fit: cover;
+  border: 1px solid #bbf7d0;
+  background: #ffffff;
 }
 
-.success-btn {
-  width: 100%;
-  padding: 12px;
-  border-radius: 8px;
-}
-
-/* 拒绝原因提示 */
-.rejection-alert {
-  margin-bottom: 16px;
-}
-
-.history-rejection {
-  display: flex;
-  align-items: center;
+.placement-main {
+  display: grid;
   gap: 4px;
-  font-size: 12px;
-  color: #f56c6c;
-  margin-top: 4px;
+  flex: 1;
 }
 
-.history-rejection .el-icon {
+.placement-main span {
+  color: #64748b;
+  font-size: 13px;
+}
+
+.offer-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.offer-item {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  width: 100%;
+  padding: 15px 16px;
+  color: inherit;
+  text-align: left;
+  border: 1px solid #dbe3ef;
+  border-radius: 10px;
+  background: #ffffff;
+  cursor: pointer;
+  transition: 0.2s ease;
+}
+
+.offer-item:hover,
+.offer-item.selected {
+  border-color: #2563eb;
+  background: #eff6ff;
+}
+
+.offer-radio {
+  width: 16px;
+  height: 16px;
+  border: 2px solid #94a3b8;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 3px #ffffff;
+  flex-shrink: 0;
+}
+
+.offer-item.selected .offer-radio {
+  border-color: #2563eb;
+  background: #2563eb;
+}
+
+.offer-copy {
+  display: grid;
+  flex: 1;
+  gap: 3px;
+}
+
+.offer-copy span,
+.offer-copy small {
+  color: #64748b;
+}
+
+.offer-copy small {
+  font-size: 12px;
+}
+
+.confirmation-box {
+  display: grid;
+  gap: 13px;
+  margin-top: 16px;
+  padding: 18px;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+
+.selected-summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
   font-size: 14px;
 }
 
-.history-actions {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 8px;
+.selected-summary span {
+  color: #64748b;
 }
 
-.history-actions .el-tag {
-  margin-bottom: 4px;
+.timeline {
+  display: grid;
+  gap: 0;
 }
 
-.action-button {
-  padding: 8px 16px;
+.timeline-item {
+  position: relative;
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 10px;
+  padding: 0 0 20px;
+}
+
+.timeline-item:not(:last-child)::before {
+  content: '';
+  position: absolute;
+  top: 12px;
+  bottom: -2px;
+  left: 7px;
+  width: 2px;
+  background: #dbe3ef;
+}
+
+.timeline-dot {
+  z-index: 1;
+  width: 16px;
+  height: 16px;
+  margin-top: 14px;
+  border: 4px solid #dbeafe;
+  border-radius: 50%;
+  background: #2563eb;
+}
+
+.timeline-dot.dot-success {
+  border-color: #bbf7d0;
+  background: #16a34a;
+}
+
+.timeline-dot.dot-danger {
+  border-color: #fecaca;
+  background: #dc2626;
+}
+
+.timeline-dot.dot-warning {
+  border-color: #fef3c7;
+  background: #f59e0b;
+}
+
+.timeline-content {
+  padding: 15px 16px;
+  border: 1px solid #e2e8f0;
   border-radius: 10px;
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  border: none;
+  background: #ffffff;
+}
+
+.timeline-item.highlighted .timeline-content {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+
+.timeline-header {
   display: flex;
-  align-items: center;
-  gap: 6px;
-  white-space: nowrap;
-  letter-spacing: 0.3px;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
 }
 
-.action-button.view {
-  background: linear-gradient(135deg, #409EFF 0%, #66b1ff 100%);
-  color: white;
-  box-shadow:
-    0 4px 12px rgba(64, 158, 255, 0.25),
-    inset 0 1px 0 rgba(255, 255, 255, 0.3);
+.timeline-header > div {
+  display: grid;
+  gap: 4px;
 }
 
-.action-button.view:hover {
-  transform: translateY(-3px) scale(1.05);
-  box-shadow:
-    0 8px 24px rgba(64, 158, 255, 0.35),
-    inset 0 1px 0 rgba(255, 255, 255, 0.4);
+.timeline-header span,
+.timeline-meta,
+.record-reason {
+  color: #64748b;
+  font-size: 13px;
 }
 
-.action-button.edit {
-  background: linear-gradient(135deg, #e6a23c 0%, #f5c77e 100%);
-  color: white;
-  box-shadow:
-    0 4px 12px rgba(230, 162, 60, 0.25),
-    inset 0 1px 0 rgba(255, 255, 255, 0.3);
+.timeline-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  margin-top: 12px;
 }
 
-.action-button.edit:hover {
-  transform: translateY(-3px) scale(1.05);
-  box-shadow:
-    0 8px 24px rgba(230, 162, 60, 0.35),
-    inset 0 1px 0 rgba(255, 255, 255, 0.4);
+.record-reason {
+  margin: 10px 0 0;
+  padding: 9px 11px;
+  border-radius: 7px;
+  background: #f8fafc;
+  color: #475569;
+  border-left: 3px solid #cbd5e1;
 }
 
-.rejection-text {
-  color: #f56c6c;
-  font-weight: 500;
+.recall-content {
+  padding: 0 8px;
 }
 
-/* 查看对话框 */
-.view-content {
-  padding: 16px 0;
-}
-
-.view-content .el-descriptions {
-  margin-top: 16px;
-}
-
-/* 响应式 */
-@media screen and (max-width: 768px) {
-  .info-grid {
-    grid-template-columns: repeat(2, 1fr);
+@media (max-width: 860px) {
+  .pending-card,
+  .current-content,
+  .page-header,
+  .timeline-header,
+  .selected-summary {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
-  .history-actions {
-    flex-direction: row;
-    align-items: center;
-  }
 }
 
-@media screen and (max-width: 480px) {
-  .info-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .page-header {
-    padding: 20px;
-  }
-
+@media (max-width: 520px) {
   .page-header h2 {
     font-size: 24px;
   }
 
-  .history-actions {
-    flex-direction: column;
-    align-items: flex-end;
+  .current-card,
+  .offer-card,
+  .history-card {
+    padding: 18px;
   }
-}
-
-/* 单位变更按钮样式 */
-.action-button.change {
-  background: linear-gradient(135deg, #E6A23C 0%, #F5C77E 100%);
-  color: white;
-  box-shadow: 0 4px 12px rgba(230, 162, 60, 0.25);
-}
-
-.action-button.change:hover {
-  transform: translateY(-3px) scale(1.05);
-  box-shadow: 0 8px 24px rgba(230, 162, 60, 0.35);
-}
-
-.action-button.pending {
-  background: linear-gradient(135deg, #909399 0%, #C0C4CC 100%);
-  color: white;
-  cursor: not-allowed;
-  opacity: 0.7;
-}
-
-.action-button.reapply {
-  background: linear-gradient(135deg, #F56C6C 0%, #F89A9A 100%);
-  color: white;
-  box-shadow: 0 4px 12px rgba(245, 108, 108, 0.25);
-}
-
-.action-button.reapply:hover {
-  transform: translateY(-3px) scale(1.05);
-  box-shadow: 0 8px 24px rgba(245, 108, 108, 0.35);
-}
-
-/* 驳回提示 */
-.reject-alert {
-  margin: 16px 0;
-}
-
-/* 撤回按钮样式 */
-.action-button.recall {
-  background: linear-gradient(135deg, #909399 0%, #C0C4CC 100%);
-  color: white;
-  box-shadow: 0 4px 12px rgba(144, 147, 153, 0.25);
-}
-
-.action-button.recall:hover {
-  transform: translateY(-3px) scale(1.05);
-  box-shadow: 0 8px 24px rgba(144, 147, 153, 0.35);
-}
-
-/* 撤回说明样式 */
-.recall-notice {
-  margin-bottom: 20px;
-}
-
-.recall-notice p {
-  margin: 4px 0;
-  line-height: 1.6;
-}
-
-.recall-form {
-  margin-top: 16px;
-}
-
-/* 上传区域 */
-.upload-items {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.upload-item {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.upload-item label {
-  font-size: 14px;
-  font-weight: 500;
-  color: #333;
-}
-
-.upload-hint {
-  font-size: 13px;
-  color: #909399;
-  line-height: 1.6;
-  margin: 0;
-  padding: 8px 12px;
-  background: #f4f4f5;
-  border-radius: 6px;
-  border-left: 3px solid #409eff;
-}
-
-.upload-format-hint {
-  font-size: 12px;
-  color: #c0c4cc;
-}
-
-.required {
-  color: #f56c6c;
-  margin-left: 4px;
-}
-
-.uploaded-file {
-  margin-top: 8px;
-}
-
-.preview-image {
-  width: 100px;
-  height: 100px;
-  object-fit: cover;
-  border-radius: 4px;
-  cursor: pointer;
-  border: 1px solid #ddd;
-}
-
-/* 表单项 */
-.form-item {
-  margin-bottom: 16px;
-}
-
-.form-item label {
-  display: block;
-  font-size: 14px;
-  font-weight: 500;
-  color: #333;
-  margin-bottom: 8px;
-}
-
-.info-value.highlight {
-  color: #E6A23C;
-  font-weight: 600;
 }
 </style>

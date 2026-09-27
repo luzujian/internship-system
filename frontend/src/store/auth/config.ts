@@ -46,7 +46,6 @@ export interface StorageKeys {
 
 export interface ErrorMessages {
   LOGIN_FAILED: string
-  REGISTER_FAILED: string
   TOKEN_EXPIRED: string
   USER_DISABLED: string
   TOKEN_REFRESH_FAILED: string
@@ -96,7 +95,6 @@ export const STORAGE_KEYS: StorageKeys = {
 
 export const ERROR_MESSAGES: ErrorMessages = {
   LOGIN_FAILED: '用户名或密码错误',
-  REGISTER_FAILED: '注册失败',
   TOKEN_EXPIRED: '认证信息已过期，请重新登录',
   USER_DISABLED: '用户已被禁用',
   TOKEN_REFRESH_FAILED: '刷新令牌失败，请重新登录'

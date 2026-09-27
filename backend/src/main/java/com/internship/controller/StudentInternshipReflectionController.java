@@ -1,10 +1,10 @@
 package com.internship.controller;
 
+import com.internship.anno.Log;
 import com.internship.entity.InternshipConfirmationRecord;
 import com.internship.entity.InternshipEvaluation;
-import com.internship.entity.InternshipProgressRecord;
 import com.internship.entity.InternshipReflection;
-import com.internship.entity.InternshipTimeSettings;
+import com.internship.entity.InternshipStageAssignment;
 import com.internship.entity.Result;
 import com.internship.entity.User;
 import com.internship.entity.StudentReflectionAIAnalysis;
@@ -15,7 +15,7 @@ import com.internship.service.InternshipConfirmationRecordService;
 import com.internship.service.InternshipEvaluationService;
 import com.internship.service.InternshipProgressRecordService;
 import com.internship.service.InternshipReflectionService;
-import com.internship.service.InternshipTimeSettingsService;
+import com.internship.service.InternshipStageAssignmentService;
 import com.internship.service.StudentReflectionAIAnalysisService;
 import com.internship.service.StudentReflectionEvaluationService;
 import com.internship.service.UserService;
@@ -28,19 +28,31 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.NoTransactionException;
+import org.springframework.transaction.interceptor.TransactionAspectSupport;
 
-import java.util.Calendar;
+import java.time.LocalDate;
+import java.time.ZoneId;
+import java.util.Comparator;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+
+import static com.internship.service.InternshipProgressEvents.append;
 
 @Slf4j
 @RestController
 @RequestMapping("/api/student/internship-reflection")
 @PreAuthorize("hasRole('STUDENT')")
 public class StudentInternshipReflectionController {
+
+    private static final ZoneId BUSINESS_ZONE = ZoneId.of("Asia/Shanghai");
+    private static final Set<String> REFLECTION_PLACEMENT_STATUSES =
+            Set.of("CONFIRMED", "REPLACED", "INTERRUPTED", "ENDED");
 
     @Autowired
     private UserService userService;
@@ -70,7 +82,7 @@ public class StudentInternshipReflectionController {
     private InternshipConfirmationRecordService confirmationRecordService;
 
     @Autowired
-    private InternshipTimeSettingsService timeSettingsService;
+    private InternshipStageAssignmentService stageAssignmentService;
 
     @Autowired
     private FileParserUtil fileParserUtil;
@@ -93,7 +105,7 @@ public class StudentInternshipReflectionController {
     /**
      * 校验学生是否可以提交实习心得
      * 条件：1. 实习确认表已被企业确认（status=1）
-     *       2. 当前时间在实习时间范围内
+     *       2. 当前处于全局实习日历内，且存在覆盖今天的已确认实习经历
      */
     private Result validateCanSubmitReflection(User user) {
         // 1. 检查实习确认表是否已被企业确认
@@ -102,43 +114,12 @@ public class StudentInternshipReflectionController {
             return Result.error("您尚未完成实习确认，无法提交实习心得");
         }
 
-        // 2. 检查当前时间是否在实习时间范围内
-        InternshipTimeSettings timeSettings = timeSettingsService.findLatest();
-        if (timeSettings == null) {
-            return Result.error("实习时间设置不存在，无法提交实习心得");
+        // 2. 心得期次只按全局日历计算；岗位切换不会重置期次。
+        if (internshipReflectionService.calculatePeriodNumber(new Date()) == null) {
+            return Result.error("当前不在全局实习日历内，无法提交实习心得");
         }
-
-        Date now = new Date();
-        // 检查是否到了实习开始时间
-        if (timeSettings.getStartDate() != null && !timeSettings.getStartDate().isEmpty()) {
-            try {
-                java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("yyyy-MM-dd");
-                Date startDate = sdf.parse(timeSettings.getStartDate());
-                if (now.before(startDate)) {
-                    return Result.error("实习尚未开始，无法提交实习心得");
-                }
-            } catch (Exception e) {
-                log.error("解析实习开始时间失败: {}", e.getMessage());
-            }
-        }
-
-        // 检查是否超过了实习结束时间
-        if (timeSettings.getEndDate() != null && !timeSettings.getEndDate().isEmpty()) {
-            try {
-                java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("yyyy-MM-dd");
-                Date endDate = sdf.parse(timeSettings.getEndDate());
-                // 设置为当天结束
-                Calendar cal = Calendar.getInstance();
-                cal.setTime(endDate);
-                cal.set(Calendar.HOUR_OF_DAY, 23);
-                cal.set(Calendar.MINUTE, 59);
-                cal.set(Calendar.SECOND, 59);
-                if (now.after(cal.getTime())) {
-                    return Result.error("实习已结束，无法提交实习心得");
-                }
-            } catch (Exception e) {
-                log.error("解析实习结束时间失败: {}", e.getMessage());
-            }
+        if (findPlacementForDate(user.getId(), LocalDate.now(BUSINESS_ZONE)) == null) {
+            return Result.error("当前没有生效中的实习经历，无法提交实习心得");
         }
 
         return null; // 校验通过
@@ -150,7 +131,9 @@ public class StudentInternshipReflectionController {
      * @param taskId 可选的自动生成任务ID，如果有则更新该任务
      */
     @PostMapping("/upload")
-    public Result uploadReflection(@RequestParam("file") MultipartFile file,
+    @Transactional(rollbackFor = Exception.class)
+    @Log(operationType = "UPLOAD", module = "INTERNSHIP_REFLECTION", description = "上传实习心得", riskLevel = "MEDIUM")
+    public synchronized Result uploadReflection(@RequestParam("file") MultipartFile file,
                                   @RequestParam(value = "taskId", required = false) Long taskId) {
         try {
             User user = getCurrentUser();
@@ -187,8 +170,9 @@ public class StudentInternshipReflectionController {
             Long counselorId = classCounselorRelationService.findCounselorIdByStudentId(user.getId());
 
             InternshipReflection reflection;
+            boolean resubmitted = false;
             if (taskId != null) {
-                // 更新已有的任务 - 检查阶段是否过期且状态为草稿
+                // 更新已有的任务 - 检查期次是否过期且状态为草稿
                 reflection = internshipReflectionService.findById(taskId);
                 if (reflection == null) {
                     return Result.error("任务不存在");
@@ -196,24 +180,31 @@ public class StudentInternshipReflectionController {
                 if (!reflection.getStudentId().equals(user.getId())) {
                     return Result.error("无权操作此任务");
                 }
+                if (hasActiveReflectionSubmission(user.getId(), reflection.getId())) {
+                    return Result.error("该心得已提交，请勿重复操作");
+                }
                 // 检查状态：只有草稿状态(status=0/待分析)才能重新提交
                 if (reflection.getStatus() != null && reflection.getStatus() != 0) {
                     return Result.error("该心得已进入批阅流程，无法修改提交");
                 }
-                // 检查阶段是否已过期（当前阶段大于心得所属阶段）
+                // 检查期次是否已过期
                 Integer currentPeriod = internshipReflectionService.calculatePeriodNumber(new Date());
                 if (currentPeriod != null && reflection.getPeriodNumber() != null && reflection.getPeriodNumber() < currentPeriod) {
                     return Result.error("第" + reflection.getPeriodNumber() + "期已过期，无法修改提交");
                 }
+                resubmitted = "0".equals(reflection.getRemark())
+                        && reflection.getContent() != null && !reflection.getContent().isBlank();
                 reflection.setContent(content);
                 reflection.setStatus(0); // 待分析
                 reflection.setRemark(null); // 清除草稿状态
+                reflection.setSubmitTime(new Date());
+                reflection.setUpdateTime(new Date());
                 internshipReflectionService.updateById(reflection);
             } else {
-                // 创建新的实习心得 - 检查是否已在当前阶段提交
+                // 创建新的实习心得 - 检查是否已在当前期次提交
                 Integer periodNumber = internshipReflectionService.calculatePeriodNumber(new Date());
                 if (periodNumber != null && internshipReflectionService.existsByStudentIdAndPeriodNumber(user.getId(), periodNumber)) {
-                    return Result.error("第" + periodNumber + "期实习心得已提交，请等待下一阶段再提交");
+                    return Result.error("第" + periodNumber + "期实习心得已提交，请等待下一期再提交");
                 }
                 reflection = new InternshipReflection();
                 reflection.setStudentId(user.getId());
@@ -227,22 +218,16 @@ public class StudentInternshipReflectionController {
                 reflection.setCreateTime(new Date());
                 reflection.setUpdateTime(new Date());
                 reflection.setDeleted(0);
-                // 计算并设置阶段编号
+                // 记录提交时实际生效的实习经历；数据库旧字段名暂保留作兼容。
                 reflection.setPeriodNumber(periodNumber);
-                log.info("上传实习心得，学生ID={}, 计算阶段={}", user.getId(), periodNumber);
+                InternshipStageAssignment currentPlacement =
+                        findPlacementForDate(user.getId(), LocalDate.now(BUSINESS_ZONE));
+                if (currentPlacement != null) reflection.setStageAssignmentId(currentPlacement.getId());
+                log.info("上传实习心得，学生ID={}, 全局期次={}", user.getId(), periodNumber);
                 internshipReflectionService.insert(reflection);
-
-                // 同步写入进度记录
-                InternshipProgressRecord record = new InternshipProgressRecord();
-                record.setStudentId(user.getId());
-                record.setEventType("reflection_submit");
-                record.setEventTitle("提交实习心得");
-                record.setDescription("第" + periodNumber + "期实习心得");
-                record.setStatus("submitted");
-                record.setRelatedId(reflection.getId());
-                record.setEventTime(new Date());
-                progressRecordService.saveRecord(record);
             }
+
+            appendReflectionSubmission(user.getId(), reflection, resubmitted);
 
             // 异步触发AI分析，分析完成后会自动推送待评分数据给辅导员
             final Long reflectionId = reflection.getId();
@@ -256,9 +241,11 @@ public class StudentInternshipReflectionController {
 
             return Result.success("上传并提交成功", reflection);
         } catch (IllegalArgumentException e) {
+            rollbackCurrentTransaction();
             log.error("文件格式错误: {}", e.getMessage());
             return Result.error(e.getMessage());
         } catch (Exception e) {
+            rollbackCurrentTransaction();
             log.error("上传实习心得失败: {}", e.getMessage(), e);
             return Result.error("上传失败: " + e.getMessage());
         }
@@ -269,7 +256,9 @@ public class StudentInternshipReflectionController {
      * @param request 包含 content 和可选的 taskId
      */
     @PostMapping("/submit")
-    public Result submitReflection(@RequestBody Map<String, Object> request) {
+    @Transactional(rollbackFor = Exception.class)
+    @Log(operationType = "CREATE", module = "INTERNSHIP_REFLECTION", description = "提交实习心得", riskLevel = "MEDIUM")
+    public synchronized Result submitReflection(@RequestBody Map<String, Object> request) {
         try {
             User user = getCurrentUser();
             if (user == null) {
@@ -293,8 +282,9 @@ public class StudentInternshipReflectionController {
             Long counselorId = classCounselorRelationService.findCounselorIdByStudentId(user.getId());
 
             InternshipReflection reflection;
+            boolean resubmitted = false;
             if (taskId != null) {
-                // 更新已有的任务 - 检查阶段是否过期且状态为草稿
+                // 更新已有的任务 - 检查期次是否过期且状态为草稿
                 reflection = internshipReflectionService.findById(taskId);
                 if (reflection == null) {
                     return Result.error("任务不存在");
@@ -302,24 +292,31 @@ public class StudentInternshipReflectionController {
                 if (!reflection.getStudentId().equals(user.getId())) {
                     return Result.error("无权操作此任务");
                 }
+                if (hasActiveReflectionSubmission(user.getId(), reflection.getId())) {
+                    return Result.error("该心得已提交，请勿重复操作");
+                }
                 // 检查状态：只有草稿状态(status=0/待分析)才能重新提交
                 if (reflection.getStatus() != null && reflection.getStatus() != 0) {
                     return Result.error("该心得已进入批阅流程，无法修改提交");
                 }
-                // 检查阶段是否已过期（当前阶段大于心得所属阶段）
+                // 检查期次是否已过期
                 Integer currentPeriod = internshipReflectionService.calculatePeriodNumber(new Date());
                 if (currentPeriod != null && reflection.getPeriodNumber() != null && reflection.getPeriodNumber() < currentPeriod) {
                     return Result.error("第" + reflection.getPeriodNumber() + "期已过期，无法修改提交");
                 }
+                resubmitted = "0".equals(reflection.getRemark())
+                        && reflection.getContent() != null && !reflection.getContent().isBlank();
                 reflection.setContent(content);
                 reflection.setStatus(0); // 待分析
                 reflection.setRemark(null); // 清除草稿状态
+                reflection.setSubmitTime(new Date());
+                reflection.setUpdateTime(new Date());
                 internshipReflectionService.updateById(reflection);
             } else {
-                // 创建新的实习心得 - 检查是否已在当前阶段提交
+                // 创建新的实习心得 - 检查是否已在当前期次提交
                 Integer periodNumber = internshipReflectionService.calculatePeriodNumber(new Date());
                 if (periodNumber != null && internshipReflectionService.existsByStudentIdAndPeriodNumber(user.getId(), periodNumber)) {
-                    return Result.error("第" + periodNumber + "期实习心得已提交，请等待下一阶段再提交");
+                    return Result.error("第" + periodNumber + "期实习心得已提交，请等待下一期再提交");
                 }
                 reflection = new InternshipReflection();
                 reflection.setStudentId(user.getId());
@@ -333,22 +330,16 @@ public class StudentInternshipReflectionController {
                 reflection.setCreateTime(new Date());
                 reflection.setUpdateTime(new Date());
                 reflection.setDeleted(0);
-                // 计算并设置阶段编号
+                // 记录提交时实际生效的实习经历；数据库旧字段名暂保留作兼容。
                 reflection.setPeriodNumber(periodNumber);
-                log.info("提交实习心得，学生ID={}, 计算阶段={}", user.getId(), periodNumber);
+                InternshipStageAssignment currentPlacement =
+                        findPlacementForDate(user.getId(), LocalDate.now(BUSINESS_ZONE));
+                if (currentPlacement != null) reflection.setStageAssignmentId(currentPlacement.getId());
+                log.info("提交实习心得，学生ID={}, 全局期次={}", user.getId(), periodNumber);
                 internshipReflectionService.insert(reflection);
-
-                // 同步写入进度记录
-                InternshipProgressRecord record = new InternshipProgressRecord();
-                record.setStudentId(user.getId());
-                record.setEventType("reflection_submit");
-                record.setEventTitle("提交实习心得");
-                record.setDescription("第" + periodNumber + "期实习心得");
-                record.setStatus("submitted");
-                record.setRelatedId(reflection.getId());
-                record.setEventTime(new Date());
-                progressRecordService.saveRecord(record);
             }
+
+            appendReflectionSubmission(user.getId(), reflection, resubmitted);
 
             // 异步触发AI分析，分析完成后会自动推送待评分数据给辅导员
             final Long reflectionId = reflection.getId();
@@ -362,6 +353,7 @@ public class StudentInternshipReflectionController {
 
             return Result.success("提交成功", reflection);
         } catch (Exception e) {
+            rollbackCurrentTransaction();
             log.error("提交实习心得失败: {}", e.getMessage(), e);
             return Result.error("提交失败: " + e.getMessage());
         }
@@ -484,6 +476,16 @@ public class StudentInternshipReflectionController {
 
                 // 添加期数信息，用于前端显示"第X期实习心得"
                 item.put("periodNumber", reflection.getPeriodNumber());
+                item.put("placementId", reflection.getStageAssignmentId());
+                // 旧响应字段保留一个兼容周期，前端新代码统一读取 placementId。
+                item.put("stageAssignmentId", reflection.getStageAssignmentId());
+                if (reflection.getStageAssignmentId() != null) {
+                    InternshipStageAssignment assignment = stageAssignmentService.findById(reflection.getStageAssignmentId());
+                    if (assignment != null) {
+                        item.put("companyName", assignment.getCompanyName());
+                        item.put("positionName", assignment.getPositionName());
+                    }
+                }
 
                 // 返回remark字段，供前端判断撤回状态
                 item.put("remark", reflection.getRemark());
@@ -499,11 +501,10 @@ public class StudentInternshipReflectionController {
     }
 
     /**
-     * 获取当前阶段提交状态（用于前端判断是否可以提交）
-     * 返回当前阶段号和是否已提交
-     * 注意：阶段（第几期）统一按系室设置的实习时间来计算
+     * 获取当前全局期次提交状态（用于前端判断是否可以提交）
+     * 返回当前期次和是否已提交；岗位切换不会重置期次。
      * 提交条件：1. 实习确认表已被企业确认（status=1）
-     *          2. 当前时间在实习时间范围内
+     *          2. 当前处于全局实习日历内，且存在覆盖今天的实习经历
      */
     @GetMapping("/current-period-status")
     public Result getCurrentPeriodStatus() {
@@ -514,93 +515,37 @@ public class StudentInternshipReflectionController {
             }
 
             Map<String, Object> result = new HashMap<>();
-            String submitReason = null;
-            boolean canSubmit = false;
-
-            // 1. 检查实习确认表是否已被企业确认
-            List<InternshipConfirmationRecord> confirmedRecords = confirmationRecordService.findByStudentIdAndStatus(user.getId(), 1);
-            if (confirmedRecords == null || confirmedRecords.isEmpty()) {
-                submitReason = "您尚未完成实习确认，无法提交实习心得";
+            Result validation = validateCanSubmitReflection(user);
+            if (validation != null) {
                 result.put("currentPeriod", null);
                 result.put("hasSubmitted", false);
                 result.put("canSubmit", false);
-                result.put("submitReason", submitReason);
+                result.put("submitReason", validation.getMessage());
                 return Result.success(result);
             }
 
-            // 2. 检查当前时间是否在实习时间范围内
-            InternshipTimeSettings timeSettings = timeSettingsService.findLatest();
-            if (timeSettings == null) {
-                submitReason = "实习时间设置不存在，无法提交实习心得";
-                result.put("currentPeriod", null);
-                result.put("hasSubmitted", false);
-                result.put("canSubmit", false);
-                result.put("submitReason", submitReason);
-                return Result.success(result);
-            }
-
-            Date now = new Date();
-            // 检查是否到了实习开始时间
-            if (timeSettings.getStartDate() != null && !timeSettings.getStartDate().isEmpty()) {
-                try {
-                    java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("yyyy-MM-dd");
-                    Date startDate = sdf.parse(timeSettings.getStartDate());
-                    if (now.before(startDate)) {
-                        submitReason = "实习尚未开始，无法提交实习心得";
-                        result.put("currentPeriod", null);
-                        result.put("hasSubmitted", false);
-                        result.put("canSubmit", false);
-                        result.put("submitReason", submitReason);
-                        return Result.success(result);
-                    }
-                } catch (Exception e) {
-                    log.error("解析实习开始时间失败: {}", e.getMessage());
-                }
-            }
-
-            // 检查是否超过了实习结束时间
-            if (timeSettings.getEndDate() != null && !timeSettings.getEndDate().isEmpty()) {
-                try {
-                    java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("yyyy-MM-dd");
-                    Date endDate = sdf.parse(timeSettings.getEndDate());
-                    // 设置为当天结束
-                    Calendar cal = Calendar.getInstance();
-                    cal.setTime(endDate);
-                    cal.set(Calendar.HOUR_OF_DAY, 23);
-                    cal.set(Calendar.MINUTE, 59);
-                    cal.set(Calendar.SECOND, 59);
-                    if (now.after(cal.getTime())) {
-                        submitReason = "实习已结束，无法提交实习心得";
-                        result.put("currentPeriod", null);
-                        result.put("hasSubmitted", false);
-                        result.put("canSubmit", false);
-                        result.put("submitReason", submitReason);
-                        return Result.success(result);
-                    }
-                } catch (Exception e) {
-                    log.error("解析实习结束时间失败: {}", e.getMessage());
-                }
-            }
-
-            // 3. 阶段（第几期）统一按系室设置的实习时间来计算
             Integer currentPeriod = internshipReflectionService.calculatePeriodNumber(new Date());
-            boolean hasSubmitted = false;
-            if (currentPeriod != null) {
-                hasSubmitted = internshipReflectionService.existsByStudentIdAndPeriodNumber(user.getId(), currentPeriod);
+            if (currentPeriod == null) {
+                result.put("currentPeriod", null);
+                result.put("hasSubmitted", false);
+                result.put("canSubmit", false);
+                result.put("submitReason", "当前不在全局实习日历内，无法提交实习心得");
+                return Result.success(result);
             }
+
+            boolean hasSubmitted = internshipReflectionService
+                    .existsByStudentIdAndPeriodNumber(user.getId(), currentPeriod);
 
             result.put("currentPeriod", currentPeriod);
             result.put("hasSubmitted", hasSubmitted);
-            result.put("canSubmit", currentPeriod != null && !hasSubmitted);
-            if (!result.get("canSubmit").equals(true) && hasSubmitted) {
-                result.put("submitReason", "第" + currentPeriod + "期实习心得已提交，请等待下一阶段再提交");
-            } else if (currentPeriod == null) {
-                result.put("submitReason", "当前不在实习期间内，无法提交实习心得");
+            result.put("canSubmit", !hasSubmitted);
+            if (hasSubmitted) {
+                result.put("submitReason", "第" + currentPeriod + "期实习心得已提交，请等待下一期再提交");
             }
 
             return Result.success(result);
         } catch (Exception e) {
-            log.error("获取当前阶段状态失败: {}", e.getMessage(), e);
+            log.error("获取当前期次状态失败: {}", e.getMessage(), e);
             return Result.error("获取失败: " + e.getMessage());
         }
     }
@@ -610,7 +555,9 @@ public class StudentInternshipReflectionController {
      * @param id 实习心得ID
      */
     @PutMapping("/withdraw/{id}")
-    public Result withdrawReflection(@PathVariable Long id) {
+    @Transactional(rollbackFor = Exception.class)
+    @Log(operationType = "UPDATE", module = "INTERNSHIP_REFLECTION", description = "撤回实习心得", riskLevel = "MEDIUM")
+    public synchronized Result withdrawReflection(@PathVariable Long id) {
         try {
             User user = getCurrentUser();
             if (user == null) {
@@ -631,20 +578,30 @@ public class StudentInternshipReflectionController {
             if ("1".equals(reflection.getRemark())) {
                 return Result.error("已批阅的心得不允许撤回");
             }
+            if (!hasActiveReflectionSubmission(user.getId(), reflection.getId())) {
+                return Result.error("该心得尚未提交或已撤回，请勿重复操作");
+            }
 
-            // 重置为草稿状态
+            // 数据库条件更新是重复撤回的最终门闩，避免多实例同时写入两条撤回动态。
+            Date withdrawnAt = new Date();
+            if (internshipReflectionService.withdrawSubmitted(
+                    reflection.getId(), user.getId(), withdrawnAt) <= 0) {
+                return Result.error("该心得已撤回或状态已变化，请刷新后重试");
+            }
             reflection.setStatus(0);
-            reflection.setRemark("0");  // 重置remark，前端根据remark判断显示状态
-            reflection.setUpdateTime(new Date());
-            // 清空AI分析相关字段
-            reflection.setAiKeywords(null);
-            reflection.setAiAnalysis(null);
-            reflection.setAiImprovements(null);
-            reflection.setAiScore(null);
-            reflection.setAiAnalysisTime(null);
-            internshipReflectionService.updateById(reflection);
+            reflection.setRemark("0");
+            reflection.setUpdateTime(withdrawnAt);
             // 删除AI分析记录
             studentReflectionAIAnalysisService.deleteByReflectionId(id);
+
+            append(progressRecordService,
+                    user.getId(),
+                    "reflection_withdrawn",
+                    "已撤回实习心得",
+                    reflectionDescription(reflection),
+                    "cancelled",
+                    reflection.getId(),
+                    reflection.getUpdateTime());
 
             // 推送待评分数据更新给辅导员
             if (reflection.getCounselorId() != null) {
@@ -653,6 +610,7 @@ public class StudentInternshipReflectionController {
 
             return Result.success("撤回成功", reflection);
         } catch (Exception e) {
+            rollbackCurrentTransaction();
             log.error("撤回实习心得失败: {}", e.getMessage(), e);
             return Result.error("撤回失败: " + e.getMessage());
         }
@@ -662,6 +620,7 @@ public class StudentInternshipReflectionController {
      * 删除实习心得（只能删除草稿状态的）
      */
     @DeleteMapping("/{id}")
+    @Log(operationType = "DELETE", module = "INTERNSHIP_REFLECTION", description = "删除实习心得", riskLevel = "MEDIUM")
     public Result deleteReflection(@PathVariable Long id) {
         try {
             User user = getCurrentUser();
@@ -785,6 +744,82 @@ public class StudentInternshipReflectionController {
                 log.error("AI分析失败，反射ID: {}，错误: {}", reflectionId, e.getMessage(), e);
             }
         });
+    }
+
+    private void appendReflectionSubmission(Long studentId,
+                                            InternshipReflection reflection,
+                                            boolean resubmitted) {
+        append(progressRecordService,
+                studentId,
+                resubmitted ? "reflection_resubmitted" : "reflection_submitted",
+                resubmitted ? "已重新提交实习心得" : "已提交实习心得",
+                reflectionDescription(reflection),
+                "pending",
+                reflection.getId(),
+                reflection.getSubmitTime());
+    }
+
+    private boolean hasActiveReflectionSubmission(Long studentId, Long reflectionId) {
+        List<com.internship.entity.InternshipProgressRecord> events =
+                progressRecordService.getByStudentId(studentId);
+        if (events == null) return false;
+        return events.stream()
+                .filter(event -> reflectionId.equals(event.getRelatedId()))
+                .filter(event -> "reflection_submitted".equals(event.getEventType())
+                        || "reflection_resubmitted".equals(event.getEventType())
+                        || "reflection_withdrawn".equals(event.getEventType())
+                        || "reflection_submit".equals(event.getEventType()))
+                .findFirst()
+                .map(event -> !"reflection_withdrawn".equals(event.getEventType()))
+                .orElse(false);
+    }
+
+    private String reflectionDescription(InternshipReflection reflection) {
+        StringBuilder description = new StringBuilder();
+        if (reflection.getStageAssignmentId() != null) {
+            InternshipStageAssignment assignment = stageAssignmentService.findById(reflection.getStageAssignmentId());
+            if (assignment != null && assignment.getCompanyName() != null) {
+                description.append(assignment.getCompanyName());
+                if (assignment.getPositionName() != null) {
+                    description.append(" · ").append(assignment.getPositionName());
+                }
+                description.append(" · ");
+            }
+        }
+        description.append("第")
+                .append(reflection.getPeriodNumber() == null ? "?" : reflection.getPeriodNumber())
+                .append("期实习心得");
+        return description.toString();
+    }
+
+    private InternshipStageAssignment findPlacementForDate(Long studentId, LocalDate date) {
+        List<InternshipStageAssignment> placements = stageAssignmentService.findByStudentId(studentId);
+        if (placements == null || date == null) return null;
+        return placements.stream()
+                .filter(item -> item != null
+                        && item.getInternshipStartTime() != null
+                        && REFLECTION_PLACEMENT_STATUSES.contains(item.getStatus()))
+                .filter(item -> {
+                    LocalDate start = item.getInternshipStartTime().toInstant()
+                            .atZone(BUSINESS_ZONE).toLocalDate();
+                    LocalDate end = item.getInternshipEndTime() == null ? null
+                            : item.getInternshipEndTime().toInstant()
+                            .atZone(BUSINESS_ZONE).toLocalDate();
+                    return !date.isBefore(start) && (end == null || !date.isAfter(end));
+                })
+                .max(Comparator
+                        .comparing(InternshipStageAssignment::getInternshipStartTime)
+                        .thenComparing(InternshipStageAssignment::getId,
+                                Comparator.nullsFirst(Comparator.naturalOrder())))
+                .orElse(null);
+    }
+
+    private void rollbackCurrentTransaction() {
+        try {
+            TransactionAspectSupport.currentTransactionStatus().setRollbackOnly();
+        } catch (NoTransactionException ignored) {
+            // Direct controller unit tests do not run through a transactional proxy.
+        }
     }
 
     /**

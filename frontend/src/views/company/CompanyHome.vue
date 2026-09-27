@@ -9,6 +9,12 @@ import emitter from '@/utils/event-bus'
 import { usePositionStore } from '@/store/position'
 import { ElMessage } from 'element-plus'
 import FilePreviewDialog from '@/components/FilePreviewDialog.vue'
+import AnnouncementMessageItem from '@/components/AnnouncementMessageItem.vue'
+import { announcementAttachmentByteUrl } from '@/utils/authorizedFileUrl'
+import { downloadAuthorizedFile } from '@/utils/authorizedFileDownload'
+import { sanitizeHTML } from '@/utils/sanitize'
+import { getPublisherNameText, getPublisherRoleDisplay } from '@/utils/studentAnnouncement'
+import { markAnnouncementRead } from '@/api/announcement'
 import {
   DocumentChecked,
   User,
@@ -117,6 +123,10 @@ const unreadCount = computed(() => {
   return notifications.value.filter(n => !n.isRead).length
 })
 
+const unreadActivityCount = computed(() => {
+  return recentActivities.value.filter(a => !a.viewed).length
+})
+
 const sortedNotifications = computed(() => {
   return [...notifications.value].sort((a, b) => {
     // 未读优先
@@ -132,16 +142,28 @@ const sortedNotifications = computed(() => {
 const fetchStats = async () => {
   console.log('开始获取统计数据')
   try {
-    const response = await request({
+    interface CompanyStatsRow {
+      publishedPositions?: number
+      published_positions?: number
+      totalApplications?: number
+      total_applications?: number
+      pendingConfirmations?: number
+      pending_confirmations?: number
+      confirmedConfirmations?: number
+      confirmed_confirmations?: number
+      [key: string]: unknown
+    }
+    const response = await request<CompanyStatsRow>({
       url: '/company/stats',
       method: 'get'
     })
     console.log('统计数据响应:', response)
     if (response.code === 200) {
-      statsData.value[0].value = response.data.publishedPositions || 0
-      statsData.value[1].value = response.data.totalApplications || 0
-      statsData.value[2].value = response.data.pendingConfirmations || 0
-      statsData.value[3].value = response.data.confirmedConfirmations || 0
+      const statsRow = response.data as CompanyStatsRow
+      statsData.value[0].value = statsRow.publishedPositions ?? statsRow.published_positions ?? 0
+      statsData.value[1].value = statsRow.totalApplications ?? statsRow.total_applications ?? 0
+      statsData.value[2].value = statsRow.pendingConfirmations ?? statsRow.pending_confirmations ?? 0
+      statsData.value[3].value = statsRow.confirmedConfirmations ?? statsRow.confirmed_confirmations ?? 0
     }
   } catch (error) {
     console.error('获取统计数据失败:', error)
@@ -150,23 +172,36 @@ const fetchStats = async () => {
 
 const fetchRecentActivities = async () => {
   try {
-    const response = await request({
+    interface RecentApplicationRow {
+      id?: number | string
+      studentName?: string
+      student_name?: string
+      positionName?: string
+      position_name?: string
+      applyTime?: string
+      apply_time?: string
+      createTime?: string
+      status?: string | number
+      viewed?: boolean
+      [key: string]: unknown
+    }
+    const response = await request<RecentApplicationRow[]>({
       url: '/company/applications/recent',
       method: 'get',
       params: { limit: 10 }
     })
     console.log('最新动态响应数据:', response)
     if (response.code === 200 && response.data) {
-      recentActivities.value = response.data
+      const activityRows = Array.isArray(response.data) ? response.data : []
+      recentActivities.value = activityRows
         .map((app) => ({
           id: app.id,
           type: 'application',
           title: `${app.studentName || '学生'} 申请了 ${app.positionName || '岗位'}`,
           time: formatTime(app.applyTime || app.createTime),
           status: app.status,
-          viewed: app.viewed !== undefined ? app.viewed : true
+          viewed: app.viewed !== undefined ? app.viewed : false
         }))
-        .filter(app => !app.viewed) // 过滤掉已读的
       console.log('处理后的最新动态数据:', recentActivities.value)
     }
   } catch (error) {
@@ -178,7 +213,7 @@ const formatTime = (date) => {
   if (!date) return '刚刚'
   const now = new Date()
   const time = new Date(date)
-  const diff = Math.floor((now - time) / 1000)
+  const diff = Math.floor((now.getTime() - time.getTime()) / 1000)
 
   if (diff < 60) return '刚刚'
   if (diff < 3600) return `${Math.floor(diff / 60)}分钟前`
@@ -189,24 +224,36 @@ const formatTime = (date) => {
 
 const fetchNotifications = async () => {
   try {
-    const response = await request({
+    interface CompanyNotificationRow {
+      id?: number | string
+      type?: string
+      title?: string
+      content?: string
+      time?: string
+      publishTime?: string
+      publishDate?: string
+      publisher?: string
+      publisherRole?: string
+      positionId?: number | string
+      positionName?: string
+      isRead?: boolean
+      [key: string]: unknown
+    }
+    const response = await request<CompanyNotificationRow[]>({
       url: '/company/notifications',
       method: 'get',
       params: { limit: 5 }
     })
     console.log('通知响应数据:', response)
     if (response.code === 200 && response.data) {
-      console.log('通知数据长度:', response.data.length)
-      notifications.value = response.data.map(item => ({
-        id: item.id,
-        type: item.type,
-        title: item.title,
-        content: item.content,
-        time: item.time,
-        priority: item.priority,
-        positionId: item.positionId,
-        positionName: item.positionName,
-        isRead: item.isRead
+      const noticeRows = Array.isArray(response.data) ? response.data : []
+      console.log('通知数据长度:', noticeRows.length)
+      notifications.value = noticeRows.map(item => ({
+        ...item,
+        time: item.time || item.publishTime || item.publishDate,
+        publishTime: item.publishTime || item.publishDate || item.time,
+        publisher: getPublisherNameText(item),
+        publisherRole: getPublisherRoleDisplay(item)
       }))
       console.log('处理后的通知数据:', notifications.value)
     } else {
@@ -222,20 +269,18 @@ const handleNavigate = (route) => {
 }
 
 const handleViewRecentActivity = async (activity) => {
-  // 把同类型的所有未读动态标记为已读
-  const activitiesToMark = recentActivities.value.filter(a => a.type === activity.type && !a.viewed)
-  for (const item of activitiesToMark) {
+  // 点击后只把当前这条动态标记为已读，条目保留在列表中
+  if (!activity.viewed) {
     try {
       await request({
-        url: `/company/applications/${item.id}/view`,
+        url: `/company/applications/${activity.id}/view`,
         method: 'put'
       })
     } catch (error) {
       console.error('标记已读失败:', error)
     }
+    activity.viewed = true
   }
-  // 从列表中移除已标记的记录
-  recentActivities.value = recentActivities.value.filter(a => a.type !== activity.type)
 
   // 根据动态类型跳转到对应页面
   let route = ''
@@ -250,8 +295,16 @@ const handleViewRecentActivity = async (activity) => {
 const getStatusText = (status) => {
   const statusMap = {
     pending: '待确认',
+    approved: '已通过',
+    interview: '面试中',
+    pending_interview: '待面试',
+    interview_passed: '面试通过',
+    interview_failed: '面试未通过',
     confirmed: '已确认',
-    rejected: '已拒绝'
+    rejected: '已拒绝',
+    withdrawn: '已撤回',
+    cancelled: '已取消',
+    canceled: '已取消'
   }
   return statusMap[status] || status
 }
@@ -259,56 +312,18 @@ const getStatusText = (status) => {
 const getStatusType = (status) => {
   const typeMap = {
     pending: 'warning',
+    pending_interview: 'warning',
+    interview: 'warning',
+    approved: 'success',
+    interview_passed: 'success',
     confirmed: 'success',
-    rejected: 'danger'
+    rejected: 'danger',
+    interview_failed: 'danger',
+    withdrawn: 'info',
+    cancelled: 'info',
+    canceled: 'info'
   }
   return typeMap[status] || 'info'
-}
-
-const getPriorityText = (priority) => {
-  const priorityMap = {
-    high: '高',
-    medium: '中',
-    low: '低',
-    info: '普通'
-  }
-  return priorityMap[priority] || priority
-}
-
-const getPriorityType = (priority) => {
-  const typeMap = {
-    high: 'danger',
-    medium: 'warning',
-    low: 'info',
-    info: 'info'
-  }
-  return typeMap[priority] || 'info'
-}
-
-const getNotificationType = (type) => {
-  const typeMap = {
-    system: '系统通知',
-    reminder: '重要提醒',
-    policy: '政策更新',
-    event: '活动通知',
-    warning: '警告通知',
-    recruitment_full: '招聘人数已满',
-    position_expiring: '岗位即将到期'
-  }
-  return typeMap[type] || type
-}
-
-const getNotificationIcon = (type) => {
-  const iconMap = {
-    system: markRaw(Bell),
-    reminder: markRaw(Message),
-    policy: markRaw(DocumentChecked),
-    event: markRaw(Calendar),
-    warning: markRaw(Bell),
-    recruitment_full: markRaw(Bell),
-    position_expiring: markRaw(Message)
-  }
-  return iconMap[type] || markRaw(Bell)
 }
 
 const handleNotificationRefresh = () => {
@@ -323,6 +338,7 @@ const viewData = ref(null)
 const filePreviewVisible = ref(false)
 const currentFileUrl = ref('')
 const currentFileName = ref('')
+const currentAuthorizedUrl = ref('')
 
 const handleViewAnnouncement = async (notification) => {
   try {
@@ -334,10 +350,15 @@ const handleViewAnnouncement = async (notification) => {
       viewData.value = response.data
       viewDialogVisible.value = true
       
-      // 更新本地通知列表的阅读状态
+      // 更新本地通知列表的阅读状态，并写入服务端阅读记录，刷新后仍保持已读
       const targetNotification = notifications.value.find(n => n.id === notification.id)
-      if (targetNotification) {
+      if (targetNotification && !targetNotification.isRead) {
         targetNotification.isRead = true
+        try {
+          await markAnnouncementRead(Number(notification.id))
+        } catch (error) {
+          console.error('持久化公告已读状态失败:', error)
+        }
       }
     } else {
       ElMessage.error('获取公告详情失败')
@@ -367,50 +388,37 @@ const previewFile = (attachment) => {
     return
   }
 
-  const url = attachment.url ? String(attachment.url) : null
-  const name = attachment.name ? String(attachment.name) : '附件'
-
-  if (!url) {
-    ElMessage.error('附件地址不存在')
+  const name = typeof attachment.name === 'string' ? attachment.name : ''
+  const authorizedUrl = announcementAttachmentByteUrl(viewData.value?.id, name)
+  if (!authorizedUrl) {
+    ElMessage.error('公告附件记录不完整')
     return
   }
 
-  currentFileUrl.value = url
+  currentFileUrl.value = typeof attachment.url === 'string' ? attachment.url : ''
   currentFileName.value = name
+  currentAuthorizedUrl.value = authorizedUrl
   filePreviewVisible.value = true
 }
 
-const downloadFile = (url, name) => {
-  try {
-    const link = document.createElement('a')
-    link.href = url
-    link.download = name || 'download'
-    link.target = '_blank'
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-    ElMessage.success('开始下载')
-  } catch (error) {
-    console.error('下载失败:', error)
-    ElMessage.error('下载失败')
-  }
-}
-
-const downloadFileWithConfirm = (attachment) => {
+const downloadFileWithConfirm = async (attachment) => {
   if (!attachment) {
     ElMessage.error('附件信息不存在')
     return
   }
-
-  const url = attachment.url ? String(attachment.url) : null
-  const name = attachment.name ? String(attachment.name) : '附件'
-
-  if (!url) {
-    ElMessage.error('附件地址不存在')
+  const name = typeof attachment.name === 'string' ? attachment.name : ''
+  const authorizedUrl = announcementAttachmentByteUrl(viewData.value?.id, name)
+  if (!authorizedUrl) {
+    ElMessage.error('公告附件记录不完整')
     return
   }
-
-  downloadFile(url, name)
+  try {
+    await downloadAuthorizedFile(authorizedUrl, name)
+    ElMessage.success('开始下载')
+  } catch (error) {
+    console.error('下载失败:', error)
+    ElMessage.error('下载失败，请检查权限')
+  }
 }
 
 const formatDate = (dateString) => {
@@ -556,7 +564,7 @@ onUnmounted(() => {
             最新动态
           </h3>
           <div class="header-right">
-            <el-badge :value="recentActivities.length" :hidden="recentActivities.length === 0" class="unread-badge" />
+            <el-badge :value="unreadActivityCount" :hidden="unreadActivityCount === 0" class="unread-badge" />
           </div>
         </div>
         <el-scrollbar height="400px">
@@ -571,6 +579,8 @@ onUnmounted(() => {
               v-for="activity in recentActivities"
               :key="activity.id"
               class="activity-item"
+              :class="{ 'is-unread': !activity.viewed, 'is-read': activity.viewed }"
+              :aria-label="`${activity.title}${activity.viewed ? '（已读）' : '（未读）'}`"
               @click="handleViewRecentActivity(activity)"
             >
               <div class="activity-icon">
@@ -586,6 +596,9 @@ onUnmounted(() => {
                   <el-tag :type="getStatusType(activity.status)" size="small">
                     {{ getStatusText(activity.status) }}
                   </el-tag>
+                  <span class="activity-read-state" :class="{ unread: !activity.viewed }">
+                    {{ activity.viewed ? '已读' : '未读' }}
+                  </span>
                 </div>
               </div>
             </div>
@@ -611,30 +624,12 @@ onUnmounted(() => {
               </el-icon>
               <p>暂无通知</p>
             </div>
-            <div
+            <AnnouncementMessageItem
               v-for="notification in sortedNotifications"
               :key="notification.id"
-              class="notification-item"
-              :class="{ 'unread': !notification.isRead }"
-              @click="handleViewAnnouncement(notification)"
-            >
-              <div class="notification-icon">
-                <el-icon :size="20" :color="notification.priority === 'high' ? '#F56C6C' : notification.priority === 'medium' ? '#E6A23C' : '#909399'">
-                  <component :is="getNotificationIcon(notification.type)" />
-                </el-icon>
-                <div v-if="!notification.isRead" class="unread-dot"></div>
-              </div>
-              <div class="notification-content">
-                <div class="notification-title">{{ notification.title }}</div>
-                <div class="notification-desc">{{ notification.content }}</div>
-                <div class="notification-meta">
-                  <el-tag :type="getPriorityType(notification.priority)" size="small">
-                    {{ getNotificationType(notification.type) }}
-                  </el-tag>
-                  <span class="notification-time">{{ notification.time }}</span>
-                </div>
-              </div>
-            </div>
+              :announcement="notification"
+              @select="handleViewAnnouncement"
+            />
           </div>
         </el-scrollbar>
       </div>
@@ -659,13 +654,9 @@ onUnmounted(() => {
             <span class="meta-label">发布日期:</span>
             <span class="meta-value">{{ formatDate(viewData.publishDate || viewData.publishTime) }}</span>
           </div>
-          <div class="meta-item">
-            <span class="meta-label">过期日期:</span>
-            <span class="meta-value">{{ formatDate(viewData.expireDate || viewData.validTo) }}</span>
-          </div>
         </div>
         <el-divider></el-divider>
-        <div class="content-body" v-html="viewData.content"></div>
+        <div class="content-body" v-html="sanitizeHTML(viewData.content)"></div>
         <div v-if="viewData.attachments && parseAttachments(viewData.attachments).length > 0" class="attachments-section">
           <el-divider></el-divider>
           <div class="attachments-title">
@@ -716,6 +707,7 @@ onUnmounted(() => {
       v-model="filePreviewVisible"
       :file-url="currentFileUrl"
       :file-name="currentFileName"
+      :authorized-url="currentAuthorizedUrl"
     />
   </div>
 </template>
@@ -973,6 +965,20 @@ onUnmounted(() => {
   background: #f5f7fa;
 }
 
+.activity-item.is-unread .activity-title {
+  color: #303133;
+  font-weight: 600;
+}
+
+.activity-item.is-read .activity-title {
+  color: #909399;
+  font-weight: 400;
+}
+
+.activity-item.is-read .activity-icon {
+  opacity: 0.55;
+}
+
 .activity-item:last-child {
   border-bottom: none;
 }
@@ -1020,6 +1026,18 @@ onUnmounted(() => {
   gap: 8px;
   font-size: 12px;
   color: #909399;
+}
+
+.activity-read-state {
+  margin-left: auto;
+  font-size: 12px;
+  color: #c0c4cc;
+  white-space: nowrap;
+}
+
+.activity-read-state.unread {
+  color: #f56c6c;
+  font-weight: 600;
 }
 
 .notification-list {

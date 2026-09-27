@@ -8,6 +8,7 @@ import com.internship.entity.AdminUser;
 import com.internship.service.AdminUserService;
 import com.internship.utils.JwtUtils;
 import com.internship.utils.PasswordValidator;
+import com.internship.utils.UserCredentialDefaults;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -19,7 +20,6 @@ import org.springframework.web.bind.annotation.*;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 
 /**
  * 管理员用户控制器
@@ -37,6 +37,9 @@ public class AdminUserController {
     
     @Autowired
     private JwtUtils jwtUtils;
+
+    @Autowired(required = false)
+    private com.internship.service.UserCacheService userCacheService;
 
     // 获取所有管理员用户（分页）
     @GetMapping
@@ -144,7 +147,7 @@ public class AdminUserController {
     }
 
     // 批量删除管理员用户
-    @Log(operationType = "DELETE", module = "USER_MANAGEMENT", description = "批量删除管理员用户")
+    @Log(operationType = "DELETE", module = "USER_MANAGEMENT", description = "批量删除管理员用户", riskLevel = "HIGH", critical = true)
     @DeleteMapping("/batch")
     @PreAuthorize("hasAuthority('user:admin:delete')")
     public Result batchDeleteAdminUsers(@RequestBody List<Long> ids) {
@@ -177,20 +180,15 @@ public class AdminUserController {
             if (adminUser == null) {
                 return Result.error("用户不存在");
             }
-
-            String newPassword = passwordDTO.get("password");
-            if (StringUtils.isBlank(newPassword)) {
-                newPassword = UUID.randomUUID().toString().substring(0, 8);
-            }
-
-            PasswordValidator.ValidationResult validationResult = PasswordValidator.validatePassword(newPassword);
-            if (!validationResult.isValid()) {
-                log.warn("重置管理员用户密码失败：新密码不符合复杂度要求 - {}", validationResult.getMessage());
-                return Result.error(validationResult.getMessage());
-            }
+            // 管理员端统一重置口令，服务端固定生效，不信任前端传值。
+            String newPassword = UserCredentialDefaults.PASSWORD;
 
             adminUser.setPassword(newPassword);
             adminUserService.update(adminUser);
+            // 清除 Redis 用户缓存，避免被重置用户登录时命中旧密码哈希
+            if (userCacheService != null) {
+                userCacheService.evictUserCache(adminUser.getUsername());
+            }
 
             jwtUtils.incrementUserTokenVersion(adminUser.getUsername());
 

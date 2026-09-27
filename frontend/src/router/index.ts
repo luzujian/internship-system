@@ -1,9 +1,10 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 
-// 认证页面
-import Login from '../views/Login.vue'
-import CompanyCheck from '../views/CompanyCheck.vue'
-import CompanyRegister from '../views/CompanyRegister.vue'
+// 延迟加载认证页，避免页面的 request/auth 依赖反向导入尚未初始化的 router。
+const Login = () => import('../views/Login.vue')
+const ForgotPassword = () => import('../views/ForgotPassword.vue')
+const CompanyCheck = () => import('../views/CompanyCheck.vue')
+const CompanyRegister = () => import('../views/CompanyRegister.vue')
 
 // 404 页面
 import NotFound from '../views/NotFound.vue'
@@ -39,6 +40,14 @@ const router = createRouter({
       path: '/login',
       name: 'login',
       component: Login,
+      meta: {
+        requiresAuth: false
+      }
+    },
+    {
+      path: '/forgot-password',
+      name: 'forgotPassword',
+      component: ForgotPassword,
       meta: {
         requiresAuth: false
       }
@@ -122,6 +131,8 @@ initRoutePreload()
 router.afterEach((to) => {
   if (to.path === '/login') {
     document.title = '账号登录 - DeepIntern'
+  } else if (to.path === '/forgot-password') {
+    document.title = '忘记密码 - DeepIntern'
   } else if (to.path.startsWith('/admin')) {
     document.title = to.meta.title ? `${to.meta.title} - 管理端 - DeepIntern` : '管理端 - DeepIntern'
   } else if (to.path.startsWith('/student')) {

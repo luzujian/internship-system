@@ -1,7 +1,8 @@
 <!-- src/layouts/MainLayout.vue -->
 <script lang="ts" setup>
 import logger from '@/utils/logger'
-import { reactive, ref, computed, onMounted, nextTick } from 'vue'
+import { reactive, ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
+import { useFormContext } from '@/agent/formContext'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRouter } from 'vue-router'
 import {
@@ -39,19 +40,20 @@ import TeacherUserService from '../../api/TeacherUserService'
 import UserService from '../../api/user'
 import { useAuthStore } from '../../store/auth'
 import { useSystemSettingsStore } from '../../store/systemSettings'
-import { useLogStore } from '../../store/log'
 import request from '../../utils/request'
 import ClassService from '../../api/class'
 import DepartmentService from '../../api/department'
 import MajorService from '../../api/major'
-import { cleanLogsApi } from '../../api/log'
 import companyService from '../../api/company'
 import PositionCategoryService from '../../api/positionCategory'
 import * as announcementApi from '../../api/announcement'
 import * as feedbackApi from '../../api/problemFeedback'
 import positionService from '../../api/position'
 import { useUserStatusCheck } from '../../composables/useUserStatusCheck'
-import FloatingAIBall from '@/components/FloatingAIBall.vue'
+import AgentWorkspace from '@/components/agent/AgentWorkspace.vue'
+import AgentEntry from '@/components/agent/AgentEntry.vue'
+import { getAdminMenuPermission } from '@/utils/adminMenuPermissions'
+import { useResponsiveSidebar } from '@/composables/useResponsiveSidebar'
 
 useUserStatusCheck(180000)
 
@@ -79,6 +81,25 @@ const editingUserRules = {
     { pattern: /^1[3-9]\d{9}$/, message: '请输入正确的手机号', trigger: 'blur' }
   ]
 }
+
+// ===== 智能填表：编辑个人资料注册到 AI 侧栏 =====
+// 真实姓名只读、修改密码（口令）与角色切换（含管理员密码）不接入语音填表
+const formContext = useFormContext()
+watch(editDialogVisible, (open) => {
+  if (open) {
+    formContext.register({
+      formId: 'admin:profile-edit',
+      title: '编辑个人资料',
+      fields: [
+        { prop: 'username', label: '用户名', type: 'input', required: true },
+        { prop: 'phone', label: '手机号', type: 'input', patternHint: '11位手机号码' }
+      ],
+      getModel: () => editingUser,
+      getFormEl: () => editingUserFormRef.value
+    })
+  } else formContext.unregister('admin:profile-edit')
+})
+onUnmounted(() => formContext.unregister('admin:profile-edit'))
 
 // 角色切换对话框相关状态
 const switchRoleDialogVisible = ref(false)
@@ -204,7 +225,7 @@ const passwordRequirements = computed(() => {
 
 const passwordFormRef = ref(null)
 
-const sidebarCollapsed = ref(false)
+const { isMobile, sidebarCollapsed, toggleSidebar, closeSidebar } = useResponsiveSidebar()
 
 const adminPermissionsLoaded = ref(false)
 
@@ -216,18 +237,25 @@ const handleMenuClick = (index: string) => {
 
 const loadAdminPermissions = async () => {
   try {
-    const response = await request.get('/admin/permissions/roles/1/permissions')
+    interface AdminPermissionRow {
+      id?: number
+      permissionCode?: string
+      permission_code?: string
+      permissionName?: string
+      [key: string]: unknown
+    }
+    const response = await request.get<AdminPermissionRow[]>('/admin/permissions/roles/1/permissions')
     logger.log('权限接口响应:', response)
     logger.log('response.data:', response.data)
     if (response && response.code === 200 && response.data) {
-      const permissions = response.data
+      const permissions = Array.isArray(response.data) ? response.data : []
       localStorage.setItem('adminPermissions', JSON.stringify(permissions))
       adminPermissionsLoaded.value = true
       logger.log('管理员权限列表加载成功，数量:', permissions.length)
-      logger.log('权限列表:', permissions.map(p => p.permissionCode))
-      const withdrawalPerm = permissions.find(p => p.permissionCode === 'application:withdrawal:view')
+      logger.log('权限列表:', permissions.map(p => p.permissionCode ?? p.permission_code))
+      const withdrawalPerm = permissions.find(p => (p.permissionCode ?? p.permission_code) === 'application:withdrawal:view')
       logger.log('撤回申请记录权限:', withdrawalPerm)
-      const confirmPerm = permissions.find(p => p.permissionCode === 'internship:confirm:view')
+      const confirmPerm = permissions.find(p => (p.permissionCode ?? p.permission_code) === 'internship:confirm:view')
       logger.log('实习确认表权限:', confirmPerm)
     } else {
       logger.error('权限接口返回格式错误:', response.data)
@@ -246,35 +274,8 @@ const hasPermission = (permissionCode) => {
   return authStore.hasPermission(permissionCode)
 }
 
-const menuPermissions = {
-  '/admin/teacher-users': 'user:teacher:view',
-  '/admin/student-users': 'user:student:view',
-  '/admin/companies': 'user:company:view',
-  '/admin/positions': 'position:view',
-  '/admin/position-categories': 'position-category:view',
-  '/admin/classes': 'class:view',
-  '/admin/majors': 'major:view',
-  '/admin/departments': 'department:view',
-  '/admin/announcements': 'announcement:view',
-  '/admin/resource-documents': 'resource:view',
-  '/admin/problem-feedback': 'problem:view',
-  '/admin/data-statistics/active-statistics': 'statistics:view',
-  '/admin/logs': 'log:view',
-  '/admin/permissions': 'permission:view',
-  '/admin/backup': 'backup:view',
-  '/admin/system-settings': 'system:settings:view',
-  '/admin/keyword-library': 'keyword:view',
-  '/admin/ai-model': 'ai:model:view',
-  '/admin/ai-test': 'ai:test:view',
-  '/admin/scoring-rule': 'scoring:view',
-  '/admin/companies/audit': 'user:company:audit',
-  '/admin/application-withdrawal-records': 'application:withdrawal:view',
-  '/admin/internship-confirm-application': 'internship:confirm:view',
-  '/admin/recruitment': 'recruitment:view'
-}
-
 const canShowMenu = (menuPath) => {
-  const permissionCode = menuPermissions[menuPath]
+  const permissionCode = getAdminMenuPermission(menuPath)
   if (!permissionCode) return true
   if (!adminPermissionsLoaded.value) {
     logger.log('canShowMenu - 权限未加载完成:', menuPath)
@@ -283,14 +284,6 @@ const canShowMenu = (menuPath) => {
   const result = hasPermission(permissionCode)
   logger.log('canShowMenu - 菜单:', menuPath, '权限码:', permissionCode, '结果:', result)
   return result
-}
-
-// 初始化store
-const logStore = useLogStore()
-
-// 切换侧边栏显示状态
-const toggleSidebar = () => {
-  sidebarCollapsed.value = !sidebarCollapsed.value
 }
 
 // 测试导航
@@ -616,7 +609,14 @@ const showEditProfile = async () => {
 
     logger.log('获取到的用户ID:', currentUserId)
     // 调用API获取当前管理员的完整信息
-    const response = await AdminUserService.getAdminById(currentUserId)
+    interface AdminProfileRow {
+      id?: number | string
+      username?: string
+      name?: string
+      phone?: string
+      [key: string]: unknown
+    }
+    const response = await AdminUserService.getAdminById(currentUserId) as unknown as { code?: number; message?: string; msg?: string; data?: AdminProfileRow }
 
     // 根据后端Result对象格式检查响应状态
     if (response && response.data && response.code === 200 && response.data) {
@@ -627,10 +627,10 @@ const showEditProfile = async () => {
       }
 
       // 将管理员信息填充到编辑表单中
-      editingUser.id = adminInfo.id
-      editingUser.username = adminInfo.username
-      editingUser.name = adminInfo.name || ''
-      editingUser.phone = adminInfo.phone || ''
+      if (adminInfo.id !== undefined) editingUser.id = Number(adminInfo.id)
+      if (adminInfo.username !== undefined) editingUser.username = String(adminInfo.username)
+      editingUser.name = typeof adminInfo.name === 'string' ? adminInfo.name : ''
+      editingUser.phone = typeof adminInfo.phone === 'string' ? adminInfo.phone : ''
     } else if (response && response.data && response.code !== 200) {
       ElMessage.error(response.message || '获取用户信息失败')
     } else {
@@ -674,15 +674,18 @@ const saveProfile = async () => {
     }
 
     // 调用API更新用户资料
-    const response = await AdminUserService.updateAdmin(updateData)
+    const operation = formContext.beginFormOperation('admin:profile-edit')
+    const response = await AdminUserService.updateAdmin(updateData) as unknown as { code?: number; message?: string; msg?: string; data?: unknown }
 
     // 根据后端Result对象格式检查响应状态
     if (response && response.data && response.code === 200) {
       // 始终显示自定义的中文提示信息
+      operation.complete({ status: 'saved', label: '管理员资料已保存', url: '/admin/profile' })
       ElMessage.success('资料更新成功')
       editDialogVisible.value = false
     } else {
-      ElMessage.error(response?.data?.message || '资料更新失败')
+      const respMsg = typeof response?.message === 'string' ? response.message : (typeof response?.msg === 'string' ? response.msg : '')
+      ElMessage.error(respMsg || '资料更新失败')
     }
   } catch (error) {
     logger.error('更新用户资料失败:', error)
@@ -692,8 +695,8 @@ const saveProfile = async () => {
 </script>
 
 <template>
-  <div class="app-container">
-    <FloatingAIBall role="admin" />
+  <div class="app-container agent-host">
+    <AgentWorkspace />
     <!-- 顶部栏 -->
     <header class="header">
       <div class="header-left">
@@ -708,8 +711,9 @@ const saveProfile = async () => {
         </div>
       </div>
       <div class="user-actions">
+        <AgentEntry />
         <!-- 个人中心 -->
-        <el-dropdown @command="handleCommand" class="user-dropdown">
+        <el-dropdown :popper-style="{ zIndex: 2500 }" @command="handleCommand" class="user-dropdown">
           <el-button link class="user-btn">
             <div class="user-info">
               <el-icon class="user-avatar">
@@ -761,15 +765,16 @@ const saveProfile = async () => {
     <!-- 主要内容 -->
     <div class="main-content">
       <!-- 左侧菜单 -->
-      <aside :class="['sidebar', { 'sidebar-collapsed': sidebarCollapsed }]" v-show="!sidebarCollapsed">
+      <aside :class="['sidebar', { 'sidebar-collapsed': sidebarCollapsed }]" v-show="!sidebarCollapsed" aria-label="主导航">
         <el-scrollbar>
-          <el-menu 
+          <el-menu
+            v-if="adminPermissionsLoaded"
             :router="true" 
             class="el-menu-vertical-demo" 
             mode="vertical"
             @select="handleMenuClick"
           >
-            <el-menu-item index="/admin/dashboard">
+            <el-menu-item index="/admin/dashboard" data-agent-route="/admin/dashboard">
               <el-icon>
                 <HomeFilled />
               </el-icon>
@@ -783,19 +788,19 @@ const saveProfile = async () => {
                 </el-icon>
                 <span>用户管理</span>
               </template>
-              <el-menu-item index="/admin/teacher-users" v-if="canShowMenu('/admin/teacher-users')">
+              <el-menu-item index="/admin/teacher-users" v-if="canShowMenu('/admin/teacher-users')" data-agent-route="/admin/teacher-users">
                 <el-icon>
                   <Avatar />
                 </el-icon>
                 <span>教师管理</span>
               </el-menu-item>
-              <el-menu-item index="/admin/student-users" v-if="canShowMenu('/admin/student-users')">
+              <el-menu-item index="/admin/student-users" v-if="canShowMenu('/admin/student-users')" data-agent-route="/admin/student-users">
                 <el-icon>
                   <UserFilled />
                 </el-icon>
                 <span>学生管理</span>
               </el-menu-item>
-              <el-menu-item index="/admin/companies" v-if="canShowMenu('/admin/companies')">
+              <el-menu-item index="/admin/companies" v-if="canShowMenu('/admin/companies')" data-agent-route="/admin/companies">
                 <el-icon>
                   <OfficeBuilding />
                 </el-icon>
@@ -810,31 +815,31 @@ const saveProfile = async () => {
                 </el-icon>
                 <span>基础数据管理</span>
               </template>
-              <el-menu-item index="/admin/position-categories" v-if="canShowMenu('/admin/position-categories')">
+              <el-menu-item index="/admin/position-categories" v-if="canShowMenu('/admin/position-categories')" data-agent-route="/admin/position-categories">
                 <el-icon>
                   <Briefcase />
                 </el-icon>
                 <span>岗位类别管理</span>
               </el-menu-item>
-              <el-menu-item index="/admin/classes" v-if="canShowMenu('/admin/classes')">
+              <el-menu-item index="/admin/classes" v-if="canShowMenu('/admin/classes')" data-agent-route="/admin/classes">
                 <el-icon>
                   <Collection />
                 </el-icon>
                 <span>班级管理</span>
               </el-menu-item>
-              <el-menu-item index="/admin/majors" v-if="canShowMenu('/admin/majors')">
+              <el-menu-item index="/admin/majors" v-if="canShowMenu('/admin/majors')" data-agent-route="/admin/majors">
                 <el-icon>
                   <School />
                 </el-icon>
                 <span>院系专业管理</span>
               </el-menu-item>
-              <el-menu-item index="/admin/internship-confirm-application" v-if="canShowMenu('/admin/internship-confirm-application')">
+              <el-menu-item index="/admin/internship-confirm-application" v-if="canShowMenu('/admin/internship-confirm-application')" data-agent-route="/admin/internship-confirm-application">
                 <el-icon>
                   <Document />
                 </el-icon>
                 <span>实习确认表</span>
               </el-menu-item>
-              <el-menu-item index="/admin/recruitment" v-if="canShowMenu('/admin/recruitment')">
+              <el-menu-item index="/admin/recruitment" v-if="canShowMenu('/admin/recruitment')" data-agent-route="/admin/recruitment">
                 <el-icon>
                   <Briefcase />
                 </el-icon>
@@ -842,35 +847,35 @@ const saveProfile = async () => {
               </el-menu-item>
             </el-sub-menu>
 
-            <el-menu-item index="/admin/application-withdrawal-records" v-if="canShowMenu('/admin/application-withdrawal-records')">
+            <el-menu-item index="/admin/application-withdrawal-records" v-if="canShowMenu('/admin/application-withdrawal-records')" data-agent-route="/admin/application-withdrawal-records">
               <el-icon>
                 <DocumentChecked />
               </el-icon>
               <span>撤回申请记录</span>
             </el-menu-item>
             
-            <el-menu-item index="/admin/announcements" v-if="canShowMenu('/admin/announcements')">
+            <el-menu-item index="/admin/announcements" v-if="canShowMenu('/admin/announcements')" data-agent-route="/admin/announcements">
               <el-icon>
                 <DocumentChecked />
               </el-icon>
               <span>公告管理</span>
             </el-menu-item>
 
-            <el-menu-item index="/admin/resource-documents" v-if="canShowMenu('/admin/resource-documents')">
+            <el-menu-item index="/admin/resource-documents" v-if="canShowMenu('/admin/resource-documents')" data-agent-route="/admin/resource-documents">
               <el-icon>
                 <Folder />
               </el-icon>
               <span>资源管理</span>
             </el-menu-item>
 
-            <el-menu-item index="/admin/problem-feedback" v-if="canShowMenu('/admin/problem-feedback')">
+            <el-menu-item index="/admin/problem-feedback" v-if="canShowMenu('/admin/problem-feedback')" data-agent-route="/admin/problem-feedback">
               <el-icon>
                 <ChatLineRound />
               </el-icon>
                 <span>反馈管理</span>
             </el-menu-item>
 
-            <el-menu-item index="/admin/data-statistics/active-statistics" v-if="canShowMenu('/admin/data-statistics/active-statistics')">
+            <el-menu-item index="/admin/data-statistics/active-statistics" v-if="canShowMenu('/admin/data-statistics/active-statistics')" data-agent-route="/admin/data-statistics/active-statistics">
               <el-icon>
                 <DataLine />
               </el-icon>
@@ -884,26 +889,26 @@ const saveProfile = async () => {
                 </el-icon>
                 <span>AI配置测试</span>
               </template>
-              <el-menu-item index="/admin/keyword-library" v-if="canShowMenu('/admin/keyword-library')">
+              <el-menu-item index="/admin/keyword-library" v-if="canShowMenu('/admin/keyword-library')" data-agent-route="/admin/keyword-library">
                 <el-icon>
                   <Document />
                 </el-icon>
                 <span>关键词库管理</span>
               </el-menu-item>
               
-              <el-menu-item index="/admin/scoring-rule" v-if="canShowMenu('/admin/scoring-rule')">
+              <el-menu-item index="/admin/scoring-rule" v-if="canShowMenu('/admin/scoring-rule')" data-agent-route="/admin/scoring-rule">
                 <el-icon>
                   <Document />
                 </el-icon>
                 <span>评分规则管理</span>
               </el-menu-item>
-              <el-menu-item index="/admin/ai-model" v-if="canShowMenu('/admin/ai-model')">
+              <el-menu-item index="/admin/ai-model" v-if="canShowMenu('/admin/ai-model')" data-agent-route="/admin/ai-model">
                 <el-icon>
                   <ChatDotRound />
                 </el-icon>
                 <span>AI大模型选择</span>
               </el-menu-item>
-              <el-menu-item index="/admin/ai-test" v-if="canShowMenu('/admin/ai-test')">
+              <el-menu-item index="/admin/ai-test" v-if="canShowMenu('/admin/ai-test')" data-agent-route="/admin/ai-test">
                 <el-icon>
                   <ChatLineRound />
                 </el-icon>
@@ -918,25 +923,25 @@ const saveProfile = async () => {
                 </el-icon>
                 <span>系统管理</span>
               </template>
-              <el-menu-item index="/admin/logs" v-if="canShowMenu('/admin/logs')">
+              <el-menu-item index="/admin/logs" v-if="canShowMenu('/admin/logs')" data-agent-route="/admin/logs">
                 <el-icon>
                   <Document />
                 </el-icon>
                 <span>日志管理</span>
               </el-menu-item>
-              <el-menu-item index="/admin/permissions" v-if="canShowMenu('/admin/permissions')">
+              <el-menu-item index="/admin/permissions" v-if="canShowMenu('/admin/permissions')" data-agent-route="/admin/permissions">
                 <el-icon>
                   <Lock />
                 </el-icon>
                 <span>权限管理</span>
               </el-menu-item>
-              <el-menu-item index="/admin/backup" v-if="canShowMenu('/admin/backup')">
+              <el-menu-item index="/admin/backup" v-if="canShowMenu('/admin/backup')" data-agent-route="/admin/backup">
                 <el-icon>
                   <Download />
                 </el-icon>
                 <span>数据备份与恢复</span>
               </el-menu-item>
-              <el-menu-item index="/admin/system-settings" v-if="canShowMenu('/admin/system-settings')">
+              <el-menu-item index="/admin/system-settings" v-if="canShowMenu('/admin/system-settings')" data-agent-route="/admin/system-settings">
                 <el-icon>
                   <Setting />
                 </el-icon>
@@ -944,7 +949,7 @@ const saveProfile = async () => {
               </el-menu-item>
             </el-sub-menu>
 
-            <el-menu-item index="/admin/profile">
+            <el-menu-item index="/admin/profile" data-agent-route="/admin/profile">
               <el-icon>
                 <User />
               </el-icon>
@@ -953,6 +958,9 @@ const saveProfile = async () => {
           </el-menu>
         </el-scrollbar>
       </aside>
+
+      <!-- 手机端侧边栏遮罩 -->
+      <div v-if="isMobile && !sidebarCollapsed" class="sidebar-overlay" @click="closeSidebar"></div>
 
       <!-- 右侧内容区域 -->
       <el-scrollbar style="flex: 1;">
@@ -1162,6 +1170,11 @@ const saveProfile = async () => {
 .user-actions {
   display: flex;
   align-items: center;
+  gap: 16px;
+}
+
+.user-actions :deep(.agent-entry) {
+  margin-inline: 0;
 }
 
 .header-center {
@@ -1177,10 +1190,6 @@ const saveProfile = async () => {
   padding: 8px 16px;
   border-radius: 20px;
   box-shadow: 0 2px 8px rgba(255, 255, 255, 0.2);
-}
-
-.user-dropdown {
-  margin-right: 8px;
 }
 
 .user-btn {
@@ -1366,7 +1375,7 @@ const saveProfile = async () => {
   line-height: 1.5;
 }
 
-/* 响应式设计 */
+/* 响应式设计：手机端侧边栏为遮罩抽屉 */
 @media screen and (max-width: 768px) {
   .header {
     padding: 0 16px;
@@ -1380,15 +1389,41 @@ const saveProfile = async () => {
     display: none;
   }
 
-  .sidebar {
-    position: absolute;
-    z-index: 99;
-    height: calc(100vh - 64px);
-    box-shadow: 4px 0 12px rgba(0, 0, 0, 0.1);
+  .user-actions {
+    gap: 10px;
   }
 
-  .sidebar-collapsed {
+  .user-name {
+    display: none;
+  }
+
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: min(82vw, 280px);
+    min-width: 0;
+    max-width: none;
+    height: auto;
+    z-index: 1999;
     transform: translateX(-100%);
+    transition: transform 0.3s ease;
+    box-shadow: 4px 0 16px rgba(0, 0, 0, 0.18);
+  }
+
+  .sidebar:not(.sidebar-collapsed) {
+    transform: translateX(0);
+  }
+
+  /* 手机端收起仅位移隐藏，保持抽屉宽度 */
+  .sidebar.sidebar-collapsed {
+    width: min(82vw, 280px);
+    opacity: 1;
+  }
+
+  .el-main {
+    padding: 12px;
   }
 }
 </style>

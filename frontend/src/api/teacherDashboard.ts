@@ -44,7 +44,7 @@ export interface DashboardStats {
 export const dashboardApi = {
   getDashboardStats: async (params?: { startDate?: string; endDate?: string }): Promise<DashboardStats> => {
     try {
-      const response = await request.get<{ code: number; message: string; data: DashboardStats }>('/teacher/dashboard/stats', { params })
+      const response = await request.get<DashboardStats>('/teacher/dashboard/stats', { params })
       return response.data
     } catch (error) {
       throw new Error(`Failed to fetch dashboard stats: ${error}`)
@@ -53,7 +53,7 @@ export const dashboardApi = {
 
   getCounselorDashboardStats: async (counselorId: number, params?: { startDate?: string; endDate?: string }): Promise<DashboardStats> => {
     try {
-      const response = await request.get<{ code: number; message: string; data: DashboardStats }>(`/teacher/dashboard/counselor-stats/${counselorId}`, { params })
+      const response = await request.get<DashboardStats>(`/teacher/dashboard/counselor-stats/${counselorId}`, { params })
       return response.data
     } catch (error) {
       throw new Error(`Failed to fetch counselor dashboard stats: ${error}`)

@@ -20,24 +20,30 @@ import org.springframework.transaction.annotation.Transactional;
 
 import javax.sql.DataSource;
 import java.sql.Connection;
+import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.BufferedReader;
+import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.text.SimpleDateFormat;
+import java.security.MessageDigest;
 import java.util.*;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.regex.Pattern;
 import java.util.regex.Matcher;
+import java.util.zip.GZIPInputStream;
 
 import jakarta.annotation.PostConstruct;
 
 @Slf4j
 @Service
 public class BackupServiceImpl implements BackupService {
+    @Autowired
+    private com.internship.config.LocalRuntimeGuard localRuntimeGuard;
 
     private final ReentrantLock backupLock = new ReentrantLock();
     private volatile boolean autoBackupExecutedToday = false;
@@ -98,6 +104,10 @@ public class BackupServiceImpl implements BackupService {
 
     @PostConstruct
     public void init() {
+        if (localRuntimeGuard != null && localRuntimeGuard.isLocal()) {
+            log.info("本地验收环境跳过备份同步，不访问外部对象存储");
+            return;
+        }
         log.info("备份存储类型: {}, OSS启用: {}", storageType, ossEnabled);
         if ("OSS".equalsIgnoreCase(storageType) && ossEnabled) {
             log.info("备份文件将存储在阿里云OSS上");
@@ -368,8 +378,9 @@ public class BackupServiceImpl implements BackupService {
     public void updateBackupSchedule(Map<String, Object> schedule) {
         try {
             BackupSchedule existingSchedule = backupScheduleMapper.getSchedule();
-            
-            if (existingSchedule == null) {
+            boolean isNew = (existingSchedule == null);
+
+            if (isNew) {
                 existingSchedule = new BackupSchedule();
             }
             
@@ -421,8 +432,13 @@ public class BackupServiceImpl implements BackupService {
                 existingSchedule.setRemark((String) schedule.get("remark"));
             }
             
-            backupScheduleMapper.updateSchedule(existingSchedule);
-            log.info("自动备份策略更新成功: {}", schedule);
+            if (isNew) {
+                backupScheduleMapper.insertSchedule(existingSchedule);
+                log.info("自动备份策略创建成功: {}", schedule);
+            } else {
+                backupScheduleMapper.updateSchedule(existingSchedule);
+                log.info("自动备份策略更新成功: {}", schedule);
+            }
         } catch (Exception e) {
             log.error("更新自动备份策略失败: {}", e.getMessage(), e);
             throw new RuntimeException("更新自动备份策略失败: " + e.getMessage(), e);
@@ -470,11 +486,16 @@ public class BackupServiceImpl implements BackupService {
 
     @Override
     @Scheduled(cron = "0 0/5 * * * ?")
-    @Transactional
     public void autoBackup() {
+        // JVM 内互斥：已有备份在跑则直接跳过，防止窗口内重入导致一天多份
+        if (!backupLock.tryLock()) {
+            log.debug("已有备份任务正在执行，跳过本次自动备份检查");
+            return;
+        }
         BackupAuditLog auditLog = null;
         long startTime = System.currentTimeMillis();
-        
+        boolean claimed = false;
+
         try {
             BackupSchedule schedule = backupScheduleMapper.getSchedule();
             if (schedule == null || !schedule.getEnabled()) {
@@ -527,6 +548,16 @@ public class BackupServiceImpl implements BackupService {
                 log.debug("当前时间不符合备份频率要求，跳过执行");
                 return;
             }
+
+            // 原子占位：先标记今天已执行，防止 5 分钟窗口内下一次 tick 重复进入。
+            // 此处无方法级事务，UPDATE 立即提交，多实例也可见。
+            int updated = backupScheduleMapper.claimTodayExecution();
+            if (updated == 0) {
+                log.debug("今日已执行过自动备份，跳过执行");
+                return;
+            }
+            claimed = true;
+            autoBackupExecutedToday = true;
 
             log.info("开始执行自动备份，频率: {}, 备份时间: {}", frequency, backupTime);
             auditLog = backupAuditService.startAuditLog("AUTO_BACKUP", "自动备份 - " + frequency, "system", "127.0.0.1");
@@ -596,12 +627,8 @@ public class BackupServiceImpl implements BackupService {
             
             backupRecordMapper.insert(record);
             log.info("自动备份记录保存成功，ID: {}", record.getId());
-            
-            autoBackupExecutedToday = true;
-            
-            schedule.setLastExecutionDate(new Date());
-            backupScheduleMapper.updateSchedule(schedule);
-            log.info("更新自动备份最后执行日期: {}", new SimpleDateFormat("yyyy-MM-dd").format(new Date()));
+
+            log.info("自动备份占位已在开始前标记，日期: {}", new SimpleDateFormat("yyyy-MM-dd").format(new Date()));
             
             long duration = System.currentTimeMillis() - startTime;
             backupAuditService.completeAuditLog(auditLog.getId(), 1, null, duration);
@@ -621,6 +648,18 @@ public class BackupServiceImpl implements BackupService {
             if (auditLog != null) {
                 backupAuditService.completeAuditLog(auditLog.getId(), 2, errorMsg, duration);
             }
+            // 失败回滚占位，允许窗口内下一次 tick 重试
+            if (claimed) {
+                try {
+                    backupScheduleMapper.clearTodayExecution();
+                    autoBackupExecutedToday = false;
+                    log.info("已回滚自动备份占位，允许重试");
+                } catch (Exception ex) {
+                    log.warn("回滚自动备份占位失败: {}", ex.getMessage());
+                }
+            }
+        } finally {
+            backupLock.unlock();
         }
     }
 
@@ -682,15 +721,7 @@ public class BackupServiceImpl implements BackupService {
             
             for (BackupRecord record : expiredRecords) {
                 try {
-                    File backupFile = new File(record.getBackupPath());
-                    if (backupFile.exists()) {
-                        boolean deleted = backupFile.delete();
-                        if (!deleted) {
-                            log.warn("备份文件删除失败: {}", record.getBackupPath());
-                            failCount++;
-                            continue;
-                        }
-                    }
+                    aliyunOSSOperator.deleteFile(record.getBackupPath());
                     deletedIds.add(record.getId());
                     successCount++;
                     log.info("过期备份删除成功: {}", record.getBackupName());
@@ -706,8 +737,8 @@ public class BackupServiceImpl implements BackupService {
             }
             
             long duration = System.currentTimeMillis() - startTime;
-            String operationDetail = String.format("清理过期备份完成，成功: %d, 失败: %d", successCount, failCount);
-            backupAuditService.completeAuditLog(auditLog.getId(), 1, null, duration);
+            String error = failCount > 0 ? String.format("%d 个过期备份删除失败", failCount) : null;
+            backupAuditService.completeAuditLog(auditLog.getId(), failCount > 0 ? 2 : 1, error, duration);
             log.info("过期备份清理完成，成功: {}, 失败: {}, 耗时: {}ms", successCount, failCount, duration);
             
         } catch (Exception e) {
@@ -948,9 +979,11 @@ public class BackupServiceImpl implements BackupService {
                 "--quick",
                 "--lock-tables=false",
                 "--routines",
-                "--triggers",
-                "--events",
-                "--add-drop-table",
+            "--triggers",
+            // 去掉 --events：该选项需要 PROCESS 权限(dump tablespaces) + SHOW EVENTS 权限，
+            // 业务账号 user 仅有 CRUD 权限会导致 mysqldump 退出码 2 备份失败。
+            // 本系统定时任务均在 Java @Scheduled 层，数据库无 MySQL events，去掉无损。
+            "--add-drop-table",
                 "--complete-insert",
                 "--extended-insert",
                 "--set-charset",
@@ -1156,33 +1189,47 @@ public class BackupServiceImpl implements BackupService {
                 return false;
             }
 
-            String backupPath = record.getBackupPath();
-            File backupFile = new File(backupPath);
-            
-            if (!backupFile.exists()) {
-                log.error("备份文件不存在: {}", backupPath);
+            if (record.getChecksum() == null || record.getChecksum().isBlank()) {
+                log.error("备份缺少校验和，ID: {}", id);
                 return false;
             }
 
-            if (backupFile.length() == 0) {
-                log.error("备份文件为空: {}", backupPath);
+            byte[] backupContent = aliyunOSSOperator.downloadFile(record.getBackupPath());
+            if (backupContent == null || backupContent.length == 0) {
+                log.error("备份文件为空，ID: {}", id);
                 return false;
             }
 
-            if (record.getChecksum() != null && !record.getChecksum().isEmpty()) {
-                boolean isValid = BackupUtils.verifyChecksum(backupPath, record.getChecksum());
-                if (!isValid) {
-                    log.error("备份文件校验失败，校验和不匹配");
-                    return false;
-                }
+            if (record.getBackupSize() != null && backupContent.length != record.getBackupSize()) {
+                log.error("备份文件大小不匹配，ID: {}", id);
+                return false;
             }
 
-            log.info("备份文件验证成功，ID: {}, 路径: {}", id, backupPath);
-            return true;
+            // Existing compressed records store the checksum of the SQL before compression.
+            String checksum = checksumOfBackup(backupContent, Boolean.TRUE.equals(record.getIsCompressed()));
+            boolean valid = checksum.equals(record.getChecksum());
+            if (!valid) {
+                log.error("备份文件校验失败，校验和不匹配，ID: {}", id);
+            }
+            return valid;
         } catch (Exception e) {
             log.error("验证备份失败: {}", e.getMessage(), e);
             return false;
         }
+    }
+
+    private String checksumOfBackup(byte[] content, boolean compressed) throws Exception {
+        MessageDigest digest = MessageDigest.getInstance("SHA-256");
+        try (InputStream input = compressed
+                ? new GZIPInputStream(new ByteArrayInputStream(content))
+                : new ByteArrayInputStream(content)) {
+            byte[] buffer = new byte[8192];
+            int count;
+            while ((count = input.read(buffer)) != -1) {
+                digest.update(buffer, 0, count);
+            }
+        }
+        return HexFormat.of().formatHex(digest.digest());
     }
 
     private String extractTableListFromBackup(String backupFilePath) throws Exception {

@@ -36,6 +36,12 @@ public interface StudentInternshipStatusService {
      * @return 更新的记录数
      */
     int update(StudentInternshipStatus status);
+
+    /**
+     * 回退旧审批流程遗留的待确认状态。
+     * 仅当记录仍为待确认且岗位与失败申请一致时更新。
+     */
+    int rollbackPendingConfirmationForFailedApplication(Long studentId, Long positionId);
     
     /**
      * 删除学生实习状态
@@ -162,5 +168,5 @@ public interface StudentInternshipStatusService {
     PageResult<StudentInternshipStatus> findPageByScope(Integer page, Integer pageSize, Long studentId, String name,
                                                          Integer gender, Integer status, Long companyId, String companyName,
                                                          String grade, String major, String className, String studentUserId,
-                                                         List<Long> divisionIds, List<Long> classIds);
+                                                         List<Long> departmentIds, List<Long> divisionIds, List<Long> classIds);
 }

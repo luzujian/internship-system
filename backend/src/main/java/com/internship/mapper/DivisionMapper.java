@@ -3,6 +3,7 @@ package com.internship.mapper;
 import com.internship.entity.Division;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
+import org.apache.ibatis.annotations.Update;
 
 import java.util.List;
 
@@ -49,4 +50,8 @@ public interface DivisionMapper {
 
     // 更新系实习状态统计信息
     int updateDivisionInternshipCount(@Param("id") Long id, @Param("confirmedCount") Integer confirmedCount, @Param("notFoundCount") Integer notFoundCount, @Param("hasOfferCount") Integer hasOfferCount);
+
+    // ===== 删除系级联清理：先解 teacher_users.division_id 外键绑定（不删老师，只解绑） =====
+    @Update("UPDATE teacher_users SET division_id = NULL WHERE division_id = #{divisionId}")
+    int clearDivisionIdOnTeachers(@Param("divisionId") Long divisionId);
 }

@@ -10,7 +10,6 @@ import com.github.pagehelper.PageInfo;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -44,17 +43,15 @@ public class AnnouncementServiceImpl implements AnnouncementService {
     public int insert(Announcement announcement) {
         log.debug("插入通知公告: {}", announcement.getTitle());
         
+        // 发布时间由系统在真正发布时写入，不接受前端指定
+        Date now = new Date();
+        announcement.setPriority("normal");
+        announcement.setValidTo(null);
+        announcement.setValidFrom(now);
+        announcement.setPublishTime("PUBLISHED".equals(announcement.getStatus()) ? now : null);
+
         // 参数校验
         validateAnnouncementInfo(announcement);
-        
-        // 设置创建和发布时间
-        Date now = new Date();
-        announcement.setPublishTime(now);
-        
-        // 如果设置了有效期结束时间，并且当前时间已经超过结束时间，设置为过期状态
-        if (announcement.getValidTo() != null && now.after(announcement.getValidTo())) {
-            announcement.setStatus("EXPIRED");
-        }
         
         int result = announcementMapper.insert(announcement);
         log.info("通知公告插入成功，标题: {}", announcement.getTitle());
@@ -89,16 +86,17 @@ public class AnnouncementServiceImpl implements AnnouncementService {
             throw new BusinessException("公告不存在");
         }
         
+        // 编辑时不接受前端指定发布时间；发布时间只在草稿转发布时更新
+        announcement.setPriority("normal");
+        announcement.setValidTo(null);
+        boolean newlyPublished = "PUBLISHED".equals(announcement.getStatus())
+                && !"PUBLISHED".equals(existingAnnouncement.getStatus());
+        Date publishAt = new Date();
+        announcement.setPublishTime(newlyPublished ? publishAt : existingAnnouncement.getPublishTime());
+        announcement.setValidFrom(newlyPublished ? publishAt : existingAnnouncement.getValidFrom());
+
         // 参数校验
         validateAnnouncementInfo(announcement);
-        
-        // 如果设置了有效期结束时间，并且当前时间已经超过结束时间，设置为过期状态
-        if (announcement.getValidTo() != null) {
-            Date now = new Date();
-            if (now.after(announcement.getValidTo())) {
-                announcement.setStatus("EXPIRED");
-            }
-        }
         
         int result = announcementMapper.update(announcement);
         log.info("通知公告更新成功，标题: {}", announcement.getTitle());
@@ -186,15 +184,19 @@ public class AnnouncementServiceImpl implements AnnouncementService {
     
     @Override
     public PageResult<Announcement> findPage(Integer page, Integer pageSize, String title, String status, String publisher, String excludePublisherRole) {
-        return findPage(page, pageSize, title, status, publisher, excludePublisherRole, null);
+        return findPage(page, pageSize, title, status, publisher, excludePublisherRole, null, null);
     }
 
-    public PageResult<Announcement> findPage(Integer page, Integer pageSize, String title, String status, String publisher, String excludePublisherRole, String userId) {
+    @Override
+    public PageResult<Announcement> findPage(Integer page, Integer pageSize, String title, String status,
+                                            String publisher, String excludePublisherRole, String userId,
+                                            String userType) {
         log.debug("分页查询通知公告，页码: {}, 每页大小: {}, 标题: {}, 状态: {}, 发布人: {}, 排除角色: {}, 用户ID: {}",
-                page, pageSize, title, status, publisher, excludePublisherRole, userId);
+                page, pageSize, title, status, publisher, excludePublisherRole, userId, userType);
 
         PageHelper.startPage(page, pageSize);
-        List<Announcement> announcements = announcementMapper.list(title, status, publisher, excludePublisherRole, userId);
+        List<Announcement> announcements = announcementMapper.list(
+                title, status, publisher, excludePublisherRole, userId, userType);
 
         PageInfo<Announcement> pageInfo = new PageInfo<>(announcements);
         return PageResult.build(pageInfo.getTotal(), pageInfo.getList(),
@@ -225,63 +227,24 @@ public class AnnouncementServiceImpl implements AnnouncementService {
             throw new BusinessException("公告状态不能为空");
         }
         
-        // 验证发布日期（validFrom）必填
-        if (announcement.getValidFrom() == null) {
-            throw new BusinessException("发布日期不能为空");
-        }
-        
-        // 验证过期日期（validTo）必填
-        if (announcement.getValidTo() == null) {
-            throw new BusinessException("过期日期不能为空");
-        }
-        
         // 验证目标群体必填
         if (StringUtils.isBlank(announcement.getTargetType())) {
             throw new BusinessException("目标群体不能为空");
         }
-        
-        // 验证有效期：开始时间必须早于结束时间
-        if (announcement.getValidFrom().after(announcement.getValidTo())) {
-            throw new BusinessException("公告开始时间不能晚于结束时间");
-        }
-    }
-    
-    /**
-     * 定时任务：自动更新过期公告的状态
-     * 每天凌晨1点执行
-     */
-    @Scheduled(cron = "0 0 1 * * ?")
-    @Transactional(rollbackFor = Exception.class)
-    public void autoUpdateExpiredAnnouncements() {
-        log.info("开始执行自动更新过期公告状态的定时任务");
-        
-        try {
-            // 查询所有已发布且未过期的公告
-            List<Announcement> announcements = announcementMapper.listByTitleAndStatus(null, "PUBLISHED");
-            Date now = new Date();
-            int expiredCount = 0;
-            
-            for (Announcement announcement : announcements) {
-                // 如果设置了有效期结束时间，并且当前时间已经超过结束时间，更新为过期状态
-                if (announcement.getValidTo() != null && now.after(announcement.getValidTo())) {
-                    announcement.setStatus("EXPIRED");
-                    announcementMapper.update(announcement);
-                    expiredCount++;
-                    log.debug("公告过期处理：ID={}, 标题={}, 有效期至={}", 
-                            announcement.getId(), announcement.getTitle(), announcement.getValidTo());
-                }
-            }
-            
-            log.info("自动更新过期公告状态完成，共处理 {} 个过期公告", expiredCount);
-        } catch (Exception e) {
-            log.error("自动更新过期公告状态失败：{}", e.getMessage(), e);
-        }
     }
     
     @Override
-    public List<Announcement> getAnnouncementsForUser(String userType, String userInfo, String userId) {
-        log.debug("根据用户类型和用户信息获取公告列表，用户类型: {}, 用户信息: {}, 用户ID: {}", userType, userInfo, userId);
-        return announcementMapper.getAnnouncementsForUser(userType, userInfo, userId);
+    public List<Announcement> getAnnouncementsForUser(String userType, String userInfo, String userId,
+                                                     String readerType) {
+        log.debug("根据用户类型获取公告列表：userType={}, readerType={}, hasUserId={}",
+                userType, readerType, userId != null && !userId.isBlank());
+        return announcementMapper.getAnnouncementsForUser(userType, userInfo, userId, readerType);
+    }
+
+    @Override
+    public List<Announcement> listForViewer(String title, String status, String publisher,
+                                           String excludePublisherRole, String userId, String userType) {
+        return announcementMapper.list(title, status, publisher, excludePublisherRole, userId, userType);
     }
     
     @Override
@@ -352,7 +315,6 @@ public class AnnouncementServiceImpl implements AnnouncementService {
         String publisher = getStringValue(rowData, "发布人");
         String publisherRole = getStringValue(rowData, "发布人身份");
         String status = getStringValue(rowData, "状态");
-        String priority = getStringValue(rowData, "优先级");
         String targetType = getStringValue(rowData, "目标群体");
         String targetValue = getStringValue(rowData, "目标值");
         
@@ -361,7 +323,7 @@ public class AnnouncementServiceImpl implements AnnouncementService {
         announcement.setPublisher(publisher);
         announcement.setPublisherRole(convertPublisherRoleToEnglish(publisherRole));
         announcement.setStatus(convertStatusToEnglish(status));
-        announcement.setPriority(convertPriorityToEnglish(priority));
+        announcement.setPriority("normal");
         announcement.setTargetType(convertTargetTypeToEnglish(targetType));
         announcement.setTargetValue(targetValue);
         announcement.setPublishTime(new Date());
@@ -400,19 +362,6 @@ public class AnnouncementServiceImpl implements AnnouncementService {
             return "EXPIRED";
         } else {
             return status;
-        }
-    }
-    
-    private String convertPriorityToEnglish(String priority) {
-        if (StringUtils.isBlank(priority)) {
-            return null;
-        }
-        if ("普通".equals(priority)) {
-            return "normal";
-        } else if ("重要".equals(priority)) {
-            return "important";
-        } else {
-            return priority;
         }
     }
     

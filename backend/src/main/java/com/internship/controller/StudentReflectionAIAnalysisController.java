@@ -30,7 +30,7 @@ public class StudentReflectionAIAnalysisController {
     @PreAuthorize("hasAnyRole('TEACHER_COUNSELOR', 'ADMIN')")
     @Log(module = "STUDENT_REFLECTION_AI_ANALYSIS", operationType = "INSERT", description = "AI分析学生实习心得")
     public Result analyzeReflection(@RequestBody Map<String, Object> request) {
-        log.info("AI分析学生实习心得: {}", request);
+        log.info("收到学生实习心得 AI 分析请求");
         try {
             Long reflectionId = Long.parseLong(request.get("reflectionId").toString());
             Long counselorId = Long.parseLong(request.get("counselorId").toString());

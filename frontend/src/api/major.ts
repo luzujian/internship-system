@@ -1,5 +1,6 @@
 // 专业服务
 import request from '@/utils/request'
+import type { ApiResult } from '@/utils/request'
 import cacheService, { CACHE_CONFIG } from './cacheService'
 import logger from '@/utils/logger'
 
@@ -53,13 +54,13 @@ const MajorService = {
   },
 
   // 根据 ID 获取专业 - 添加缓存
-  getMajorById: async (id: number) => {
+  getMajorById: async (id: number | string) => {
     const cacheKey = `major_${id}`
     const cachedData = cacheService.get<{ code: number; data: Major }>(cacheKey)
 
     if (cachedData) {
-      // 返回缓存数据的 Promise
-      return Promise.resolve({ data: cachedData })
+      // 返回与请求一致的业务包形态
+      return Promise.resolve({ code: 200, message: 'cached', data: cachedData })
     }
 
     // 缓存未命中，请求数据
@@ -72,7 +73,8 @@ const MajorService = {
   },
 
   // 根据名称搜索专业
-  searchMajorsByName: async (name: string) => {
+  // 失败时返回兼容旧前端过滤分支的占位形态（无顶层 code，调用方用 'code' in 收窄）
+  searchMajorsByName: async (name: string): Promise<ApiResult<Major[]> | { data: { code: number; data: Major[] } }> => {
     try {
       logger.log('根据名称搜索专业:', name)
       const response = await request.get<Major[]>('majors/search', {
@@ -88,7 +90,7 @@ const MajorService = {
   },
 
   // 根据系ID获取专业列表
-  getMajorsByDivisionId: async (divisionId: number) => {
+  getMajorsByDivisionId: async (divisionId: number): Promise<ApiResult<Major[]> | { data: { code: number; data: Major[] } }> => {
     try {
       logger.log('根据系ID获取专业列表:', divisionId)
       const response = await request.get<Major[]>(`majors/division/${divisionId}`)
@@ -110,7 +112,7 @@ const MajorService = {
   },
 
   // 更新专业
-  updateMajor: async (id: number, major: Partial<Major>) => {
+  updateMajor: async (id: number | string, major: Partial<Major>) => {
     // 更新数据后清除相关缓存
     const response = await request.put(`majors/${id}`, major)
     // 清除专业列表和该专业的缓存
@@ -120,7 +122,7 @@ const MajorService = {
   },
 
   // 删除专业
-  deleteMajor: async (id: number) => {
+  deleteMajor: async (id: number | string) => {
     // 删除数据后清除相关缓存
     const response = await request.delete(`majors/${id}`)
     // 清除专业列表和该专业的缓存

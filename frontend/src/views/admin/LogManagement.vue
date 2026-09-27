@@ -1,773 +1,921 @@
 <script setup lang="ts">
 import logger from '@/utils/logger'
-import { onMounted, ref, inject, nextTick, watch, h } from 'vue'
-import { queryPageApi, cleanLogsApi } from '@/api/log'
-import { useLogStore } from '@/store/log'
-import { useSystemSettingsStore } from '@/store/systemSettings'
-import { ElTag, ElMessage, ElCard, ElTable, ElTableColumn, ElPagination, ElTabs, ElTabPane, ElMessageBox, ElDropdown, ElDropdownMenu, ElDropdownItem, ElSelect, ElOption, type FormInstance } from 'element-plus'
-import { Search, Refresh, Download, Delete, ArrowDown } from '@element-plus/icons-vue'
-import { exportToExcel } from '../../utils/xlsx'
-import request from '@/utils/request'
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { useFormContext } from '@/agent/formContext'
+import {
+  getLogSummaryApi, getOperationsApi, getLoginEventsApi, getSecurityEventsApi,
+  getLogDetailApi, getLogOptionsApi, exportLogsApi,
+  getRetentionPoliciesApi, updateRetentionPoliciesApi, previewRetentionApi, runRetentionApi,
+  verifyIntegrityApi,
+  type LogSummary, type OperateLogItem, type LoginLogItem, type SecurityEventItem, type LogOptions
+} from '@/api/log'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { Search, Refresh, Download, DataAnalysis } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/store/auth'
-import type { PaginationState, SelectOption } from '@/types/admin'
-
-interface LogData {
-  id: string
-  operatorName: string
-  operatorRole?: string
-  operationType: string
-  operationResult: string
-  module: string
-  description: string
-  ipAddress: string
-  createTime: string
-  operateTime?: string
-  operationTypeName?: string
-  moduleName?: string
-  roleName?: string
-}
-
-interface SearchForm {
-  operatorName: string
-  operationType: string
-  module: string
-}
 
 const authStore = useAuthStore()
 
-const preloadService = inject<{ get: (key: string) => unknown; onComplete: (cb: () => void) => void } | null>('preloadService', null)
-const systemSettingsStore = useSystemSettingsStore()
+// ===== 标签与权限 =====
+type TabName = 'operations' | 'login-events' | 'security-events'
 
-const logStore = useLogStore()
+const tabPermissionMap: Record<TabName, string> = {
+  'operations': 'log:view',
+  'login-events': 'log:login:view',
+  'security-events': 'log:security:view'
+}
 
-const tableData = ref<LogData[]>([])
+const tabCategoryMap: Record<TabName, string> = {
+  'operations': 'operations',
+  'login-events': 'login-events',
+  'security-events': 'security-events'
+}
 
-const searchForm = ref<SearchForm>({
+const activeTab = ref<TabName>('operations')
+const hasPermission = (code: string) => authStore.hasPermission(code)
+
+const visibleTabs = computed(() => {
+  const tabs: Array<{ name: TabName; label: string }> = [
+    { name: 'operations', label: '操作日志' },
+    { name: 'login-events', label: '登录日志' },
+    { name: 'security-events', label: '安全事件' }
+  ]
+  return tabs.filter(tab => hasPermission(tabPermissionMap[tab.name]))
+})
+
+const onTabChange = (tab: string | number) => {
+  activeTab.value = tab as TabName
+  pagination.currentPage = 1
+  queryPage()
+}
+
+// ===== 统计 =====
+const summary = ref<LogSummary | null>(null)
+const loadSummary = async () => {
+  try {
+    const response = await getLogSummaryApi() as unknown as { code: number; data: LogSummary }
+    if (response.code === 200) {
+      summary.value = response.data
+    }
+  } catch (error) {
+    logger.error('获取日志统计失败:', error)
+  }
+}
+
+// ===== 筛选 =====
+const defaultTimeRange = (): [string, string] => {
+  const end = new Date()
+  const start = new Date(end.getTime() - 7 * 24 * 60 * 60 * 1000)
+  const fmt = (d: Date) => {
+    const pad = (n: number) => String(n).padStart(2, '0')
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+  }
+  return [fmt(start), fmt(end)]
+}
+
+const searchForm = reactive({
+  timeRange: defaultTimeRange() as [string, string] | null,
   operatorName: '',
-  operationType: '',
-  module: ''
+  role: '',
+  module: '',
+  action: '',
+  result: '',
+  riskLevel: '',
+  ip: '',
+  requestId: ''
 })
 
-const operationTypes = ref<SelectOption[]>([
-  { value: 'LOGIN', label: '登录' },
-  { value: 'LOGOUT', label: '登出' },
-  { value: 'ADD', label: '新增' },
-  { value: 'UPDATE', label: '修改' },
-  { value: 'DELETE', label: '删除' },
-  { value: 'IMPORT', label: '导入' },
-  { value: 'EXPORT', label: '导出' },
-  { value: 'UPLOAD', label: '上传' },
-  { value: 'AUDIT', label: '审核' },
-  { value: 'CLEAN', label: '清理' },
-  { value: 'SWITCH_ROLE', label: '切换角色' },
-  { value: 'SELECT', label: '查询' },
-  { value: 'VIEW', label: '查看' }
-])
+const options = ref<LogOptions>({ actions: [], modules: [], eventTypes: [], roles: [], riskLevels: [], results: [] })
 
-const modules = ref<SelectOption[]>([
-  { value: 'AUTH', label: '认证管理' },
-  { value: 'USER_MANAGEMENT', label: '用户管理' },
-  { value: 'STUDENT_MANAGEMENT', label: '学生管理' },
-  { value: 'TEACHER_MANAGEMENT', label: '教师管理' },
-  { value: 'CLASS_MANAGEMENT', label: '班级管理' },
-  { value: 'MAJOR_MANAGEMENT', label: '专业管理' },
-  { value: 'DEPARTMENT_MANAGEMENT', label: '院系管理' },
-  { value: 'COMPANY_MANAGEMENT', label: '企业管理' },
-  { value: 'POSITION_MANAGEMENT', label: '岗位管理' },
-  { value: 'POSITION_CATEGORY_MANAGEMENT', label: '岗位类别管理' },
-  { value: 'ANNOUNCEMENT_MANAGEMENT', label: '公告管理' },
-  { value: 'INTERNSHIP_MANAGEMENT', label: '实习管理' },
-  { value: 'STUDENT_INTERNSHIP', label: '学生实习' },
-  { value: 'TEACHER_CLASS', label: '教师班级' },
-  { value: 'INTERNSHIP_REFLECTION', label: '实习心得' },
-  { value: 'INTERNSHIP_PLAN', label: '实习计划' },
-  { value: 'INTERNSHIP_VISIT', label: '实习走访' },
-  { value: 'INTERNSHIP_REPORT', label: '实习报告' },
-  { value: 'SCORING_RULE_MANAGEMENT', label: '评分规则管理' },
-  { value: 'KEYWORD_LIBRARY', label: '关键词库' },
-  { value: 'KEYWORD_LIBRARY_MANAGEMENT', label: '关键词库管理' },
-  { value: 'PROBLEM_FEEDBACK', label: '问题反馈' },
-  { value: 'ARCHIVE_MANAGEMENT', label: '档案管理' },
-  { value: 'TEMPLATE_MANAGEMENT', label: '模板管理' },
-  { value: 'RESOURCE_DOCUMENT_MANAGEMENT', label: '资源文档管理' },
-  { value: 'RESOURCE_MANAGEMENT', label: '资源管理' },
-  { value: 'LOG_MANAGEMENT', label: '日志管理' },
-  { value: 'DATA_EXPORT', label: '数据导出' },
-  { value: 'SYSTEM_SETTINGS', label: '系统设置' },
-  { value: 'BACKUP', label: '备份管理' },
-  { value: 'BACKUP_MANAGEMENT', label: '备份管理' },
-  { value: 'PERMISSION', label: '权限管理' },
-  { value: 'PERMISSION_MANAGEMENT', label: '权限管理' },
-  { value: 'AI_MODEL', label: 'AI模型管理' },
-  { value: 'WITHDRAWAL_RECORD_MANAGEMENT', label: '撤回申请记录管理' },
-  { value: 'CHAT_MANAGEMENT', label: '聊天管理' },
-  { value: 'STUDENT_REFLECTION_AI_ANALYSIS', label: '学生心得AI分析' },
-  { value: 'STUDENT_REFLECTION_EVALUATION', label: '学生心得评分' },
-  { value: 'FILE_ACCESS', label: '文件访问' },
-  { value: 'APPLICATION_MANAGEMENT', label: '申请管理' },
-  { value: 'COUNSELOR_EVALUATION', label: '辅导员评分' },
-  { value: 'COUNSELOR_AI_ANALYSIS', label: '辅导员AI分析' },
-  { value: 'SYSTEM_CONFIG', label: '系统配置' }
-])
+const loadOptions = async () => {
+  try {
+    const response = await getLogOptionsApi() as unknown as { code: number; data: LogOptions }
+    if (response.code === 200) {
+      options.value = response.data
+    }
+  } catch (error) {
+    logger.error('获取筛选选项失败:', error)
+  }
+}
 
-const roles = ref<SelectOption[]>([
-  { value: 'STUDENT', label: '学生' },
-  { value: 'TEACHER', label: '教师' },
-  { value: 'ADMIN', label: '管理员' },
-  { value: 'COMPANY', label: '企业' }
-])
-
+// ===== 列表 =====
 const loading = ref(false)
-const activeTab = ref('all')
-const pagination = ref<PaginationState>({
-  currentPage: 1,
-  pageSize: 10,
-  total: 0
-})
+const operateTableData = ref<OperateLogItem[]>([])
+const loginTableData = ref<LoginLogItem[]>([])
+const securityTableData = ref<SecurityEventItem[]>([])
+const pagination = reactive({ currentPage: 1, pageSize: 20, total: 0 })
 
-onMounted(() => {
-  if (preloadService) {
-    const preloadedLogs = preloadService.get('logs')
-
-    if (preloadedLogs) {
-      if (preloadedLogs.data && preloadedLogs.data.rows) {
-        tableData.value = processLogData(preloadedLogs.data.rows)
-        pagination.value.total = preloadedLogs.data.total || 0
-      }
-      else if (preloadedLogs.rows) {
-        tableData.value = processLogData(preloadedLogs.rows)
-        pagination.value.total = preloadedLogs.total || 0
-      }
-    }
-
-    if (!tableData.value || tableData.value.length === 0) {
-      queryPage()
-    }
-
-    preloadService.onComplete(() => {
-      const updatedLogs = preloadService.get('logs')
-      if (updatedLogs) {
-        if (updatedLogs.data && updatedLogs.data.rows) {
-          tableData.value = processLogData(updatedLogs.data.rows)
-          pagination.value.total = updatedLogs.data.total || 0
-        }
-        else if (updatedLogs.rows) {
-          tableData.value = processLogData(updatedLogs.rows)
-          pagination.value.total = updatedLogs.total || 0
-        }
-      }
-    })
-  } else {
-    queryPage()
+const buildParams = () => {
+  return {
+    page: pagination.currentPage,
+    pageSize: pagination.pageSize,
+    startTime: searchForm.timeRange?.[0] || undefined,
+    endTime: searchForm.timeRange?.[1] || undefined,
+    operatorName: searchForm.operatorName || undefined,
+    role: searchForm.role || undefined,
+    module: activeTab.value === 'operations' ? (searchForm.module || undefined) : undefined,
+    action: activeTab.value !== 'login-events' ? (searchForm.action || undefined) : undefined,
+    result: searchForm.result || undefined,
+    riskLevel: searchForm.riskLevel || undefined,
+    ip: searchForm.ip || undefined,
+    requestId: searchForm.requestId || undefined
   }
-})
-
-
-watch(() => logStore.logsCleared, (newValue) => {
-  if (newValue) {
-    logger.log('检测到日志已被清除，自动刷新日志列表')
-    queryPage()
-  }
-})
-
-watch(activeTab, () => {
-  pagination.value.currentPage = 1
-  queryPage()
-})
-
-const getTagType = (operationType: string): string => {
-  const typeMap: Record<string, string> = {
-    'LOGIN': 'success',
-    'ADD': 'primary',
-    'UPDATE': 'warning',
-    'DELETE': 'danger',
-    'RESET_PASSWORD': 'warning'
-  }
-  return typeMap[operationType] || 'info'
-}
-
-const getOperationTypeName = (operationType: string): string => {
-  const nameMap: Record<string, string> = {
-    'LOGIN': '登录',
-    'LOGOUT': '登出',
-    'ADD': '新增',
-    'INSERT': '新增',
-    'UPDATE': '修改',
-    'DELETE': '删除',
-    'IMPORT': '导入',
-    'EXPORT': '导出',
-    'UPLOAD': '上传',
-    'AUDIT': '审核',
-    'CLEAN': '清理',
-    'SWITCH_ROLE': '切换角色',
-    'CREATE': '创建',
-    'ASSIGN': '分配',
-    'CLEAR': '清除',
-    'SELECT': '查询',
-    'BACKUP': '备份',
-    'RESTORE': '恢复',
-    'DOWNLOAD': '下载',
-    'VERIFY': '验证',
-    'VIEW': '查看'
-  }
-  return nameMap[operationType] || operationType
-}
-
-const getModuleName = (module: string): string => {
-  const nameMap: Record<string, string> = {
-    'AUTH': '认证管理',
-    'USER_MANAGEMENT': '用户管理',
-    'STUDENT_MANAGEMENT': '学生管理',
-    'TEACHER_MANAGEMENT': '教师管理',
-    'CLASS_MANAGEMENT': '班级管理',
-    'MAJOR_MANAGEMENT': '专业管理',
-    'DEPARTMENT_MANAGEMENT': '院系管理',
-    'COMPANY_MANAGEMENT': '企业管理',
-    'POSITION_MANAGEMENT': '岗位管理',
-    'POSITION_CATEGORY_MANAGEMENT': '岗位类别管理',
-    'ANNOUNCEMENT_MANAGEMENT': '公告管理',
-    'INTERNSHIP_MANAGEMENT': '实习管理',
-    'STUDENT_INTERNSHIP': '学生实习',
-    'TEACHER_CLASS': '教师班级',
-    'INTERNSHIP_REFLECTION': '实习心得',
-    'INTERNSHIP_PLAN': '实习计划',
-    'INTERNSHIP_VISIT': '实习走访',
-    'INTERNSHIP_REPORT': '实习报告',
-    'SCORING_RULE_MANAGEMENT': '评分规则管理',
-    'SCORING_RULE': '评分规则',
-    'KEYWORD_LIBRARY_MANAGEMENT': '关键词库管理',
-    'KEYWORD_LIBRARY': '关键词库',
-    'PROBLEM_FEEDBACK': '问题反馈',
-    'ARCHIVE_MANAGEMENT': '档案管理',
-    'TEMPLATE_MANAGEMENT': '模板管理',
-    'RESOURCE_DOCUMENT_MANAGEMENT': '资源文档管理',
-    'RESOURCE_MANAGEMENT': '资源管理',
-    'LOG_MANAGEMENT': '日志管理',
-    'DATA_EXPORT': '数据导出',
-    'SYSTEM_SETTINGS': '系统设置',
-    'BACKUP_MANAGEMENT': '备份管理',
-    'BACKUP': '备份管理',
-    'PERMISSION_MANAGEMENT': '权限管理',
-    'PERMISSION': '权限管理',
-    'AI_MODEL': 'AI模型管理',
-    'WITHDRAWAL_RECORD_MANAGEMENT': '撤回申请记录管理',
-    'CHAT_MANAGEMENT': '聊天管理',
-    'SYSTEM_CONFIG': '系统配置',
-    'STUDENT_REFLECTION_AI_ANALYSIS': '学生心得AI分析',
-    'STUDENT_REFLECTION_EVALUATION': '学生心得评分',
-    'FILE_ACCESS': '文件访问',
-    'APPLICATION_MANAGEMENT': '申请管理',
-    'COUNSELOR_EVALUATION': '辅导员评分',
-    'COUNSELOR_AI_ANALYSIS': '辅导员AI分析'
-  }
-
-  if (nameMap[module]) {
-    return nameMap[module]
-  }
-
-  if (module) {
-    let words = []
-    
-    if (module.includes('_')) {
-      words = module.split('_').map(word => word.toLowerCase())
-    }
-    else if (/^[a-zA-Z]+$/.test(module)) {
-      words = module
-        .replace(/([A-Z])/g, ' $1')
-        .trim()
-        .toLowerCase()
-        .split(' ')
-    }
-    
-    if (words.length > 0) {
-      const wordMap = {
-        'user': '用户',
-        'student': '学生',
-        'teacher': '教师',
-        'course': '课程',
-        'major': '专业',
-        'system': '系统',
-        'class': '班级',
-        'classname': '班级',
-        'department': '院系',
-        'group': '小组',
-        'assignment': '作业',
-        'score': '成绩',
-        'log': '日志',
-        'permission': '权限',
-        'role': '角色',
-        'notification': '通知',
-        'file': '文件',
-        'dashboard': '仪表盘',
-        'management': '管理',
-        'settings': '设置',
-        'analytics': '分析',
-        'content': '内容',
-        'report': '报表',
-        'configuration': '配置',
-        'performance': '绩效',
-        'data': '数据',
-        'company': '企业',
-        'internship': '实习',
-        'application': '申请',
-        'position': '岗位',
-        'category': '类别',
-        'keyword': '关键词',
-        'library': '库',
-        'rule': '规则',
-        'scoring': '评分',
-        'announcement': '公告',
-        'backup': '备份',
-        'export': '导出',
-        'feedback': '反馈',
-        'problem': '问题',
-        'archive': '档案',
-        'template': '模板',
-        'auth': '认证',
-        'visit': '走访',
-        'plan': '计划',
-        'reflection': '心得',
-        'ai': 'AI',
-        'model': '模型',
-        'counselor': '辅导员',
-        'withdrawal': '撤回',
-        'record': '记录',
-        'chat': '聊天',
-        'resource': '资源',
-        'document': '文档',
-        'switch': '切换',
-        'config': '配置'
-      }
-      const translatedWords = words.map(word => wordMap[word] || word)
-      return translatedWords.join('')
-    }
-  }
-
-  return module || '未知模块'
-}
-
-const getRoleName = (role: string): string => {
-  const nameMap: Record<string, string> = {
-    'all': '全部',
-    'STUDENT': '学生',
-    'TEACHER': '教师',
-    'ADMIN': '管理员',
-    'COMPANY': '企业',
-    '管理员切换': '管理员切换'
-  }
-  return nameMap[role] || role || '未知'
-}
-
-const getRoleTagType = (role: string): string => {
-  const typeMap: Record<string, string> = {
-    'STUDENT': 'primary',
-    'TEACHER': 'success',
-    'ADMIN': 'danger',
-    'COMPANY': 'warning',
-    '管理员切换': 'danger'
-  }
-  return typeMap[role] || 'info'
-}
-
-const formatDate = (date: string): string => {
-  if (!date) return '未知'
-  const d = new Date(date)
-  const year = d.getFullYear()
-  const month = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  const hour = String(d.getHours()).padStart(2, '0')
-  const minute = String(d.getMinutes()).padStart(2, '0')
-  const second = String(d.getSeconds()).padStart(2, '0')
-  return `${year}-${month}-${day} ${hour}:${minute}:${second}`
-}
-
-const processLogData = (rows: unknown[]): LogData[] => {
-  return rows.map(log => ({
-    ...log,
-    operatorName: (log as any).operatorName || '未知',
-    createTime: (log as any).operate_time || (log as any).operateTime || (log as any).createTime || (log as any).createdTime,
-    operateTime: (log as any).operate_time || (log as any).operateTime || (log as any).createTime || (log as any).createdTime
-  }))
-}
-
-const handleExportToExcel = async (): Promise<void> => {
-  const selectedRole = ref('all')
-  
-  try {
-    await ElMessageBox({
-      title: '导出Excel',
-      message: () => h('div', { class: 'export-dialog-content' }, [
-        h('div', { style: { marginBottom: '15px' } }, '请选择要导出的日志角色'),
-        h('div', { style: { display: 'flex', alignItems: 'center' } }, [
-          h('span', { style: { marginRight: '10px' } }, '选择角色：'),
-          h(ElSelect, {
-            modelValue: selectedRole.value,
-            'onUpdate:modelValue': (val) => {
-              selectedRole.value = val
-            },
-            placeholder: '请选择角色',
-            style: { width: '200px' }
-          }, {
-            default: () => [
-              h(ElOption, { label: '全部角色', value: 'all' }),
-              h(ElOption, { label: '学生', value: 'STUDENT' }),
-              h(ElOption, { label: '教师', value: 'TEACHER' }),
-              h(ElOption, { label: '管理员', value: 'ADMIN' }),
-              h(ElOption, { label: '企业', value: 'COMPANY' })
-            ]
-          })
-        ])
-      ]),
-      confirmButtonText: '确定',
-      cancelButtonText: '取消',
-      showCancelButton: true,
-      beforeClose: (action, instance, done) => {
-        if (action === 'confirm') {
-          done()
-        } else {
-          done()
-        }
-      }
-    })
-
-    if (!selectedRole.value) {
-      return
-    }
-
-    loading.value = true
-    
-    const operatorRole = selectedRole.value === 'all' ? null : selectedRole.value
-    
-    const response = await queryPageApi(searchForm.value.operatorName, operatorRole, searchForm.value.operationType, searchForm.value.module, 1, 10000, 'operate_time', 'desc')
-    
-    if (response && response.code === 200 && response.data) {
-      const exportDataList = response.data.rows || []
-      
-      if (exportDataList.length === 0) {
-        ElMessage.warning('暂无数据可导出')
-        loading.value = false
-        return
-      }
-      
-      const exportData = exportDataList.map(item => ({
-        'ID': item.id,
-        '操作人': item.operatorName || '未知',
-        '身份': getRoleName(item.operatorRole),
-        '操作类型': getOperationTypeName(item.operationType),
-        '操作结果': item.operationResult === 'SUCCESS' ? '成功' : '失败',
-        '操作模块': getModuleName(item.module),
-        '操作描述': item.description || '',
-        'IP地址': item.ipAddress || '未知',
-        '操作时间': formatDate(item.operateTime || item.createTime) 
-      }))
-      
-      const timestamp = new Date().toLocaleString('zh-CN').replace(/[/\\:]/g, '-')
-      const roleName = selectedRole.value === 'all' ? '全部' : getRoleName(selectedRole.value)
-      const fileName = `${roleName}系统操作日志_${timestamp}`
-      
-      await exportToExcel(exportData, fileName, '操作日志')
-      
-      ElMessage.success('日志数据导出成功')
-    } else {
-      ElMessage.error('获取日志数据失败')
-    }
-  } catch (error) {
-    if (error !== 'cancel' && error !== 'close') {
-      logger.error('导出Excel失败:', error)
-      ElMessage.error('导出Excel失败，请重试')
-    }
-  } finally {
-    loading.value = false
-  }
-}
-
-const cleanLogs = async (role: string | null = null): Promise<void> => {
-  try {
-    const roleName = role ? getRoleName(role) : '全部'
-    
-    await ElMessageBox.confirm(
-      `确定要清理${roleName}日志吗？\n此操作将保留最新记录，不可恢复！`,
-      '清理日志确认',
-      {
-        confirmButtonText: '确定清理',
-        cancelButtonText: '取消',
-        type: 'warning',
-        distinguishCancelAndClose: true,
-        dangerouslyUseHTMLString: true
-      }
-    )
-
-    loading.value = true
-    const operatorRole = role === 'all' ? null : role
-    const response = await cleanLogsApi(operatorRole, false)
-    
-    logger.log('清理日志完整响应:', response)
-    logger.log('响应数据:', response.data)
-    
-    const data = response.data || {}
-    const code = data.code
-    const message = data.message || data.msg || '日志清理成功'
-    
-    logger.log('实际响应码:', code)
-    logger.log('实际响应消息:', message)
-    
-    if (code === 200) {
-      ElMessage.success(message)
-      queryPage()
-    } else {
-      ElMessage.error(message || '日志清理失败')
-    }
-  } catch (error) {
-    if (error !== 'cancel' && error !== 'close') {
-      logger.error('清理日志失败:', error)
-      
-      if (error.response && error.response.data) {
-        const errorMsg = error.response.message || error.response.msg || '日志清理失败，请重试'
-        ElMessage.error(errorMsg)
-      } else if (error.message) {
-        ElMessage.error('清理日志失败：' + error.message)
-      } else {
-        ElMessage.error('日志清理失败，请重试')
-      }
-    }
-  } finally {
-    loading.value = false
-  }
-}
-
-const handleCleanCommand = async (command: string): Promise<void> => {
-  await cleanLogs(command)
-}
-
-const clearSearch = (): void => {
-  searchForm.value = {
-    operatorName: '',
-    operationType: '',
-    module: ''
-  }
-  pagination.value.currentPage = 1
-}
-
-const handleSizeChange = (newSize: number): void => {
-  pagination.value.pageSize = newSize
-  queryPage()
-}
-
-const handleCurrentChange = (newCurrent: number): void => {
-  pagination.value.currentPage = newCurrent
-  queryPage()
 }
 
 const queryPage = async (): Promise<void> => {
   loading.value = true
   try {
-    logger.log('开始查询日志列表...')
-    const { operatorName, operationType, module } = searchForm.value
-    const page = pagination.value.currentPage
-    const pageSize = pagination.value.pageSize
-    
-    let operatorRole = null
-    if (activeTab.value !== 'all') {
-      operatorRole = activeTab.value
+    let response: { code: number; data: { rows: unknown[]; total: number } } | null = null
+    if (activeTab.value === 'operations') {
+      response = await getOperationsApi(buildParams()) as unknown as typeof response
+    } else if (activeTab.value === 'login-events') {
+      response = await getLoginEventsApi(buildParams()) as unknown as typeof response
+    } else {
+      response = await getSecurityEventsApi(buildParams()) as unknown as typeof response
     }
-
-    logger.log('查询参数:', { operatorName, operatorRole, operationType, module, page, pageSize })
-    const response = await queryPageApi(operatorName, operatorRole, operationType, module, page, pageSize, 'operate_time', 'desc')
-    logger.log('查询结果响应:', response)
 
     if (response && response.code === 200 && response.data) {
-      const dataList = response.data.rows || []
-      const totalCount = response.data.total || 0
-
-      const enhancedData = processLogData(dataList).map(log => {
-        const operationTypeName = getOperationTypeName(log.operationType)
-        const moduleName = getModuleName(log.module)
-        const roleName = getRoleName(log.operatorRole)
-        return {
-          ...log,
-          operationTypeName: operationTypeName,
-          moduleName: moduleName,
-          roleName: roleName
-        }
-      })
-
-      enhancedData.sort((a, b) => {
-        const timeA = new Date(a.createTime || 0).getTime()
-        const timeB = new Date(b.createTime || 0).getTime()
-        return timeB - timeA
-      })
-
-      tableData.value = enhancedData
-      pagination.value.total = totalCount
-      logger.log('处理后的数据列表:', tableData.value)
+      pagination.total = response.data.total || 0
+      if (activeTab.value === 'operations') {
+        operateTableData.value = response.data.rows as OperateLogItem[]
+      } else if (activeTab.value === 'login-events') {
+        loginTableData.value = response.data.rows as LoginLogItem[]
+      } else {
+        securityTableData.value = response.data.rows as SecurityEventItem[]
+      }
     } else {
-      tableData.value = []
-      pagination.value.total = 0
-      logger.log('无数据或响应格式不正确')
+      operateTableData.value = []
+      loginTableData.value = []
+      securityTableData.value = []
+      pagination.total = 0
     }
-  } catch (error) {
+  } catch (error: unknown) {
     logger.error('查询日志列表失败:', error)
-    tableData.value = []
-    pagination.value.total = 0
-    ElMessage.error('查询日志列表失败: ' + (error.response?.data?.message || error.message || '未知错误'))
+    operateTableData.value = []
+    loginTableData.value = []
+    securityTableData.value = []
+    pagination.total = 0
   } finally {
     loading.value = false
   }
 }
 
+const handleSizeChange = (newSize: number) => {
+  pagination.pageSize = newSize
+  queryPage()
+}
+
+const handleCurrentChange = (newCurrent: number) => {
+  pagination.currentPage = newCurrent
+  queryPage()
+}
+
+const resetSearch = () => {
+  searchForm.timeRange = defaultTimeRange()
+  searchForm.operatorName = ''
+  searchForm.role = ''
+  searchForm.module = ''
+  searchForm.action = ''
+  searchForm.result = ''
+  searchForm.riskLevel = ''
+  searchForm.ip = ''
+  searchForm.requestId = ''
+  pagination.currentPage = 1
+  queryPage()
+}
+
+// ===== 详情抽屉 =====
+const detailVisible = ref(false)
+const detailLoading = ref(false)
+const detailData = ref<Record<string, unknown> | null>(null)
+const detailCategory = ref('')
+
+const openDetail = async (id: number) => {
+  const category = tabCategoryMap[activeTab.value]
+  detailCategory.value = category
+  detailVisible.value = true
+  detailLoading.value = true
+  detailData.value = null
+  try {
+    const response = await getLogDetailApi(category, id) as unknown as { code: number; message?: string; msg?: string; data: Record<string, unknown> }
+    if (response.code === 200) {
+      detailData.value = response.data
+    } else {
+      ElMessage.error(response.message || '获取详情失败')
+    }
+  } catch (error) {
+    logger.error('获取日志详情失败:', error)
+    ElMessage.error('获取日志详情失败')
+  } finally {
+    detailLoading.value = false
+  }
+}
+
+const detailSections = computed<{ title: string; fields: [string, unknown][] }[]>(() => {
+  if (!detailData.value) return []
+  const data = detailData.value
+  if (detailCategory.value === 'operations') {
+    return [
+      { title: '用户信息', fields: [
+        ['操作人', data.operatorName], ['用户名', data.operatorUsername], ['角色', getRoleName(data.operatorRole as string)],
+        ...(data.realOperatorName ? [['真实管理员身份', data.realOperatorName] as [string, unknown]] : [])
+      ] },
+      { title: '操作信息', fields: [
+        ['模块', getModuleName(data.module as string)], ['动作', getActionName(data.operationType as string)],
+        ['结果', data.operationResult === 'SUCCESS' ? '成功' : data.operationResult === 'ATTEMPTED' ? '尝试' : '失败'],
+        ['风险等级', getRiskName(data.riskLevel as string)], ['耗时', data.durationMs != null ? `${data.durationMs}ms` : null],
+        ['描述', data.description], ['错误码', data.errorCode]
+      ] },
+      { title: '目标对象', fields: [
+        ['目标类型', data.targetType], ['目标ID', data.targetId],
+        ['影响数量', data.affectedCount != null ? String(data.affectedCount) : null]
+      ] },
+      { title: '请求信息', fields: [
+        ['请求方法', data.httpMethod], ['请求路径', data.requestPath], ['IP地址', data.ipAddress],
+        ['设备类别', data.deviceType], ['requestId', data.requestId],
+        ['操作时间', data.operateTime]
+      ] },
+      { title: '完整性哈希链', fields: data.entryHash ? [
+        ['节点哈希', data.entryHash], ['前驱哈希', data.prevHash], ['密钥版本', data.keyVersion != null ? 'v' + data.keyVersion : null]
+      ] : [['节点哈希', '（该记录早于哈希链启用，未受链保护）']] },
+      { title: '详情数据', fields: data.detailJson ? [['详情JSON', data.detailJson]] : [] }
+    ]
+  }
+  if (detailCategory.value === 'login-events') {
+    return [
+      { title: '用户信息', fields: [
+        ['操作人', data.operatorName], ['用户名', data.userName], ['角色', getRoleName(data.userType as string)]
+      ] },
+      { title: '登录信息', fields: [
+        ['状态', data.loginStatus === 'SUCCESS' ? '成功' : '失败'], ['风险等级', getRiskName(data.riskLevel as string)],
+        ['错误码', data.errorCode], ['耗时', data.durationMs != null ? `${data.durationMs}ms` : null],
+        ['登录时间', data.loginTime]
+      ] },
+      { title: '请求信息', fields: [
+        ['IP地址', data.ipAddress], ['设备类别', data.deviceType], ['requestId', data.requestId], ['设备信息', data.deviceInfo]
+      ] },
+      { title: '完整性哈希链', fields: data.entryHash ? [
+        ['节点哈希', data.entryHash], ['前驱哈希', data.prevHash], ['密钥版本', data.keyVersion != null ? 'v' + data.keyVersion : null]
+      ] : [['节点哈希', '（该记录早于哈希链启用，未受链保护）']] },
+      { title: '详情数据', fields: data.detailJson ? [['详情JSON', data.detailJson]] : [] }
+    ]
+  }
+  return [
+    { title: '用户信息', fields: [
+      ['操作人', data.operatorName], ['用户名', data.username], ['角色', getRoleName(data.userRole as string)],
+      ...(data.realOperatorName ? [['真实管理员身份', data.realOperatorName] as [string, unknown]] : [])
+    ] },
+    { title: '事件信息', fields: [
+      ['事件类型', getEventTypeName(data.eventType as string)], ['结果', data.result],
+      ['风险等级', getRiskName(data.riskLevel as string)], ['错误码', data.errorCode],
+      ['影响数量', data.affectedCount != null ? String(data.affectedCount) : null],
+      ['描述', data.description], ['事件时间', data.eventTime]
+    ] },
+    { title: '目标对象', fields: [
+      ['目标类型', data.targetType], ['目标ID', data.targetId]
+    ] },
+    { title: '请求信息', fields: [
+      ['请求方法', data.httpMethod], ['请求路径', data.requestPath], ['IP地址', data.ipAddress],
+      ['设备类别', data.deviceType], ['requestId', data.requestId]
+    ] },
+    { title: '完整性哈希链', fields: data.entryHash ? [
+      ['节点哈希', data.entryHash], ['前驱哈希', data.prevHash], ['密钥版本', data.keyVersion != null ? 'v' + data.keyVersion : null]
+    ] : [['节点哈希', '（该记录早于哈希链启用，未受链保护）']] },
+    { title: '详情数据', fields: data.detailJson ? [['详情JSON', data.detailJson]] : [] }
+  ]
+})
+
+// ===== 导出 =====
+const exportLoading = ref(false)
+const handleExport = async (): Promise<void> => {
+  exportLoading.value = true
+  try {
+    const response = await exportLogsApi({ ...buildParams(), category: tabCategoryMap[activeTab.value] }) as unknown as Blob
+
+    // 后端错误时返回 JSON（如超限提示）
+    if (response && response.type && response.type.includes('application/json')) {
+      const text = await response.text()
+      try {
+        const err = JSON.parse(text)
+        ElMessage.error(err.message || '导出失败')
+      } catch {
+        ElMessage.error('导出失败')
+      }
+      return
+    }
+
+    const url = URL.createObjectURL(response)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `日志导出_${tabCategoryMap[activeTab.value]}_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.xlsx`
+    link.click()
+    URL.revokeObjectURL(url)
+    ElMessage.success('导出任务已完成')
+  } catch (error) {
+    logger.error('导出失败:', error)
+    ElMessage.error('导出失败，请重试')
+  } finally {
+    exportLoading.value = false
+  }
+}
+
+// ===== 留存策略 =====
+const retentionVisible = ref(false)
+const retentionLoading = ref(false)
+const retentionForm = ref({ highRiskDays: 365, normalDays: 180, loginDays: 180, logbackDays: 30 })
+const retentionPreviewData = ref<Record<string, number> | null>(null)
+const retentionReason = ref('')
+const retentionRunning = ref(false)
+
+// ===== 智能填表：日志保留策略注册到 AI 侧栏（只写响应式 model，不触发保存/执行） =====
+// logbackDays 为只读展示（部署配置控制），清理原因必填文本；保存与执行仍由用户点击原按钮
+const formContext = useFormContext()
+const retentionProxy = {
+  get highRiskDays() { return String(retentionForm.value.highRiskDays) },
+  set highRiskDays(v: unknown) { const n = Number(v); if (!Number.isNaN(n)) retentionForm.value.highRiskDays = n },
+  get normalDays() { return String(retentionForm.value.normalDays) },
+  set normalDays(v: unknown) { const n = Number(v); if (!Number.isNaN(n)) retentionForm.value.normalDays = n },
+  get loginDays() { return String(retentionForm.value.loginDays) },
+  set loginDays(v: unknown) { const n = Number(v); if (!Number.isNaN(n)) retentionForm.value.loginDays = n },
+  get retentionReason() { return retentionReason.value },
+  set retentionReason(v: unknown) { retentionReason.value = String(v ?? '') }
+}
+watch(retentionVisible, (open) => {
+  if (open) {
+    formContext.register({
+      formId: 'admin:log-retention',
+      title: '日志保留策略',
+      fields: [
+        { prop: 'highRiskDays', label: '高风险日志保留天数', type: 'number', valueType: 'number' },
+        { prop: 'normalDays', label: '普通日志保留天数', type: 'number', valueType: 'number' },
+        { prop: 'loginDays', label: '登录日志保留天数', type: 'number', valueType: 'number' },
+        { prop: 'retentionReason', label: '清理原因', type: 'textarea', required: true }
+      ],
+      getModel: () => retentionProxy,
+      getValidationSummary: () => ({ missingFields: [], validationErrors: [retentionForm.value.highRiskDays, retentionForm.value.normalDays, retentionForm.value.loginDays].some(value => !Number.isInteger(Number(value)) || Number(value) < 30 || Number(value) > 3650) ? ['日志保留天数应为30到3650之间的整数'] : [] })
+    })
+  } else formContext.unregister('admin:log-retention')
+})
+onUnmounted(() => formContext.unregister('admin:log-retention'))
+
+const openRetention = async () => {
+  retentionVisible.value = true
+  retentionPreviewData.value = null
+  retentionReason.value = ''
+  try {
+    const response = await getRetentionPoliciesApi() as unknown as { code: number; data: typeof retentionForm.value }
+    if (response.code === 200) {
+      retentionForm.value = response.data
+    }
+  } catch (error) {
+    logger.error('获取留存策略失败:', error)
+    ElMessage.error('获取留存策略失败')
+  }
+}
+
+const saveRetentionPolicies = async () => {
+  retentionLoading.value = true
+  try {
+    const operation = formContext.beginFormOperation('admin:log-retention', ['highRiskDays', 'normalDays', 'loginDays'])
+    const response = await updateRetentionPoliciesApi({
+      highRiskDays: retentionForm.value.highRiskDays,
+      normalDays: retentionForm.value.normalDays,
+      loginDays: retentionForm.value.loginDays
+    }) as unknown as { code: number; data: typeof retentionForm.value; message?: string }
+    if (response.code === 200) {
+      operation.complete({ status: 'saved', label: '日志保留策略已保存，未执行清理', url: '/admin/logs' })
+      retentionForm.value = response.data
+      ElMessage.success('留存策略已更新')
+    } else {
+      ElMessage.error(response.message || '更新留存策略失败')
+    }
+  } catch (error) {
+    logger.error('更新留存策略失败:', error)
+    ElMessage.error('更新留存策略失败')
+  } finally {
+    retentionLoading.value = false
+  }
+}
+
+const previewRetention = async () => {
+  try {
+    const response = await previewRetentionApi() as unknown as { code: number; message?: string; msg?: string; data: Record<string, number> }
+    if (response.code === 200) {
+      retentionPreviewData.value = response.data
+    } else {
+      ElMessage.error(response.message || '预览失败')
+    }
+  } catch (error) {
+    logger.error('留存预览失败:', error)
+    ElMessage.error('留存预览失败')
+  }
+}
+
+const retentionPreviewTotal = computed(() => {
+  const data = retentionPreviewData.value
+  if (!data) return 0
+  return (data.operateLogNormal || 0) + (data.operateLogHighRisk || 0) + (data.loginLog || 0)
+    + (data.securityEventNormal || 0) + (data.securityEventHighRisk || 0)
+})
+
+const executeRetention = async () => {
+  if (!retentionPreviewData.value) {
+    ElMessage.warning('请先预览到期数据量')
+    return
+  }
+  if (!retentionReason.value.trim()) {
+    ElMessage.warning('请填写清理原因')
+    return
+  }
+  try {
+    await ElMessageBox.confirm(
+      `即将删除 ${retentionPreviewTotal.value} 条到期日志，此操作不可恢复，是否继续？`,
+      '执行留存清理',
+      { confirmButtonText: '确认清理', cancelButtonText: '取消', type: 'warning' }
+    )
+  } catch {
+    return
+  }
+
+  retentionRunning.value = true
+  try {
+    const operation = formContext.beginFormOperation('admin:log-retention', ['retentionReason'])
+    const response = await runRetentionApi(retentionReason.value.trim()) as unknown as { code: number; data: { deletedCount: number }; message?: string }
+    if (response.code === 200) {
+      operation.complete({ status: 'submitted', label: `留存清理完成，实际删除 ${response.data?.deletedCount ?? 0} 条日志`, url: '/admin/logs' })
+      ElMessage.success(`清理完成，共删除 ${response.data?.deletedCount ?? 0} 条到期日志`)
+      retentionPreviewData.value = null
+      retentionReason.value = ''
+      loadSummary()
+      queryPage()
+    } else {
+      ElMessage.error(response.message || '执行清理失败')
+    }
+  } catch (error) {
+    logger.error('执行留存清理失败:', error)
+    ElMessage.error('执行留存清理失败')
+  } finally {
+    retentionRunning.value = false
+  }
+}
+
+// ===== P2 完整性校验 =====
+const integrityVerifying = ref(false)
+const integrityReport = ref<Record<string, unknown> | null>(null)
+
+const runIntegrityVerify = async (): Promise<void> => {
+  integrityVerifying.value = true
+  integrityReport.value = null
+  try {
+    const response = await verifyIntegrityApi() as unknown as { code: number; data: Record<string, unknown>; message?: string }
+    if (response.code === 200) {
+      integrityReport.value = response.data
+      if (response.data.passed) {
+        ElMessage.success('完整性校验通过：哈希链与签名根均一致')
+      } else {
+        ElMessage.error(`完整性校验发现 ${response.data.totalIssues} 个问题，已触发告警`)
+      }
+    } else {
+      ElMessage.error(response.message || '完整性校验失败')
+    }
+  } catch (error) {
+    logger.error('完整性校验失败:', error)
+    ElMessage.error('完整性校验失败，请重试')
+  } finally {
+    integrityVerifying.value = false
+  }
+}
+
+// ===== 展示映射 =====
+const actionNameMap: Record<string, string> = {
+  CREATE: '新增', UPDATE: '修改', DELETE: '删除', READ: '查询', IMPORT: '导入', EXPORT: '导出',
+  UPLOAD: '上传', AUDIT: '审核', CLEAN: '清理', LOGIN: '登录', LOGOUT: '登出', SWITCH_ROLE: '切换角色',
+  BACKUP: '备份', RESTORE: '恢复', RESET_PASSWORD: '重置密码', ASSIGN: '分配', DOWNLOAD: '下载', VERIFY: '验证',
+  ADD: '新增', INSERT: '新增', MODIFY: '修改', EDIT: '修改', REMOVE: '删除', QUERY: '查询',
+  SELECT: '查询', VIEW: '查看', CREATE_: '创建'
+}
+
+const getActionName = (action?: string) => action ? (actionNameMap[action] || action) : ''
+
+const roleNameMap: Record<string, string> = {
+  STUDENT: '学生', TEACHER: '教师', ADMIN: '管理员', COMPANY: '企业', SYSTEM: '系统', UNKNOWN: '未知',
+  '管理员切换': '管理员切换'
+}
+
+const getRoleName = (role?: string) => {
+  if (!role) return '未知'
+  const normalized = role.startsWith('ROLE_') ? role.substring(5) : role
+  return roleNameMap[normalized] || normalized
+}
+
+const riskNameMap: Record<string, string> = { LOW: '低风险', MEDIUM: '中风险', HIGH: '高风险', CRITICAL: '严重' }
+const getRiskName = (risk?: string) => risk ? (riskNameMap[risk] || risk) : ''
+
+const getRiskTagType = (risk?: string) => {
+  switch (risk) {
+    case 'CRITICAL': return 'danger'
+    case 'HIGH': return 'danger'
+    case 'MEDIUM': return 'warning'
+    default: return 'info'
+  }
+}
+
+const eventNameMap: Record<string, string> = {
+  LOGIN_SUCCESS: '登录成功', LOGIN_FAILURE: '登录失败', ACCOUNT_LOCK: '账号锁定', LOGOUT: '登出',
+  SESSION_TIMEOUT: '会话超时', ACCOUNT_DISABLED: '账号禁用', TOKEN_INVALID: '无效令牌',
+  RETENTION_CLEAN: '留存清理'
+}
+const getEventTypeName = (type?: string) => type ? (eventNameMap[type] || type) : ''
+
+const moduleNameMap: Record<string, string> = {
+  AUTH: '认证管理', USER_MANAGEMENT: '用户管理', STUDENT_MANAGEMENT: '学生管理', TEACHER_MANAGEMENT: '教师管理',
+  CLASS_MANAGEMENT: '班级管理', MAJOR_MANAGEMENT: '专业管理', DEPARTMENT_MANAGEMENT: '院系管理',
+  COMPANY_MANAGEMENT: '企业管理', POSITION_MANAGEMENT: '岗位管理', ANNOUNCEMENT_MANAGEMENT: '公告管理',
+  INTERNSHIP_MANAGEMENT: '实习管理', STUDENT_INTERNSHIP: '学生实习', INTERNSHIP_REFLECTION: '实习心得',
+  INTERNSHIP_REPORT: '实习报告', LOG_MANAGEMENT: '日志管理', SYSTEM_SETTINGS: '系统设置',
+  PERMISSION: '权限管理', AI_MODEL: 'AI模型管理', FILE_ACCESS: '文件访问'
+}
+const getModuleName = (module?: string) => {
+  if (!module) return ''
+  if (moduleNameMap[module]) return moduleNameMap[module]
+  return module.split('_').map(w => w.toLowerCase()).map(w =>
+    ({ user: '用户', student: '学生', teacher: '教师', management: '管理', company: '企业', internship: '实习', log: '日志', system: '系统', permission: '权限', announcement: '公告', position: '岗位', data: '数据', export: '导出', backup: '备份', settings: '设置', config: '配置', resource: '资源', document: '文档', application: '申请', evaluation: '评分', reflection: '心得', report: '报告', visit: '走访', plan: '计划', keyword: '关键词', library: '库', scoring: '评分', rule: '规则', chat: '聊天', model: '模型', feedback: '反馈', problem: '问题', archive: '档案', template: '模板', withdrawal: '撤回', record: '记录', chat_management: '聊天' } as Record<string, string>)[w] || w
+  ).join('')
+}
+
+const getResultTagType = (result?: string) => {
+  switch (result) {
+    case 'SUCCESS': return 'success'
+    case 'ATTEMPTED': return 'info'
+    case 'FAILURE': return 'danger'
+    default: return 'info'
+  }
+}
+
+const getRoleTagType = (role?: string) => {
+  const normalized = role?.startsWith('ROLE_') ? role.substring(5) : role
+  switch (normalized) {
+    case 'ADMIN': return 'danger'
+    case 'TEACHER': return 'success'
+    case 'TEACHER_COLLEGE': return 'success'
+    case 'TEACHER_DEPARTMENT': return 'success'
+    case 'TEACHER_COUNSELOR': return 'success'
+    case 'STUDENT': return 'primary'
+    case 'COMPANY': return 'warning'
+    default: return 'info'
+  }
+}
+
+const formatTarget = (row: OperateLogItem) => {
+  if (!row.targetType && !row.targetId) return ''
+  const type = row.targetType || ''
+  return row.targetId ? `${type ? type + ' ' : ''}#${row.targetId}` : type
+}
+
+// ===== 初始化 =====
+onMounted(() => {
+  if (visibleTabs.value.length === 0) {
+    ElMessage.warning('您没有日志查看权限')
+    return
+  }
+  // 初始标签取第一个有权限的
+  activeTab.value = visibleTabs.value[0].name
+  loadSummary()
+  loadOptions()
+  queryPage()
+})
 </script>
 
 <template>
   <div class="log-management-container">
     <div class="page-header">
       <div class="header-content">
-        <h1 class="page-title">日志管理</h1>
-        <p class="page-description">查看系统的所有操作日志记录</p>
-        <p class="auto-clean-tip">系统会自动管理日志数量：学生日志超过500条保留100条，教师日志超过300条保留80条，管理员日志超过200条保留50条，企业日志超过300条保留80条</p>
+        <h1 class="page-title">日志中心</h1>
+        <p class="page-description">操作日志、登录日志与安全事件统一审计，日志由服务端记录、不可伪造</p>
+        <p class="auto-clean-tip">日志按时间留存策略自动清理：高风险事件保留365天，登录与普通操作保留180天（可在保留策略中调整）</p>
       </div>
-      <div class="header-illustration">
-        <div class="illustration-circle circle-1"></div>
-        <div class="illustration-circle circle-2"></div>
+      <div class="header-actions">
+        <el-button v-if="hasPermission('log:retention:manage')" type="primary" plain @click="openRetention">
+          <el-icon><DataAnalysis /></el-icon>&nbsp;保留策略
+        </el-button>
+        <el-button v-if="hasPermission('log:export')" type="success" :loading="exportLoading" @click="handleExport">
+          <el-icon><Download /></el-icon>&nbsp;导出Excel
+        </el-button>
       </div>
     </div>
 
+    <!-- 顶部统计 -->
+    <div class="stats-grid" v-if="summary">
+      <el-card class="stat-card" shadow="never">
+        <div class="stat-content">
+          <div class="stat-label">今日操作</div>
+          <div class="stat-value">{{ summary.todayOperations }}</div>
+        </div>
+      </el-card>
+      <el-card class="stat-card" shadow="never">
+        <div class="stat-content">
+          <div class="stat-label">今日失败操作</div>
+          <div class="stat-value stat-warning">{{ summary.todayFailedOperations }}</div>
+        </div>
+      </el-card>
+      <el-card class="stat-card" shadow="never">
+        <div class="stat-content">
+          <div class="stat-label">今日登录失败</div>
+          <div class="stat-value stat-warning">{{ summary.todayFailedLogins }}</div>
+        </div>
+      </el-card>
+      <el-card class="stat-card" shadow="never">
+        <div class="stat-content">
+          <div class="stat-label">今日高风险事件</div>
+          <div class="stat-value stat-danger">{{ summary.todayHighRiskEvents }}</div>
+        </div>
+      </el-card>
+    </div>
+
+    <!-- 筛选区 -->
     <el-card class="search-card" shadow="never">
-      <el-form :inline="true" :model="searchForm" class="search-form" @keyup.enter="queryPage">
+      <el-form :inline="true" class="search-form" @submit.prevent>
         <div class="search-row">
+          <el-form-item label="时间范围">
+            <el-date-picker
+              v-model="searchForm.timeRange"
+              type="datetimerange"
+              range-separator="至"
+              start-placeholder="开始时间"
+              end-placeholder="结束时间"
+              value-format="YYYY-MM-DD HH:mm:ss"
+              :default-time="[new Date(0, 0, 0, 0, 0, 0), new Date(0, 0, 0, 23, 59, 59)]"
+              style="width: 360px"
+            />
+          </el-form-item>
           <el-form-item label="操作人">
-            <el-input
-              v-model="searchForm.operatorName"
-              placeholder="请输入操作人姓名"
-              clearable
-              @keyup.enter="queryPage"
-            ></el-input>
+            <el-input v-model="searchForm.operatorName" placeholder="姓名/用户名" clearable style="width: 140px" />
           </el-form-item>
-          <el-form-item label="操作类型">
-            <el-select v-model="searchForm.operationType" placeholder="请选择操作类型" clearable filterable>
-              <el-option v-for="type in operationTypes" :key="type.value" :label="type.label" :value="type.value" />
+          <el-form-item label="角色">
+            <el-select v-model="searchForm.role" placeholder="全部" clearable style="width: 110px">
+              <el-option v-for="role in options.roles" :key="role" :label="getRoleName(role)" :value="role" />
             </el-select>
           </el-form-item>
-          <el-form-item label="操作模块">
-            <el-select v-model="searchForm.module" placeholder="请选择操作模块" clearable filterable>
-              <el-option v-for="module in modules" :key="module.value" :label="module.label" :value="module.value" />
+          <el-form-item v-if="activeTab === 'operations'" label="模块">
+            <el-select v-model="searchForm.module" placeholder="全部" clearable filterable style="width: 150px">
+              <el-option v-for="m in options.modules" :key="m" :label="getModuleName(m)" :value="m" />
             </el-select>
+          </el-form-item>
+          <el-form-item v-if="activeTab !== 'login-events'" :label="activeTab === 'operations' ? '动作' : '事件类型'">
+            <el-select v-model="searchForm.action" placeholder="全部" clearable filterable style="width: 130px">
+              <el-option v-for="a in (activeTab === 'operations' ? options.actions : options.eventTypes)" :key="a"
+                :label="activeTab === 'operations' ? getActionName(a) : getEventTypeName(a)" :value="a" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="结果">
+            <el-select v-model="searchForm.result" placeholder="全部" clearable style="width: 100px">
+              <el-option label="成功" value="SUCCESS" />
+              <el-option label="失败" value="FAILURE" />
+              <el-option v-if="activeTab === 'security-events'" label="尝试" value="ATTEMPTED" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="风险">
+            <el-select v-model="searchForm.riskLevel" placeholder="全部" clearable style="width: 100px">
+              <el-option v-for="r in options.riskLevels" :key="r" :label="getRiskName(r)" :value="r" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="IP">
+            <el-input v-model="searchForm.ip" placeholder="IP地址" clearable style="width: 130px" />
+          </el-form-item>
+          <el-form-item label="requestId">
+            <el-input v-model="searchForm.requestId" placeholder="请求链路ID" clearable style="width: 140px" />
           </el-form-item>
           <el-form-item>
             <div class="search-actions">
-              <el-button v-if="authStore.hasPermission('log:view')" type="primary" @click="queryPage" class="search-btn">
-                <el-icon>
-                  <Search />
-                </el-icon>&nbsp;查询
+              <el-button type="primary" @click="() => { pagination.currentPage = 1; queryPage() }">
+                <el-icon><Search /></el-icon>&nbsp;查询
               </el-button>
-              <el-button v-if="authStore.hasPermission('log:view')" type="warning" @click="clearSearch" class="reset-btn">
-                <el-icon>
-                  <Refresh />
-                </el-icon>&nbsp;重置
+              <el-button @click="resetSearch">
+                <el-icon><Refresh /></el-icon>&nbsp;重置
               </el-button>
-              <el-button v-if="authStore.hasPermission('log:view')" type="success" @click="handleExportToExcel" class="export-btn">
-                <el-icon>
-                  <Download />
-                </el-icon>&nbsp;导出Excel
-              </el-button>
-              <div v-if="authStore.hasPermission('log:delete')" class="clean-button-group">
-                <el-button type="danger" @click="cleanLogs('all')" class="clean-btn">
-                  <el-icon>
-                    <Delete />
-                  </el-icon>&nbsp;清理日志
-                </el-button>
-                <el-dropdown @command="handleCleanCommand" class="clean-dropdown">
-                  <el-button type="danger" class="clean-dropdown-btn">
-                    <el-icon>
-                      <ArrowDown />
-                    </el-icon>
-                  </el-button>
-                  <template #dropdown>
-                    <el-dropdown-menu>
-                      <el-dropdown-item command="all">清理全部日志</el-dropdown-item>
-                      <el-dropdown-item command="STUDENT">清理学生日志</el-dropdown-item>
-                      <el-dropdown-item command="TEACHER">清理教师日志</el-dropdown-item>
-                      <el-dropdown-item command="ADMIN">清理管理员日志</el-dropdown-item>
-                      <el-dropdown-item command="COMPANY">清理企业日志</el-dropdown-item>
-                    </el-dropdown-menu>
-                  </template>
-                </el-dropdown>
-              </div>
             </div>
           </el-form-item>
         </div>
       </el-form>
     </el-card>
 
+    <!-- 日志列表 -->
     <el-card class="table-card" shadow="never">
-      <div class="table-header">
-        <h3 class="table-title">操作日志列表</h3>
-        <div class="table-actions">
-          <span class="total-count">共 {{ pagination.total }} 条记录</span>
-        </div>
-      </div>
-
-      <el-tabs v-model="activeTab" class="log-tabs">
-        <el-tab-pane label="全部" name="all"></el-tab-pane>
-        <el-tab-pane label="学生日志" name="STUDENT"></el-tab-pane>
-        <el-tab-pane label="教师日志" name="TEACHER"></el-tab-pane>
-        <el-tab-pane label="管理员日志" name="ADMIN"></el-tab-pane>
-        <el-tab-pane label="企业日志" name="COMPANY"></el-tab-pane>
+      <el-tabs :model-value="activeTab" class="log-tabs" @tab-change="onTabChange">
+        <el-tab-pane v-for="tab in visibleTabs" :key="tab.name" :label="tab.label" :name="tab.name" />
       </el-tabs>
 
-      <el-table :data="tableData" border style="width: 100%" fit v-loading="loading" class="data-table">        
-        <el-table-column prop="id" label="编号" align="center" width="60" />
-        <el-table-column prop="operatorName" label="操作人姓名" align="center" width="120" />
-        <el-table-column prop="operatorRole" label="身份" align="center" width="100">
+      <!-- 操作日志 -->
+      <el-table v-if="activeTab === 'operations'" :data="operateTableData" border v-loading="loading" class="data-table">
+        <el-table-column prop="operateTime" label="时间" align="center" width="165">
+          <template #default="scope">{{ scope.row.operateTime || '未知' }}</template>
+        </el-table-column>
+        <el-table-column prop="operatorName" label="操作人" align="center" width="110">
+          <template #default="scope">{{ scope.row.operatorName || '未知' }}</template>
+        </el-table-column>
+        <el-table-column prop="operatorRole" label="角色" align="center" width="90">
           <template #default="scope">
-            <el-tag :type="getRoleTagType(scope.row.operatorRole)" class="role-tag">
-              {{ scope.row.roleName || getRoleName(scope.row.operatorRole) }}
+            <el-tag :type="getRoleTagType(scope.row.operatorRole)" size="small">{{ getRoleName(scope.row.operatorRole) }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="module" label="模块" align="center" width="130" show-overflow-tooltip>
+          <template #default="scope">{{ getModuleName(scope.row.module) }}</template>
+        </el-table-column>
+        <el-table-column prop="operationType" label="动作" align="center" width="90">
+          <template #default="scope">{{ getActionName(scope.row.operationType) }}</template>
+        </el-table-column>
+        <el-table-column label="目标" align="center" width="120" show-overflow-tooltip>
+          <template #default="scope">{{ formatTarget(scope.row) || '-' }}</template>
+        </el-table-column>
+        <el-table-column prop="operationResult" label="结果" align="center" width="80">
+          <template #default="scope">
+            <el-tag :type="getResultTagType(scope.row.operationResult)" size="small">
+              {{ scope.row.operationResult === 'SUCCESS' ? '成功' : scope.row.operationResult === 'ATTEMPTED' ? '尝试' : '失败' }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="operationTypeName" label="操作类型" align="center" width="120">
+        <el-table-column prop="riskLevel" label="风险" align="center" width="90">
           <template #default="scope">
-            <el-tag :type="getTagType(scope.row.operationType)" class="operation-tag">
-              {{ scope.row.operationTypeName }}
+            <el-tag v-if="scope.row.riskLevel" :type="getRiskTagType(scope.row.riskLevel)" size="small">{{ getRiskName(scope.row.riskLevel) }}</el-tag>
+            <span v-else class="unknown-text">-</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="durationMs" label="耗时" align="center" width="80">
+          <template #default="scope">{{ scope.row.durationMs != null ? scope.row.durationMs + 'ms' : '-' }}</template>
+        </el-table-column>
+        <el-table-column prop="ipAddress" label="IP地址" align="center" width="130">
+          <template #default="scope">{{ scope.row.ipAddress || '-' }}</template>
+        </el-table-column>
+        <el-table-column prop="description" label="描述" align="center" min-width="180" show-overflow-tooltip />
+        <el-table-column label="操作" align="center" width="80" fixed="right">
+          <template #default="scope">
+            <el-button link type="primary" size="small" @click="openDetail(scope.row.id)">详情</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+
+      <!-- 登录日志 -->
+      <el-table v-else-if="activeTab === 'login-events'" :data="loginTableData" border v-loading="loading" class="data-table">
+        <el-table-column prop="loginTime" label="时间" align="center" width="165">
+          <template #default="scope">{{ scope.row.loginTime || '未知' }}</template>
+        </el-table-column>
+        <el-table-column prop="userName" label="用户名" align="center" width="130">
+          <template #default="scope">{{ scope.row.userName || '未知' }}</template>
+        </el-table-column>
+        <el-table-column prop="userType" label="角色" align="center" width="100">
+          <template #default="scope">
+            <el-tag :type="getRoleTagType(scope.row.userType)" size="small">{{ getRoleName(scope.row.userType) }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="loginStatus" label="状态" align="center" width="80">
+          <template #default="scope">
+            <el-tag :type="scope.row.loginStatus === 'SUCCESS' ? 'success' : 'danger'" size="small">
+              {{ scope.row.loginStatus === 'SUCCESS' ? '成功' : '失败' }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="operationResult" label="操作结果" align="center" width="100">
+        <el-table-column prop="riskLevel" label="风险" align="center" width="90">
           <template #default="scope">
-            <el-tag :type="scope.row.operationResult === 'SUCCESS' ? 'success' : 'danger'" class="result-tag">
-              {{ scope.row.operationResult === 'SUCCESS' ? '成功' : '失败' }}
+            <el-tag v-if="scope.row.riskLevel" :type="getRiskTagType(scope.row.riskLevel)" size="small">{{ getRiskName(scope.row.riskLevel) }}</el-tag>
+            <span v-else class="unknown-text">-</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="errorCode" label="错误码" align="center" width="110">
+          <template #default="scope">{{ scope.row.errorCode || '-' }}</template>
+        </el-table-column>
+        <el-table-column prop="ipAddress" label="IP地址" align="center" width="130">
+          <template #default="scope">{{ scope.row.ipAddress || '-' }}</template>
+        </el-table-column>
+        <el-table-column prop="deviceType" label="设备类别" align="center" width="100">
+          <template #default="scope">{{ scope.row.deviceType || '-' }}</template>
+        </el-table-column>
+        <el-table-column label="操作" align="center" width="80" fixed="right">
+          <template #default="scope">
+            <el-button link type="primary" size="small" @click="openDetail(scope.row.id)">详情</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+
+      <!-- 安全事件 -->
+      <el-table v-else :data="securityTableData" border v-loading="loading" class="data-table">
+        <el-table-column prop="eventTime" label="时间" align="center" width="165">
+          <template #default="scope">{{ scope.row.eventTime || '未知' }}</template>
+        </el-table-column>
+        <el-table-column prop="username" label="用户名" align="center" width="120">
+          <template #default="scope">{{ scope.row.username || '未知' }}</template>
+        </el-table-column>
+        <el-table-column prop="userRole" label="角色" align="center" width="90">
+          <template #default="scope">
+            <el-tag :type="getRoleTagType(scope.row.userRole)" size="small">{{ getRoleName(scope.row.userRole) }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="eventType" label="事件类型" align="center" width="110">
+          <template #default="scope">{{ getEventTypeName(scope.row.eventType) }}</template>
+        </el-table-column>
+        <el-table-column prop="result" label="结果" align="center" width="80">
+          <template #default="scope">
+            <el-tag :type="getResultTagType(scope.row.result)" size="small">
+              {{ scope.row.result === 'SUCCESS' ? '成功' : scope.row.result === 'ATTEMPTED' ? '尝试' : '失败' }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="module" label="操作模块" align="center" width="150">
+        <el-table-column prop="riskLevel" label="风险" align="center" width="90">
           <template #default="scope">
-            <span class="module-name">{{ scope.row.moduleName || getModuleName(scope.row.module) }}</span>
+            <el-tag :type="getRiskTagType(scope.row.riskLevel)" size="small">{{ getRiskName(scope.row.riskLevel) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="description" label="操作描述" align="center" min-width="200" show-overflow-tooltip />
-        <el-table-column prop="ipAddress" label="IP地址" align="center" width="140">
-          <template #default="scope">
-            <span class="ip-text">{{ scope.row.ipAddress || '未知' }}</span>
-          </template>
+        <el-table-column prop="ipAddress" label="IP地址" align="center" width="130">
+          <template #default="scope">{{ scope.row.ipAddress || '-' }}</template>
         </el-table-column>
-        <el-table-column prop="createTime" label="操作时间" align="center" width="180">
+        <el-table-column prop="requestPath" label="请求路径" align="center" min-width="160" show-overflow-tooltip>
+          <template #default="scope">{{ scope.row.requestPath || '-' }}</template>
+        </el-table-column>
+        <el-table-column prop="description" label="描述" align="center" min-width="140" show-overflow-tooltip />
+        <el-table-column label="操作" align="center" width="80" fixed="right">
           <template #default="scope">
-            <span v-if="scope.row.createTime" class="time-text">
-              {{ new Date(scope.row.createTime).toLocaleString('zh-CN') }}
-            </span>
-            <span v-else-if="scope.row.operateTime" class="time-text">
-              {{ new Date(scope.row.operateTime).toLocaleString('zh-CN') }}
-            </span>
-            <span v-else class="unknown-text">未知</span>
+            <el-button link type="primary" size="small" @click="openDetail(scope.row.id)">详情</el-button>
           </template>
         </el-table-column>
       </el-table>
 
       <div class="pagination-container">
         <el-pagination v-model:current-page="pagination.currentPage" v-model:page-size="pagination.pageSize"
-          :page-sizes="[5, 10, 20, 50]" layout="total, sizes, prev, pager, next, jumper" :total="pagination.total"
-          @size-change="handleSizeChange" @current-change="handleCurrentChange" class="custom-pagination" />
+          :page-sizes="[10, 20, 50, 100]" layout="total, sizes, prev, pager, next, jumper" :total="pagination.total"
+          @size-change="handleSizeChange" @current-change="handleCurrentChange" />
       </div>
     </el-card>
+
+    <!-- 详情抽屉 -->
+    <el-drawer v-model="detailVisible" title="日志详情" size="480px">
+      <div v-loading="detailLoading" class="detail-content">
+        <template v-if="detailData">
+          <div v-for="section in detailSections" :key="section.title" class="detail-section">
+            <template v-if="section.fields.length > 0">
+              <h4 class="section-title">{{ section.title }}</h4>
+              <div v-for="[label, value] in section.fields" :key="label" class="detail-row">
+                <span class="detail-label">{{ label }}</span>
+                <span class="detail-value" :title="String(value ?? '')">{{ value != null && value !== '' ? String(value) : '-' }}</span>
+              </div>
+            </template>
+          </div>
+        </template>
+      </div>
+    </el-drawer>
+
+    <!-- 保留策略对话框 -->
+    <el-dialog v-model="retentionVisible" title="日志保留策略" width="640px">
+      <el-form label-width="150px">
+        <el-form-item label="高风险事件保留">
+          <el-input-number v-model="retentionForm.highRiskDays" :min="30" :max="3650" :disabled="retentionLoading" />
+          <span class="retention-unit">天（权限、备份、日志管理等 HIGH/CRITICAL 记录）</span>
+        </el-form-item>
+        <el-form-item label="普通操作保留">
+          <el-input-number v-model="retentionForm.normalDays" :min="30" :max="3650" :disabled="retentionLoading" />
+          <span class="retention-unit">天（普通业务状态变更）</span>
+        </el-form-item>
+        <el-form-item label="登录日志保留">
+          <el-input-number v-model="retentionForm.loginDays" :min="30" :max="3650" :disabled="retentionLoading" />
+          <span class="retention-unit">天（登录成功/失败记录）</span>
+        </el-form-item>
+        <el-form-item label="运行日志保留">
+          <span>{{ retentionForm.logbackDays }} 天（服务器运行日志，由部署配置控制）</span>
+        </el-form-item>
+      </el-form>
+
+      <el-divider content-position="left">完整性校验</el-divider>
+
+      <div class="retention-actions">
+        <el-button :loading="integrityVerifying" @click="runIntegrityVerify">校验哈希链完整性</el-button>
+      </div>
+      <el-alert v-if="integrityReport" :type="integrityReport.passed ? 'success' : 'error'" :closable="false" class="preview-alert">
+        <template #title>
+          {{ integrityReport.passed ? '完整性校验通过' : `发现 ${integrityReport.totalIssues} 个问题（已告警）` }}
+          —— 签名根：操作日志 {{ (integrityReport.signatureRoots as Record<string, number>)?.['operate_log'] || 0 }} 个、
+          登录日志 {{ (integrityReport.signatureRoots as Record<string, number>)?.['login_log'] || 0 }} 个、
+          安全事件 {{ (integrityReport.signatureRoots as Record<string, number>)?.['security_event_log'] || 0 }} 个
+        </template>
+      </el-alert>
+
+      <el-divider content-position="left">到期清理</el-divider>
+
+      <div class="retention-actions">
+        <el-button type="primary" plain :loading="retentionLoading" @click="saveRetentionPolicies">保存策略</el-button>
+        <el-button @click="previewRetention">预览到期数据</el-button>
+        <el-button type="primary" :disabled="!retentionPreviewData || !retentionReason.trim() || retentionRunning"
+          :loading="retentionRunning" @click="executeRetention">
+          执行清理
+        </el-button>
+      </div>
+
+      <el-alert v-if="retentionPreviewData" type="info" :closable="false" class="preview-alert">
+        <template #title>
+          到期数据共 {{ retentionPreviewTotal }} 条：操作日志（普通 {{ retentionPreviewData.operateLogNormal || 0 }} 条 / 高风险
+          {{ retentionPreviewData.operateLogHighRisk || 0 }} 条），登录日志 {{ retentionPreviewData.loginLog || 0 }} 条，
+          安全事件（普通 {{ retentionPreviewData.securityEventNormal || 0 }} 条 / 高风险 {{ retentionPreviewData.securityEventHighRisk || 0 }} 条）
+        </template>
+      </el-alert>
+
+      <el-input v-model="retentionReason" placeholder="请填写清理原因（必填，将记入安全事件）" class="reason-input" />
+    </el-dialog>
   </div>
 </template>
 
@@ -786,21 +934,10 @@ const queryPage = async (): Promise<void> => {
   border-radius: 16px;
   padding: 24px 32px;
   color: white;
-  margin-bottom: 24px;
+  margin-bottom: 20px;
   box-shadow: 0 8px 25px rgba(64, 158, 255, 0.25);
   position: relative;
   overflow: hidden;
-}
-
-.page-header::before {
-  content: '';
-  position: absolute;
-  top: -50%;
-  right: -50%;
-  width: 100%;
-  height: 100%;
-  background: radial-gradient(circle, rgba(255, 255, 255, 0.1) 0%, transparent 70%);
-  transform: rotate(30deg);
 }
 
 .header-content h1 {
@@ -824,43 +961,51 @@ const queryPage = async (): Promise<void> => {
   font-weight: 400;
 }
 
-.header-illustration {
-  position: relative;
-  width: 100px;
-  height: 100px;
+.header-actions {
+  display: flex;
+  gap: 10px;
+  z-index: 1;
 }
 
-.illustration-circle {
-  position: absolute;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.15);
-  animation: float 6s ease-in-out infinite;
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+  gap: 16px;
+  margin-bottom: 20px;
 }
 
-.circle-1 {
-  width: 60px;
-  height: 60px;
-  top: 0;
-  right: 0;
-  animation-delay: 0s;
+.stat-card {
+  border-radius: 12px;
+  border: none;
 }
 
-.circle-2 {
-  width: 40px;
-  height: 40px;
-  bottom: 10px;
-  right: 20px;
-  animation-delay: 3s;
+.stat-card :deep(.el-card__body) {
+  padding: 14px 20px;
 }
 
-@keyframes float {
-  0%,
-  100% {
-    transform: translateY(0);
-  }
-  50% {
-    transform: translateY(-8px);
-  }
+.stat-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.stat-label {
+  font-size: 14px;
+  color: #909399;
+}
+
+.stat-value {
+  font-size: 26px;
+  font-weight: 700;
+  color: #303133;
+}
+
+.stat-warning {
+  color: #e6a23c;
+}
+
+.stat-danger {
+  color: #f56c6c;
 }
 
 .search-card,
@@ -869,16 +1014,12 @@ const queryPage = async (): Promise<void> => {
   border: none;
   background: white;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
-  margin-bottom: 24px;
+  margin-bottom: 20px;
   overflow: hidden;
 }
 
-.search-card {
-  padding: 24px;
-}
-
-.table-card {
-  padding: 0;
+.search-card :deep(.el-card__body) {
+  padding: 18px 20px 4px;
 }
 
 .search-form {
@@ -887,13 +1028,13 @@ const queryPage = async (): Promise<void> => {
 
 .search-row {
   display: flex;
-  gap: 20px;
+  flex-wrap: wrap;
+  gap: 4px 16px;
   align-items: flex-start;
 }
 
 .search-row .el-form-item {
-  margin-bottom: 0;
-  flex: 1;
+  margin-bottom: 14px;
 }
 
 .search-actions {
@@ -901,36 +1042,8 @@ const queryPage = async (): Promise<void> => {
   gap: 10px;
 }
 
-.search-btn,
-.reset-btn {
-  border-radius: 8px;
-  padding: 10px 20px;
-}
-
-.table-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 20px 20px 10px;
-  border-bottom: 1px solid #f0f0f0;
-}
-
-.table-title {
-  font-size: 16px;
-  font-weight: 600;
-  color: #303133;
-  margin: 0;
-}
-
-.table-actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.total-count {
-  font-size: 14px;
-  color: #909399;
+.table-card :deep(.el-card__body) {
+  padding: 0;
 }
 
 .log-tabs {
@@ -947,36 +1060,6 @@ const queryPage = async (): Promise<void> => {
   font-weight: 600;
 }
 
-.data-table :deep(.el-table__body) tr:hover {
-  background-color: #f0f7ff;
-}
-
-.role-tag {
-  font-weight: 500;
-}
-
-.operation-tag {
-  font-weight: 500;
-}
-
-.module-name {
-  color: #606266;
-}
-
-.time-text {
-  color: #909399;
-}
-
-.ip-text {
-  color: #606266;
-  font-family: var(--font-family-mono);
-  font-size: 13px;
-}
-
-.result-tag {
-  font-weight: 500;
-}
-
 .unknown-text {
   color: #C0C4CC;
 }
@@ -988,46 +1071,110 @@ const queryPage = async (): Promise<void> => {
   border-top: 1px solid #f0f0f0;
 }
 
-.custom-pagination :deep(.el-pagination) {
+.detail-content {
+  padding: 0 4px;
+}
+
+.detail-section {
+  margin-bottom: 18px;
+}
+
+.section-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #409EFF;
+  margin: 0 0 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid #ebeef5;
+}
+
+.detail-row {
   display: flex;
-  align-items: center;
+  gap: 12px;
+  padding: 5px 0;
+  font-size: 13px;
+  line-height: 1.5;
 }
 
-.custom-pagination :deep(.el-pagination .el-pager li) {
-  border-radius: 6px;
-  margin: 0 4px;
+.detail-label {
+  flex: 0 0 110px;
+  color: #909399;
 }
 
-.custom-pagination :deep(.el-pagination .el-pager li.is-active) {
-  background-color: #409EFF;
-  color: white;
+.detail-value {
+  flex: 1;
+  color: #303133;
+  word-break: break-all;
+  white-space: pre-wrap;
 }
 
-.custom-pagination :deep(.el-pagination button) {
-  border-radius: 6px;
+.retention-unit {
+  margin-left: 8px;
+  font-size: 12px;
+  color: #909399;
 }
 
-.clean-btn {
-  border-top-right-radius: 0;
-  border-bottom-right-radius: 0;
-  margin-right: 0;
+.retention-actions {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 12px;
 }
 
-.clean-dropdown-btn {
-  border-top-left-radius: 0;
-  border-bottom-left-radius: 0;
-  margin-left: 0;
-  padding: 0 12px;
+.preview-alert {
+  margin-bottom: 12px;
 }
 
-.clean-button-group {
-  display: inline-flex;
-  align-items: center;
-  gap: 0;
+.reason-input {
+  margin-top: 4px;
 }
 
-.clean-dropdown {
-  display: inline-flex;
-  vertical-align: middle;
+@media (max-width: 768px) {
+  .page-header {
+    flex-direction: column;
+    align-items: stretch;
+    padding: 18px 20px;
+    margin-bottom: 16px;
+  }
+
+  .header-content h1 {
+    font-size: 22px;
+  }
+
+  .header-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .header-actions :deep(.el-button) {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+  }
+
+  .search-card :deep(.el-card__body) {
+    padding: 16px 18px 4px;
+  }
+
+  .search-row :deep(.el-date-editor) {
+    width: 100% !important;
+  }
+
+  .search-row :deep(.el-select) {
+    width: 100% !important;
+  }
+
+  .retention-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .retention-actions :deep(.el-button) {
+    width: 100%;
+    margin-left: 0;
+  }
 }
 </style>

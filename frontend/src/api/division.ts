@@ -43,12 +43,13 @@ const DivisionService = {
   },
 
   // 根据 ID 获取系
-  getDivisionById: async (id: number) => {
+  getDivisionById: async (id: number | string) => {
     const cacheKey = `division_${id}`
-    const cachedData = cacheService.get<{ code: number; data: Division }>(cacheKey)
+    const cachedData = cacheService.get<Division>(cacheKey)
 
     if (cachedData) {
-      return Promise.resolve({ data: cachedData })
+      // 返回与请求一致的业务包形态
+      return Promise.resolve({ code: 200, message: 'cached', data: cachedData })
     }
 
     const response = await request.get<Division>(`admin/divisions/${id}`)
@@ -79,7 +80,7 @@ const DivisionService = {
   },
 
   // 更新系
-  updateDivision: async (id: number, division: Partial<Division>) => {
+  updateDivision: async (id: number | string, division: Partial<Division>) => {
     const response = await request.put(`admin/divisions/${id}`, division)
     cacheService.delete('all_divisions')
     cacheService.delete(`division_${id}`)
@@ -87,7 +88,7 @@ const DivisionService = {
   },
 
   // 删除系
-  deleteDivision: async (id: number) => {
+  deleteDivision: async (id: number | string) => {
     const response = await request.delete(`admin/divisions/${id}`)
     cacheService.delete('all_divisions')
     cacheService.delete(`division_${id}`)

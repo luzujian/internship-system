@@ -6,6 +6,8 @@ import java.util.List;
 
 public interface CounselorKeywordService {
 
+    CounselorKeyword findById(Long id);
+
     List<CounselorKeyword> getKeywordsByCounselorId(Long counselorId);
 
     void addKeyword(CounselorKeyword keyword);

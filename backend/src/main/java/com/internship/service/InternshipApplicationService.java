@@ -21,6 +21,8 @@ public interface InternshipApplicationService {
     List<InternshipApplicationEntity> findByCompanyIdAndStatus(Long companyId, String status);
     
     boolean updateStatus(Long id, String status);
+
+    boolean updateLatestStatusByStudentAndPosition(Long studentId, Long positionId, String status);
     
     boolean markAsViewed(Long id);
     

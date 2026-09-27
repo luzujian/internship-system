@@ -1,5 +1,9 @@
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
+import companyInfoSchema from '../../../../backend/src/main/resources/agent/company-info-schema.json'
+const companyField = (prop) => companyInfoSchema.fields.find(field => field.prop === prop)
+import { useAgentPageContext } from '@/agent/useAgentPageContext'
+import { useFormContext } from '@/agent/formContext'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from '@/store/auth'
@@ -14,71 +18,6 @@ const authStore = useAuthStore()
 
 // 初始化省市区数据
 const chinaData = new EluiChinaAreaDht.ChinaArea().chinaAreaflat
-
-// 辅助函数：通过行政区划代码前缀匹配层级关系
-// 中国行政区划代码规则：省级 XX0000, 市级 XXXX00, 区级 XXXXXX
-const findProvinceCode = (provinceName) => {
-  if (!provinceName) return null
-  return Object.keys(chinaData).find(code => {
-    return chinaData[code].label === provinceName && code.endsWith('0000')
-  }) || null
-}
-
-const findCityCode = (cityName, provinceCode) => {
-  if (!cityName || !provinceCode) return null
-  const provincePrefix = provinceCode.slice(0, 2)
-  // 通过省份前缀 + 名称匹配城市
-  return Object.keys(chinaData).find(code => {
-    const info = chinaData[code]
-    // 市级代码格式：XXYY00，其中 XX 是省份前缀
-    return code.startsWith(provincePrefix) &&
-           code.endsWith('00') &&
-           !code.endsWith('0000') &&
-           (info.label === cityName ||
-            info.label === cityName.slice(0, -1) || // 去掉"市"后缀
-            info.label === cityName + '市') // 添加"市"后缀
-  }) || null
-}
-
-// 直辖市特殊处理：返回"市辖区"代码
-const getDirectMunicipalityCityCode = (provinceName) => {
-  const provinceCode = findProvinceCode(provinceName)
-  if (!provinceCode) return null
-  // 在直辖市中，"市辖区"的父级是省级代码
-  return Object.keys(chinaData).find(code => {
-    const info = chinaData[code]
-    return info.parent === provinceCode && info.label === '市辖区'
-  }) || null
-}
-
-const findDistrictCode = (districtName, cityCode) => {
-  if (!districtName || !cityCode) return null
-  const cityPrefix = cityCode.slice(0, 4)
-  // 通过城市前缀 + 名称匹配区县
-  return Object.keys(chinaData).find(code => {
-    const info = chinaData[code]
-    // 区级代码格式：XXXXYY，其中 XXXX 是城市前缀
-    return code.startsWith(cityPrefix) &&
-           !code.endsWith('00') &&
-           (info.label === districtName ||
-            info.label === districtName.replace(/[区县]$/, '')) // 去掉后缀
-  }) || null
-}
-
-// 直接通过名称查找区县代码（当没有城市信息时）
-const findDistrictByProvince = (districtName, provinceCode) => {
-  if (!districtName || !provinceCode) return null
-  const provincePrefix = provinceCode.slice(0, 2)
-  return Object.keys(chinaData).find(code => {
-    const info = chinaData[code]
-    // 直辖市区县或省直辖县级行政区：XXYYYY，其中 XX 是省份前缀
-    return code.startsWith(provincePrefix) &&
-           !code.endsWith('0000') &&
-           !code.endsWith('00') &&
-           (info.label === districtName ||
-            info.label === districtName.replace(/[区县]$/, ''))
-  }) || null
-}
 
 // 从 auth store 获取当前用户 ID
 const companyId = computed(() => {
@@ -103,6 +42,8 @@ const companyId = computed(() => {
 
 const activeTab = ref('basic')
 const loading = ref(false)
+const schoolLiaisons = ref([])
+const schoolLiaisonsLoading = ref(false)
 
 const basicForm = ref({
   companyName: '',
@@ -117,46 +58,50 @@ const basicForm = ref({
   contactPhone: '',
   contactEmail: '',
   website: '',
-  cooperationMode: 'mutual_choice',
-  isInternshipBase: 0,
-  acceptBackup: 0,
-  maxBackupStudents: 0
+  cooperationMode: '',
+  auditStatus: null,
+  isInternshipBase: companyField('isInternshipBase').defaultValue,
+  hasTrainingBaseAgreement: companyField('hasTrainingBaseAgreement').defaultValue,
+  acceptBackup: companyField('acceptBackup').defaultValue,
+  isAlumniUnit: companyField('isAlumniUnit').defaultValue,
+  alumniMembers: []
 })
 
-const cooperationModeOptions = [
-  { label: '学生自主联系', value: 'student_contact', type: 'warning' },
-  { label: '双向选择', value: 'mutual_choice', type: 'success' }
-]
+const createEmptyAlumniMember = () => ({ name: '', phone: '', position: '' })
 
-const getInternshipBaseText = (value) => {
-  switch (value) {
-    case 1: return '国家级实习基地'
-    case 2: return '省级实习基地'
-    default: return null
+const handleAlumniUnitChange = (value) => {
+  if (value === 1 && basicForm.value.alumniMembers.length === 0) {
+    basicForm.value.alumniMembers.push(createEmptyAlumniMember())
   }
+  // 保留本地校友草稿，切回“是”或撤销 AI 填写时不会抹掉手工填写；保存“否”仍按原接口发送空列表。
 }
 
-const getInternshipBaseType = (value) => {
-  switch (value) {
-    case 1: return 'danger'
-    case 2: return 'warning'
-    default: return 'info'
+const addAlumniMember = () => basicForm.value.alumniMembers.push(createEmptyAlumniMember())
+
+const removeAlumniMember = (index) => {
+  if (basicForm.value.alumniMembers.length > 1) basicForm.value.alumniMembers.splice(index, 1)
+}
+
+const validateAlumniMembers = () => {
+  if (basicForm.value.isAlumniUnit !== 1) return true
+  if (!basicForm.value.alumniMembers.length) {
+    ElMessage.warning('校友单位至少需要填写一名校友')
+    return false
   }
+  const invalid = basicForm.value.alumniMembers.some(member => !member.name?.trim() || !member.phone?.trim() || !member.position?.trim())
+  if (invalid) ElMessage.warning('请完整填写每名校友的姓名、电话和任职')
+  return !invalid
 }
 
-const getAcceptBackupText = (value) => {
-  return value === 1 ? '接受兜底' : null
-}
-
-const getTagText = (mode) => {
-  const option = cooperationModeOptions.find(item => item.value === mode)
-  return option ? option.label : '双向选择'
-}
-
-const getTagType = (mode) => {
-  const option = cooperationModeOptions.find(item => item.value === mode)
-  return option ? option.type : 'success'
-}
+// 标签显示与 AI 解释共用字段定义；未知历史编码如实显示，不猜测含义。
+const companyTags = computed(() => {
+  const modes = String(basicForm.value.cooperationMode || '').split(',').map(value => value.trim()).filter(Boolean)
+  const tags = companyInfoSchema.tags.filter(tag => !tag.requiresApproval || basicForm.value.auditStatus === 1).filter(tag => tag.prop === 'cooperationMode'
+    ? tag.values.some(value => modes.includes(String(value)))
+    : tag.values.includes(basicForm.value[tag.prop]))
+  const unknown = modes.filter(value => !companyInfoSchema.tags.some(tag => tag.prop === 'cooperationMode' && tag.values.includes(value)))
+  return [...tags, ...unknown.map(label => ({ prop: 'cooperationMode', label, type: 'info', description: '历史标签，暂无含义说明' }))]
+})
 
 const promotionForm = ref({
   logo: '',
@@ -253,25 +198,18 @@ const removeLogo = () => {
   })
 }
 
-const industryOptions = [
-  { label: '互联网/IT', value: 'internet' },
-  { label: '金融', value: 'finance' },
-  { label: '教育', value: 'education' },
-  { label: '医疗', value: 'medical' },
-  { label: '制造业', value: 'manufacturing' },
-  { label: '服务业', value: 'service' },
-  { label: '房地产', value: 'realestate' },
-  { label: '能源', value: 'energy' },
-  { label: '其他', value: 'other' }
-]
+const industryOptions = companyField('industry').options
+const scaleOptions = companyField('scale').options
 
-const scaleOptions = [
-  { label: '1-50人', value: '1-50' },
-  { label: '51-100人', value: '51-100' },
-  { label: '101-500人', value: '101-500' },
-  { label: '501-1000人', value: '501-1000' },
-  { label: '1000人以上', value: '1000+' }
-]
+const getIndustryLabel = (value) => {
+  const option = industryOptions.find(item => item.value === value)
+  return option ? option.label : (value || '-')
+}
+
+const getScaleLabel = (value) => {
+  const option = scaleOptions.find(item => item.value === value)
+  return option ? option.label : (value || '-')
+}
 
 const logoFileList = ref([])
 const photoFileList = ref([])
@@ -279,7 +217,7 @@ const videoFileList = ref([])
 
 const handleLogoChange = (file) => {
   logoFileList.value = [file]
-  UploadService.uploadImage(file.raw).then(res => {
+  UploadService.uploadCompanyMedia(file.raw, 'logo').then(res => {
     if (res.code === 200) {
       promotionForm.value.logo = res.data.url
       savePromotionData().then(saveRes => {
@@ -310,7 +248,7 @@ const handlePhotoChange = (file, fileList) => {
   const files = [file.raw]
   console.log('准备上传的文件:', files)
   
-  UploadService.uploadImages(files).then(res => {
+  UploadService.uploadCompanyMedia(files[0], 'photo').then(res => {
     console.log('照片上传响应:', res)
     console.log('res.data:', res.data)
     
@@ -380,7 +318,7 @@ const handleVideoChange = (file, fileList) => {
   const files = [file.raw]
   console.log('准备上传的文件:', files)
   
-  UploadService.uploadFiles(files).then(res => {
+  UploadService.uploadCompanyMedia(files[0], 'video').then(res => {
     console.log('视频上传响应:', res)
     console.log('res.data:', res.data)
     
@@ -452,6 +390,10 @@ const handleRemove = (file, fileList) => {
 }
 
 const handleSaveBasic = () => {
+  if (loading.value) return
+  const fillInstance = formContext.currentForm.value?.instanceId
+  const savedValues = formContext.captureValues('company:info')
+  if (!validateAlumniMembers()) return
   loading.value = true
 
   const isDirectMunicipality = ['北京市', '上海市', '天津市', '重庆市'].includes(basicForm.value.province)
@@ -468,10 +410,11 @@ const handleSaveBasic = () => {
     contactPhone: basicForm.value.contactPhone,
     contactEmail: basicForm.value.contactEmail,
     website: basicForm.value.website,
-    cooperationMode: basicForm.value.cooperationMode,
     isInternshipBase: basicForm.value.isInternshipBase,
+    hasTrainingBaseAgreement: basicForm.value.hasTrainingBaseAgreement,
     acceptBackup: basicForm.value.acceptBackup,
-    maxBackupStudents: basicForm.value.maxBackupStudents
+    isAlumniUnit: basicForm.value.isAlumniUnit,
+    alumniMembers: basicForm.value.isAlumniUnit === 1 ? basicForm.value.alumniMembers : []
   }
 
   console.log('=== 保存基础信息 ===')
@@ -481,6 +424,7 @@ const handleSaveBasic = () => {
   CompanyService.updateCompanyInfo(data).then(res => {
     if (res.code === 200) {
       ElMessage.success('基础信息保存成功')
+      formContext.reportFormOutcome('company:info', { status: 'saved', label: '企业基本信息已保存', url: '/company/interviews', object: { type: 'company', id: String(companyId.value) } }, fillInstance, savedValues)
     } else {
       ElMessage.error(res.message || '保存失败')
     }
@@ -492,6 +436,9 @@ const handleSaveBasic = () => {
 }
 
 const handleSavePromotion = () => {
+  if (loading.value) return
+  const fillInstance = formContext.currentForm.value?.instanceId
+  const savedValues = formContext.captureValues('company:promotion')
   loading.value = true
   
   console.log('=== 开始保存宣传资料 ===')
@@ -514,6 +461,7 @@ const handleSavePromotion = () => {
     console.log('后端返回结果:', res)
     if (res.code === 200) {
       ElMessage.success('宣传资料保存成功')
+      formContext.reportFormOutcome('company:promotion', { status: 'saved', label: '企业宣传资料已保存', url: '/company/interviews' }, fillInstance, savedValues)
     } else {
       ElMessage.error(res.message || '保存失败')
     }
@@ -526,6 +474,11 @@ const handleSavePromotion = () => {
 }
 
 const handleSaveAll = () => {
+  if (loading.value) return
+  const fillInstance = formContext.currentForm.value?.instanceId
+  const fillFormId = formContext.currentForm.value?.formId
+  const savedValues = fillFormId ? formContext.captureValues(fillFormId) : null
+  if (!validateAlumniMembers()) return
   loading.value = true
   const data = {
     companyName: basicForm.value.companyName,
@@ -539,10 +492,11 @@ const handleSaveAll = () => {
     contactPhone: basicForm.value.contactPhone,
     contactEmail: basicForm.value.contactEmail,
     website: basicForm.value.website,
-    cooperationMode: basicForm.value.cooperationMode,
     isInternshipBase: basicForm.value.isInternshipBase,
+    hasTrainingBaseAgreement: basicForm.value.hasTrainingBaseAgreement,
     acceptBackup: basicForm.value.acceptBackup,
-    maxBackupStudents: basicForm.value.maxBackupStudents,
+    isAlumniUnit: basicForm.value.isAlumniUnit,
+    alumniMembers: basicForm.value.isAlumniUnit === 1 ? basicForm.value.alumniMembers : [],
     logo: promotionForm.value.logo,
     photos: JSON.stringify(promotionForm.value.photos),
     videos: JSON.stringify(promotionForm.value.videos),
@@ -552,6 +506,7 @@ const handleSaveAll = () => {
   CompanyService.updateCompanyInfo(data).then(res => {
     if (res.code === 200) {
       ElMessage.success('企业信息保存成功')
+      if (fillFormId === 'company:info' || fillFormId === 'company:promotion') formContext.reportFormOutcome(fillFormId, { status: 'saved', label: '企业信息已保存', url: '/company/interviews' }, fillInstance, savedValues)
     } else {
       ElMessage.error(res.message || '保存失败')
     }
@@ -584,66 +539,7 @@ const loadCompanyInfo = () => {
       console.log('data.district:', data.district)
       console.log('data.detailAddress:', data.detailAddress)
       
-      const addressCodes = []
-      console.log('开始解析省市区代码...')
-
-      if (data.province) {
-        const provinceCode = findProvinceCode(data.province)
-        if (provinceCode) {
-          addressCodes.push(provinceCode)
-
-          // 检查是否是直辖市
-          const isDirectMunicipality = ['北京市', '上海市', '天津市', '重庆市'].includes(data.province)
-
-          if (isDirectMunicipality) {
-            // 直辖市特殊处理：添加"市辖区"代码
-            const cityCode = getDirectMunicipalityCityCode(data.province)
-            if (cityCode) {
-              addressCodes.push(cityCode)
-              if (data.district) {
-                const districtCode = findDistrictCode(data.district, cityCode)
-                if (districtCode) {
-                  addressCodes.push(districtCode)
-                } else {
-                  console.warn('无法解析区县代码:', data.district)
-                }
-              }
-            } else {
-              console.warn('无法解析直辖市辖区代码:', data.province)
-            }
-          } else {
-            // 非直辖市正常处理
-            const isDirectDistrict = data.city === '市辖区' || data.city === '县' || data.city === '城区'
-
-            if (data.city && !isDirectDistrict) {
-              const cityCode = findCityCode(data.city, provinceCode)
-              if (cityCode) {
-                addressCodes.push(cityCode)
-                if (data.district) {
-                  const districtCode = findDistrictCode(data.district, cityCode)
-                  if (districtCode) {
-                    addressCodes.push(districtCode)
-                  } else {
-                    console.warn('无法解析区县代码:', data.district)
-                  }
-                }
-              } else {
-                console.warn('无法解析城市代码:', data.city)
-              }
-            } else if (data.district) {
-              // 直接匹配区县（适用于"市辖区"或省直辖的情况）
-              const districtCode = findDistrictByProvince(data.district, provinceCode)
-              if (districtCode) {
-                addressCodes.push(districtCode)
-              } else {
-                console.warn('无法直接匹配区县代码:', data.district)
-              }
-            }
-          }
-        } else {
-          console.warn('无法解析省份代码:', data.province)
-        }
-      }
+      const addressCodes = resolveAddressCodes(data.province, data.city, data.district)
 
       // 直接设置表单属性，确保响应式更新
       basicForm.value.companyName = data.companyName || ''
@@ -665,10 +561,21 @@ const loadCompanyInfo = () => {
       basicForm.value.contactPhone = data.contactPhone || ''
       basicForm.value.contactEmail = data.contactEmail || ''
       basicForm.value.website = data.website || ''
-      basicForm.value.cooperationMode = data.cooperationMode || 'mutual_choice'
-      basicForm.value.isInternshipBase = data.isInternshipBase || 0
-      basicForm.value.acceptBackup = data.acceptBackup || 0
-      basicForm.value.maxBackupStudents = data.maxBackupStudents || 0
+      basicForm.value.cooperationMode = data.cooperationMode ?? ''
+      basicForm.value.auditStatus = data.auditStatus ?? null
+      basicForm.value.isInternshipBase = data.isInternshipBase ?? companyField('isInternshipBase').defaultValue
+      basicForm.value.hasTrainingBaseAgreement = data.hasTrainingBaseAgreement ?? companyField('hasTrainingBaseAgreement').defaultValue
+      basicForm.value.acceptBackup = data.acceptBackup ?? companyField('acceptBackup').defaultValue
+      basicForm.value.isAlumniUnit = data.isAlumniUnit ?? companyField('isAlumniUnit').defaultValue
+      basicForm.value.alumniMembers = Array.isArray(data.alumniMembers) && data.alumniMembers.length
+        ? data.alumniMembers.map(member => ({ name: member.name || '', phone: member.phone || '', position: member.position || '' }))
+        : (basicForm.value.isAlumniUnit === 1 && data.alumniRepresentativeName
+            ? [{
+                name: data.alumniRepresentativeName,
+                phone: data.alumniRepresentativePhone || '',
+                position: data.alumniRepresentativePosition || ''
+              }]
+            : [])
 
       const logo = data.logo || ''
       const photos = data.photos ? JSON.parse(data.photos) : []
@@ -717,6 +624,19 @@ const loadCompanyInfo = () => {
   })
 }
 
+const loadSchoolLiaisons = async () => {
+  schoolLiaisonsLoading.value = true
+  try {
+    const res = await CompanyService.getSchoolLiaisons()
+    schoolLiaisons.value = res.code === 200 && Array.isArray(res.data) ? res.data : []
+  } catch (error) {
+    schoolLiaisons.value = []
+    console.warn('加载校内对接人失败，不影响企业资料展示:', error)
+  } finally {
+    schoolLiaisonsLoading.value = false
+  }
+}
+
 const handleAddressChange = (e) => {
   // 确保 addressCode 是一个新的数组引用，触发组件更新
   basicForm.value.addressCode = e && e.length > 0 ? [...e] : null
@@ -736,9 +656,188 @@ const handleAddressChange = (e) => {
   }
 }
 
+// 名称归一：兼容“广东省/广东”“深圳市/深圳”等带/不带后缀的写法
+const normalizeAreaLabel = (value) => String(value || '').replace(/(省|市|自治区|特别行政区|地区|自治州|盟)$/, '')
+const matchesAreaLabel = (item, label) => Boolean(item?.label) && Boolean(label)
+  && (item.label === label || normalizeAreaLabel(item.label) === normalizeAreaLabel(label))
+
+// 省/市/区名称 → 级联组件所需的行政区划代码（与岗位发布页同一算法，兼容只给部分层级）
+const resolveAddressCodes = (province, city, district) => {
+  const findByLabel = (label, parentCode) => Object.keys(chinaData).find(
+    code => matchesAreaLabel(chinaData[code], label) && (!parentCode || chinaData[code].parent === parentCode)
+  )
+  const findMunicipalityCityCode = (provinceCode) => Object.keys(chinaData).find(
+    code => chinaData[code].label === '市辖区' && chinaData[code].parent === provinceCode
+  )
+  const isMunicipality = (name) => ['北京市', '上海市', '天津市', '重庆市']
+    .some(city => normalizeAreaLabel(city) === normalizeAreaLabel(name))
+
+  if (province) {
+    const provinceCode = findByLabel(province)
+    if (!provinceCode) return []
+    const codes = [provinceCode]
+    if (!city && !district) return codes
+
+    let cityCode = city ? findByLabel(city, provinceCode) : undefined
+    if (!cityCode && isMunicipality(province)) cityCode = findMunicipalityCityCode(provinceCode)
+    if (!cityCode) {
+      // 兼容“市辖区/县/城区”等不具名市级写法：直接在省下匹配区县（与旧加载逻辑一致）
+      if (district) {
+        const directDistrictCode = findByLabel(district, provinceCode)
+        if (directDistrictCode) codes.push(directDistrictCode)
+      }
+      return codes
+    }
+
+    codes.push(cityCode)
+    if (!district) return codes
+    const districtCode = findByLabel(district, cityCode)
+    if (districtCode) codes.push(districtCode)
+    return codes
+  }
+
+  if (city) {
+    const cityCode = findByLabel(city)
+    if (!cityCode) return []
+    let inferredProvinceCode = chinaData[cityCode]?.parent
+    let cityLevelCode = cityCode
+    if (!inferredProvinceCode && isMunicipality(city)) {
+      // 直辖市：city 命中省级代码时，补上“市辖区”一级
+      const municipalityCityCode = findMunicipalityCityCode(cityCode)
+      if (!municipalityCityCode) return []
+      inferredProvinceCode = cityCode
+      cityLevelCode = municipalityCityCode
+    }
+    if (!inferredProvinceCode) return []
+    const codes = [inferredProvinceCode, cityLevelCode]
+    if (!district) return codes
+    const districtCode = findByLabel(district, cityLevelCode)
+    if (districtCode) codes.push(districtCode)
+    return codes
+  }
+
+  if (district) {
+    const districtCode = findByLabel(district)
+    if (!districtCode) return []
+    const cityCode = chinaData[districtCode]?.parent
+    const inferredProvinceCode = cityCode ? chinaData[cityCode]?.parent : undefined
+    if (!cityCode || !inferredProvinceCode) return []
+    return [inferredProvinceCode, cityCode, districtCode]
+  }
+
+  return []
+}
+
+// 侧栏智能填表会直接写入 province/city/district，这里解析成级联组件需要的 addressCode；
+// 手动选择级联时由 handleAddressChange 赋值，两者通过代码比对避免互相覆盖。
+watch(
+  () => [basicForm.value.province, basicForm.value.city, basicForm.value.district],
+  ([province, city, district]) => {
+    const codes = resolveAddressCodes(province || '', city || '', district || '')
+    if (codes.length && JSON.stringify(codes) !== JSON.stringify(basicForm.value.addressCode)) {
+      basicForm.value.addressCode = [...codes]
+    }
+  },
+  { flush: 'post' }
+)
+
+// ===== 智能填表：基础信息表单注册到 AI 侧栏（只写响应式 model，不触发提交） =====
+// 未覆盖项：校友成员嵌套数组（选“是”后手动添加）、
+// 宣传资料 Logo/照片/视频（文件上传手动）、校内对接人（只读）
+const formContext = useFormContext()
+const basicFormRef = ref(null)
+const companyFillFields = () => [
+  { prop: 'companyName', label: '企业名称', type: 'input', required: true },
+  { prop: 'industry', label: '所属行业', type: 'select', options: industryOptions },
+  { prop: 'scale', label: '企业规模', type: 'select', options: scaleOptions },
+  { prop: 'province', label: '企业地址省份', type: 'input', patternHint: '例如：广东省' },
+  { prop: 'city', label: '企业地址城市', type: 'input', patternHint: '例如：深圳市；直辖市可填北京市/上海市等' },
+  { prop: 'district', label: '企业地址区县', type: 'input', patternHint: '例如：南山区' },
+  { prop: 'detailAddress', label: '详细地址（街道/门牌）', type: 'input',
+    patternHint: '只填写街道、门牌等详细地址，不要把城市或区县写到这里' },
+  { prop: 'contactPerson', label: '联系人', type: 'input', required: true },
+  { prop: 'contactPhone', label: '联系电话', type: 'input', required: true },
+  { prop: 'contactEmail', label: '联系邮箱', type: 'input' },
+  { prop: 'website', label: '企业网站', type: 'input' },
+  { prop: 'isAlumniUnit', label: '是否校友单位', type: 'radio', valueType: 'number',
+    options: [{ label: '否', value: 0 }, { label: '是', value: 1 }],
+    patternHint: '选是后需手动添加校友信息' },
+  { prop: 'isInternshipBase', label: '挂牌实习基地', type: 'radio', valueType: 'number',
+    options: [{ label: '否', value: 0 }, { label: '是', value: 1 }] },
+  { prop: 'acceptBackup', label: '接受兜底', type: 'radio', valueType: 'number',
+    options: [{ label: '不接受', value: 0 }, { label: '接受', value: 1 }] },
+  { prop: 'hasTrainingBaseAgreement', label: '签署实训基地协议', type: 'radio', valueType: 'number',
+    options: [{ label: '未签署', value: 0 }, { label: '已签署', value: 1 }] }
+].map(field => {
+  const definition = companyField(field.prop)
+  return definition ? { ...field, label: definition.label, ...(definition.options ? { options: definition.options } : {}) } : field
+})
+const registerCompanyForm = () => {
+  formContext.register({
+    formId: 'company:info',
+    title: '企业基本信息',
+    fields: companyFillFields(),
+    getFields: companyFillFields,
+    getObject: () => companyId.value ? { type: 'company', id: String(companyId.value) } : null,
+    getValidationSummary: () => ({
+      missingFields: basicForm.value.isAlumniUnit === 1 && (!basicForm.value.alumniMembers.length || basicForm.value.alumniMembers.some(member => !member.name?.trim() || !member.phone?.trim() || !member.position?.trim())) ? ['校友姓名、电话和任职（需手动补充）'] : [],
+      validationErrors: basicForm.value.contactEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(basicForm.value.contactEmail) ? ['联系邮箱格式不正确'] : [],
+    }),
+    getModel: () => basicForm.value,
+    getFormEl: () => basicFormRef.value
+  })
+}
+// AI 写入是否校友单位后补齐联动（与 @change 同一函数，幂等）
+watch(() => basicForm.value.isAlumniUnit, (v) => {
+  if (v !== undefined && v !== null) handleAlumniUnitChange(v)
+})
+// 仅基础信息页签展示关联表单，切到宣传资料则切换为企业简介表单，防误填
+// 宣传资料的图片/视频为文件上传，需手动操作，仅企业简介文本可由语音填写
+watch(activeTab, (tab) => {
+  if (tab === 'basic') {
+    formContext.unregister('company:promotion')
+    registerCompanyForm()
+  } else if (tab === 'promotion') {
+    formContext.unregister('company:info')
+    formContext.register({
+      formId: 'company:promotion',
+      title: '企业宣传资料',
+      fields: [
+        { prop: 'introduction', label: '企业简介', type: 'textarea' },
+        { prop: 'logo', label: '企业 Logo', type: 'upload' },
+        { prop: 'photos', label: '企业照片', type: 'upload' },
+        { prop: 'videos', label: '宣传视频', type: 'upload' },
+      ],
+      getObject: () => companyId.value ? { type: 'company', id: String(companyId.value) } : null,
+      getModel: () => promotionForm.value
+    })
+  } else {
+    formContext.unregister('company:info')
+    formContext.unregister('company:promotion')
+  }
+})
+
 onMounted(() => {
   loadCompanyInfo()
+  loadSchoolLiaisons()
+  if (activeTab.value === 'basic') registerCompanyForm()
+  else if (activeTab.value === 'promotion') {
+    formContext.register({
+      formId: 'company:promotion',
+      title: '企业宣传资料',
+      fields: [
+        { prop: 'introduction', label: '企业简介', type: 'textarea' },
+        { prop: 'logo', label: '企业 Logo', type: 'upload' },
+        { prop: 'photos', label: '企业照片', type: 'upload' },
+        { prop: 'videos', label: '宣传视频', type: 'upload' },
+      ],
+      getObject: () => companyId.value ? { type: 'company', id: String(companyId.value) } : null,
+      getModel: () => promotionForm.value
+    })
+  }
 })
+onUnmounted(() => { formContext.unregister('company:info'); formContext.unregister('company:promotion') })
+useAgentPageContext(() => ({ title: '企业信息', view: activeTab.value, object: null, filters: {} }))
 
 watch(companyId, (newVal) => {
   if (newVal && !basicForm.value.companyName) {
@@ -757,40 +856,19 @@ watch(companyId, (newVal) => {
     <el-tabs v-model="activeTab" class="info-tabs" v-loading="loading">
       <el-tab-pane label="基础信息" name="basic" :lazy="true">
         <div class="form-card">
-          <el-form :model="basicForm" label-width="120px" label-position="left">
-            <el-form-item label="企业名称">
+          <el-form ref="basicFormRef" :model="basicForm" label-width="120px" label-position="left">
+            <el-form-item :label="companyField('companyName').label">
               <el-input v-model="basicForm.companyName" placeholder="请输入企业名称" />
             </el-form-item>
 
-            <el-form-item label="企业标签">
+            <el-form-item :label="companyField('cooperationMode').label">
               <div class="tags-container">
-                <el-tag :type="getTagType(basicForm.cooperationMode)" size="large" effect="dark">
-                  {{ getTagText(basicForm.cooperationMode) }}
-                </el-tag>
-                <el-tag 
-                  v-if="basicForm.isInternshipBase > 0" 
-                  :type="getInternshipBaseType(basicForm.isInternshipBase)" 
-                  size="large" 
-                  effect="dark"
-                  class="internship-base-tag"
-                >
-                  <el-icon class="tag-icon"><Star /></el-icon>
-                  {{ getInternshipBaseText(basicForm.isInternshipBase) }}
-                </el-tag>
-                <el-tag 
-                  v-if="basicForm.acceptBackup === 1" 
-                  type="danger" 
-                  size="large" 
-                  effect="dark"
-                  class="accept-backup-tag"
-                >
-                  {{ getAcceptBackupText(basicForm.acceptBackup) }}
-                </el-tag>
+                <el-tag v-for="tag in companyTags" :key="tag.prop + tag.label" :type="tag.type" :title="tag.description" size="large" effect="dark">{{ tag.label }}</el-tag>
               </div>
-              <span class="tag-hint">此标签由系统根据注册时间和选择自动设置</span>
+              <span class="tag-hint">标签根据当前合作方式和基础信息选项显示，可悬停查看含义</span>
             </el-form-item>
 
-            <el-form-item label="所属行业">
+            <el-form-item :label="companyField('industry').label">
               <el-select v-model="basicForm.industry" placeholder="请选择所属行业" style="width: 100%">
                 <el-option
                   v-for="item in industryOptions"
@@ -801,7 +879,7 @@ watch(companyId, (newVal) => {
               </el-select>
             </el-form-item>
 
-            <el-form-item label="企业规模">
+            <el-form-item :label="companyField('scale').label">
               <el-select v-model="basicForm.scale" placeholder="请选择企业规模" style="width: 100%">
                 <el-option
                   v-for="item in scaleOptions"
@@ -812,7 +890,7 @@ watch(companyId, (newVal) => {
               </el-select>
             </el-form-item>
 
-            <el-form-item label="企业地址">
+            <el-form-item :label="companyField('address').label">
               <elui-china-area-dht 
                 v-model="basicForm.addressCode" 
                 @change="handleAddressChange" 
@@ -821,24 +899,74 @@ watch(companyId, (newVal) => {
               />
             </el-form-item>
 
-            <el-form-item label="详细地址">
+            <el-form-item :label="companyField('detailAddress').label">
               <el-input v-model="basicForm.detailAddress" placeholder="请输入详细地址，如街道、门牌号等" />
             </el-form-item>
 
-            <el-form-item label="联系人">
+            <el-form-item :label="companyField('contactPerson').label">
               <el-input v-model="basicForm.contactPerson" placeholder="请输入联系人姓名" />
             </el-form-item>
 
-            <el-form-item label="联系电话">
+            <el-form-item :label="companyField('contactPhone').label">
               <el-input v-model="basicForm.contactPhone" placeholder="请输入联系电话" />
             </el-form-item>
 
-            <el-form-item label="联系邮箱">
+            <el-form-item :label="companyField('contactEmail').label">
               <el-input v-model="basicForm.contactEmail" placeholder="请输入联系邮箱" />
             </el-form-item>
 
-            <el-form-item label="企业网站">
+            <el-form-item :label="companyField('schoolLiaisons').label">
+              <span v-if="schoolLiaisonsLoading" class="liaison-empty">加载中...</span>
+              <div v-else-if="schoolLiaisons.length" class="school-liaison-list">
+                <div v-for="liaison in schoolLiaisons" :key="liaison.teacherId" class="school-liaison-item">
+                  <span class="school-liaison-name">{{ liaison.teacherName }}</span>
+                  <span class="school-liaison-phone">{{ liaison.teacherPhone || '未填写电话' }}</span>
+                </div>
+              </div>
+              <span v-else class="liaison-empty">暂未设置</span>
+            </el-form-item>
+
+            <el-form-item :label="companyField('website').label">
               <el-input v-model="basicForm.website" placeholder="请输入企业网站" />
+            </el-form-item>
+
+            <el-form-item :label="companyField('isAlumniUnit').label">
+              <el-radio-group v-model="basicForm.isAlumniUnit" @change="handleAlumniUnitChange">
+                <el-radio v-for="option in companyField('isAlumniUnit').options" :key="option.value" :label="option.value">{{ option.label }}</el-radio>
+              </el-radio-group>
+            </el-form-item>
+
+            <el-form-item :label="companyField('isInternshipBase').label">
+              <el-radio-group v-model="basicForm.isInternshipBase">
+                <el-radio v-for="option in companyField('isInternshipBase').options" :key="option.value" :label="option.value">{{ option.label }}</el-radio>
+              </el-radio-group>
+            </el-form-item>
+
+            <el-form-item :label="companyField('acceptBackup').label">
+              <el-radio-group v-model="basicForm.acceptBackup">
+                <el-radio v-for="option in companyField('acceptBackup').options" :key="option.value" :label="option.value">{{ option.label }}</el-radio>
+              </el-radio-group>
+            </el-form-item>
+
+            <el-form-item :label="companyField('hasTrainingBaseAgreement').label" label-width="150px">
+              <el-radio-group v-model="basicForm.hasTrainingBaseAgreement">
+                <el-radio v-for="option in companyField('hasTrainingBaseAgreement').options" :key="option.value" :label="option.value">{{ option.label }}</el-radio>
+              </el-radio-group>
+            </el-form-item>
+
+            <el-form-item v-if="basicForm.isAlumniUnit === 1" :label="companyField('alumniMembers').label">
+              <div class="alumni-members">
+                <div v-for="(member, index) in basicForm.alumniMembers" :key="index" class="alumni-member-card">
+                  <div class="alumni-member-title">
+                    <span>校友 {{ index + 1 }}</span>
+                    <el-button text type="danger" :disabled="basicForm.alumniMembers.length === 1" @click="removeAlumniMember(index)">删除</el-button>
+                  </div>
+                  <el-input v-model="member.name" maxlength="50" placeholder="姓名" />
+                  <el-input v-model="member.phone" maxlength="20" placeholder="联系电话" />
+                  <el-input v-model="member.position" maxlength="100" placeholder="在企业的任职" />
+                </div>
+                <el-button type="primary" :icon="Plus" @click="addAlumniMember">添加校友</el-button>
+              </div>
             </el-form-item>
 
             <el-form-item>
@@ -976,24 +1104,8 @@ watch(companyId, (newVal) => {
               <div class="preview-title">
                 <h3>{{ basicForm.companyName || '企业名称' }}</h3>
                 <div class="preview-tags">
-                  <el-tag :type="getTagType(basicForm.cooperationMode)" size="small">
-                    {{ getTagText(basicForm.cooperationMode) }}
-                  </el-tag>
-                  <el-tag 
-                    v-if="basicForm.isInternshipBase > 0" 
-                    :type="getInternshipBaseType(basicForm.isInternshipBase)" 
-                    size="small"
-                  >
-                    {{ getInternshipBaseText(basicForm.isInternshipBase) }}
-                  </el-tag>
-                  <el-tag 
-                    v-if="basicForm.acceptBackup === 1" 
-                    type="danger" 
-                    size="small"
-                  >
-                    {{ getAcceptBackupText(basicForm.acceptBackup) }}
-                  </el-tag>
-                </div>
+                <el-tag v-for="tag in companyTags" :key="tag.prop + tag.label" :type="tag.type" :title="tag.description" size="large" effect="dark">{{ tag.label }}</el-tag>
+              </div>
               </div>
             </div>
 
@@ -1003,11 +1115,11 @@ watch(companyId, (newVal) => {
                 <div class="preview-info-grid">
                   <div class="info-item">
                     <span class="info-label">所属行业：</span>
-                    <span class="info-value">{{ basicForm.industry || '-' }}</span>
+                    <span class="info-value">{{ getIndustryLabel(basicForm.industry) }}</span>
                   </div>
                   <div class="info-item">
                     <span class="info-label">企业规模：</span>
-                    <span class="info-value">{{ basicForm.scale || '-' }}</span>
+                    <span class="info-value">{{ getScaleLabel(basicForm.scale) }}</span>
                   </div>
                   <div class="info-item">
                     <span class="info-label">企业地址：</span>
@@ -1029,12 +1141,26 @@ watch(companyId, (newVal) => {
                     <span class="info-label">企业网站：</span>
                     <span class="info-value">{{ basicForm.website || '-' }}</span>
                   </div>
+                  <div class="info-item">
+                    <span class="info-label">校内对接人：</span>
+                    <span class="info-value">{{ schoolLiaisons.length ? schoolLiaisons.map(l => l.teacherName + (l.teacherPhone ? '（' + l.teacherPhone + '）' : '')).join('、') : '暂未设置' }}</span>
+                  </div>
                 </div>
               </div>
 
               <div class="preview-section" v-if="promotionForm.introduction">
                 <h4>企业介绍</h4>
                 <p class="preview-introduction">{{ promotionForm.introduction }}</p>
+              </div>
+
+              <div class="preview-section" v-if="basicForm.isAlumniUnit === 1 && basicForm.alumniMembers.length">
+                <h4>校友信息</h4>
+                <div class="preview-info-grid">
+                  <div class="info-item" v-for="(member, index) in basicForm.alumniMembers" :key="index">
+                    <span class="info-label" style="min-width: auto;">校友 {{ index + 1 }}：</span>
+                    <span class="info-value">{{ member.name }}（{{ member.position }}）{{ member.phone }}</span>
+                  </div>
+                </div>
               </div>
 
               <div class="preview-section" v-if="photoFileList.length > 0">
@@ -1657,5 +1783,90 @@ watch(companyId, (newVal) => {
   margin-top: 8px;
   grid-column: 1 / -1;
   border-radius: 0 0 12px 12px;
+}
+
+.alumni-members {
+  width: 100%;
+  display: grid;
+  gap: 12px;
+}
+
+.school-liaison-list {
+  width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.school-liaison-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  border: 1px solid #d9ecff;
+  border-radius: 6px;
+  background: #ecf5ff;
+}
+
+.school-liaison-name {
+  color: #303133;
+  font-weight: 600;
+}
+
+.school-liaison-phone,
+.liaison-empty {
+  color: #909399;
+}
+
+.alumni-member-card {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid #e4e7ed;
+  border-radius: 8px;
+  background: #fafafa;
+}
+
+.alumni-member-title {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-weight: 600;
+}
+
+@media (max-width: 720px) {
+  .alumni-member-card {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* 手机端：企业资料双栏改单列 */
+@media screen and (max-width: 768px) {
+  .promotion-container {
+    grid-template-columns: 1fr;
+    padding: 16px;
+    gap: 16px;
+  }
+
+  .card-body {
+    padding: 16px;
+  }
+
+  .preview-info-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .action-buttons {
+    flex-wrap: wrap;
+    padding: 16px;
+  }
+
+  .action-buttons .el-button {
+    flex: 1;
+    min-width: 120px;
+    margin-left: 0;
+  }
 }
 </style>

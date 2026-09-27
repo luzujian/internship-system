@@ -206,32 +206,77 @@ public class DepartmentServiceImpl implements DepartmentService {
     @Override
     public int deleteDepartment(Long id) {
         log.debug("删除院系，ID: {}", id);
-        
+
         // 参数校验
         if (id == null || id <= 0) {
             throw new RuntimeException("院系ID无效");
         }
-        
+
         // 检查院系是否存在
         Department department = departmentMapper.findById(id);
         if (department == null) {
             throw new RuntimeException("院系不存在");
         }
-        
-        // 级联删除：院系 → 系 → 专业 → 班级
+
+        // ===== 先做直接反向引用清理（teacher_users.department_id 等在 Service 循环前解绑，避免外键炸） =====
+        safeCleanupDepartmentRelations(id);
+
+        // ===== 级联删除：院系 → 系 → 专业 → 班级 → 学生 =====
         log.info("开始删除院系 {} 下的所有系", id);
         List<Division> divisions = divisionService.findByDepartmentId(id);
         if (divisions != null && !divisions.isEmpty()) {
             for (Division division : divisions) {
-                log.info("删除系: {}", division.getName());
-                divisionService.deleteDivision(division.getId());
+                try {
+                    log.info("删除系: {}", division.getName());
+                    divisionService.deleteDivision(division.getId());
+                } catch (Exception e) {
+                    // 单个系删除失败不阻塞整个院系删除，跳过只打 WARN
+                    log.warn("删除院系下的系时跳过（divisionId={}, name={}）: {}",
+                            division.getId(), division.getName(), trimErr(e));
+                }
             }
         }
-        log.info("成功删除院系 {} 下的 {} 个系", id, divisions != null ? divisions.size() : 0);
+        log.info("成功处理院系 {} 下的 {} 个系（含跳过失败项）", id, divisions != null ? divisions.size() : 0);
 
+        // ===== 最后删院系本身 =====
         int result = departmentMapper.deleteById(id);
         log.info("院系删除成功，院系ID: {}", id);
         return result;
+    }
+
+    /**
+     * 安全清理院系自身的反向引用（department→外键表：teacher_users.department_id）。
+     * 每条独立 try-catch，表不存在时跳过，保证后续级联能执行。
+     */
+    private void safeCleanupDepartmentRelations(Long departmentId) {
+        // 教师用户 teacher_users.department_id 置 NULL（不删老师本人，只解绑），否则删院系会因 teacher 外键失败
+        try {
+            departmentMapper.clearDepartmentIdOnTeachers(departmentId);
+        } catch (Exception e) { log.warn("跳过清理 department→teacher_users.department_id: {}", trimErr(e)); }
+
+        // division.department_id 直接删（正常情况下 DepartmentServiceImpl 本身会循环 divisionService.deleteDivision，
+        // 但这里多做一层保险——如果前面 division 级联里有任何异常跳过，最后还能靠物理 DELETE 收尾）
+        try {
+            departmentMapper.deleteDivisionsByDepartmentId(departmentId);
+        } catch (Exception e) { log.warn("跳过清理 department→division: {}", trimErr(e)); }
+
+        log.debug("院系直接关联外键清理完成（已跳过不存在的表），院系ID: {}", departmentId);
+    }
+
+    /** 提取精简错误信息，避免超长 SQL 堆栈刷屏 */
+    private String trimErr(Throwable e) {
+        Throwable c = e;
+        String lastMsg = (e.getMessage() == null ? "" : e.getMessage().split(";")[0].trim());
+        int depth = 0;
+        while (c.getCause() != null && depth < 5) {
+            c = c.getCause();
+            if (c.getMessage() != null) {
+                String m = c.getMessage().split(";")[0].trim();
+                if (m.length() < 160) lastMsg = m;
+            }
+            depth++;
+        }
+        return lastMsg.length() > 160 ? lastMsg.substring(0, 160) : lastMsg;
     }
 
     @Override

@@ -106,7 +106,7 @@
     <select id="getNotFoundCountByMajorId" resultType="java.lang.Integer" parameterType="java.lang.Long">
         SELECT COUNT(*) FROM student_users su
         LEFT JOIN student_internship_status sis ON su.id = sis.student_id
-        WHERE su.major_id = #{majorId} AND (sis.status = 0 OR sis.status IS NULL)
+        WHERE su.major_id = #{majorId} AND <include refid="com.internship.mapper.JobSearchStatusMapper.effectiveNumericStatus"/> = 0
     </select>
     
     <!-- 根据专业ID查询有Offer未确定的学生数 -->

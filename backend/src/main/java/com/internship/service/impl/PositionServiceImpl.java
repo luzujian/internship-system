@@ -14,6 +14,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.security.access.AccessDeniedException;
 
 import java.util.*;
 
@@ -87,36 +88,119 @@ public class PositionServiceImpl implements PositionService {
         log.info("岗位信息更新成功，岗位名称: {}", position.getPositionName());
         return result;
     }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public int updateForCompany(Position position, Long companyId) {
+        if (companyId == null || position == null || position.getId() == null || position.getId() <= 0) {
+            throw new AccessDeniedException("无权修改该岗位");
+        }
+        Position existing = positionMapper.findByIdForUpdate(position.getId());
+        if (existing == null || !companyId.equals(existing.getCompanyId())) {
+            throw new AccessDeniedException("无权修改该岗位");
+        }
+        // Ownership comes from the locked row, never from client input.
+        position.setCompanyId(null);
+        position.setUpdateTime(new Date());
+        return positionMapper.update(position);
+    }
     
     @Override
     @Transactional(rollbackFor = Exception.class)
     public int delete(Long id) {
         log.debug("删除岗位信息，ID: {}", id);
-        
+
         // 参数校验
         if (id == null || id <= 0) {
             throw new BusinessException("岗位ID无效");
         }
-        
+
         // 检查岗位是否存在
         Position position = positionMapper.findById(id);
         if (position == null) {
             throw new BusinessException("岗位不存在");
         }
-        
-        // 先删除该岗位下的所有实习确认表
-        try {
-            int deletedCount = studentInternshipStatusService.deleteByPositionId(id);
-            log.info("已删除岗位关联的实习确认表，岗位ID: {}, 删除记录数: {}", id, deletedCount);
-        } catch (Exception e) {
-            log.error("删除岗位关联的实习确认表失败，岗位ID: {}, 错误: {}", id, e.getMessage());
-            throw new BusinessException("删除岗位关联的实习确认表失败: " + e.getMessage());
-        }
-        
+
+        // 级联清理所有引用 position_id 的业务表（每条独立 try-catch，表不存在或异常时跳过，避免中断）
+        safeCleanupPositionRelations(id);
+
         // 删除岗位
         int result = positionMapper.deleteById(id);
         log.info("岗位信息删除成功，岗位名称: {}", position.getPositionName());
         return result;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public int deleteForCompany(Long id, Long companyId) {
+        if (companyId == null || id == null || id <= 0) {
+            throw new AccessDeniedException("无权删除该岗位");
+        }
+        Position existing = positionMapper.findByIdForUpdate(id);
+        if (existing == null || !companyId.equals(existing.getCompanyId())) {
+            throw new AccessDeniedException("无权删除该岗位");
+        }
+        safeCleanupPositionRelations(id);
+        return positionMapper.deleteById(id);
+    }
+
+    /**
+     * 安全级联清理岗位关联的业务数据。
+     * 每条清理语句都独立 try-catch，表不存在/外键报错只打 WARN，保证最后能删除岗位本身。
+     */
+    private void safeCleanupPositionRelations(Long positionId) {
+        // 实习状态 / 阶段分配 / 确认记录
+        try {
+            positionMapper.deleteInternshipStatusByPositionId(positionId);
+        } catch (Exception e) { log.warn("跳过清理 position→student_internship_status: {}", trimErr(e)); }
+        try {
+            positionMapper.deleteStageAssignmentByPositionId(positionId);
+        } catch (Exception e) { log.warn("跳过清理 position→internship_stage_assignment: {}", trimErr(e)); }
+        try {
+            positionMapper.deleteConfirmationRecordByPositionId(positionId);
+        } catch (Exception e) { log.warn("跳过清理 position→internship_confirmation_record: {}", trimErr(e)); }
+
+        // 申请相关（实习申请 / 岗位申请）
+        try {
+            positionMapper.deleteInternshipApplicationByPositionId(positionId);
+        } catch (Exception e) { log.warn("跳过清理 position→internship_application: {}", trimErr(e)); }
+        try {
+            positionMapper.deleteJobApplicationByPositionId(positionId);
+        } catch (Exception e) { log.warn("跳过清理 position→student_job_application: {}", trimErr(e)); }
+
+        // 面试邀请 / 收藏 / 浏览
+        try {
+            positionMapper.deleteInterviewInvitationByPositionId(positionId);
+        } catch (Exception e) { log.warn("跳过清理 position→interview_invitation: {}", trimErr(e)); }
+        try {
+            positionMapper.deletePositionFavoriteByPositionId(positionId);
+        } catch (Exception e) { log.warn("跳过清理 position→position_favorite: {}", trimErr(e)); }
+        try {
+            positionMapper.deletePositionViewRecordByPositionId(positionId);
+        } catch (Exception e) { log.warn("跳过清理 position→position_view_record: {}", trimErr(e)); }
+
+        // 企业通知
+        try {
+            positionMapper.deleteCompanyNotificationByPositionId(positionId);
+        } catch (Exception e) { log.warn("跳过清理 position→company_notification: {}", trimErr(e)); }
+
+        log.debug("岗位关联业务数据级联清理完成（已跳过不存在的表），岗位ID: {}", positionId);
+    }
+
+    /** 提取精简错误信息，避免超长 SQL 堆栈刷屏 */
+    private String trimErr(Throwable e) {
+        Throwable c = e;
+        String lastMsg = (e.getMessage() == null ? "" : e.getMessage().split(";")[0].trim());
+        int depth = 0;
+        while (c.getCause() != null && depth < 5) {
+            c = c.getCause();
+            if (c.getMessage() != null) {
+                String m = c.getMessage().split(";")[0].trim();
+                if (m.length() < 160) lastMsg = m;
+            }
+            depth++;
+        }
+        return lastMsg.length() > 160 ? lastMsg.substring(0, 160) : lastMsg;
     }
     
     @Override

@@ -10,6 +10,16 @@ export interface UploadResponse {
 }
 
 export default {
+  uploadCompanyMedia(file: File, kind: 'logo' | 'photo' | 'video') {
+    const formData = new FormData()
+    formData.append('file', file)
+    return request<UploadResponse>({
+      url: `/upload/company-media/${kind}`,
+      method: 'post',
+      data: formData,
+      headers: { 'Content-Type': 'multipart/form-data' }
+    })
+  },
   uploadImage(file: File) {
     const formData = new FormData()
     formData.append('file', file)

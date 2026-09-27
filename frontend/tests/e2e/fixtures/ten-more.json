@@ -1,0 +1,129 @@
+{
+  "code": 200,
+  "data": {
+    "items": [
+      {
+        "id": 11,
+        "eventType": "job_applied",
+        "category": "recruitment",
+        "title": "已投递岗位",
+        "description": "云海科技 · 前端实习生",
+        "status": "pending",
+        "statusText": "待企业处理",
+        "occurredAt": "2026-07-13T14:00:00+08:00",
+        "relatedId": 11,
+        "action": { "key": "VIEW_APPLICATION", "targetId": 11, "params": {} }
+      },
+      {
+        "id": 12,
+        "eventType": "interview_invited",
+        "category": "recruitment",
+        "title": "面试邀请",
+        "description": "云海科技 · 前端实习生",
+        "status": "info",
+        "statusText": "待面试",
+        "occurredAt": "2026-07-12T10:00:00+08:00",
+        "relatedId": 31,
+        "action": { "key": "VIEW_INTERVIEW", "targetId": 31, "params": {} }
+      },
+      {
+        "id": 13,
+        "eventType": "interview_passed",
+        "category": "recruitment",
+        "title": "面试已通过",
+        "description": "云海科技 · 前端实习生",
+        "status": "success",
+        "statusText": "获得 Offer",
+        "occurredAt": "2026-07-11T15:30:00+08:00",
+        "relatedId": 27,
+        "action": { "key": "START_CONFIRMATION", "targetId": 27, "params": {} }
+      },
+      {
+        "id": 14,
+        "eventType": "confirmation_submitted",
+        "category": "confirmation",
+        "title": "确认表已提交",
+        "description": "云海科技 · 前端实习生",
+        "status": "pending",
+        "statusText": "待企业确认",
+        "occurredAt": "2026-07-10T11:00:00+08:00",
+        "relatedId": 41,
+        "action": { "key": "VIEW_CONFIRMATION", "targetId": 41, "params": {} }
+      },
+      {
+        "id": 15,
+        "eventType": "confirmation_confirmed",
+        "category": "confirmation",
+        "title": "确认表已确认",
+        "description": "云海科技 · 前端实习生",
+        "status": "approved",
+        "statusText": "已确认",
+        "occurredAt": "2026-07-09T09:00:00+08:00",
+        "relatedId": 41,
+        "action": { "key": "VIEW_CONFIRMATION", "targetId": 41, "params": {} }
+      },
+      {
+        "id": 16,
+        "eventType": "reflection_submitted",
+        "category": "reflection",
+        "title": "实习心得已提交",
+        "description": "第 1 阶段实习心得",
+        "status": "submitted",
+        "statusText": "待评分",
+        "occurredAt": "2026-07-08T16:00:00+08:00",
+        "relatedId": 51,
+        "action": { "key": "VIEW_REFLECTION", "targetId": 51, "params": {} }
+      },
+      {
+        "id": 17,
+        "eventType": "reflection_scored",
+        "category": "reflection",
+        "title": "实习心得已评分",
+        "description": "第 1 阶段实习心得 · 85 分",
+        "status": "scored",
+        "statusText": "已评分",
+        "occurredAt": "2026-07-07T14:00:00+08:00",
+        "relatedId": 51,
+        "action": { "key": "VIEW_REFLECTION", "targetId": 51, "params": {} }
+      },
+      {
+        "id": 18,
+        "eventType": "internship_confirmed",
+        "category": "lifecycle",
+        "title": "新实习岗位已确认",
+        "description": "当前实习记录已更新",
+        "status": "success",
+        "statusText": "已生效",
+        "occurredAt": "2026-07-06T10:00:00+08:00",
+        "relatedId": 118,
+        "action": { "key": "VIEW_CONFIRMATION", "targetId": 118, "params": {} }
+      },
+      {
+        "id": 19,
+        "eventType": "internship_started",
+        "category": "internship",
+        "title": "实习已开始",
+        "description": "云海科技 · 前端实习生",
+        "status": "info",
+        "statusText": "实习中",
+        "occurredAt": "2026-07-05T08:00:00+08:00",
+        "relatedId": 61,
+        "action": { "key": "VIEW_INTERNSHIP", "targetId": 61, "params": {} }
+      },
+      {
+        "id": 20,
+        "eventType": "direct_offer",
+        "category": "recruitment",
+        "title": "直发 Offer",
+        "description": "云海科技 · 前端实习生",
+        "status": "success",
+        "statusText": "获得 Offer",
+        "occurredAt": "2026-07-04T17:00:00+08:00",
+        "relatedId": 28,
+        "action": { "key": "START_CONFIRMATION", "targetId": 28, "params": {} }
+      }
+    ],
+    "nextCursor": null,
+    "hasMore": false
+  }
+}

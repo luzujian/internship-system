@@ -8,15 +8,19 @@ import com.internship.entity.PositionFavorite;
 import com.internship.entity.Result;
 import com.internship.entity.StudentJobApplication;
 import com.internship.entity.User;
+import com.internship.entity.dto.CompanyRatingSummary;
 import com.internship.entity.dto.PositionVO;
 import com.internship.mapper.CompanyUserMapper;
 import com.internship.mapper.PositionCategoryMapper;
 import com.internship.mapper.StudentJobApplicationMapper;
+import com.internship.service.CompanyRecommendationRatingService;
 import com.internship.service.PositionCacheService;
 import com.internship.service.PositionFavoriteService;
 import com.internship.service.PositionService;
 import com.internship.service.PositionViewRecordService;
 import com.internship.service.UserService;
+import com.internship.service.StudentJobApplicationStatuses;
+import com.internship.utils.SalaryFormatter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -24,6 +28,8 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -56,6 +62,9 @@ public class StudentPositionController {
 
     @Autowired
     private PositionCacheService positionCacheService;
+
+    @Autowired
+    private CompanyRecommendationRatingService companyRecommendationRatingService;
 
     /**
      * 获取当前登录学生的ID，支持两种格式：
@@ -94,10 +103,7 @@ public class StudentPositionController {
         }
         try {
             List<StudentJobApplication> applications = studentJobApplicationMapper.findByStudentId(studentId);
-            return applications.stream()
-                    .map(StudentJobApplication::getPositionId)
-                    .filter(Objects::nonNull)
-                    .collect(Collectors.toSet());
+            return latestBlockingPositionIds(applications);
         } catch (Exception e) {
             log.error("获取学生申请记录失败: {}", e.getMessage());
             return Collections.emptySet();
@@ -143,6 +149,141 @@ public class StudentPositionController {
         }
     }
 
+    /**
+     * 批量补充企业推荐指数。评分不会写回职位基础缓存，确保新提交的评分立即生效。
+     */
+    private Map<Long, CompanyRatingSummary> enrichCompanyRatings(List<PositionVO> positions) {
+        Set<Long> companyIds = positions.stream()
+                .map(PositionVO::getCompanyId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        Map<Long, CompanyRatingSummary> summaries =
+                companyRecommendationRatingService.findSubmittedSummaries(companyIds);
+        for (PositionVO position : positions) {
+            CompanyRatingSummary summary = summaries.get(position.getCompanyId());
+            if (summary == null || summary.getRatingCount() == null || summary.getRatingCount() <= 0) {
+                position.setCompanyRatingAverage(null);
+                position.setCompanyRatingCount(0);
+            } else {
+                BigDecimal average = summary.getAverageStars();
+                position.setCompanyRatingAverage(average == null
+                        ? null
+                        : average.setScale(1, RoundingMode.HALF_UP));
+                position.setCompanyRatingCount(summary.getRatingCount());
+            }
+        }
+        return summaries;
+    }
+
+    private List<PositionVO> loadBasePositions() {
+        List<PositionVO> cachedPositions = positionCacheService.getCachedPositions();
+        if (cachedPositions != null && !cachedPositions.isEmpty()) return cachedPositions;
+
+        List<Position> positions = positionService.findAll();
+        if (positions.isEmpty()) return Collections.emptyList();
+        Set<Long> companyIds = positions.stream()
+                .map(Position::getCompanyId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        Map<Long, CompanyUser> companyMap = companyIds.isEmpty()
+                ? Collections.emptyMap()
+                : companyUserMapper.selectByIds(new ArrayList<>(companyIds)).stream()
+                        .collect(Collectors.toMap(CompanyUser::getId, company -> company));
+        List<PositionVO> result = positions.stream()
+                .map(position -> convertToVO(position, companyMap.get(position.getCompanyId())))
+                .collect(Collectors.toList());
+        positionCacheService.cachePositions(result);
+        return result;
+    }
+
+    private boolean isActive(PositionVO position) {
+        if (!"active".equalsIgnoreCase(position.getStatus())) {
+            return false;
+        }
+        return !isExpired(position.getInternshipEndDate());
+    }
+
+    private boolean isActive(Position position) {
+        if (!"active".equalsIgnoreCase(position.getStatus())) {
+            return false;
+        }
+        return !isExpired(position.getInternshipEndDate());
+    }
+
+    /** 到期安全阀(读取时兜底):实习期已过的岗位即使尚未暂停,也视为不在招 */
+    private boolean isExpired(Date endDate) {
+        return endDate != null && endDate.before(new java.sql.Date(System.currentTimeMillis()));
+    }
+
+    private void enrichStudentPositionData(List<PositionVO> positions) {
+        Set<Long> appliedPositionIds = getStudentAppliedPositionIds();
+        Set<Long> favoritePositionIds = getStudentFavoritePositionIds();
+        List<Long> positionIds = positions.stream().map(PositionVO::getId).collect(Collectors.toList());
+        Map<Long, Integer> applyCountMap = getPositionApplyCounts(positionIds);
+        for (PositionVO position : positions) {
+            position.setIsApplied(appliedPositionIds.contains(position.getId()));
+            position.setIsFavorite(favoritePositionIds.contains(position.getId()));
+            position.setApplyCount(applyCountMap.getOrDefault(position.getId(), 0));
+        }
+    }
+
+    /**
+     * {@code findByStudentId} returns newest records first. Only the newest record for each
+     * position decides whether the position is still considered applied.
+     */
+    static Set<Long> latestBlockingPositionIds(List<StudentJobApplication> applications) {
+        if (applications == null || applications.isEmpty()) {
+            return Collections.emptySet();
+        }
+        Map<Long, StudentJobApplication> latestByPosition = new LinkedHashMap<>();
+        for (StudentJobApplication application : applications) {
+            if (application != null && application.getPositionId() != null) {
+                latestByPosition.putIfAbsent(application.getPositionId(), application);
+            }
+        }
+        return latestByPosition.values().stream()
+                .filter(application -> StudentJobApplicationStatuses.blocksRetry(application.getStatus()))
+                .map(StudentJobApplication::getPositionId)
+                .collect(Collectors.toSet());
+    }
+
+    static Comparator<PositionVO> recommendedComparator(Map<Long, CompanyRatingSummary> summaries) {
+        return (left, right) -> {
+            CompanyRatingSummary leftSummary = summaries.get(left.getCompanyId());
+            CompanyRatingSummary rightSummary = summaries.get(right.getCompanyId());
+            boolean leftRated = isRated(leftSummary);
+            boolean rightRated = isRated(rightSummary);
+            if (leftRated != rightRated) return leftRated ? -1 : 1;
+
+            if (leftRated) {
+                int averageComparison = rightSummary.getAverageStars()
+                        .compareTo(leftSummary.getAverageStars());
+                if (averageComparison != 0) return averageComparison;
+                int countComparison = Integer.compare(
+                        rightSummary.getRatingCount(), leftSummary.getRatingCount());
+                if (countComparison != 0) return countComparison;
+            }
+
+            long leftPublishTime = left.getPublishTime() == null
+                    ? Long.MIN_VALUE : left.getPublishTime().getTime();
+            long rightPublishTime = right.getPublishTime() == null
+                    ? Long.MIN_VALUE : right.getPublishTime().getTime();
+            int publishComparison = Long.compare(rightPublishTime, leftPublishTime);
+            if (publishComparison != 0) return publishComparison;
+
+            long leftId = left.getId() == null ? Long.MIN_VALUE : left.getId();
+            long rightId = right.getId() == null ? Long.MIN_VALUE : right.getId();
+            return Long.compare(rightId, leftId);
+        };
+    }
+
+    private static boolean isRated(CompanyRatingSummary summary) {
+        return summary != null
+                && summary.getAverageStars() != null
+                && summary.getRatingCount() != null
+                && summary.getRatingCount() > 0;
+    }
+
     @GetMapping("/all")
     public Result getAll() {
         try {
@@ -179,6 +320,8 @@ public class StudentPositionController {
                 positionCacheService.cachePositions(voList);
             }
 
+            voList = voList.stream().filter(this::isActive).collect(Collectors.toList());
+
             // 补充学生个性化数据（申请状态、收藏状态、真实申请人数）
             Set<Long> appliedPositionIds = getStudentAppliedPositionIds();
             Set<Long> favoritePositionIds = getStudentFavoritePositionIds();
@@ -189,6 +332,7 @@ public class StudentPositionController {
                 vo.setIsFavorite(favoritePositionIds.contains(vo.getId()));
                 vo.setApplyCount(applyCountMap.getOrDefault(vo.getId(), 0));
             }
+            enrichCompanyRatings(voList);
 
             return Result.success(voList);
         } catch (Exception e) {
@@ -233,6 +377,7 @@ public class StudentPositionController {
 
             // 从缓存数据中筛选最新10条（按发布时间倒序）
             List<PositionVO> latest = allPositions.stream()
+                    .filter(this::isActive)
                     .sorted(Comparator.comparing(p -> p.getPublishTime() == null ? 0L : -p.getPublishTime().getTime()))
                     .limit(10)
                     .collect(Collectors.toList());
@@ -247,6 +392,7 @@ public class StudentPositionController {
                 vo.setIsFavorite(favoritePositionIds.contains(vo.getId()));
                 vo.setApplyCount(applyCountMap.getOrDefault(vo.getId(), 0));
             }
+            enrichCompanyRatings(latest);
 
             return Result.success(latest);
         } catch (Exception e) {
@@ -291,6 +437,7 @@ public class StudentPositionController {
 
             // 从缓存数据中筛选热门10条（按浏览次数倒序）
             List<PositionVO> hot = allPositions.stream()
+                    .filter(this::isActive)
                     .sorted(Comparator.comparingInt(p -> -(p.getViewCount() == null ? 0 : p.getViewCount())))
                     .limit(10)
                     .collect(Collectors.toList());
@@ -305,10 +452,29 @@ public class StudentPositionController {
                 vo.setIsFavorite(favoritePositionIds.contains(vo.getId()));
                 vo.setApplyCount(applyCountMap.getOrDefault(vo.getId(), 0));
             }
+            enrichCompanyRatings(hot);
 
             return Result.success(hot);
         } catch (Exception e) {
             log.error("获取热门职位失败: {}", e.getMessage(), e);
+            return Result.error("获取失败");
+        }
+    }
+
+    @GetMapping("/recommended")
+    public Result getRecommended() {
+        try {
+            List<PositionVO> recommended = loadBasePositions().stream()
+                    .filter(position -> "active".equalsIgnoreCase(position.getStatus()))
+                    .collect(Collectors.toCollection(ArrayList::new));
+            if (recommended.isEmpty()) return Result.success(Collections.emptyList());
+
+            enrichStudentPositionData(recommended);
+            Map<Long, CompanyRatingSummary> summaries = enrichCompanyRatings(recommended);
+            recommended.sort(recommendedComparator(summaries));
+            return Result.success(recommended);
+        } catch (Exception e) {
+            log.error("获取推荐职位失败: {}", e.getMessage(), e);
             return Result.error("获取失败");
         }
     }
@@ -322,6 +488,9 @@ public class StudentPositionController {
             Position position = positionService.findById(positionId);
             if (position == null) {
                 return Result.error("职位不存在");
+            }
+            if (!isActive(position)) {
+                return Result.error("该岗位已暂停招聘");
             }
 
             // 记录浏览（同一学生多次浏览只算一次）
@@ -345,6 +514,7 @@ public class StudentPositionController {
             // 填充真实申请人数
             Map<Long, Integer> applyCountMap = getPositionApplyCounts(Collections.singletonList(position.getId()));
             vo.setApplyCount(applyCountMap.getOrDefault(position.getId(), 0));
+            enrichCompanyRatings(Collections.singletonList(vo));
             return Result.success(vo);
         } catch (Exception e) {
             log.error("获取职位详情失败: {}", e.getMessage(), e);
@@ -428,9 +598,12 @@ public class StudentPositionController {
                     PositionVO vo = convertToVO(position, companyMap.get(position.getCompanyId()));
                     vo.setIsApplied(appliedPositionIds.contains(position.getId()));
                     vo.setIsFavorite(true);
+                    // ponytail: 收藏列表数量有限，逐条补充评分；量大时可改为收集 vo 列表后批量 enrichCompanyRatings
+                    enrichCompanyRatings(Collections.singletonList(vo));
                     Map<String, Object> item = new HashMap<>();
                     item.put("id", vo.getId());
                     item.put("positionId", vo.getId());
+                    item.put("companyId", vo.getCompanyId());
                     item.put("companyName", vo.getCompany());
                     item.put("positionName", vo.getTitle());
                     item.put("salary", vo.getSalary());
@@ -438,6 +611,16 @@ public class StudentPositionController {
                     item.put("industryName", vo.getIndustryName());
                     item.put("duration", vo.getDuration());
                     item.put("internshipBase", vo.getInternshipBase());
+                    item.put("isAlumniUnit", vo.getIsAlumniUnit());
+                    item.put("cooperationMode", vo.getCooperationMode());
+                    item.put("companyIntroduction", vo.getCompanyIntroduction());
+                    item.put("logo", vo.getLogo());
+                    item.put("photos", vo.getPhotos());
+                    item.put("videos", vo.getVideos());
+                    item.put("remainingQuota", vo.getRemainingQuota());
+                    item.put("companyRatingAverage", vo.getCompanyRatingAverage());
+                    item.put("companyRatingCount", vo.getCompanyRatingCount());
+                    item.put("tags", vo.getTags());
                     item.put("description", vo.getDescription());
                     item.put("requirements", vo.getRequirements());
                     item.put("benefits", vo.getBenefits());
@@ -471,13 +654,8 @@ public class StudentPositionController {
                 return Result.success(cached);
             }
 
-            List<Long> categoryIds = positionService.findDistinctCategoryIds();
-            if (categoryIds.isEmpty()) {
-                return Result.success(Collections.emptyList());
-            }
-
-            // 批量查询行业类别
-            List<PositionCategory> categoriesList = positionCategoryMapper.findByIds(categoryIds);
+            // 查询所有岗位类别（管理员配置的全部类别，不限于已被使用的）
+            List<PositionCategory> categoriesList = positionCategoryMapper.findAll();
             List<Map<String, Object>> categories = categoriesList.stream()
                     .map(category -> {
                         Map<String, Object> item = new HashMap<>();
@@ -575,6 +753,7 @@ public class StudentPositionController {
     private PositionVO convertToVO(Position position, CompanyUser company) {
         PositionVO vo = new PositionVO();
         vo.setId(position.getId());
+        vo.setInternshipEndDate(position.getInternshipEndDate());
 
         // title <- positionName
         vo.setTitle(position.getPositionName());
@@ -610,24 +789,9 @@ public class StudentPositionController {
         }
         vo.setLocation(location.length() > 0 ? location.toString() : "未知");
 
-        // salary <- salaryMin - salaryMax (单位: K/月)
-        if (position.getSalaryMin() != null && position.getSalaryMax() != null) {
-            vo.setSalary(position.getSalaryMin() + "-" + position.getSalaryMax() + "K/月");
-        } else if (position.getSalaryMin() != null) {
-            vo.setSalary(position.getSalaryMin() + "K/月起");
-        } else if (position.getSalaryMax() != null) {
-            vo.setSalary("最高" + position.getSalaryMax() + "K/月");
-        } else {
-            vo.setSalary("面议");
-        }
+        setSalaryFields(vo, position);
 
-        // duration <- internshipStartDate - internshipEndDate
-        if (position.getInternshipStartDate() != null && position.getInternshipEndDate() != null) {
-            long diffDays = (position.getInternshipEndDate().getTime() - position.getInternshipStartDate().getTime()) / (1000 * 60 * 60 * 24);
-            vo.setDuration(diffDays + "天");
-        } else {
-            vo.setDuration("不限");
-        }
+        vo.setDuration("不限");
 
         // publishTime <- publishDate
         vo.setPublishTime(position.getPublishDate());
@@ -649,12 +813,6 @@ public class StudentPositionController {
 
         // status
         vo.setStatus(position.getStatus());
-
-        // internshipStartDate
-        vo.setInternshipStartDate(position.getInternshipStartDate());
-
-        // internshipEndDate
-        vo.setInternshipEndDate(position.getInternshipEndDate());
 
         // createTime
         vo.setCreateTime(position.getCreateTime());
@@ -680,8 +838,17 @@ public class StudentPositionController {
             } else {
                 vo.setInternshipBase(null);
             }
+            vo.setIsAlumniUnit(company.getIsAlumniUnit());
+            vo.setCooperationMode(company.getCooperationMode());
+            vo.setLogo(company.getLogo());
+            vo.setPhotos(company.getPhotos());
+            vo.setVideos(company.getVideos());
 
-            if (company.getIndustry() != null) {
+            // 岗位类别名称，优先从 position_category 表查询，无则回退到公司行业
+            if (position.getCategoryId() != null) {
+                PositionCategory category = positionCategoryMapper.findById(position.getCategoryId());
+                vo.setIndustryName(category != null ? category.getName() : "");
+            } else if (company != null && company.getIndustry() != null) {
                 vo.setIndustryName(company.getIndustry());
             }
 
@@ -714,6 +881,7 @@ public class StudentPositionController {
     private PositionVO convertToVO(Position position, Set<Long> appliedPositionIds, Set<Long> favoritePositionIds) {
         PositionVO vo = new PositionVO();
         vo.setId(position.getId());
+        vo.setInternshipEndDate(position.getInternshipEndDate());
 
         // title <- positionName
         vo.setTitle(position.getPositionName());
@@ -749,24 +917,9 @@ public class StudentPositionController {
         }
         vo.setLocation(location.length() > 0 ? location.toString() : "未知");
 
-        // salary <- salaryMin - salaryMax (单位: K/月)
-        if (position.getSalaryMin() != null && position.getSalaryMax() != null) {
-            vo.setSalary(position.getSalaryMin() + "-" + position.getSalaryMax() + "K/月");
-        } else if (position.getSalaryMin() != null) {
-            vo.setSalary(position.getSalaryMin() + "K/月起");
-        } else if (position.getSalaryMax() != null) {
-            vo.setSalary("最高" + position.getSalaryMax() + "K/月");
-        } else {
-            vo.setSalary("面议");
-        }
+        setSalaryFields(vo, position);
 
-        // duration <- internshipStartDate - internshipEndDate
-        if (position.getInternshipStartDate() != null && position.getInternshipEndDate() != null) {
-            long diffDays = (position.getInternshipEndDate().getTime() - position.getInternshipStartDate().getTime()) / (1000 * 60 * 60 * 24);
-            vo.setDuration(diffDays + "天");
-        } else {
-            vo.setDuration("不限");
-        }
+        vo.setDuration("不限");
 
         // publishTime <- publishDate
         vo.setPublishTime(position.getPublishDate());
@@ -788,12 +941,6 @@ public class StudentPositionController {
 
         // status
         vo.setStatus(position.getStatus());
-
-        // internshipStartDate
-        vo.setInternshipStartDate(position.getInternshipStartDate());
-
-        // internshipEndDate
-        vo.setInternshipEndDate(position.getInternshipEndDate());
 
         // createTime
         vo.setCreateTime(position.getCreateTime());
@@ -821,8 +968,17 @@ public class StudentPositionController {
                 } else {
                     vo.setInternshipBase(null);
                 }
+                vo.setIsAlumniUnit(company.getIsAlumniUnit());
+                vo.setCooperationMode(company.getCooperationMode());
+                vo.setLogo(company.getLogo());
+                vo.setPhotos(company.getPhotos());
+                vo.setVideos(company.getVideos());
 
-                if (company.getIndustry() != null) {
+                // 岗位类别名称，优先从 position_category 表查询，无则回退到公司行业
+                if (position.getCategoryId() != null) {
+                    PositionCategory category = positionCategoryMapper.findById(position.getCategoryId());
+                    vo.setIndustryName(category != null ? category.getName() : "");
+                } else if (company.getIndustry() != null) {
                     vo.setIndustryName(company.getIndustry());
                 }
 
@@ -853,4 +1009,11 @@ public class StudentPositionController {
         return vo;
     }
 
+    private void setSalaryFields(PositionVO vo, Position position) {
+        String unit = SalaryFormatter.normalizeUnit(position.getSalaryUnit());
+        vo.setSalaryMin(position.getSalaryMin());
+        vo.setSalaryMax(position.getSalaryMax());
+        vo.setSalaryUnit(unit);
+        vo.setSalary(SalaryFormatter.format(position.getSalaryMin(), position.getSalaryMax(), unit));
+    }
 }

@@ -640,4 +640,72 @@ public class AnnouncementWebSocketHandler extends TextWebSocketHandler {
             log.info("学生 {} 当前无在线session，提醒将存入数据库待下次连接时显示", studentId);
         }
     }
+
+    /**
+     * 通知学生首页刷新最近动态。该消息只携带刷新线索，动态详情仍以首页接口为准。
+     */
+    public void sendStudentRecentActivityChanged(Long studentId, Long activityId) {
+        if (studentId == null) {
+            return;
+        }
+
+        Map<String, Object> data = new HashMap<>();
+        if (activityId != null) {
+            data.put("activityId", activityId);
+        }
+
+        Map<String, Object> wsMessage = new HashMap<>();
+        wsMessage.put("type", "student_recent_activity_changed");
+        wsMessage.put("data", data);
+        wsMessage.put("timestamp", System.currentTimeMillis());
+
+        Set<String> userSessionSet = userSessions.get(studentId);
+        if (userSessionSet == null || userSessionSet.isEmpty()) {
+            log.debug("学生 {} 当前无在线session，跳过最近动态刷新推送", studentId);
+            return;
+        }
+
+        for (String sessionId : userSessionSet) {
+            WebSocketSession session = sessions.get(sessionId);
+            if (session != null && session.isOpen()) {
+                try {
+                    sendMessage(session, wsMessage);
+                } catch (Exception e) {
+                    log.error("推送最近动态刷新失败：sessionId={}, error={}", sessionId, e.getMessage());
+                }
+            }
+        }
+    }
+
+    /**
+     * 向学生推送实习状态更新
+     */
+    public void sendInternshipStatusUpdateToStudent(Long studentId, Integer currentStatus) {
+        log.info("向学生 {} 推送实习状态更新：status={}", studentId, currentStatus);
+
+        Map<String, Object> data = new HashMap<>();
+        data.put("currentStatus", currentStatus);
+
+        Map<String, Object> wsMessage = new HashMap<>();
+        wsMessage.put("type", "internship_status_update");
+        wsMessage.put("data", data);
+        wsMessage.put("timestamp", System.currentTimeMillis());
+
+        Set<String> userSessionSet = userSessions.get(studentId);
+        if (userSessionSet != null && !userSessionSet.isEmpty()) {
+            for (String sessionId : userSessionSet) {
+                WebSocketSession session = sessions.get(sessionId);
+                if (session != null && session.isOpen()) {
+                    try {
+                        sendMessage(session, wsMessage);
+                        log.info("已向学生 {} 推送实习状态更新", studentId);
+                    } catch (Exception e) {
+                        log.error("推送实习状态更新失败：sessionId={}, error={}", session.getId(), e.getMessage());
+                    }
+                }
+            }
+        } else {
+            log.debug("学生 {} 当前无在线session，跳过推送", studentId);
+        }
+    }
 }

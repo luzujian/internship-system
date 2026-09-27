@@ -143,10 +143,11 @@ const queryData = async (): Promise<void> => {
       page: pagination.value.currentPage,
       pageSize: pagination.value.pageSize
     }
-    const response = await request.get('/admin/internship-status', { params })
+    const response = await request.get<{ rows?: InternshipStatusData[]; total?: number; list?: InternshipStatusData[]; count?: number }>('/admin/internship-status', { params })
     if (response.code === 200 && response.data) {
-      const dataList = response.data.rows || []
-      const totalCount = response.data.total || 0
+      const pageData = response.data
+      const dataList = Array.isArray(pageData.rows) ? pageData.rows : (Array.isArray(pageData.list) ? pageData.list : [])
+      const totalCount = pageData.total ?? pageData.count ?? 0
       tableData.value = dataList
       pagination.value.total = totalCount
     } else {
@@ -335,7 +336,7 @@ onMounted(async (): Promise<void> => {
           </el-form-item>
           <el-form-item label="实习状态">
             <el-select v-model="searchForm.status" placeholder="请选择实习状态" clearable>
-              <el-option label="未找到" :value="0"></el-option>
+              <el-option label="尚无 Offer" :value="0"></el-option>
               <el-option label="已有Offer" :value="1"></el-option>
               <el-option label="已确认" :value="2"></el-option>
               <el-option label="已结束" :value="3"></el-option>
@@ -481,9 +482,6 @@ onMounted(async (): Promise<void> => {
                 {{ formatCompanyConfirmStatus(null, null, currentRow.companyConfirmStatus) }}
               </el-tag>
             </el-descriptions-item>
-            <el-descriptions-item label="实习开始时间">{{ formatDate(null, null, currentRow.internshipStartTime ?? '') }}</el-descriptions-item>
-            <el-descriptions-item label="实习结束时间">{{ formatDate(null, null, currentRow.internshipEndTime ?? '') }}</el-descriptions-item>
-            <el-descriptions-item label="实习时长（天）">{{ currentRow.internshipDuration ?? '' }}</el-descriptions-item>
             <el-descriptions-item label="创建时间">{{ formatDate(null, null, currentRow.createTime) }}</el-descriptions-item>
             <el-descriptions-item label="更新时间">{{ formatDate(null, null, currentRow.updateTime) }}</el-descriptions-item>
             <el-descriptions-item label="反馈" :span="2">

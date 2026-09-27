@@ -4,7 +4,10 @@ import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ElScrollbar } from 'element-plus'
 import { useAuthStore } from '@/store/auth'
-import FloatingAIBall from '@/components/FloatingAIBall.vue'
+import AgentWorkspace from '@/components/agent/AgentWorkspace.vue'
+import AgentEntry from '@/components/agent/AgentEntry.vue'
+import FeedbackSubmitDialog from '@/components/FeedbackSubmitDialog.vue'
+import { useResponsiveSidebar } from '@/composables/useResponsiveSidebar'
 import {
   initAnnouncementWebSocket,
   disconnectAnnouncementWebSocket
@@ -45,7 +48,11 @@ const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
 
-const sidebarCollapsed = ref(false)
+// 问题反馈弹窗
+const feedbackVisible = ref(false)
+
+const { isMobile, sidebarCollapsed, toggleSidebar, closeSidebar } = useResponsiveSidebar()
+const companyMenuReady = computed(() => authStore.isAuthenticated && authStore.role === 'ROLE_COMPANY')
 
 // 只读模式
 const isReadOnlyMode = computed(() => authStore.user?.isReadOnly || false)
@@ -121,10 +128,6 @@ const displayName = computed(() => {
   return '企业用户'
 })
 
-const toggleSidebar = () => {
-  sidebarCollapsed.value = !sidebarCollapsed.value
-}
-
 const handleCommand = async (command) => {
   switch (command) {
     case 'edit':
@@ -132,6 +135,9 @@ const handleCommand = async (command) => {
       break
     case 'password':
       router.push('/company/settings?tab=password')
+      break
+    case 'feedback':
+      feedbackVisible.value = true
       break
     case 'logout':
       try {
@@ -197,7 +203,7 @@ const initWebSocket = () => {
 </script>
 
 <template>
-  <div class="app-container">
+  <div class="app-container agent-host">
     <!-- 只读模式横幅 -->
     <div v-if="isReadOnlyMode" class="read-only-banner">
       <el-alert type="warning" :closable="false" show-icon>
@@ -237,7 +243,8 @@ const initWebSocket = () => {
         </div>
       </div>
       <div class="user-actions">
-        <el-dropdown @command="handleCommand" class="user-dropdown">
+        <AgentEntry />
+        <el-dropdown :popper-style="{ zIndex: 2500 }" @command="handleCommand" class="user-dropdown">
           <el-button link class="user-btn">
             <div class="user-info">
               <el-icon class="user-avatar">
@@ -265,6 +272,13 @@ const initWebSocket = () => {
                 <span>修改密码</span>
               </el-dropdown-item>
 
+              <el-dropdown-item command="feedback" class="dropdown-item">
+                <el-icon>
+                  <ChatDotRound />
+                </el-icon>
+                <span>问题反馈</span>
+              </el-dropdown-item>
+
               <el-dropdown-item command="logout" divided class="dropdown-item logout-item">
                 <el-icon>
                   <SwitchButton />
@@ -274,42 +288,41 @@ const initWebSocket = () => {
             </el-dropdown-menu>
           </template>
         </el-dropdown>
+        <FeedbackSubmitDialog v-model="feedbackVisible" user-type="company" />
       </div>
     </header>
 
     <div class="main-content">
-      <aside :class="['sidebar', { 'sidebar-collapsed': sidebarCollapsed }]" v-show="!sidebarCollapsed">
-        <div class="sidebar-header">
-          <div class="sidebar-title">系统菜单</div>
-        </div>
-        <el-menu 
+      <aside :class="['sidebar', { 'sidebar-collapsed': sidebarCollapsed }]" v-show="!sidebarCollapsed" aria-label="主导航">
+        <el-menu
+          v-if="companyMenuReady"
           :router="true" 
           :default-active="route.path" 
           class="el-menu-vertical-demo" 
           mode="vertical"
         >
-          <el-menu-item index="/company">
+          <el-menu-item index="/company" data-agent-route="/company">
             <el-icon>
               <HomeFilled />
             </el-icon>
             <span>首页</span>
           </el-menu-item>
 
-          <el-menu-item index="/company/jobs">
+          <el-menu-item index="/company/jobs" data-agent-route="/company/jobs">
             <el-icon>
               <OfficeBuilding />
             </el-icon>
             <span>招聘管理</span>
           </el-menu-item>
 
-          <el-menu-item index="/company/application-view">
+          <el-menu-item index="/company/application-view" data-agent-route="/company/application-view">
             <el-icon>
               <View />
             </el-icon>
             <span>岗位申请查看</span>
           </el-menu-item>
 
-          <el-menu-item index="/company/internship-confirm">
+          <el-menu-item index="/company/internship-confirm" data-agent-route="/company/internship-confirm">
             <el-icon>
               <DocumentChecked />
             </el-icon>
@@ -318,14 +331,14 @@ const initWebSocket = () => {
 
           
 
-          <el-menu-item index="/company/interviews">
+          <el-menu-item index="/company/interviews" data-agent-route="/company/interviews">
             <el-icon>
               <Document />
             </el-icon>
             <span>企业信息</span>
           </el-menu-item>
 
-          <el-menu-item index="/company/settings">
+          <el-menu-item index="/company/settings" data-agent-route="/company/settings">
             <el-icon>
               <Setting />
             </el-icon>
@@ -334,13 +347,16 @@ const initWebSocket = () => {
         </el-menu>
       </aside>
 
+      <!-- 手机端侧边栏遮罩 -->
+      <div v-if="isMobile && !sidebarCollapsed" class="sidebar-overlay" @click="closeSidebar"></div>
+
       <el-scrollbar style="flex: 1;">
         <el-main>
           <router-view></router-view>
         </el-main>
       </el-scrollbar>
     </div>
-    <FloatingAIBall role="company" />
+    <AgentWorkspace />
   </div>
 </template>
 
@@ -420,6 +436,10 @@ const initWebSocket = () => {
   display: flex;
   align-items: center;
   gap: 16px;
+}
+
+.user-actions :deep(.agent-entry) {
+  margin-inline: 0;
 }
 
 .user-dropdown {
@@ -507,17 +527,6 @@ const initWebSocket = () => {
   width: 64px;
 }
 
-.sidebar-header {
-  padding: 20px;
-  border-bottom: 1px solid #e8e8e8;
-}
-
-.sidebar-title {
-  font-size: 16px;
-  font-weight: 600;
-  color: #333;
-}
-
 .el-menu-vertical-demo {
   border-right: none;
   /* 优化：启用 GPU 加速 */
@@ -565,6 +574,7 @@ const initWebSocket = () => {
   min-height: 100%;
 }
 
+/* 响应式设计：手机端侧边栏为遮罩抽屉 */
 @media screen and (max-width: 768px) {
   .header {
     padding: 0 16px;
@@ -578,15 +588,39 @@ const initWebSocket = () => {
     display: none;
   }
 
-  .sidebar {
-    position: absolute;
-    z-index: 99;
-    height: calc(100vh - 64px);
-    box-shadow: 4px 0 12px rgba(0, 0, 0, 0.1);
+  .user-actions {
+    gap: 10px;
   }
 
-  .sidebar-collapsed {
+  .user-name {
+    display: none;
+  }
+
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: min(82vw, 280px);
+    height: auto;
+    z-index: 1999;
     transform: translateX(-100%);
+    transition: transform 0.3s ease;
+    box-shadow: 4px 0 16px rgba(0, 0, 0, 0.18);
+  }
+
+  .sidebar:not(.sidebar-collapsed) {
+    transform: translateX(0);
+  }
+
+  /* 手机端收起仅位移隐藏，保持抽屉宽度 */
+  .sidebar.sidebar-collapsed {
+    width: min(82vw, 280px);
+    opacity: 1;
+  }
+
+  .el-main {
+    padding: 12px;
   }
 }
 

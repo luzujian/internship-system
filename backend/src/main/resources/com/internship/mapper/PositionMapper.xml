@@ -18,6 +18,7 @@
         <result property="detailAddress" column="detail_address" />
         <result property="salaryMin" column="salary_min" />
         <result property="salaryMax" column="salary_max" />
+        <result property="salaryUnit" column="salary_unit" />
         <result property="description" column="description" />
         <result property="requirements" column="requirements" />
         <result property="plannedRecruit" column="planned_recruit" />
@@ -31,6 +32,9 @@
         <result property="interviewLocation" column="interview_location" />
         <result property="interviewMethod" column="interview_method" />
         <result property="interviewRemark" column="interview_remark" />
+        <result property="internshipEnvironment" column="internship_environment" />
+        <result property="providesAccommodation" column="provides_accommodation" />
+        <result property="requiredMajors" column="required_majors" />
         <result property="viewCount" column="view_count" />
         <result property="createTime" column="create_time" />
         <result property="updateTime" column="update_time" />
@@ -41,20 +45,20 @@
         insert into position (
             company_id, category_id, position_name, department, position_type,
             province, city, district, detail_address,
-            salary_min, salary_max, description, requirements,
+            salary_min, salary_max, salary_unit, description, requirements,
             planned_recruit, recruited_count, remaining_quota,
             status, publish_date, internship_start_date, internship_end_date,
             interview_time, interview_location, interview_method, interview_remark,
-            create_time, update_time
+            internship_environment, provides_accommodation, required_majors, create_time, update_time
         )
         values (
             #{companyId}, #{categoryId}, #{positionName}, #{department}, #{positionType},
             #{province}, #{city}, #{district}, #{detailAddress},
-            #{salaryMin}, #{salaryMax}, #{description}, #{requirements},
+            #{salaryMin}, #{salaryMax}, #{salaryUnit}, #{description}, #{requirements},
             #{plannedRecruit}, #{recruitedCount}, #{remainingQuota},
             #{status}, #{publishDate}, #{internshipStartDate}, #{internshipEndDate},
             #{interviewTime}, #{interviewLocation}, #{interviewMethod}, #{interviewRemark},
-            #{createTime}, #{updateTime}
+            #{internshipEnvironment}, #{providesAccommodation}, #{requiredMajors}, #{createTime}, #{updateTime}
         )
     </insert>
 
@@ -65,7 +69,20 @@
 
     <!-- 根据 ID 查询岗位信息并加行锁（FOR UPDATE，防止并发超发） -->
     <select id="findByIdForUpdate" resultMap="PositionResultMap">
-        select * from position where id = #{id} FOR UPDATE
+        SELECT
+            p.planned_recruit - COALESCE(
+                (SELECT COUNT(DISTINCT sis.student_id) FROM student_internship_status sis
+                 WHERE sis.position_id = p.id AND sis.status IN (1, 2, 3)
+                   AND COALESCE(sis.recall_status, 0) != 2), 0
+            ) AS remaining_quota,
+            COALESCE(
+                (SELECT COUNT(DISTINCT sis.student_id) FROM student_internship_status sis
+                 WHERE sis.position_id = p.id AND sis.status IN (1, 2, 3)
+                   AND COALESCE(sis.recall_status, 0) != 2), 0
+            ) AS recruited_count,
+            p.*
+        FROM position p
+        WHERE p.id = #{id} FOR UPDATE
     </select>
 
     <!-- 更新岗位信息 -->
@@ -99,11 +116,22 @@
             <if test="detailAddress != null">
                 detail_address = #{detailAddress},
             </if>
-            <if test="salaryMin != null">
-                salary_min = #{salaryMin},
-            </if>
-            <if test="salaryMax != null">
-                salary_max = #{salaryMax},
+            <choose>
+                <when test="salaryUnit == '面议'">
+                    salary_min = NULL,
+                    salary_max = NULL,
+                </when>
+                <otherwise>
+                    <if test="salaryMin != null">
+                        salary_min = #{salaryMin},
+                    </if>
+                    <if test="salaryMax != null">
+                        salary_max = #{salaryMax},
+                    </if>
+                </otherwise>
+            </choose>
+            <if test="salaryUnit != null">
+                salary_unit = #{salaryUnit},
             </if>
             <if test="description != null">
                 description = #{description},
@@ -144,6 +172,15 @@
             <if test="interviewRemark != null">
                 interview_remark = #{interviewRemark},
             </if>
+            <if test="internshipEnvironment != null">
+                internship_environment = #{internshipEnvironment},
+            </if>
+            <if test="providesAccommodation != null">
+                provides_accommodation = #{providesAccommodation},
+            </if>
+            <if test="requiredMajors != null">
+                required_majors = #{requiredMajors},
+            </if>
             <if test="updateTime != null">
                 update_time = #{updateTime}
             </if>
@@ -159,15 +196,17 @@
     <!-- 查询所有岗位信息（动态计算剩余名额） -->
     <select id="findAll" resultMap="PositionResultMap">
         SELECT
-            p.*,
             p.planned_recruit - COALESCE(
-                (SELECT COUNT(*) FROM student_internship_status sis
-                 WHERE sis.position_id = p.id AND sis.status IN (1, 2)), 0
+                (SELECT COUNT(DISTINCT sis.student_id) FROM student_internship_status sis
+                 WHERE sis.position_id = p.id AND sis.status IN (1, 2, 3)
+                   AND COALESCE(sis.recall_status, 0) != 2), 0
             ) AS remaining_quota,
             COALESCE(
-                (SELECT COUNT(*) FROM student_internship_status sis
-                 WHERE sis.position_id = p.id AND sis.status IN (1, 2)), 0
-            ) AS recruited_count
+                (SELECT COUNT(DISTINCT sis.student_id) FROM student_internship_status sis
+                 WHERE sis.position_id = p.id AND sis.status IN (1, 2, 3)
+                   AND COALESCE(sis.recall_status, 0) != 2), 0
+            ) AS recruited_count,
+            p.*
         FROM position p
         ORDER BY p.create_time DESC
     </select>
@@ -177,12 +216,14 @@
         SELECT
             p.*,
             p.planned_recruit - COALESCE(
-                (SELECT COUNT(*) FROM student_internship_status sis
-                 WHERE sis.position_id = p.id AND sis.status IN (1, 2)), 0
+                (SELECT COUNT(DISTINCT sis.student_id) FROM student_internship_status sis
+                 WHERE sis.position_id = p.id AND sis.status IN (1, 2, 3)
+                   AND COALESCE(sis.recall_status, 0) != 2), 0
             ) AS remaining_quota,
             COALESCE(
-                (SELECT COUNT(*) FROM student_internship_status sis
-                 WHERE sis.position_id = p.id AND sis.status IN (1, 2)), 0
+                (SELECT COUNT(DISTINCT sis.student_id) FROM student_internship_status sis
+                 WHERE sis.position_id = p.id AND sis.status IN (1, 2, 3)
+                   AND COALESCE(sis.recall_status, 0) != 2), 0
             ) AS recruited_count
         FROM position p
         WHERE p.company_id = #{companyId}
@@ -194,12 +235,14 @@
         SELECT
             p.*,
             p.planned_recruit - COALESCE(
-                (SELECT COUNT(*) FROM student_internship_status sis
-                 WHERE sis.position_id = p.id AND sis.status IN (1, 2)), 0
+                (SELECT COUNT(DISTINCT sis.student_id) FROM student_internship_status sis
+                 WHERE sis.position_id = p.id AND sis.status IN (1, 2, 3)
+                   AND COALESCE(sis.recall_status, 0) != 2), 0
             ) AS remaining_quota,
             COALESCE(
-                (SELECT COUNT(*) FROM student_internship_status sis
-                 WHERE sis.position_id = p.id AND sis.status IN (1, 2)), 0
+                (SELECT COUNT(DISTINCT sis.student_id) FROM student_internship_status sis
+                 WHERE sis.position_id = p.id AND sis.status IN (1, 2, 3)
+                   AND COALESCE(sis.recall_status, 0) != 2), 0
             ) AS recruited_count
         FROM position p
         <where>
@@ -224,12 +267,14 @@
         SELECT
             p.*,
             p.planned_recruit - COALESCE(
-                (SELECT COUNT(*) FROM student_internship_status sis
-                 WHERE sis.position_id = p.id AND sis.status IN (1, 2)), 0
+                (SELECT COUNT(DISTINCT sis.student_id) FROM student_internship_status sis
+                 WHERE sis.position_id = p.id AND sis.status IN (1, 2, 3)
+                   AND COALESCE(sis.recall_status, 0) != 2), 0
             ) AS remaining_quota,
             COALESCE(
-                (SELECT COUNT(*) FROM student_internship_status sis
-                 WHERE sis.position_id = p.id AND sis.status IN (1, 2)), 0
+                (SELECT COUNT(DISTINCT sis.student_id) FROM student_internship_status sis
+                 WHERE sis.position_id = p.id AND sis.status IN (1, 2, 3)
+                   AND COALESCE(sis.recall_status, 0) != 2), 0
             ) AS recruited_count
         FROM position p
         <where>
@@ -272,15 +317,17 @@
     <!-- 分页查询岗位信息（动态计算剩余名额） -->
     <select id="findPage" resultMap="PositionResultMap">
         SELECT
-            p.*,
             p.planned_recruit - COALESCE(
-                (SELECT COUNT(*) FROM student_internship_status sis
-                 WHERE sis.position_id = p.id AND sis.status IN (1, 2)), 0
+                (SELECT COUNT(DISTINCT sis.student_id) FROM student_internship_status sis
+                 WHERE sis.position_id = p.id AND sis.status IN (1, 2, 3)
+                   AND COALESCE(sis.recall_status, 0) != 2), 0
             ) AS remaining_quota,
             COALESCE(
-                (SELECT COUNT(*) FROM student_internship_status sis
-                 WHERE sis.position_id = p.id AND sis.status IN (1, 2)), 0
-            ) AS recruited_count
+                (SELECT COUNT(DISTINCT sis.student_id) FROM student_internship_status sis
+                 WHERE sis.position_id = p.id AND sis.status IN (1, 2, 3)
+                   AND COALESCE(sis.recall_status, 0) != 2), 0
+            ) AS recruited_count,
+            p.*
         FROM position p
         ORDER BY p.create_time DESC
         LIMIT #{offset}, #{pageSize}
@@ -289,15 +336,17 @@
     <!-- 查询所有岗位信息（动态计算剩余名额） -->
     <select id="selectAll" resultType="com.internship.entity.Position">
         SELECT
-            p.*,
             p.planned_recruit - COALESCE(
-                (SELECT COUNT(*) FROM student_internship_status sis
-                 WHERE sis.position_id = p.id AND sis.status IN (1, 2)), 0
+                (SELECT COUNT(DISTINCT sis.student_id) FROM student_internship_status sis
+                 WHERE sis.position_id = p.id AND sis.status IN (1, 2, 3)
+                   AND COALESCE(sis.recall_status, 0) != 2), 0
             ) AS remaining_quota,
             COALESCE(
-                (SELECT COUNT(*) FROM student_internship_status sis
-                 WHERE sis.position_id = p.id AND sis.status IN (1, 2)), 0
-            ) AS recruited_count
+                (SELECT COUNT(DISTINCT sis.student_id) FROM student_internship_status sis
+                 WHERE sis.position_id = p.id AND sis.status IN (1, 2, 3)
+                   AND COALESCE(sis.recall_status, 0) != 2), 0
+            ) AS recruited_count,
+            p.*
         FROM position p
         ORDER BY p.create_time DESC
     </select>
@@ -317,19 +366,22 @@
             p.detail_address AS detailAddress,
             p.salary_min AS salaryMin,
             p.salary_max AS salaryMax,
+            p.salary_unit AS salaryUnit,
             p.requirements,
             p.planned_recruit AS plannedRecruit,
             COALESCE((
-                SELECT COUNT(*)
+                SELECT COUNT(DISTINCT sis.student_id)
                 FROM student_internship_status sis
-                WHERE sis.position_id = p.id
-                AND sis.status IN (1, 2)
+                WHERE sis.position_id =
+p.idAND sis.status IN (1, 2, 3)
+p.idAND COALESCE(sis.recall_status, 0) != 2
             ), 0) AS recruitedCount,
             p.planned_recruit - COALESCE((
-                SELECT COUNT(*)
+                SELECT COUNT(DISTINCT sis.student_id)
                 FROM student_internship_status sis
-                WHERE sis.position_id = p.id
-                AND sis.status IN (1, 2)
+                WHERE sis.position_id =
+p.idAND sis.status IN (1, 2, 3)
+p.idAND COALESCE(sis.recall_status, 0) != 2
             ), 0) AS remainingQuota,
             p.status,
             p.publish_date AS publishDate,
@@ -370,10 +422,11 @@
             m.name AS majorName,
             sis.status,
             CASE sis.status
-                WHEN 0 THEN '未找到实习'
+                WHEN 0 THEN '尚无 Offer'
                 WHEN 1 THEN '有 Offer 未确定'
                 WHEN 2 THEN '已确定实习'
-                WHEN 3 THEN '实习结束'
+                WHEN 3 THEN '实习进行中'
+                WHEN 4 THEN '实习已结束'
                 ELSE '未知'
             END AS statusText
         FROM student_internship_status sis
@@ -388,12 +441,14 @@
         SELECT
             p.*,
             p.planned_recruit - COALESCE(
-                (SELECT COUNT(*) FROM student_internship_status sis
-                 WHERE sis.position_id = p.id AND sis.status IN (1, 2)), 0
+                (SELECT COUNT(DISTINCT sis.student_id) FROM student_internship_status sis
+                 WHERE sis.position_id = p.id AND sis.status IN (1, 2, 3)
+                   AND COALESCE(sis.recall_status, 0) != 2), 0
             ) AS remaining_quota,
             COALESCE(
-                (SELECT COUNT(*) FROM student_internship_status sis
-                 WHERE sis.position_id = p.id AND sis.status IN (1, 2)), 0
+                (SELECT COUNT(DISTINCT sis.student_id) FROM student_internship_status sis
+                 WHERE sis.position_id = p.id AND sis.status IN (1, 2, 3)
+                   AND COALESCE(sis.recall_status, 0) != 2), 0
             ) AS recruited_count
         FROM position p
         WHERE p.category_id = #{categoryId}
@@ -405,16 +460,18 @@
         UPDATE position p
         SET
             p.recruited_count = (
-                SELECT COUNT(*)
+                SELECT COUNT(DISTINCT sis.student_id)
                 FROM student_internship_status sis
-                WHERE sis.position_id = #{positionId}
-                AND sis.status IN (1, 2)
+                WHERE sis.position_id =
+#{positionId}AND sis.status IN (1, 2, 3)
+#{positionId}AND COALESCE(sis.recall_status, 0) != 2
             ),
             p.remaining_quota = p.planned_recruit - (
-                SELECT COUNT(*)
+                SELECT COUNT(DISTINCT sis.student_id)
                 FROM student_internship_status sis
-                WHERE sis.position_id = #{positionId}
-                AND sis.status IN (1, 2)
+                WHERE sis.position_id =
+#{positionId}AND sis.status IN (1, 2, 3)
+#{positionId}AND COALESCE(sis.recall_status, 0) != 2
             ),
             p.update_time = NOW()
         WHERE p.id = #{positionId}
@@ -443,4 +500,12 @@
     <select id="findDistinctProvinces" resultType="java.lang.String">
         SELECT DISTINCT province FROM position WHERE province IS NOT NULL AND province != ''
     </select>
+    <!-- 到期安全阀:实习期已过的在招岗位自动暂停,防止过期岗位继续收投递 -->
+    <update id="pauseExpiredActivePositions">
+        UPDATE position
+        SET status = 'paused', update_time = NOW()
+        WHERE status = 'active'
+          AND internship_end_date IS NOT NULL
+          AND internship_end_date &lt; CURDATE()
+    </update>
 </mapper>

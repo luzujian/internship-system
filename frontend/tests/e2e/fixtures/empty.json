@@ -1,0 +1,8 @@
+{
+  "code": 200,
+  "data": {
+    "items": [],
+    "nextCursor": null,
+    "hasMore": false
+  }
+}

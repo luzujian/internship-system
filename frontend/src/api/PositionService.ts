@@ -12,10 +12,9 @@ export interface Position {
   detailAddress?: string
   salaryMin?: number | null
   salaryMax?: number | null
+  salaryUnit?: string | null
   description?: string
   requirements?: string
-  internshipStartDate?: string | null
-  internshipEndDate?: string | null
   plannedRecruit: number
   recruitedCount: number
   remainingQuota: number
@@ -36,7 +35,7 @@ export interface PositionStatistics {
 
 export default {
   getPositionsByCompanyId(companyId: number, params: Record<string, unknown> = {}) {
-    return request({
+    return request<Position[]>({
       url: `/admin/positions/company/${companyId}`,
       method: 'get',
       params

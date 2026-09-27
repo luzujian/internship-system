@@ -1,7 +1,9 @@
 import { defineStore } from 'pinia'
 import request, { cleanupTokens, CustomAxiosRequestConfig } from '@/utils/request'
+import type { ApiResult } from '@/utils/request'
 import { ElMessage } from 'element-plus'
 import logger from '@/utils/logger'
+import { readTabSession, writeTabSession, clearTabSession } from './tabSession.mjs'
 
 // 导入模块化的配置和工具
 import {
@@ -209,7 +211,7 @@ export const useAuthStore = defineStore('auth', {
       console.log('[auth] - 角色前缀:', rolePrefix)
 
       saveRoleInfoToStorage(role, accessToken, userId, username, refreshToken)
-      this.restoreAuthState()
+      // Login sets the complete identity synchronously below; do not race an async restore.
     },
 
     async login(username: string, password: string): Promise<boolean> {
@@ -231,7 +233,7 @@ export const useAuthStore = defineStore('auth', {
 
         // 发送登录请求
         logger.log('发送登录请求到:', request.defaults.baseURL + '/auth/login')
-        const response = await request.post('/auth/login', {
+        const response = await request.post<LoginResult>('/auth/login', {
           username,
           password
         })
@@ -251,12 +253,11 @@ export const useAuthStore = defineStore('auth', {
       }
     },
 
-    handleLoginSuccess(result: LoginResponse['data'], userType: string): boolean {
+    handleLoginSuccess(result: ApiResult<LoginResult>, userType: string): boolean {
       let accessToken: string, refreshToken: string | null, userInfo: User & { role: string; teacherType?: string }, role: string, teacherType: string | undefined, permissions: unknown[] | undefined
 
-      // 解析不同格式的响应数据
-      // 响应可能是 { code, data, message } 格式，其中 data 包含实际的登录结果
-      const loginResult = result.data || result
+      // 登录接口返回统一业务包，实际登录结果在 data 中
+      const loginResult = result.data ?? {}
 
       if (loginResult.token) {
         accessToken = loginResult.token
@@ -300,58 +301,18 @@ export const useAuthStore = defineStore('auth', {
       // 更新状态
       this.updateAuthState(accessToken, userInfo, role, refreshToken)
 
+      // 供学生端 AI 初始化消费：只对真实登录生效，角色切换和页面刷新不会重复触发。
+      if (role === CONFIG.ROLES.ROLE_STUDENT) {
+        try {
+          sessionStorage.setItem('deepintern.agent.auto-open-student-login', 'true')
+        } catch (error) {
+          logger.warn('记录学生登录后的 AI 自动展开标记失败:', error)
+        }
+      }
+
+      writeTabSession(this)
       logger.log('登录成功，用户信息:', this.user, '角色:', this.role)
       return true
-    },
-
-    // ==================== 注册 ====================
-
-    async register(
-      username: string,
-      password: string,
-      name: string,
-      role = CONFIG.ROLES.ROLE_STUDENT,
-      majorId = '',
-      classId = '',
-      departmentId = '',
-      grade = ''
-    ): Promise<boolean> {
-      try {
-        if (!validateString(username, 'username') || !validateString(password, 'password') || !validateString(name, 'name')) {
-          return false
-        }
-
-        const requestData: Record<string, unknown> = { username, password, role }
-
-        if (role === CONFIG.ROLES.ROLE_ADMIN) {
-          requestData.phone = name
-        } else {
-          requestData.name = name
-        }
-
-        if (role === CONFIG.ROLES.ROLE_STUDENT) {
-          requestData.majorId = majorId
-          requestData.classId = classId
-          requestData.grade = grade
-        }
-
-        if (isTeacherRole(role)) {
-          requestData.departmentId = departmentId
-        }
-
-        const response = await request.post('/auth/register', requestData)
-
-        if (response && response.code === 200) {
-          return true
-        } else {
-          ElMessage.error(response?.message || ERROR_MESSAGES.REGISTER_FAILED)
-          return false
-        }
-      } catch (error) {
-        logger.error('注册失败:', error)
-        ElMessage.error(ERROR_MESSAGES.REGISTER_FAILED)
-        return false
-      }
     },
 
     // ==================== 角色切换 ====================
@@ -456,6 +417,7 @@ export const useAuthStore = defineStore('auth', {
         originalAdminUsername: result.originalAdminUsername || null
       }
 
+      writeTabSession(this)
       logger.log('角色切换成功：管理员 ->', role, '只读模式:', result.isReadOnly || false)
       return true
     },
@@ -510,8 +472,7 @@ export const useAuthStore = defineStore('auth', {
     },
 
     async callBackendLogout(role: string): Promise<void> {
-      const rolePrefix = getRoleStoragePrefix(role)
-      const accessToken = localStorage.getItem(rolePrefix + 'accessToken_' + role)
+      const accessToken = this.token
 
       if (accessToken) {
         try {
@@ -548,10 +509,15 @@ export const useAuthStore = defineStore('auth', {
         return false
       }
 
-      const newToken = await refreshTokenUtil(currentRole)
+      const previousToken = this.token
+      let refreshedCredential = this.allUsers[currentRole]?.refreshToken
+      const newToken = await refreshTokenUtil(currentRole, refreshedCredential, value => { refreshedCredential = value })
+      if (this.role !== currentRole || this.token !== previousToken) return false
 
       if (newToken) {
         this.setToken(newToken)
+        if (this.allUsers[currentRole]) this.allUsers[currentRole].refreshToken = refreshedCredential || null
+        writeTabSession(this)
         if (this.allUsers && this.allUsers[currentRole]) {
           this.allUsers[currentRole].accessToken = newToken
         }
@@ -572,6 +538,19 @@ export const useAuthStore = defineStore('auth', {
     async restoreAuthState(allowPathRoleInference = true): Promise<boolean> {
       logger.log('开始从本地存储恢复认证状态，允许路径角色推断:', allowPathRoleInference)
 
+      const tab = readTabSession()
+      if (tab) {
+        this.role = tab.role; this.token = tab.token; this.user = tab.user
+        this.allUsers[tab.role] = { accessToken: tab.token, refreshToken: tab.refreshToken,
+          role: tab.role, userId: tab.user.id, username: tab.user.username }
+        if (isTokenExpired(tab.token) && !(await this.refreshAccessToken())) {
+          clearTabSession(); this.token = null; this.user = null; this.role = null
+          this.isAuthenticated = false
+          return false
+        }
+        this.isAuthenticated = true; this.hasValidatedToken = true
+        return true
+      }
       let currentRole = localStorage.getItem(STORAGE_KEYS.CURRENT_ROLE)
       const pathRole = getRoleFromPath()
 
@@ -635,6 +614,15 @@ export const useAuthStore = defineStore('auth', {
             // 学生用户字段（不再从JWT解析，由API获取）
             studentId: decoded.studentId,
           }
+          // 补充从 localStorage 读取学生扩展字段（JWT 不含 PII）
+          this.user.major = localStorage.getItem('student_' + 'major_' + this.role) || ''
+          this.user.grade = localStorage.getItem('student_' + 'grade_' + this.role) || ''
+          this.user.phone = localStorage.getItem('student_' + 'phone_' + this.role) || ''
+          this.user.school = localStorage.getItem('student_' + 'school_' + this.role) || ''
+          this.user.department = localStorage.getItem('student_' + 'department_' + this.role) || ''
+          this.user.class = localStorage.getItem('student_' + 'class_' + this.role) || ''
+          this.user.gender = localStorage.getItem('student_' + 'gender_' + this.role) || ''
+          this.user.email = localStorage.getItem('student_' + 'email_' + this.role) || ''
         } else if (restoreResult.userId) {
           this.user = {
             id: restoreResult.userId,
@@ -660,6 +648,7 @@ export const useAuthStore = defineStore('auth', {
         this.updateLocalStorageAfterRestore(currentRole, restoreResult.role || '', restoreResult.userId)
 
         this.hasValidatedToken = true
+        writeTabSession(this)
         logger.log('恢复认证状态成功 - 角色:', this.role, '已认证:', this.isAuthenticated)
         return true
       } else {
@@ -745,20 +734,18 @@ export const useAuthStore = defineStore('auth', {
     },
 
     clearOldRoleInfo(newRole: string) {
+      clearTabSession()
       logger.log('清理旧的角色信息')
       this.user = null
       this.token = null
       this.role = null
       this.isAuthenticated = false
 
-      const oldRole = localStorage.getItem(STORAGE_KEYS.CURRENT_ROLE)
-      if (oldRole && oldRole !== newRole) {
-        clearRoleStorage(oldRole)
-        logger.log('已清理旧角色信息:', oldRole)
-      }
+
     },
 
     clearAllAuthInfo() {
+      clearTabSession()
       logger.log('清理所有角色的旧认证信息')
       this.user = null
       this.token = null
@@ -806,6 +793,9 @@ export const useAuthStore = defineStore('auth', {
       if (permissions && permissions.length > 0) {
         localStorage.setItem(STORAGE_KEYS.TEACHER_PERMISSIONS, JSON.stringify(permissions))
         logger.log('已保存教师权限，数量:', permissions.length)
+      } else {
+        localStorage.removeItem(STORAGE_KEYS.TEACHER_PERMISSIONS)
+        logger.log('教师权限为空，已清除旧权限缓存')
       }
 
       localStorage.setItem(STORAGE_KEYS.CURRENT_ROLE, role)
@@ -836,6 +826,7 @@ export const useAuthStore = defineStore('auth', {
           console.log('[saveExtraInfo] 管理员登录成功，已获取权限数量:', perms.length)
           console.log('[saveExtraInfo] 权限列表:', (perms as Array<{ permissionCode: string }>).map(p => p.permissionCode))
         } else {
+          localStorage.removeItem(STORAGE_KEYS.ADMIN_PERMISSIONS)
           console.warn('[saveExtraInfo] 管理员登录但没有获取到权限数据')
         }
       }
@@ -916,6 +907,7 @@ export const useAuthStore = defineStore('auth', {
         localStorage.setItem(STORAGE_KEYS.CURRENT_ROLE, newRole)
         setRoleId(newRole, userInfo.userId || '')
 
+        writeTabSession(this)
         logger.log('切换角色成功 - 新角色:', newRole)
         return true
       }

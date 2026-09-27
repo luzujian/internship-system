@@ -1,17 +1,107 @@
 <script setup lang="ts">
+import { useAgentPageContext } from '@/agent/useAgentPageContext'
+import { useFormContext } from '@/agent/formContext'
 import logger from '@/utils/logger'
 import { createRequiredValidator, createPhoneValidator, createEmailValidator } from '@/utils/validation'
-import { ref, onMounted, nextTick } from 'vue'
+import { readInitialCredentials } from '@/utils/initialCredentialPayload'
+import { showInitialCredentials } from '@/utils/initialCredentialDialog'
+import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import type { CompanyUser, PaginationState } from '@/types/admin'
+import type { FormFieldDescriptor } from '@/agent/types'
+// 企业行精确局部接口：以 CompanyUser 为基，补全模板/脚本实际使用的扩展字段与后端别名，均可选
+interface AlumniMemberRow {
+  id?: string | number
+  name?: string
+  phone?: string
+  position?: string
+}
+interface SchoolLiaisonRow {
+  teacherId?: string | number
+  teacherName?: string
+  name?: string
+  teacherPhone?: string
+  phone?: string
+}
+interface VisitSummaryRow {
+  currentYearVisitCount?: number
+  totalVisitCount?: number
+  lastVisitDate?: string
+}
+interface CompanyRow {
+  id?: string | number
+  username?: string
+  companyName?: string
+  contactPerson?: string
+  contactPhone?: string
+  contactEmail?: string
+  email?: string
+  phone?: string
+  address?: string
+  introduction?: string
+  companyTag?: string | string[]
+  industry?: string
+  status?: number | string | null
+  auditStatus?: number | string | null
+  auditTime?: string
+  applyTime?: string
+  businessLicense?: string
+  legalIdCard?: string
+  recallStatus?: number | string | null
+  createTime?: string
+  updateTime?: string
+  creditCode?: string
+  scale?: string
+  province?: string
+  city?: string
+  district?: string
+  detailAddress?: string
+  legalIdCardFront?: string
+  legalIdCardBack?: string
+  alumniRepresentativeName?: string
+  alumniRepresentativePhone?: string
+  alumniRepresentativePosition?: string
+  website?: string
+  description?: string
+  cooperationMode?: string
+  logo?: string
+  photos?: string
+  videos?: string
+  isInternshipBase?: number | string | null
+  acceptBackup?: number | string | null
+  hasTrainingBaseAgreement?: number | string | null
+  isAlumniUnit?: number | string | null
+  hasReceivedInterns?: number | string | null
+  currentEmployeesCount?: number | string | null
+  plaquePhoto?: string
+  registerTime?: string
+  auditRemark?: string
+  reviewerId?: number | string | null
+  recallReason?: string
+  recallApplyTime?: string
+  recallAuditTime?: string
+  recallReviewerId?: number | string | null
+  recallAuditRemark?: string
+  alumniMembers?: AlumniMemberRow[]
+  schoolLiaisons?: SchoolLiaisonRow[]
+  visitSummary?: VisitSummaryRow
+}
+// 表格实例最小接口（模板 ref 占位，未调用实例方法，避免 InstanceType 约束错误）
+interface CompanyTableInstance {
+  toggleRowSelection?: (row: CompanyRow, selected: boolean) => void
+}
 import { ElMessage, ElMessageBox, ElForm, ElTable, ElDropdown, ElDropdownMenu, ElDropdownItem } from 'element-plus'
-import { Search, Refresh, View, ArrowRight, Close, Plus, Edit, Delete, Download, Upload, Check, Switch, MoreFilled, ArrowDown } from '@element-plus/icons-vue'
+import { Search, Refresh, Key, View, ArrowRight, Close, Plus, Edit, Delete, Download, Upload, Check, Switch, MoreFilled, ArrowDown, PictureFilled, VideoCameraFilled, OfficeBuilding, ZoomIn } from '@element-plus/icons-vue'
 import { useRouter } from 'vue-router'
 import request from '../../utils/request'
 import companyService from '../../api/company'
 import { exportToExcel } from '../../utils/xlsx'
-import html2pdf from 'html2pdf.js'
+import html2canvas from 'html2canvas'
+import { jsPDF } from 'jspdf'
+import { escapePdfText } from '../../utils/pdfExportSafety'
 import { useSystemSettingsStore } from '../../store/systemSettings'
 import { useAuthStore } from '../../store/auth'
+import { companyQualificationMaterialByteUrl } from '@/utils/authorizedFileUrl'
+import { downloadAuthorizedFile } from '@/utils/authorizedFileDownload'
 
 const router = useRouter()
 const systemSettingsStore = useSystemSettingsStore()
@@ -31,18 +121,18 @@ const formatDate = (_row: unknown, _column: unknown, cellValue: string): string 
   return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`
 }
 
-// 搜索表单对象
-let searchForm = ref<Partial<CompanyUser>>({ companyName: '', status: null, companyTag: [] })
+// 搜索表单对象（含多选标签数组形态）
+let searchForm = ref<CompanyRow>({ companyName: '', status: null, companyTag: [] })
 // 列表展示数据
-let tableData = ref<CompanyUser[]>([])
+let tableData = ref<CompanyRow[]>([])
 // 加载状态
 let loading = ref(false)
 // 分页数据
 let pagination = ref<PaginationState>({ currentPage: 1, pageSize: 10, total: 0 })
 // 表格引用
-let companyTable = ref<InstanceType<typeof ElTable> | null>(null)
+let companyTable = ref<CompanyTableInstance | null>(null)
 // 多选数据
-let selectedRows = ref<CompanyUser[]>([])
+let selectedRows = ref<CompanyRow[]>([])
 
 // 重置密码对话框控制
 let resetPasswordDialogVisible = ref(false)
@@ -50,24 +140,62 @@ let resetPasswordCompanyId = ref<number | null>(null)
 
 // 查看详情对话框
 let viewDialogVisible = ref(false)
-let currentCompany = ref<CompanyUser | null>(null)
+let currentCompany = ref<CompanyRow | null>(null)
 let companyTagOptions = ref<string[]>([])
+
+const legalCardIndices = computed(() => String(currentCompany.value?.legalIdCard || '')
+  .split(',').slice(0, 2).map((value, index) => value.trim() ? index : -1).filter(index => index >= 0))
+
+const downloadCompanyMaterial = async (kind: 'businessLicense' | 'legalIdCard' | 'plaquePhoto',
+                                       index: number, label: string): Promise<void> => {
+  const company = currentCompany.value
+  const url = companyQualificationMaterialByteUrl(company?.id, kind, index, true)
+  if (!url) { ElMessage.error('企业材料记录不可用'); return }
+  const stored = kind === 'legalIdCard' ? String(company?.legalIdCard || '').split(',')[index] : company?.[kind]
+  const extension = typeof stored === 'string' ? /\.([a-z0-9]{1,8})(?:$|[?#])/i.exec(stored)?.[1] : ''
+  try {
+    await downloadAuthorizedFile(url, extension ? `${label}.${extension}` : label)
+  } catch {
+    ElMessage.error('企业材料下载失败，请检查权限或联系管理员')
+  }
+}
+
+// 企业宣传资料：photos/videos 为 JSON 数组字符串，容错解析（与教师端一致）
+const companyPhotos = computed(() => {
+  try {
+    const arr = JSON.parse(currentCompany.value?.photos || '[]')
+    return Array.isArray(arr) ? arr.filter((u: string) => !u.startsWith('blob:')) : []
+  } catch { return [] }
+})
+const companyVideos = computed(() => {
+  try {
+    const arr = JSON.parse(currentCompany.value?.videos || '[]')
+    return Array.isArray(arr) ? arr.filter((u: string) => !u.startsWith('blob:')) : []
+  } catch { return [] }
+})
+const hasPromotion = computed(() =>
+  !!currentCompany.value?.logo || companyPhotos.value.length > 0 || companyVideos.value.length > 0
+)
+// 宣传资料面板默认展开
+const promotionActive = ref<string[]>(['promotion'])
 
 // 新增/编辑对话框
 let formDialogVisible = ref(false)
 let formDialogTitle = ref('新增企业')
 let isEdit = ref(false)
 let formRef = ref<InstanceType<typeof ElForm> | null>(null)
-let companyForm = ref<Partial<CompanyUser>>({
+let companyForm = ref<CompanyRow>({
   id: null,
   username: '',
   companyName: '',
   contactPerson: '',
   contactPhone: '',
   contactEmail: '',
+  email: '',
   address: '',
   introduction: '',
   companyTag: '',
+  isInternshipBase: 0,
   status: 0
 })
 
@@ -77,8 +205,40 @@ const formRules = {
   contactPerson: [createRequiredValidator('请输入联系人')],
   contactPhone: createPhoneValidator('请输入 11 位中国大陆手机号'),
   contactEmail: createEmailValidator('请输入有效的邮箱地址，如 example@email.com'),
+  email: createEmailValidator('请输入有效的邮箱地址，如 example@email.com', false),
   address: [createRequiredValidator('请输入企业地址')]
 }
+
+
+// ===== 智能填表：企业新增/编辑弹窗（只写响应式 model，不触发提交） =====
+// 未覆盖字段说明：username/登录账号、status/auditStatus（系统维护）——均由系统维护
+const formContext = useFormContext()
+const companyFillFields = (): FormFieldDescriptor[] => [
+  { prop: 'companyName', label: '企业名称', type: 'input', required: true },
+  { prop: 'contactPerson', label: '联系人', type: 'input', required: true },
+  { prop: 'contactPhone', label: '联系电话', type: 'input', required: true },
+  { prop: 'contactEmail', label: '联系邮箱', type: 'input' },
+  { prop: 'email', label: '个人邮箱', type: 'input' },
+  { prop: 'address', label: '企业地址', type: 'input', required: true },
+  { prop: 'introduction', label: '企业介绍', type: 'textarea' },
+  { prop: 'isInternshipBase', label: '挂牌实习基地', type: 'radio', valueType: 'number',
+    options: [{ label: '否', value: 0 }, { label: '是', value: 1 }] },
+  { prop: 'companyTag', label: '标签', type: 'input', patternHint: '快捷标签（如校企双向选择/接受兜底/实习基地）需手动点选，多个标签用逗号分隔' }
+]
+const registerCompanyForm = (title: string): void => {
+  formContext.register({
+    formId: 'admin:company',
+    title,
+    fields: companyFillFields(),
+    getFields: companyFillFields,
+    getModel: () => companyForm.value,
+    getFormEl: () => formRef.value
+  })
+}
+watch(formDialogVisible, (open) => {
+  if (!open) formContext.unregister('admin:company')
+})
+onUnmounted(() => formContext.unregister('admin:company'))
 
 
 // 分页查询函数
@@ -98,7 +258,8 @@ const queryPage = async (): Promise<void> => {
     logger.log('查询参数 - 原始:', searchForm.value)
     
     if (params.status !== null && params.status !== undefined && params.status !== '') {
-      params.status = parseInt(params.status)
+      // String 包裹后 parseInt：字符串输入与原运行时一致，数字输入同样可解析
+      params.status = parseInt(String(params.status))
     }
     
     if (params.companyTag && Array.isArray(params.companyTag) && params.companyTag.length > 0) {
@@ -109,10 +270,15 @@ const queryPage = async (): Promise<void> => {
     
     logger.log('查询参数 - 处理后:', params)
     
-    const response = await companyService.getAdminCompanies(params)
-    if (response && response.code === 200 && response.data) {
-      const dataList = response.data.rows || []
-      const totalCount = response.data.total || 0
+    // getAdminCompanies 声明返回双层 AxiosResponseWithMeta，运行时为单层 ApiResult；
+    // params 在运行时与后端约定一致（status 数字/字符串/null 均可），用精确参数类型断言保持运行时一致
+    const response = await companyService.getAdminCompanies(params as unknown as Parameters<typeof companyService.getAdminCompanies>[0])
+    // 单层 ApiResult { code, data: { rows, total } } 收窄；声明层的双层 data.rows 在运行时不存在
+    const listRes = response as unknown as { code?: unknown; data?: unknown }
+    if (response && listRes.code === 200 && listRes.data !== undefined && listRes.data !== null) {
+      const pageObj = listRes.data as { rows?: unknown; total?: unknown }
+      const dataList: CompanyRow[] = Array.isArray(pageObj.rows) ? (pageObj.rows as CompanyRow[]) : []
+      const totalCount: number = typeof pageObj.total === 'number' ? pageObj.total : 0
       tableData.value = dataList
       pagination.value.total = totalCount
       logger.log('查询结果 - 数据条数:', dataList.length, '总数:', totalCount)
@@ -149,34 +315,17 @@ const handleCurrentChange = (newCurrent: number): void => {
 }
 
 // 多选处理
-const handleSelectionChange = (selection: CompanyUser[]): void => {
+const handleSelectionChange = (selection: CompanyRow[]): void => {
   selectedRows.value = selection
 }
 
-// 处理图片URL
-const getImageUrl = (url) => {
-  if (!url) return ''
-  if (url.startsWith('data:')) return url
-  if (url.startsWith('http://') || url.startsWith('https://')) return url
-  if (url.startsWith('/api/')) return url
-  if (url.startsWith('/')) return '/api' + url
-  return '/api/' + url
-}
-
-// 处理多张图片URL
-const getImageUrls = (urls) => {
-  if (!urls) return []
-  const urlList = urls.split(',').map(url => url.trim()).filter(url => url)
-  return urlList.map(url => getImageUrl(url))
-}
-
 // 查看企业详情
-const viewCompanyDetail = async (id: string): Promise<void> => {
+const viewCompanyDetail = async (id: string | number): Promise<void> => {
   try {
     const response = await request.get(`/admin/companies/${id}`)
     const result = response
     if (result && result.code === 200 && result.data) {
-      currentCompany.value = result.data
+      currentCompany.value = result.data as CompanyRow
       viewDialogVisible.value = true
     } else {
       ElMessage.error(result?.msg || '获取企业信息失败')
@@ -192,23 +341,32 @@ const showAddDialog = (): void => {
   formDialogTitle.value = '新增企业'
   companyForm.value = {
     id: null, username: '', companyName: '', contactPerson: '', contactPhone: '',
-    contactEmail: '', address: '', introduction: '', status: 1
+    contactEmail: '', email: '', address: '', introduction: '', isInternshipBase: 0, status: 1, auditStatus: 1
   }
   formDialogVisible.value = true
+  registerCompanyForm('新增企业')
 }
 
 // 显示编辑对话框
-const showEditDialog = (row: CompanyUser): void => {
+const showEditDialog = (row: CompanyRow): void => {
   isEdit.value = true
   formDialogTitle.value = '编辑企业'
   companyForm.value = { ...row }
   formDialogVisible.value = true
+  registerCompanyForm('编辑企业')
 }
 
 // 添加标签到表单
 const addTagToForm = (tag: string): void => {
-  if (companyForm.value.companyTag) {
-    const tags = companyForm.value.companyTag.split(',').map(t => t.trim()).filter(t => t)
+  // 自动标签联动对应状态字段，保存后标签重建（rebuildTags）才能派生出来，不会被清掉
+  if (tag === '实习基地') companyForm.value.isInternshipBase = 1
+  if (tag === '接受兜底') companyForm.value.acceptBackup = 1
+  if (tag === '学生自主联系') companyForm.value.cooperationMode = 'student_contact'
+  // companyTag 可能是搜索多选写入的数组，先归一为字符串再拆分（数组 join 后拆分与原字符串语义一致）
+  const formTagRaw: string | string[] | null | undefined = companyForm.value.companyTag
+  const formTagStr: string = Array.isArray(formTagRaw) ? formTagRaw.join(',') : (formTagRaw ?? '')
+  if (formTagStr) {
+    const tags = formTagStr.split(',').map(t => t.trim()).filter(t => t)
     if (!tags.includes(tag)) {
       tags.push(tag)
       companyForm.value.companyTag = tags.join(',')
@@ -224,15 +382,28 @@ const submitForm = async (): Promise<void> => {
   await formRef.value.validate(async (valid) => {
     if (valid) {
       try {
+        const operation = formContext.beginFormOperation('admin:company')
         if (isEdit.value) {
-          await companyService.updateCompany(companyForm.value)
-          ElMessage.success('更新成功')
+          // 资质附件只通过专门的记录下载接口读取；普通资料编辑不能覆盖原附件字段。
+          const editableFields = { ...companyForm.value }
+          delete editableFields.businessLicense
+          delete editableFields.legalIdCard
+          delete editableFields.plaquePhoto
+          const savedResponse = await companyService.updateCompany(editableFields as unknown as Parameters<typeof companyService.updateCompany>[0])
+          if (savedResponse?.code !== 200) throw new Error(savedResponse?.message || '更新企业信息失败')
+          operation.complete({ status: 'saved', label: '企业信息已保存', url: '/admin/companies' })
         } else {
-          await companyService.addCompany(companyForm.value)
-          ElMessage.success('添加成功')
+          const savedResponse = await companyService.addCompany(companyForm.value as unknown as Parameters<typeof companyService.addCompany>[0])
+          if (savedResponse?.code !== 200) throw new Error(savedResponse?.message || '添加企业信息失败')
+          operation.complete({ status: 'saved', label: '企业信息已保存', url: '/admin/companies' })
         }
         formDialogVisible.value = false
         queryPage()
+        if (isEdit.value) {
+          ElMessage.success('更新成功')
+        } else {
+          ElMessage.success('新增成功')
+        }
       } catch (error) {
         ElMessage.error((isEdit.value ? '更新' : '添加') + '失败: ' + (error.message || '未知错误'))
       }
@@ -250,12 +421,13 @@ const handleDialogClose = (): void => {
 }
 
 // 删除企业
-const deleteCompany = (id: string): void => {
+const deleteCompany = (id: string | number): void => {
   ElMessageBox.confirm('确定要删除该企业吗？', '确认删除', {
     confirmButtonText: '确定', cancelButtonText: '取消', type: 'warning'
   }).then(async () => {
     try {
-      await companyService.deleteCompany(id)
+      // id 转 Number 后 URL 与运行时一致（后端 Long 接受数字）
+      await companyService.deleteCompany(Number(id))
       ElMessage.success('删除成功')
       queryPage()
     } catch (error) {
@@ -265,7 +437,7 @@ const deleteCompany = (id: string): void => {
 }
 
 // 切换企业账户状态（启用/禁用）
-const handleToggleStatus = async (id: number, currentStatus: number | string) => {
+const handleToggleStatus = async (id: string | number, currentStatus: number | string) => {
   const statusNum = Number(currentStatus)
   const newStatus = statusNum === 1 ? 0 : 1
   const statusText = newStatus === 1 ? '启用' : '禁用'
@@ -277,7 +449,7 @@ const handleToggleStatus = async (id: number, currentStatus: number | string) =>
       type: 'warning'
     })
 
-    const response = await companyService.updateCompanyStatus(id, newStatus)
+    const response = await companyService.updateCompanyStatus(Number(id), newStatus)
 
     if (response && response.code === 200) {
       ElMessage.success(`${statusText}成功`)
@@ -300,7 +472,8 @@ const batchDelete = (): void => {
     confirmButtonText: '确定', cancelButtonText: '取消', type: 'warning'
   }).then(async () => {
     try {
-      const ids = selectedRows.value.map(row => row.id)
+      // id 转 Number 后请求体数值与运行时一致（后端 Long 接受数字）
+      const ids = selectedRows.value.map(row => Number(row.id))
       await companyService.batchDeleteCompanies(ids)
       ElMessage.success('批量删除成功')
       queryPage()
@@ -320,8 +493,8 @@ const handleExportToExcel = async (): Promise<void> => {
       status: null
     }
 
-    // 响应拦截器已返回 Blob
-    const blob = await companyService.exportCompanies(params)
+    // 响应拦截器已返回 Blob（类型声明为 ApiResult，运行时为 Blob，用断言保持运行时一致）
+    const blob = await companyService.exportCompanies(params) as unknown as Blob
 
     const url = window.URL.createObjectURL(blob)
     const link = document.createElement('a')
@@ -339,7 +512,7 @@ const handleExportToExcel = async (): Promise<void> => {
   }
 }
 
-const importFileRef = ref<HTMLElement | null>(null)
+const importFileRef = ref<HTMLInputElement | null>(null)
 const selectedFile = ref<File | null>(null)
 const importDialogVisible = ref(false)
 const importLoading = ref(false)
@@ -353,16 +526,18 @@ const handleChooseFile = (): void => {
 }
 
 const handleNativeFileChange = (e: Event): void => {
-  if (e.target && e.target.files && e.target.files.length > 0) {
-    const file = e.target.files[0]
+  // 用 instanceof 收窄替代 EventTarget 直读，与原分支语义一致
+  const input = e.target instanceof HTMLInputElement ? e.target : null
+  if (input && input.files && input.files.length > 0) {
+    const file = input.files[0]
     const fileName = file.name.toLowerCase()
-    
+
     if (!fileName.endsWith('.xlsx') && !fileName.endsWith('.xls')) {
       ElMessage.error('请选择Excel文件(.xlsx或.xls格式)')
-      e.target.value = ''
+      input.value = ''
       return
     }
-    
+
     selectedFile.value = file
   }
 }
@@ -388,13 +563,26 @@ const handleImportExcel = async (): Promise<void> => {
     formData.append('file', selectedFile.value)
     
     const response = await companyService.importCompanies(formData)
-    const result = response.data || response
-    
-    if (result && (result.code === 200 || result.code === undefined)) {
-      const importResult = result.data || {}
-      const successCount = importResult.successCount || 0
-      const failCount = importResult.failCount || 0
-      const failList = importResult.failList || []
+    const result = response as unknown as { code?: number; data?: unknown; msg?: string; message?: string }
+
+    if (result?.code === 200) {
+      const importResult = (result.data ?? {}) as { successCount?: unknown; failCount?: unknown; failList?: unknown }
+      const successCount: number = typeof importResult.successCount === 'number' ? importResult.successCount : 0
+      const failCount: number = typeof importResult.failCount === 'number' ? importResult.failCount : 0
+      const failRaw: unknown = importResult.failList
+      const failList: Array<{ rowNum?: unknown; errorMsg?: unknown }> = Array.isArray(failRaw)
+        ? (failRaw as Array<{ rowNum?: unknown; errorMsg?: unknown }>)
+        : []
+
+      closeImportDialog()
+      queryPage()
+      const credentials = readInitialCredentials(result.data)
+      if (credentials.length > 0) {
+        await showInitialCredentials(credentials)
+      }
+      if (successCount > credentials.length) {
+        ElMessage.warning('部分成功账号未返回初始凭据，请通过重置密码流程处理')
+      }
       
       let message = `导入完成，成功: ${successCount} 条，失败: ${failCount} 条`
       
@@ -404,19 +592,18 @@ const handleImportExcel = async (): Promise<void> => {
           errorDetails += `${index + 1}. 第${fail.rowNum}行: ${fail.errorMsg || '未知错误'}\n`
         })
         
-        ElMessageBox.alert(message + errorDetails, '导入结果', {
+        await ElMessageBox.alert(message + errorDetails, '导入结果', {
           confirmButtonText: '确定',
           type: failCount > 0 ? 'warning' : 'success',
           dangerouslyUseHTMLString: false
-        })
+        }).catch(() => undefined)
       } else {
         ElMessage.success(message)
       }
       
-      closeImportDialog()
-      queryPage()
     } else {
-      ElMessage.error(result?.msg || '导入失败')
+      const importFailPick: unknown = result?.msg || result?.message
+      ElMessage.error(typeof importFailPick === 'string' && importFailPick ? importFailPick : '导入失败')
     }
   } catch (error) {
     logger.error('导入失败:', error)
@@ -429,10 +616,10 @@ const handleImportExcel = async (): Promise<void> => {
 // 下载导入模板
 const downloadTemplate = async (): Promise<void> => {
   try {
-    // 响应拦截器已返回 Blob
-    const blob = await request.get('/admin/companies/import-template', {
+    // 响应拦截器已返回 Blob（类型声明为 ApiResult，运行时为 Blob，用断言保持运行时一致）
+    const blob = await request.get<Blob>('/admin/companies/import-template', {
       responseType: 'blob'
-    })
+    }) as unknown as Blob
 
     // 创建下载链接
     const url = window.URL.createObjectURL(blob)
@@ -464,7 +651,11 @@ const updateAllTags = async (): Promise<void> => {
       ElMessage.success('批量更新标签成功')
       queryPage()
     } else {
-      ElMessage.error(response.data?.msg || '批量更新标签失败')
+      // data 为 unknown，收窄后读 msg，保持原 `response.data?.msg || '批量更新标签失败'` 语义
+      const tagData: unknown = response.data
+      const tagMsgPick: unknown =
+        tagData !== null && typeof tagData === 'object' ? (tagData as { msg?: unknown }).msg : undefined
+      ElMessage.error(typeof tagMsgPick === 'string' && tagMsgPick ? tagMsgPick : '批量更新标签失败')
     }
   } catch (error) {
     if (error !== 'cancel') {
@@ -475,23 +666,47 @@ const updateAllTags = async (): Promise<void> => {
 }
 
 
-// 显示重置密码对话框
-const showResetPasswordDialog = (row: CompanyUser): void => {
-  resetPasswordCompanyId.value = row.id
+// 一键重置全部企业用户密码
+const resetAllCompanyPasswords = async (): Promise<void> => {
+  try {
+    await ElMessageBox.confirm(
+      '将把全部企业用户的登录密码统一重置为 123456，确定继续吗？',
+      '一键重置全部企业密码',
+      { type: 'warning', confirmButtonText: '确认重置', cancelButtonText: '取消' }
+    )
+    const response = await companyService.resetAllCompanyPasswords()
+    const result = response as unknown as { code?: number; msg?: string; message?: string }
+    if (result.code === 200) {
+      ElMessage.success('全部企业用户密码已重置为 123456')
+      queryPage()
+    } else {
+      ElMessage.error(result.msg || result.message || '一键重置全部企业用户密码失败')
+    }
+  } catch (error) {
+    if (error !== 'cancel') {
+      logger.error('一键重置全部企业用户密码失败:', error)
+      ElMessage.error('一键重置全部企业用户密码失败')
+    }
+  }
+}
+
+// 显示单个企业重置密码对话框
+const showResetPasswordDialog = (row: CompanyRow): void => {
+  // id 转 Number：URL 模板展开后与运行时一致（后端 Long 接受数字）
+  resetPasswordCompanyId.value = row.id === undefined || row.id === null ? null : Number(row.id)
   resetPasswordDialogVisible.value = true
 }
 
 // 重置密码
 const resetPassword = async (): Promise<void> => {
   try {
-    const response = await companyService.resetCompanyPassword(resetPasswordCompanyId.value!, '123456')
-    const result = response.data || response
-
-    if (result && (result.code === 200 || result.code === undefined)) {
-      ElMessage.success('密码重置成功，新密码为：123456')
+    const response = await companyService.resetCompanyPassword(resetPasswordCompanyId.value!)
+    const result = response as unknown as { code?: number; data?: unknown; message?: string }
+    if (result.code === 200) {
       resetPasswordDialogVisible.value = false
+      ElMessage.success('企业密码已重置为 123456')
     } else {
-      ElMessage.error('密码重置失败：' + (result?.msg || '未知错误'))
+      ElMessage.error('密码重置失败：' + (result.message || '重置结果无效'))
     }
   } catch (error) {
     logger.error('重置密码失败:', error)
@@ -500,7 +715,7 @@ const resetPassword = async (): Promise<void> => {
 }
 
 
-const formatAuditStatus = (auditStatus: number): string => {
+const formatAuditStatus = (auditStatus: number | string): string => {
   switch (auditStatus) {
     case 0: return '待审核'
     case 1: return '审核通过'
@@ -509,7 +724,7 @@ const formatAuditStatus = (auditStatus: number): string => {
   }
 }
 
-const formatAccountStatus = (status: number): string => {
+const formatAccountStatus = (status: number | string): string => {
   switch (status) {
     case 0: return '待审核'
     case 1: return '正常'
@@ -519,7 +734,7 @@ const formatAccountStatus = (status: number): string => {
   }
 }
 
-const getAuditStatusTagType = (auditStatus: number): string => {
+const getAuditStatusTagType = (auditStatus: number | string): string => {
   switch (auditStatus) {
     case 0: return 'warning'
     case 1: return 'success'
@@ -528,7 +743,7 @@ const getAuditStatusTagType = (auditStatus: number): string => {
   }
 }
 
-const getAccountStatusTagType = (status: number): string => {
+const getAccountStatusTagType = (status: number | string): string => {
   switch (status) {
     case 0: return 'warning'
     case 1: return 'success'
@@ -540,7 +755,7 @@ const getAccountStatusTagType = (status: number): string => {
 
 const getTagType = (tag: string): string => {
   const tagMap = {
-    '双向选择阶段': 'primary',
+    '校企双向选择': 'primary',
     '学生自主联系': 'success',
     '接受兜底': 'warning',
     '国家级': 'danger',
@@ -549,125 +764,136 @@ const getTagType = (tag: string): string => {
   return tagMap[tag.trim()] || 'info'
 }
 
-// 跳转到撤回申请审核页面
-const goToRecallAudit = (company: CompanyUser): void => {
+// ===== 企业详情展示辅助（与教师端企业详情一致） =====
+
+const formatScale = (scale: string): string => {
+  const scaleMap: Record<string, string> = {
+    '1-50': '1-50 人',
+    '51-100': '51-100 人',
+    '101-500': '101-500 人',
+    '501-1000': '501-1000 人',
+    '1000+': '1000 人以上'
+  }
+  return scaleMap[scale] || scale || '-'
+}
+
+const isSafeUrl = (url: string): boolean => {
+  try {
+    const u = new URL(url)
+    return ['http:', 'https:'].includes(u.protocol)
+  } catch {
+    return false
+  }
+}
+
+const getFullAddress = (company: CompanyRow): string => {
+  const detail = [company.province, company.city, company.district, company.detailAddress].filter(Boolean).join('')
+  return detail || company.address || '-'
+}
+
+// 企业标签合并区：合作模式拆解 + 实习基地/已签协议/校友单位 + 老标签体系
+const getCompanyTagList = (company: CompanyRow): Array<{ text: string; type: string }> => {
+  const tags: Array<{ text: string; type: string }> = []
+  const modeMap: Record<string, { text: string; type: string }> = {
+    '双向': { text: '校企双向选择', type: 'success' },
+    '自主': { text: '学生自主联系', type: 'warning' },
+    '兜底': { text: '接受兜底', type: 'danger' },
+    mutual_choice: { text: '校企双向选择', type: 'success' },
+    student_contact: { text: '学生自主联系', type: 'warning' }
+  }
+  const hasBackup = company.acceptBackup === 1
+  if (company.cooperationMode) {
+    company.cooperationMode.split(',').forEach((m: string) => {
+      const t = modeMap[m.trim()]
+      if (t) tags.push(t)
+    })
+  }
+  if (company.isInternshipBase === 1) tags.push({ text: '实习基地', type: 'success' })
+  if (hasBackup && !tags.some(t => t.text === '接受兜底')) tags.push({ text: '接受兜底', type: 'danger' })
+  if (company.hasTrainingBaseAgreement === 1) tags.push({ text: '已签协议', type: 'info' })
+  if (company.isAlumniUnit === 1) tags.push({ text: '校友单位', type: 'warning' })
+  const skip = new Set(tags.map(t => t.text))
+  skip.add('校企双向选择').add('学生自主联系')
+  if (company.companyTag) {
+    // companyTag 可能是数组形态，归一为字符串再拆分（与原字符串语义一致）
+    const tagRaw: string | string[] = company.companyTag
+    const tagStr: string = Array.isArray(tagRaw) ? tagRaw.join(',') : tagRaw
+    tagStr.split(/[,，]/).forEach((tag: string) => {
+      const t = tag.trim()
+      if (t && !skip.has(t)) tags.push({ text: t, type: getTagType(t) })
+    })
+  }
+  return tags
+}
+
+const goToRecallAudit = (company: CompanyRow): void => {
   router.push({
     path: '/admin/recall-audit',
     query: {
-      companyId: company.id,
-      companyName: company.companyName,
-      contactPerson: company.contactPerson,
-      contactPhone: company.contactPhone
+      companyId: company.id === undefined || company.id === null ? '' : String(company.id),
+      companyName: company.companyName ?? '',
+      contactPerson: company.contactPerson ?? '',
+      contactPhone: company.contactPhone ?? ''
     }
   })
 }
 
-// 下载审核材料
-const downloadMaterials = (company: CompanyUser): void => {
-  const materials = {
-    '企业名称': company.companyName,
-    '联系人': company.contactPerson,
-    '联系电话': company.contactPhone,
-    '联系邮箱': company.contactEmail,
-    '企业地址': company.address,
-    '企业介绍': company.introduction || '',
-    '申请时间': formatDate(null, null, company.applyTime),
-    '审核状态': formatAuditStatus(company.auditStatus),
-    '审核时间': formatDate(null, null, company.auditTime)
-  }
-  
-  const businessLicenseUrl = company.businessLicense
-  const businessLicenseImg = businessLicenseUrl ? `<img src="${getImageUrl(businessLicenseUrl)}" style="max-width: 100%; max-height: 300px; display: block; margin: 10px 0;" />` : '未上传'
-  
-  const legalIdCardUrls = getImageUrls(company.legalIdCard)
-  const legalIdCardImgs = legalIdCardUrls.length > 0 
-    ? legalIdCardUrls.map(url => `<img src="${url}" style="max-width: 100%; max-height: 300px; display: block; margin: 10px 0;" />`).join('')
-    : '未上传'
-  
-  const htmlContent = `
-    <div style="font-family: Arial, sans-serif; padding: 40px; max-width: 800px; margin: 0 auto;">
-      <h1 style="text-align: center; color: #409EFF; margin-bottom: 30px;">企业审核材料</h1>
-      <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
-        <tr>
-          <td style="padding: 12px; border: 1px solid #ddd; background-color: #f5f7fa; font-weight: bold; width: 30%;">企业名称</td>
-          <td style="padding: 12px; border: 1px solid #ddd; width: 70%;">${materials['企业名称']}</td>
-        </tr>
-        <tr>
-          <td style="padding: 12px; border: 1px solid #ddd; background-color: #f5f7fa; font-weight: bold;">联系人</td>
-          <td style="padding: 12px; border: 1px solid #ddd;">${materials['联系人']}</td>
-        </tr>
-        <tr>
-          <td style="padding: 12px; border: 1px solid #ddd; background-color: #f5f7fa; font-weight: bold;">联系电话</td>
-          <td style="padding: 12px; border: 1px solid #ddd;">${materials['联系电话']}</td>
-        </tr>
-        <tr>
-          <td style="padding: 12px; border: 1px solid #ddd; background-color: #f5f7fa; font-weight: bold;">联系邮箱</td>
-          <td style="padding: 12px; border: 1px solid #ddd;">${materials['联系邮箱']}</td>
-        </tr>
-        <tr>
-          <td style="padding: 12px; border: 1px solid #ddd; background-color: #f5f7fa; font-weight: bold;">企业地址</td>
-          <td style="padding: 12px; border: 1px solid #ddd;">${materials['企业地址']}</td>
-        </tr>
-        <tr>
-          <td style="padding: 12px; border: 1px solid #ddd; background-color: #f5f7fa; font-weight: bold;">企业介绍</td>
-          <td style="padding: 12px; border: 1px solid #ddd;">${materials['企业介绍']}</td>
-        </tr>
-        <tr>
-          <td style="padding: 12px; border: 1px solid #ddd; background-color: #f5f7fa; font-weight: bold;">营业执照</td>
-          <td style="padding: 12px; border: 1px solid #ddd;">${businessLicenseImg}</td>
-        </tr>
-        <tr>
-          <td style="padding: 12px; border: 1px solid #ddd; background-color: #f5f7fa; font-weight: bold;">法人身份证</td>
-          <td style="padding: 12px; border: 1px solid #ddd;">${legalIdCardImgs}</td>
-        </tr>
-        <tr>
-          <td style="padding: 12px; border: 1px solid #ddd; background-color: #f5f7fa; font-weight: bold;">申请时间</td>
-          <td style="padding: 12px; border: 1px solid #ddd;">${materials['申请时间']}</td>
-        </tr>
-        <tr>
-          <td style="padding: 12px; border: 1px solid #ddd; background-color: #f5f7fa; font-weight: bold;">审核状态</td>
-          <td style="padding: 12px; border: 1px solid #ddd;">${materials['审核状态']}</td>
-        </tr>
-        <tr>
-          <td style="padding: 12px; border: 1px solid #ddd; background-color: #f5f7fa; font-weight: bold;">审核时间</td>
-          <td style="padding: 12px; border: 1px solid #ddd;">${materials['审核时间']}</td>
-        </tr>
-      </table>
-      <div style="text-align: center; margin-top: 40px; color: #909399; font-size: 12px;">
-        生成时间：${new Date().toLocaleString('zh-CN')}
-      </div>
-    </div>
-  `
-  
-  const element = document.createElement('div')
-  element.innerHTML = htmlContent
-  document.body.appendChild(element)
-  
-  const opt = {
-    margin: 10,
-    filename: `${company.companyName}_审核材料.pdf`,
-    image: { type: 'jpeg', quality: 0.98 },
-    html2canvas: { scale: 2, useCORS: true },
-    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
-  }
-  
-  html2pdf().set(opt).from(element).save().then(() => {
-    document.body.removeChild(element)
+// 下载审核信息；附件没有按记录授权的下载接口，暂不从存储地址取文件。
+const downloadMaterials = async (company: CompanyRow): Promise<void> => {
+  const value = (input: unknown): string => escapePdfText(input == null || input === '' ? '未填写' : String(input))
+  const alumni = Array.isArray(company.alumniMembers) && company.alumniMembers.length
+    ? company.alumniMembers.map((m, i) => `校友${i + 1}：${m.name || '未填写'} / ${m.phone || '未填写'} / ${m.position || '未填写'}`).join('\n')
+    : '未填写'
+  const yesNo = (v: unknown) => v == null ? '未填写' : (v === 1 || v === '1' ? '是' : '否')
+  const rows: Array<[string, string]> = [
+    ['企业名称', value(company.companyName)], ['统一社会信用代码', value(company.creditCode)],
+    ['所属行业', value(company.industry)], ['企业规模', value(company.scale)],
+    ['联系人', value(company.contactPerson)], ['联系电话', value(company.contactPhone)],
+    ['企业地址', value([company.province, company.city, company.district, company.detailAddress].filter(Boolean).join(' ') || company.address)],
+    ['联系邮箱', value(company.contactEmail)], ['个人邮箱', value(company.email)], ['企业网站', value(company.website)],
+    ['企业简介', value(company.introduction)], ['挂牌实习基地', yesNo(company.isInternshipBase)],
+    ['接受兜底', yesNo(company.acceptBackup)], ['是否校友单位', yesNo(company.isAlumniUnit)],
+    ['校友信息', value(alumni)], ['是否与学校签署实训基地协议', yesNo(company.hasTrainingBaseAgreement)]
+  ]
+  const html = `<div style="font-family:Arial,'Microsoft YaHei',sans-serif;padding:32px;width:794px;background:#fff;color:#222;box-sizing:border-box"><h1 style="text-align:center;color:#409EFF;margin:0 0 24px;font-size:26px">企业注册审核信息</h1><table style="width:100%;border-collapse:collapse;font-size:14px">${rows.map(([k,v]) => `<tr><td style="padding:10px;border:1px solid #ddd;background:#f5f7fa;font-weight:bold;width:32%">${k}</td><td style="padding:10px;border:1px solid #ddd;white-space:pre-wrap;word-break:break-word">${v}</td></tr>`).join('')}</table><div style="text-align:center;margin-top:28px;color:#909399;font-size:12px">生成时间：${new Date().toLocaleString('zh-CN')}</div></div>`
+  const frame = document.createElement('iframe')
+  frame.setAttribute('aria-hidden', 'true')
+  frame.style.cssText = 'position:fixed;left:-10000px;top:0;width:794px;height:1400px;border:0;visibility:visible;'
+  document.body.appendChild(frame)
+  try {
+    const doc = frame.contentDocument
+    if (!doc) throw new Error('无法创建 PDF 渲染文档')
+    doc.open(); doc.write(`<!doctype html><html><head><meta charset="utf-8"></head><body style="margin:0;background:#fff">${html}</body></html>`); doc.close()
+    await new Promise(resolve => setTimeout(resolve, 100))
+    const root = doc.body.firstElementChild as HTMLElement | null
+    if (!root) throw new Error('审核信息内容为空')
+    const canvas = await html2canvas(root, { scale: 2, backgroundColor: '#fff', useCORS: true, logging: false, windowWidth: 794, windowHeight: root.scrollHeight })
+    if (!canvas.width || !canvas.height) throw new Error('审核信息内容为空')
+    const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait', compress: true })
+    const margin = 10, imageWidth = 190, pageImageHeight = 277, sourcePageHeight = Math.floor(pageImageHeight * canvas.width / imageWidth)
+    for (let y = 0, page = 0; y < canvas.height; y += sourcePageHeight, page++) {
+      if (page) pdf.addPage()
+      const h = Math.min(sourcePageHeight, canvas.height - y), slice = document.createElement('canvas'); slice.width = canvas.width; slice.height = h
+      const ctx = slice.getContext('2d'); if (!ctx) throw new Error('无法创建 PDF 画布')
+      ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, slice.width, slice.height); ctx.drawImage(canvas, 0, y, canvas.width, h, 0, 0, canvas.width, h)
+      pdf.addImage(slice.toDataURL('image/jpeg', 0.95), 'JPEG', margin, margin, imageWidth, h * imageWidth / canvas.width)
+    }
+    pdf.save(`${String(company.companyName || '企业').replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').slice(0, 80)}_企业注册审核信息.pdf`)
     ElMessage.success('下载成功')
-  }).catch(err => {
-    document.body.removeChild(element)
-    ElMessage.error('下载失败: ' + err.message)
-  })
+  } catch (error) { ElMessage.error('下载失败: ' + (error instanceof Error ? error.message : '未知错误')) }
+  finally { frame.remove() }
 }
-
 // 获取企业标签列表
 const fetchCompanyTags = async (): Promise<void> => {
   try {
     const response = await companyService.getAdminCompanyTags()
-    if (response && (response as any).code === 200 && (response as any).data) {
-      companyTagOptions.value = (response as any).data
+    // getAdminCompanyTags 返回 ApiResult<string[]>，收窄后使用
+    const tagRes = response as unknown as { code?: unknown; data?: unknown }
+    if (response && tagRes.code === 200 && tagRes.data !== undefined && tagRes.data !== null) {
+      const rawTags: unknown = tagRes.data
+      companyTagOptions.value = Array.isArray(rawTags) ? rawTags.map(t => String(t)) : []
     }
-  } catch (error: any) {
+  } catch (error) {
     logger.error('获取企业标签列表失败:', error)
   }
 }
@@ -689,6 +915,15 @@ onMounted(async () => {
     logger.error('页面加载失败:', error)
   }
 })
+
+useAgentPageContext(() => ({
+  title: '企业管理',
+  view: viewDialogVisible.value ? 'company-detail' : formDialogVisible.value ? 'company-form' : 'page',
+  object: viewDialogVisible.value && currentCompany.value?.id ? { type: 'admin_company', id: String(currentCompany.value.id) }
+    : formDialogVisible.value && companyForm.value.id ? { type: 'admin_company', id: String(companyForm.value.id) } : null,
+  selectedObjects: (selectedRows.value || []).slice(0, 20).map((row: CompanyRow) => ({ type: 'admin_company', id: String(row.id) })),
+  filters: { keyword: searchForm.value.companyName || '', status: searchForm.value.status ?? '', visibleIds: tableData.value.slice(0, 20).map(row => String(row.id)) }
+}))
 </script>
 
 <template>
@@ -752,11 +987,14 @@ onMounted(async () => {
     <el-card class="actions-card" shadow="never">
       <div class="actions-container">
         <div class="primary-actions">
-          <el-button v-if="authStore.hasPermission('user:company:add')" type="primary" @click="showAddDialog" class="action-btn primary">
+          <el-button v-if="authStore.hasPermission('user:company:add')" type="primary" data-agent-open @click="showAddDialog" class="action-btn primary">
             <el-icon><Plus /></el-icon>&nbsp;新增企业
           </el-button>
           <el-button v-if="authStore.hasPermission('user:company:delete')" type="danger" @click="batchDelete" class="action-btn danger">
             <el-icon><Delete /></el-icon>&nbsp;批量删除
+          </el-button>
+          <el-button v-if="authStore.hasPermission('user:company:reset')" type="warning" @click="resetAllCompanyPasswords" class="action-btn warning">
+            <el-icon><Key /></el-icon>&nbsp;一键重置全部密码
           </el-button>
         </div>
         <div class="secondary-actions">
@@ -811,17 +1049,17 @@ onMounted(async () => {
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="companyTag" label="标签" width="150" align="center">
+        <el-table-column prop="companyTag" label="标签" min-width="240" align="center">
           <template #default="scope">
-            <div v-if="scope.row.companyTag" class="tag-container">
-              <el-tag 
-                v-for="(tag, index) in scope.row.companyTag.split(',')" 
-                :key="index" 
-                :type="getTagType(tag)" 
-                size="small" 
+            <div v-if="getCompanyTagList(scope.row).length" class="tag-container">
+              <el-tag
+                v-for="tag in getCompanyTagList(scope.row)"
+                :key="tag.text"
+                :type="tag.type"
+                size="small"
                 class="company-tag"
               >
-                {{ tag }}
+                {{ tag.text }}
               </el-tag>
             </div>
             <span v-else class="no-tag">-</span>
@@ -830,6 +1068,7 @@ onMounted(async () => {
         <el-table-column prop="contactPerson" label="联系人" width="120" align="center" />
         <el-table-column prop="contactPhone" label="联系电话" width="150" align="center" />
         <el-table-column prop="contactEmail" label="联系邮箱" min-width="180" align="center" />
+        <el-table-column prop="email" label="个人邮箱" min-width="180" align="center" show-overflow-tooltip />
         <el-table-column prop="address" label="企业地址" min-width="200" align="center" show-overflow-tooltip />
         <el-table-column prop="createTime" label="创建时间" width="170" align="center" :formatter="formatDate" />
         <el-table-column label="操作" align="center" width="240" fixed="right">
@@ -858,7 +1097,7 @@ onMounted(async () => {
               </el-tooltip>
 
               <!-- 更多操作下拉菜单 -->
-              <el-dropdown trigger="click" v-if="authStore.hasPermission('user:company:delete') || authStore.hasPermission('user:company:reset') || authStore.hasPermission('user:company:audit') || (authStore.hasPermission('company:recall:view') && scope.row.recallStatus === 1)">
+              <el-dropdown trigger="click" v-if="authStore.hasPermission('user:company:delete') || authStore.hasPermission('user:company:reset') || authStore.hasPermission('user:company:audit')">
                 <el-button size="small" class="table-btn more">
                   <el-icon><MoreFilled /></el-icon>
                 </el-button>
@@ -868,10 +1107,10 @@ onMounted(async () => {
                       <el-icon><Delete /></el-icon> 删除
                     </el-dropdown-item>
                     <el-dropdown-item v-if="authStore.hasPermission('user:company:reset')" @click="showResetPasswordDialog(scope.row)">
-                      <el-icon><Refresh /></el-icon> 重置密码
+                      <el-icon><Refresh /></el-icon> 重置该企业密码
                     </el-dropdown-item>
                     <el-dropdown-item v-if="authStore.hasPermission('user:company:audit')" @click="downloadMaterials(scope.row)">
-                      <el-icon><Download /></el-icon> 下载审核材料
+                      <el-icon><Download /></el-icon> 下载审核信息（不含附件）
                     </el-dropdown-item>
                   </el-dropdown-menu>
                 </template>
@@ -902,9 +1141,9 @@ onMounted(async () => {
         <el-form-item label="企业名称" prop="companyName">
           <el-input v-model="companyForm.companyName" placeholder="请输入企业名称" />
         </el-form-item>
-        <el-form-item label="登录账号" prop="username">
-          <el-input v-model="companyForm.username" placeholder="请输入登录账号" />
-        </el-form-item>
+        <div v-if="!isEdit" class="form-tip" style="margin-bottom: 18px;">
+          提示：登录账号默认与企业名称相同，初始密码默认为 123456
+        </div>
         <el-form-item label="联系人" prop="contactPerson">
           <el-input v-model="companyForm.contactPerson" placeholder="请输入联系人" />
         </el-form-item>
@@ -914,17 +1153,27 @@ onMounted(async () => {
         <el-form-item label="联系邮箱" prop="contactEmail">
           <el-input v-model="companyForm.contactEmail" placeholder="请输入联系邮箱" />
         </el-form-item>
+        <el-form-item label="个人邮箱" prop="email">
+          <el-input v-model="companyForm.email" placeholder="请输入个人邮箱（接收验证码，选填）" />
+        </el-form-item>
         <el-form-item label="企业地址" prop="address">
           <el-input v-model="companyForm.address" placeholder="请输入企业地址" />
         </el-form-item>
         <el-form-item label="企业介绍">
           <el-input v-model="companyForm.introduction" type="textarea" :rows="4" placeholder="请输入企业介绍" />
         </el-form-item>
+        <el-form-item label="挂牌实习基地">
+          <el-radio-group v-model="companyForm.isInternshipBase">
+            <el-radio :label="0">否</el-radio>
+            <el-radio :label="1">是</el-radio>
+          </el-radio-group>
+          <div class="form-tip" style="margin-left: 12px; font-size: 12px; color: #909399;">勾选后，该企业发布的岗位会显示"实习基地"标签</div>
+        </el-form-item>
         <el-form-item label="标签">
-          <el-input v-model="companyForm.companyTag" placeholder="请输入标签，多个标签用逗号分隔，例如：双向选择阶段，接受兜底" />
+          <el-input v-model="companyForm.companyTag" placeholder="请输入标签，多个标签用逗号分隔，例如：校企双向选择，接受兜底" />
           <div class="common-tags" style="margin-top: 8px;">
             <el-tag
-              v-for="tag in ['双向选择阶段', '学生自主联系', '接受兜底', '国家级', '省级']"
+              v-for="tag in ['校企双向选择', '学生自主联系', '接受兜底', '实习基地']"
               :key="tag"
               :type="getTagType(tag)"
               size="small"
@@ -949,53 +1198,53 @@ onMounted(async () => {
       <div v-if="currentCompany" class="company-detail">
         <el-descriptions :column="2" border>
           <el-descriptions-item label="企业名称" :span="2">{{ currentCompany.companyName }}</el-descriptions-item>
+          <el-descriptions-item label="企业标签" :span="2">
+            <el-tag v-for="tag in getCompanyTagList(currentCompany)" :key="tag.text" :type="tag.type" size="small">
+              {{ tag.text }}
+            </el-tag>
+            <span v-if="!getCompanyTagList(currentCompany).length">无</span>
+          </el-descriptions-item>
+          <el-descriptions-item label="统一社会信用代码" :span="2">{{ currentCompany.creditCode || '-' }}</el-descriptions-item>
           <el-descriptions-item label="联系人">{{ currentCompany.contactPerson }}</el-descriptions-item>
           <el-descriptions-item label="联系电话">{{ currentCompany.contactPhone }}</el-descriptions-item>
           <el-descriptions-item label="联系邮箱" :span="2">{{ currentCompany.contactEmail }}</el-descriptions-item>
-          <el-descriptions-item label="企业地址" :span="2">{{ currentCompany.address }}</el-descriptions-item>
+          <el-descriptions-item label="个人邮箱" :span="2">{{ currentCompany.email || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="企业地址" :span="2">{{ getFullAddress(currentCompany) }}</el-descriptions-item>
+          <el-descriptions-item label="所属行业">
+            <template v-if="currentCompany.industry === 'it'">IT企业</template>
+            <template v-else-if="currentCompany.industry === 'medical_equipment'">医疗设备企业</template>
+            <template v-else-if="currentCompany.industry === 'hospital'">医院</template>
+            <template v-else-if="currentCompany.industry === 'other'">其它</template>
+            <template v-else>{{ currentCompany.industry || '-' }}</template>
+          </el-descriptions-item>
+          <el-descriptions-item label="企业规模">{{ formatScale(currentCompany.scale) }}</el-descriptions-item>
+          <el-descriptions-item label="企业网站" :span="2">
+            <el-link v-if="currentCompany.website && isSafeUrl(currentCompany.website)" type="primary" :href="currentCompany.website" target="_blank" rel="noopener noreferrer">{{ currentCompany.website }}</el-link>
+            <span v-else-if="currentCompany.website">{{ currentCompany.website }}</span>
+            <span v-else>-</span>
+          </el-descriptions-item>
           <el-descriptions-item label="企业介绍" :span="2">
             <div class="company-intro">{{ currentCompany.introduction || '暂无介绍' }}</div>
           </el-descriptions-item>
-          <el-descriptions-item label="标签" :span="2">
-            <div v-if="currentCompany.companyTag" class="tag-container">
-              <el-tag 
-                v-for="(tag, index) in currentCompany.companyTag.split(',')" 
-                :key="index" 
-                :type="getTagType(tag)" 
-                size="small" 
-                class="company-tag"
-              >
-                {{ tag }}
-              </el-tag>
+          <el-descriptions-item label="校友信息" :span="2">
+            <div v-if="currentCompany.alumniMembers?.length" class="detail-list">
+              <div v-for="member in currentCompany.alumniMembers" :key="member.id || `${member.name}-${member.phone}`" class="detail-item">
+                {{ member.name }} · {{ member.phone }} · {{ member.position }}
+              </div>
             </div>
-            <span v-else class="no-tag">-</span>
+            <span v-else>非校友单位或暂无校友信息</span>
           </el-descriptions-item>
-          <el-descriptions-item label="营业执照" :span="2">
-            <div v-if="currentCompany.businessLicense" class="image-preview">
-              <el-image
-                :src="getImageUrl(currentCompany.businessLicense)"
-                :preview-src-list="[getImageUrl(currentCompany.businessLicense)]"
-                fit="cover"
-                class="material-image"
-                :preview-teleported="true"
-              />
+          <el-descriptions-item label="校内对接人" :span="2">
+            <div v-if="currentCompany.schoolLiaisons?.length" class="detail-list">
+              <div v-for="liaison in currentCompany.schoolLiaisons" :key="liaison.teacherId" class="detail-item">
+                {{ liaison.teacherName || liaison.name }} · {{ liaison.teacherPhone || liaison.phone || '未填写电话' }}
+              </div>
             </div>
-            <div v-else class="material-content">未上传</div>
+            <span v-else>暂未设置</span>
           </el-descriptions-item>
-          <el-descriptions-item label="法人身份证" :span="2">
-            <div v-if="currentCompany.legalIdCard" class="image-preview">
-              <el-image
-                v-for="(url, index) in getImageUrls(currentCompany.legalIdCard)"
-                :key="index"
-                :src="url"
-                :preview-src-list="getImageUrls(currentCompany.legalIdCard)"
-                fit="cover"
-                class="material-image"
-                :preview-teleported="true"
-                :initial-index="index"
-              />
-            </div>
-            <div v-else class="material-content">未上传</div>
+          <el-descriptions-item label="走访情况" :span="2">
+            本年度 {{ currentCompany.visitSummary?.currentYearVisitCount || 0 }} 次，累计 {{ currentCompany.visitSummary?.totalVisitCount || 0 }} 次
+            <template v-if="currentCompany.visitSummary?.lastVisitDate">，最近走访：{{ currentCompany.visitSummary.lastVisitDate }}</template>
           </el-descriptions-item>
           <el-descriptions-item label="申请时间" :span="2">{{ formatDate(null, null, currentCompany.applyTime) }}</el-descriptions-item>
           <el-descriptions-item label="审核状态">
@@ -1008,6 +1257,122 @@ onMounted(async () => {
           <el-descriptions-item label="创建时间">{{ formatDate(null, null, currentCompany.createTime) }}</el-descriptions-item>
           <el-descriptions-item label="更新时间">{{ formatDate(null, null, currentCompany.updateTime) }}</el-descriptions-item>
         </el-descriptions>
+
+        <div v-if="authStore.hasPermission('user:company:audit')" class="detail-list">
+          <strong>企业资质附件</strong>
+          <el-button v-if="currentCompany.businessLicense" link type="primary"
+            @click="downloadCompanyMaterial('businessLicense', 0, '营业执照')">下载营业执照</el-button>
+          <el-button v-for="index in legalCardIndices" :key="index" link type="primary"
+            @click="downloadCompanyMaterial('legalIdCard', index, `法人身份证${index === 0 ? '正面' : '反面'}`)">
+            下载法人身份证{{ index === 0 ? '正面' : '反面' }}
+          </el-button>
+          <el-button v-if="currentCompany.plaquePhoto" link type="primary"
+            @click="downloadCompanyMaterial('plaquePhoto', 0, '牌匾照片')">下载牌匾照片</el-button>
+        </div>
+
+        <!-- 企业宣传资料（折叠展示，与教师端一致） -->
+        <el-collapse v-if="hasPromotion" v-model="promotionActive" class="promotion-panel">
+          <el-collapse-item name="promotion">
+            <template #title>
+              <div class="promotion-header">
+                <div class="promotion-title-wrap">
+                  <span class="promotion-title-icon">
+                    <el-icon><PictureFilled /></el-icon>
+                  </span>
+                  <span class="promotion-title-text">企业宣传资料</span>
+                </div>
+                <div class="promotion-badges">
+                  <span v-if="currentCompany.logo" class="promo-badge">
+                    <el-icon><OfficeBuilding /></el-icon>Logo
+                  </span>
+                  <span v-if="companyPhotos.length" class="promo-badge">
+                    <el-icon><PictureFilled /></el-icon>{{ companyPhotos.length }} 张照片
+                  </span>
+                  <span v-if="companyVideos.length" class="promo-badge">
+                    <el-icon><VideoCameraFilled /></el-icon>{{ companyVideos.length }} 个视频
+                  </span>
+                </div>
+              </div>
+            </template>
+
+            <div class="promotion-body">
+              <div v-if="currentCompany.logo" class="promo-section">
+                <div class="promo-section-title">
+                  <el-icon><OfficeBuilding /></el-icon>
+                  <span>企业 Logo</span>
+                </div>
+                <div class="promo-logo-card">
+                  <el-image
+                    :src="currentCompany.logo"
+                    class="promo-logo"
+                    fit="contain"
+                    :preview-src-list="[currentCompany.logo]"
+                    preview-teleported
+                  >
+                    <template #placeholder>
+                      <div class="promo-placeholder">加载中...</div>
+                    </template>
+                    <template #error>
+                      <div class="promo-placeholder">图片加载失败</div>
+                    </template>
+                  </el-image>
+                </div>
+              </div>
+
+              <div v-if="companyPhotos.length" class="promo-section">
+                <div class="promo-section-title">
+                  <el-icon><PictureFilled /></el-icon>
+                  <span>企业照片</span>
+                  <span class="promo-count">{{ companyPhotos.length }}</span>
+                </div>
+                <div class="promo-photo-grid">
+                  <div
+                    v-for="(url, i) in companyPhotos"
+                    :key="i"
+                    class="promo-photo-item"
+                  >
+                    <el-image
+                      :src="url"
+                      class="promo-photo"
+                      fit="cover"
+                      :preview-src-list="companyPhotos"
+                      :initial-index="i"
+                      preview-teleported
+                    >
+                      <template #placeholder>
+                        <div class="promo-placeholder">加载中...</div>
+                      </template>
+                      <template #error>
+                        <div class="promo-placeholder">加载失败</div>
+                      </template>
+                    </el-image>
+                    <div class="promo-photo-overlay">
+                      <el-icon class="overlay-icon"><ZoomIn /></el-icon>
+                      <span class="overlay-text">点击查看大图</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div v-if="companyVideos.length" class="promo-section">
+                <div class="promo-section-title">
+                  <el-icon><VideoCameraFilled /></el-icon>
+                  <span>企业视频</span>
+                  <span class="promo-count">{{ companyVideos.length }}</span>
+                </div>
+                <div class="promo-video-grid">
+                  <div
+                    v-for="(url, i) in companyVideos"
+                    :key="i"
+                    class="promo-video-item"
+                  >
+                    <video :src="url" controls preload="metadata" class="promo-video" />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </el-collapse-item>
+        </el-collapse>
       </div>
       <template #footer>
         <span class="dialog-footer">
@@ -1020,7 +1385,7 @@ onMounted(async () => {
     <!-- 重置密码对话框 -->
     <el-dialog v-model="resetPasswordDialogVisible" title="重置密码" width="400px" class="reset-dialog">
       <div class="reset-content">
-        <p>密码将被重置为：<span class="password-text">123456</span></p>
+        <p>密码将统一重置为 123456。</p>
         <p class="reset-tip">请确认是否继续重置密码</p>
       </div>
       <template #footer>
@@ -1057,6 +1422,13 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+.form-tip {
+  color: #909399;
+  font-size: 12px;
+  margin-top: 4px;
+  line-height: 1.5;
+}
+
 .company-management-container {
   padding: 20px;
   background: #f5f7fa;
@@ -1236,6 +1608,269 @@ onMounted(async () => {
 
 .company-detail { padding: 20px 0; }
 .company-intro { white-space: pre-wrap; line-height: 1.6; }
+
+/* 企业宣传资料（与教师端企业详情一致） */
+.promotion-panel {
+  margin-top: 16px;
+  border: 1px solid #ebeef5;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+}
+
+.promotion-panel :deep(.el-collapse-item__header) {
+  height: 56px;
+  padding: 0 18px;
+  border-bottom: 1px solid #f0f2f5;
+  background: linear-gradient(135deg, #f6f9ff 0%, #ffffff 100%);
+  font-weight: 600;
+  color: #303133;
+  align-items: center;
+}
+
+.promotion-panel :deep(.el-collapse-item__header:hover) {
+  background: linear-gradient(135deg, #eef4ff 0%, #fafcff 100%);
+}
+
+.promotion-panel :deep(.el-collapse-item__content) {
+  padding: 18px;
+  background: #fafbfc;
+}
+
+.promotion-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  gap: 12px;
+}
+
+.promotion-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.promotion-title-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #409eff 0%, #6a8dff 100%);
+  color: #fff;
+  font-size: 16px;
+  box-shadow: 0 2px 6px rgba(64, 158, 255, 0.35);
+}
+
+.promotion-title-text {
+  font-size: 15px;
+  font-weight: 600;
+  color: #303133;
+  letter-spacing: 0.3px;
+}
+
+.promotion-badges {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.promo-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 9px;
+  font-size: 12px;
+  color: #409eff;
+  background: #ecf5ff;
+  border: 1px solid #d9ecff;
+  border-radius: 12px;
+  line-height: 1.4;
+}
+
+.promo-badge .el-icon {
+  font-size: 12px;
+}
+
+.promotion-body {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.promo-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.promo-section-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #303133;
+  padding-left: 8px;
+  position: relative;
+}
+
+.promo-section-title::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 13px;
+  background: linear-gradient(180deg, #409eff 0%, #6a8dff 100%);
+  border-radius: 2px;
+}
+
+.promo-section-title .el-icon {
+  color: #409eff;
+  font-size: 14px;
+}
+
+.promo-count {
+  margin-left: 2px;
+  padding: 0 6px;
+  min-width: 18px;
+  height: 16px;
+  line-height: 16px;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 600;
+  color: #fff;
+  background: #409eff;
+  border-radius: 8px;
+}
+
+/* Logo 卡片：正方形容器，图片 contain 完整显示 */
+.promo-logo-card {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 140px;
+  height: 140px;
+  background: linear-gradient(135deg, #f6f9ff 0%, #ffffff 100%);
+  border: 1px solid #ebeef5;
+  border-radius: 8px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.6);
+}
+
+.promo-logo {
+  width: 100%;
+  height: 100%;
+  cursor: zoom-in;
+}
+
+.promo-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  font-size: 12px;
+  color: #909399;
+  background: #f5f7fa;
+}
+
+/* 照片网格 */
+.promo-photo-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 12px;
+}
+
+.promo-photo-item {
+  position: relative;
+  aspect-ratio: 4 / 3;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #f5f7fa;
+  border: 1px solid #ebeef5;
+  cursor: zoom-in;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.promo-photo-item:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(64, 158, 255, 0.18);
+  border-color: #c6e2ff;
+}
+
+.promo-photo {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.promo-photo-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0) 0%, rgba(0, 0, 0, 0.55) 100%);
+  color: #fff;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  pointer-events: none;
+}
+
+.promo-photo-item:hover .promo-photo-overlay {
+  opacity: 1;
+}
+
+.overlay-icon {
+  font-size: 20px;
+}
+
+.overlay-text {
+  font-size: 12px;
+  letter-spacing: 0.3px;
+}
+
+/* 视频网格 */
+.promo-video-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+}
+
+.promo-video-item {
+  aspect-ratio: 16 / 9;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #000;
+  border: 1px solid #ebeef5;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+}
+
+.promo-video {
+  width: 100%;
+  height: 100%;
+  display: block;
+  background: #000;
+}
+
+.detail-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.detail-item {
+  color: #606266;
+  line-height: 1.6;
+}
 
 .image-preview {
   display: flex;

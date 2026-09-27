@@ -29,11 +29,14 @@
         <result property="phone" column="phone" />
         <result property="email" column="email" />
         <result property="positionName" column="position_name" />
+        <result property="stageNo" column="stage_no" />
+        <result property="stageAssignmentId" column="stage_assignment_id" />
+        <result property="sourceType" column="source_type" />
     </resultMap>
     
     <insert id="insert" parameterType="com.internship.entity.InternshipApplicationEntity" useGeneratedKeys="true" keyProperty="id">
-        insert into internship_application (student_id, student_name, student_user_id, position_id, position_name, company_id, status, viewed, skills, experience, self_evaluation, apply_time, viewed_time, create_time, update_time, gender, grade, school, education, major, phone, email)
-        values (#{studentId}, #{studentName}, #{studentUserId}, #{positionId}, #{positionName}, #{companyId}, #{status}, #{viewed}, #{skills}, #{experience}, #{selfEvaluation}, #{applyTime}, #{viewTime}, #{createTime}, #{updateTime}, #{gender}, #{grade}, #{school}, #{education}, #{major}, #{phone}, #{email})
+        insert into internship_application (student_id, student_name, student_user_id, position_id, position_name, company_id, status, viewed, skills, experience, self_evaluation, apply_time, viewed_time, create_time, update_time, gender, grade, school, education, major, phone, email, stage_no, stage_assignment_id, source_type)
+        values (#{studentId}, #{studentName}, #{studentUserId}, #{positionId}, #{positionName}, #{companyId}, #{status}, #{viewed}, #{skills}, #{experience}, #{selfEvaluation}, #{applyTime}, #{viewTime}, #{createTime}, #{updateTime}, #{gender}, #{grade}, #{school}, #{education}, #{major}, #{phone}, #{email}, #{stageNo}, #{stageAssignmentId}, #{sourceType})
     </insert>
     
     <select id="findById" resultMap="InternshipApplicationResultMap">
@@ -92,7 +95,25 @@
     
     <update id="updateStatus">
         UPDATE internship_application SET status = #{status}, update_time = NOW()
-        WHERE id = #{id} AND status IN ('pending', 'interview')
+        WHERE id = #{id}
+          AND status IN ('pending', 'approved', 'interview', 'pending_interview', 'interview_passed')
+    </update>
+
+    <update id="updateLatestStatusByStudentAndPosition">
+        UPDATE internship_application
+        SET status = #{status}, update_time = NOW()
+        WHERE id = (
+            SELECT latest.id
+            FROM (
+                SELECT id
+                FROM internship_application
+                WHERE student_id = #{studentId}
+                  AND position_id = #{positionId}
+                ORDER BY COALESCE(apply_time, create_time) DESC, id DESC
+                LIMIT 1
+            ) latest
+        )
+          AND status IN ('pending', 'approved', 'interview', 'pending_interview', 'interview_passed')
     </update>
     
     <update id="updateViewed">

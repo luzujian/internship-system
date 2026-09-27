@@ -22,6 +22,11 @@ public class CounselorKeywordServiceImpl implements CounselorKeywordService {
     private KeywordLibraryMapper keywordLibraryMapper;
 
     @Override
+    public CounselorKeyword findById(Long id) {
+        return counselorKeywordMapper.findById(id);
+    }
+
+    @Override
     public List<CounselorKeyword> getKeywordsByCounselorId(Long counselorId) {
         initDefaultKeywordsIfNeeded(counselorId);
         return counselorKeywordMapper.findByCounselorId(counselorId);

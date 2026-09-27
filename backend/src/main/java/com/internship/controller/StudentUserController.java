@@ -2,13 +2,18 @@ package com.internship.controller;
 
 import com.internship.anno.Log;
 import com.internship.exception.BusinessException;
+import com.internship.entity.Class;
+import com.internship.entity.Major;
 import com.internship.entity.PageResult;
 import com.internship.entity.Result;
 import com.internship.entity.StudentUser;
+import com.internship.mapper.ClassMapper;
+import com.internship.mapper.MajorMapper;
 import com.internship.service.StudentUserService;
 import com.internship.utils.JwtUtils;
 import com.internship.utils.ExcelUtils;
 import com.internship.utils.PasswordValidator;
+import com.internship.utils.UserCredentialDefaults;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.poi.ss.usermodel.*;
@@ -25,10 +30,11 @@ import java.io.OutputStream;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Date;
+import java.util.ArrayList;
 import java.util.List;
 
 import java.util.Map;
-import java.util.UUID;
+import java.util.HashMap;
 
 /**
  * 学生用户控制器
@@ -44,6 +50,15 @@ public class StudentUserController {
     @Autowired
     private JwtUtils jwtUtils;
 
+    @Autowired
+    private MajorMapper majorMapper;
+
+    @Autowired
+    private ClassMapper classMapper;
+
+    @Autowired(required = false)
+    private com.internship.service.UserCacheService userCacheService;
+
     // 获取所有学生用户（分页）
     @GetMapping
     @PreAuthorize("hasAuthority('user:student:view')")
@@ -57,8 +72,9 @@ public class StudentUserController {
                                      @RequestParam(required = false) Integer status,
                                      @RequestParam(required = false) Integer gender,
                                      @RequestParam(required = false) String department) {
-        log.info("分页获取学生用户列表，页码: {}, 每页条数: {}, 学号: {}, 姓名: {}, 年级: {}, 专业ID: {}, 班级ID: {}, 状态: {}, 性别: {}, 院系: {}",
-                page, pageSize, studentId, name, grade, majorId, classId, status, gender, department);
+        log.info("分页获取学生用户列表：page={}, pageSize={}, hasFilters={}",
+                page, pageSize, studentId != null || name != null || grade != null || majorId != null
+                        || classId != null || status != null || gender != null || department != null);
         PageResult<StudentUser> pageResult = studentUserService.findPage(page, pageSize, studentId, name, grade, majorId, classId, status, gender, department);
         return Result.success(pageResult);
     }
@@ -73,6 +89,7 @@ public class StudentUserController {
      * @param classId 班级ID筛选条件
      * @param status 状态筛选条件
      */
+    @Log(operationType = "EXPORT", module = "STUDENT_MANAGEMENT", description = "导出学生数据", riskLevel = "MEDIUM", critical = true)
     @GetMapping("/export")
     @PreAuthorize("hasAuthority('user:student:view')")
     public void exportStudentData(HttpServletResponse response,
@@ -82,12 +99,33 @@ public class StudentUserController {
                                  @RequestParam(required = false) String majorId,
                                  @RequestParam(required = false) String classId,
                                  @RequestParam(required = false) Integer status) {
-        log.info("导出学生Excel数据，筛选条件: 学号={}, 姓名={}, 年级={}, 专业ID={}, 班级ID={}, 状态={}",
-                studentId, name, grade, majorId, classId, status);
+        log.info("收到学生 Excel 数据导出请求");
 
         try {
             // 获取所有满足条件的学生数据（不使用分页）
             List<StudentUser> students = studentUserService.findAll(studentId, name, grade, majorId, classId, status);
+
+            // 构建专业ID -> 专业名称 的映射
+            Map<Long, String> majorNameMap = new HashMap<>();
+            List<Major> majorList = majorMapper.findAll();
+            if (majorList != null) {
+                for (Major m : majorList) {
+                    if (m.getId() != null && m.getName() != null) {
+                        majorNameMap.put(m.getId(), m.getName());
+                    }
+                }
+            }
+
+            // 构建班级ID -> 班级名称 的映射
+            Map<Long, String> classNameMap = new HashMap<>();
+            List<Class> classList = classMapper.findAll();
+            if (classList != null) {
+                for (Class c : classList) {
+                    if (c.getId() != null && c.getName() != null) {
+                        classNameMap.put(c.getId(), c.getName());
+                    }
+                }
+            }
             
             // 创建Excel工作簿
             Workbook workbook = new XSSFWorkbook();
@@ -95,7 +133,7 @@ public class StudentUserController {
             
             // 创建表头行
             Row headerRow = sheet.createRow(0);
-            String[] headers = {"学号", "姓名", "年级", "专业", "班级"};
+            String[] headers = {"学号", "姓名", "年级", "专业", "班级", "手机号", "邮箱"};
             CellStyle headerStyle = workbook.createCellStyle();
             headerStyle.setFillForegroundColor(IndexedColors.GREEN.getIndex());
             headerStyle.setFillPattern(FillPatternType.SOLID_FOREGROUND);
@@ -133,16 +171,21 @@ public class StudentUserController {
                 dataRow.createCell(1).setCellValue(student.getName() != null ? student.getName() : "");
                 dataRow.createCell(2).setCellValue(student.getGrade() != null ? student.getGrade() : 0);
                 if (student.getMajorId() != null) {
-                    dataRow.createCell(3).setCellValue(student.getMajorId());
+                    String majorName = majorNameMap.get(student.getMajorId());
+                    dataRow.createCell(3).setCellValue(majorName != null ? majorName : "");
                 } else {
                     dataRow.createCell(3).setCellValue("");
                 }
                 
                 if (student.getClassId() != null) {
-                    dataRow.createCell(4).setCellValue(student.getClassId());
+                    String clsName = classNameMap.get(student.getClassId());
+                    dataRow.createCell(4).setCellValue(clsName != null ? clsName : "");
                 } else {
                     dataRow.createCell(4).setCellValue("");
                 }
+
+                dataRow.createCell(5).setCellValue(student.getPhone() != null ? student.getPhone() : "");
+                dataRow.createCell(6).setCellValue(student.getEmail() != null ? student.getEmail() : "");
 
                 // 设置数据行样式
                 for (int j = 0; j < headers.length; j++) {
@@ -152,11 +195,11 @@ public class StudentUserController {
                     }
                     cell.setCellStyle(dataStyle);
                 }
+            }
 
-                // 自动调整列宽（放在样式设置之后，只执行一次）
-                for (int j = 0; j < headers.length; j++) {
-                    sheet.autoSizeColumn(j);
-                }
+            // 自动调整列宽（所有数据填充后执行一次即可）
+            for (int j = 0; j < headers.length; j++) {
+                sheet.autoSizeColumn(j);
             }
             
             // 设置响应头
@@ -206,17 +249,20 @@ public class StudentUserController {
     // 添加学生用户
     @Log(operationType = "ADD", module = "STUDENT_MANAGEMENT", description = "添加学生用户")
     @PostMapping
-    @PreAuthorize("hasAuthority('user:student:add')")
+    @PreAuthorize("hasRole('ADMIN') and hasAuthority('user:student:add')")
     public Result addStudentUser(@RequestBody @Validated StudentUser studentUser) {
         log.info("添加学生用户: 学号{}", studentUser.getStudentId());
         try {
+            String initialPassword = UserCredentialDefaults.PASSWORD;
+            studentUser.setPassword(initialPassword);
             // 设置username字段，与studentUserId相同
             if (studentUser.getUsername() == null || studentUser.getUsername().isEmpty()) {
                 studentUser.setUsername(studentUser.getStudentId());
             }
             studentUser.setRole("ROLE_STUDENT"); // 确保角色正确
             studentUserService.register(studentUser);
-            return Result.success("添加成功");
+            return Result.success("添加成功", Map.of("initialCredentials",
+                    List.of(Map.of("username", studentUser.getUsername(), "password", initialPassword))));
         } catch (BusinessException e) {
             log.warn("添加学生用户失败: {}", e.getMessage());
             return Result.error(e.getMessage());
@@ -226,13 +272,16 @@ public class StudentUserController {
     // 批量添加学生用户
     @Log(operationType = "ADD", module = "STUDENT_MANAGEMENT", description = "批量添加学生用户")
     @PostMapping("/batch")
-    @PreAuthorize("hasAuthority('user:student:add')")
+    @PreAuthorize("hasRole('ADMIN') and hasAuthority('user:student:add')")
     public Result batchAddStudentUsers(@RequestBody List<StudentUser> studentUsers) {
         log.info("批量添加学生用户，数量: {}", studentUsers.size());
         try {
             int successCount = 0;
+            List<Map<String, String>> initialCredentials = new ArrayList<>();
             for (StudentUser studentUser : studentUsers) {
                 try {
+                    String initialPassword = UserCredentialDefaults.PASSWORD;
+                    studentUser.setPassword(initialPassword);
                     // 设置username字段，与studentUserId相同
                     if (studentUser.getUsername() == null || studentUser.getUsername().isEmpty()) {
                         studentUser.setUsername(studentUser.getStudentId());
@@ -240,11 +289,13 @@ public class StudentUserController {
                     studentUser.setRole("ROLE_STUDENT"); // 确保角色正确
                     studentUserService.register(studentUser);
                     successCount++;
+                    initialCredentials.add(Map.of("username", studentUser.getUsername(), "password", initialPassword));
                 } catch (Exception e) {
                     log.warn("添加学生用户 学号{} 失败: {}", studentUser.getStudentId(), e.getMessage());
                 }
             }
-            return Result.success("批量添加完成，成功: " + successCount + " 个用户");
+            return Result.success("批量添加完成，成功: " + successCount + " 个用户",
+                    Map.of("initialCredentials", initialCredentials));
         } catch (Exception e) {
             log.error("批量添加学生用户失败: {}", e.getMessage());
             return Result.error("批量添加用户失败");
@@ -256,11 +307,11 @@ public class StudentUserController {
     @PutMapping
     @PreAuthorize("hasAuthority('user:student:edit')")
     public Result updateStudentUser(@RequestBody StudentUser studentUser) {
-        log.info("更新学生用户请求: 学号={}, ID={}, 状态={}", studentUser.getStudentId(), studentUser.getId(), studentUser.getStatus());
+        log.info("更新学生用户请求: id={}, status={}", studentUser.getId(), studentUser.getStatus());
         try {
             // 安全处理：不允许通过此接口修改密码
             studentUser.setPassword(null);
-            log.debug("更新学生用户前的数据检查: {}", studentUser);
+            log.debug("更新学生用户数据校验完成: id={}", studentUser.getId());
             studentUserService.update(studentUser);
             return Result.success("更新成功", null);
         } catch (BusinessException e) {
@@ -277,10 +328,10 @@ public class StudentUserController {
     @PutMapping("/status")
     @PreAuthorize("hasAuthority('user:student:edit')")
     public Result updateStudentUserStatus(@RequestBody Map<String, Object> params) {
-        log.info("更新学生用户状态: {}", params);
         try {
             Long id = Long.valueOf(params.get("id").toString());
             Integer status = Integer.valueOf(params.get("status").toString());
+            log.info("更新学生用户状态: id={}, status={}", id, status);
             
             StudentUser studentUser = new StudentUser();
             studentUser.setId(id);
@@ -311,17 +362,36 @@ public class StudentUserController {
     }
 
     // 批量删除学生用户
-    @Log(operationType = "DELETE", module = "STUDENT_MANAGEMENT", description = "批量删除学生用户")
+    @Log(operationType = "DELETE", module = "STUDENT_MANAGEMENT", description = "批量删除学生用户", riskLevel = "HIGH", critical = true)
     @DeleteMapping("/batch")
     @PreAuthorize("hasAuthority('user:student:delete')")
     public Result batchDeleteStudentUsers(@RequestBody List<Long> ids) {
-        log.info("批量删除学生用户，ID列表: {}", ids);
+        log.info("批量删除学生用户：count={}", ids != null ? ids.size() : 0);
         try {
             int deletedCount = studentUserService.batchDeleteStudentUsers(ids);
             return Result.success("批量删除成功", deletedCount);
         } catch (BusinessException e) {
             log.warn("批量删除学生用户失败: {}", e.getMessage());
             return Result.error(e.getMessage());
+        }
+    }
+
+    @Log(operationType = "RESET_PASSWORD", module = "STUDENT_MANAGEMENT", description = "一键重置全部学生用户密码",
+            riskLevel = "HIGH", targetType = "STUDENT", critical = true)
+    @PostMapping("/reset-password/all")
+    @PreAuthorize("hasAuthority('user:student:reset')")
+    public Result resetAllStudentUserPasswords() {
+        log.info("一键重置全部学生用户密码");
+        try {
+            List<StudentUser> students = studentUserService.findAll(null, null, null, null, null);
+            int resetCount = studentUserService.resetAllPasswords();
+            for (StudentUser student : students) {
+                invalidateUserCredentials(student.getStudentId(), student.getUsername());
+            }
+            return Result.success("全部学生用户密码已重置为 123456", Map.of("resetCount", resetCount));
+        } catch (Exception e) {
+            log.error("一键重置全部学生用户密码失败", e);
+            return Result.error("一键重置全部学生用户密码失败：" + e.getMessage());
         }
     }
 
@@ -342,20 +412,15 @@ public class StudentUserController {
             if (studentUser == null) {
                 return Result.error("用户不存在");
             }
-
-            String newPassword = passwordDTO.get("password");
-            if (StringUtils.isBlank(newPassword)) {
-                newPassword = UUID.randomUUID().toString().substring(0, 8);
-            }
-
-            PasswordValidator.ValidationResult validationResult = PasswordValidator.validatePassword(newPassword);
-            if (!validationResult.isValid()) {
-                log.warn("重置学生用户密码失败：新密码不符合复杂度要求 - {}", validationResult.getMessage());
-                return Result.error(validationResult.getMessage());
-            }
+            // 管理员端统一重置口令，服务端固定生效，不信任前端传值。
+            String newPassword = UserCredentialDefaults.PASSWORD;
 
             studentUser.setPassword(newPassword);
             studentUserService.update(studentUser);
+            // 清除 Redis 用户缓存，避免被重置用户登录时命中旧密码哈希
+            if (userCacheService != null) {
+                userCacheService.evictUserCache(studentUser.getStudentId());
+            }
 
             jwtUtils.incrementUserTokenVersion(studentUser.getStudentId());
 
@@ -366,6 +431,17 @@ public class StudentUserController {
             return Result.error("重置密码失败：" + e.getMessage());
         }
     }
+
+    private void invalidateUserCredentials(String... usernames) {
+        for (String username : usernames) {
+            if (StringUtils.isNotBlank(username)) {
+                if (userCacheService != null) {
+                    userCacheService.evictUserCache(username);
+                }
+                jwtUtils.incrementUserTokenVersion(username);
+            }
+        }
+    }
     
     /**
      * 从Excel导入学生数据
@@ -373,7 +449,8 @@ public class StudentUserController {
      * @return 导入结果
      */
     @PostMapping("/import")
-    @PreAuthorize("hasAuthority('user:student:add')")
+    @PreAuthorize("hasRole('ADMIN') and hasAuthority('user:student:add')")
+    @Log(operationType = "IMPORT", module = "STUDENT_MANAGEMENT", description = "批量导入学生数据", riskLevel = "MEDIUM")
     public Result importStudentData(@RequestParam("file") MultipartFile file) {
         log.info("导入学生Excel数据，文件名: {}", file.getOriginalFilename());
         

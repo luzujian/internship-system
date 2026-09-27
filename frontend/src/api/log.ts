@@ -1,174 +1,207 @@
-// 日志服务
+// 日志中心 API（P1 统一接口）
 import request from '@/utils/request'
 
-export interface OperationLog {
+export interface LogSummary {
+  todayOperations: number
+  todayFailedOperations: number
+  todayFailedLogins: number
+  todayHighRiskEvents: number
+}
+
+export interface OperateLogItem {
   id: number
+  operateAdminId?: number
   operatorName?: string
+  operatorUsername?: string
   operatorRole?: string
+  ipAddress?: string
   operationType?: string
   module?: string
-  action?: string
-  method?: string
-  url?: string
-  params?: string
-  result?: string
-  ip?: string
-  userAgent?: string
-  time?: number
-  createTime?: string
+  description?: string
+  operationResult?: string
+  operateTime?: string
+  requestId?: string
+  riskLevel?: string
+  errorCode?: string
+  targetType?: string
+  targetId?: string
+  affectedCount?: number
+  realOperatorName?: string
+  httpMethod?: string
+  requestPath?: string
+  deviceType?: string
+  durationMs?: number
+  detailJson?: string
 }
 
-export interface LoginLog {
+export interface LoginLogItem {
   id: number
-  username: string
-  userType: string
-  loginTime: string
-  ip?: string
-  userAgent?: string
-  status?: number
+  userId?: string
+  userType?: string
+  userName?: string
+  operatorName?: string
+  loginTime?: string
+  ipAddress?: string
+  deviceInfo?: string
+  loginStatus?: string
+  requestId?: string
+  riskLevel?: string
+  errorCode?: string
+  deviceType?: string
+  durationMs?: number
+  detailJson?: string
 }
 
-export interface LogResponse {
+export interface SecurityEventItem {
+  id: number
+  eventTime?: string
+  requestId?: string
+  eventType?: string
+  userId?: string
+  username?: string
+  userRole?: string
+  operatorName?: string
+  realOperatorName?: string
+  riskLevel?: string
+  result?: string
+  errorCode?: string
+  targetType?: string
+  targetId?: string
+  affectedCount?: number
+  httpMethod?: string
+  requestPath?: string
+  ipAddress?: string
+  deviceType?: string
+  durationMs?: number
+  description?: string
+  detailJson?: string
+  entryHash?: string
+  prevHash?: string
+  keyVersion?: number
+}
+
+export interface PageData<T> {
+  rows: T[]
+  total: number
+  pages: number
+  current: number
+  pageSize: number
+}
+
+export interface LogListParams {
+  page?: number
+  pageSize?: number
+  startTime?: string
+  endTime?: string
+  operatorName?: string
+  role?: string
+  module?: string
+  action?: string
+  result?: string
+  riskLevel?: string
+  ip?: string
+  targetId?: string
+  requestId?: string
+  sortField?: string
+  sortOrder?: string
+}
+
+export interface LogOptions {
+  actions: string[]
+  modules: string[]
+  eventTypes: string[]
+  roles: string[]
+  riskLevels: string[]
+  results: string[]
+}
+
+export interface RetentionPolicies {
+  highRiskDays: number
+  normalDays: number
+  loginDays: number
+  logbackDays: number
+}
+
+export interface RetentionPreview {
+  operateLogNormal: number
+  operateLogHighRisk: number
+  loginLog: number
+  securityEventNormal: number
+  securityEventHighRisk: number
+}
+
+export interface LogResponse<T = unknown> {
   code: number
-  data: OperationLog[] | LoginLog[] | { rows: OperationLog[] | LoginLog[]; total: number }
+  data: T
+  message?: string
   msg?: string
 }
 
-// 获取登录日志数据 - 登录日志存储在操作日志表中，操作类型为 LOGIN
-export const getLoginLogsApi = (params: {
-  page?: number
-  pageSize?: number
-  userType?: string
-  startDate?: string
-  endDate?: string
-  sortField?: string
-  sortOrder?: string
-}) => {
-  // 确保分页参数是数字类型
-  const numericPage = parseInt(params.page as unknown as string) || 1
-  const numericPageSize = parseInt(params.pageSize as unknown as string) || 1000
-
-  const queryParams: Record<string, unknown> = {
-    page: numericPage,
-    pageSize: numericPageSize,
-    sortField: params.sortField || 'login_time',
-    sortOrder: params.sortOrder || 'desc',
-    operationType: 'LOGIN'
-  }
-
-  // 添加可选参数
-  if (params.userType && String(params.userType).trim() !== '') {
-    queryParams.userType = String(params.userType)
-  }
-  if (params.startDate) {
-    queryParams.startDate = params.startDate
-  }
-  if (params.endDate) {
-    queryParams.endDate = params.endDate
-  }
-
-  return request.get<LogResponse>('/admin/logs/operation', {
-    params: queryParams
-  })
+// 顶部统计
+export const getLogSummaryApi = () => {
+  return request.get<LogResponse<LogSummary>>('/admin/logs/summary')
 }
 
-// 获取登录日志数据 - 调用新的/login-logs 接口
-export const getLoginLogsByNewApi = (params: {
-  page?: number
-  pageSize?: number
-  userType?: string
-  startDate?: string
-  endDate?: string
-  sortField?: string
-  sortOrder?: string
-}) => {
-  // 确保分页参数是数字类型
-  const numericPage = parseInt(params.page as unknown as string) || 1
-  const numericPageSize = parseInt(params.pageSize as unknown as string) || 1000
-
-  const queryParams: Record<string, unknown> = {
-    page: numericPage,
-    pageSize: numericPageSize,
-    sortField: params.sortField || 'login_time',
-    sortOrder: params.sortOrder || 'desc'
-  }
-
-  // 添加可选参数
-  if (params.userType && String(params.userType).trim() !== '') {
-    queryParams.userType = String(params.userType)
-  }
-  if (params.startDate) {
-    queryParams.startDate = params.startDate
-  }
-  if (params.endDate) {
-    queryParams.endDate = params.endDate
-  }
-
-  return request.get<LoginLog[]>('/login-logs', {
-    params: queryParams
-  })
+// 操作日志列表
+export const getOperationsApi = (params: LogListParams) => {
+  return request.get<LogResponse<PageData<OperateLogItem>>>('/admin/logs/operations', { params })
 }
 
-// 记录登录日志（由后端在登录时自动完成，不需要前端手动调用）
-export const recordLoginLogApi = (loginInfo: Record<string, unknown>) => {
-  return Promise.resolve()
+// 登录日志列表
+export const getLoginEventsApi = (params: LogListParams) => {
+  return request.get<LogResponse<PageData<LoginLogItem>>>('/admin/logs/login-events', { params })
 }
 
-// 分页条件查询
-export const queryPageApi = (
-  operatorName?: string,
-  operatorRole?: string,
-  operationType?: string,
-  module?: string,
-  page?: number | string,
-  pageSize?: number | string,
-  sortField = 'id',
-  sortOrder = 'desc'
-) => {
-  // 确保 page 和 pageSize 是数字类型
-  const numericPage = parseInt(page as unknown as string) || 1
-  const numericPageSize = parseInt(pageSize as unknown as string) || 15
-
-  // 构建参数对象
-  const params: Record<string, unknown> = {
-    page: numericPage,
-    pageSize: numericPageSize,
-    sortField: sortField,
-    sortOrder: sortOrder
-  }
-
-  // 只有当参数有实际值且转换为字符串后 trim 不为空时才添加到查询参数中
-  if (operatorName && String(operatorName).trim() !== '') {
-    params.operatorName = String(operatorName)
-  }
-  if (operatorRole && String(operatorRole).trim() !== '') {
-    params.operatorRole = String(operatorRole)
-  }
-  if (operationType && String(operationType).trim() !== '') {
-    params.operationType = String(operationType)
-  }
-  if (module && String(module).trim() !== '') {
-    params.module = String(module)
-  }
-
-  return request.get<LogResponse>('/admin/logs/operation', {
-    params: params
-  })
+// 安全事件列表
+export const getSecurityEventsApi = (params: LogListParams) => {
+  return request.get<LogResponse<PageData<SecurityEventItem>>>('/admin/logs/security-events', { params })
 }
 
-// 清理操作日志（手动清理 - 支持按角色清理）
-export const cleanLogsApi = (operatorRole: string | null = null, deleteAll = false) => {
-  const params: Record<string, unknown> = {}
-  if (operatorRole) {
-    params.operatorRole = operatorRole
-  }
-  if (deleteAll) {
-    params.deleteAll = true
-  }
-  return request.delete('/admin/logs/operation/clean', { params })
+// 日志详情（category: operations / login-events / security-events）
+export const getLogDetailApi = (category: string, id: number) => {
+  return request.get<LogResponse<OperateLogItem | LoginLogItem | SecurityEventItem>>(
+    `/admin/logs/${category}/${id}`
+  )
 }
 
-// 清理操作日志（自动清理 - 按角色阈值自动清理）
-export const autoCleanLogsApi = () => {
-  return request.delete('/admin/logs/operation/clean/auto')
+// 筛选选项（动作/模块/事件类型等由后端返回）
+export const getLogOptionsApi = () => {
+  return request.get<LogResponse<LogOptions>>('/admin/logs/options')
+}
+
+// 导出日志（当前标签及筛选条件，服务端流式 XLSX）
+export const exportLogsApi = (data: LogListParams & { category: string }) => {
+  return request.post('/admin/logs/export', data, { responseType: 'blob' })
+}
+
+// 获取留存策略
+export const getRetentionPoliciesApi = () => {
+  return request.get<LogResponse<RetentionPolicies>>('/admin/logs/retention/policies')
+}
+
+// 更新留存策略
+export const updateRetentionPoliciesApi = (policies: Partial<RetentionPolicies>) => {
+  return request.put<LogResponse<RetentionPolicies>>('/admin/logs/retention/policies', policies)
+}
+
+// 留存清理预览
+export const previewRetentionApi = () => {
+  return request.post<LogResponse<RetentionPreview>>('/admin/logs/retention/preview', {})
+}
+
+// 执行留存清理（需填写原因）
+export const runRetentionApi = (reason: string) => {
+  return request.post<LogResponse<{ deletedCount: number }>>('/admin/logs/retention/run', { reason })
+}
+
+export interface IntegrityVerifyReport {
+  passed: boolean
+  totalIssues: number
+  signatureRoots: Record<string, number>
+  [key: string]: unknown
+}
+
+// 手动触发全量完整性校验（P2：哈希链重算 + 签名根验证）
+export const verifyIntegrityApi = () => {
+  return request.post<LogResponse<IntegrityVerifyReport>>('/admin/logs/integrity/verify', {})
 }

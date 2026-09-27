@@ -7,21 +7,6 @@ export const getInternshipStatus = () => {
   })
 }
 
-export const getInternshipNodes = () => {
-  return request({
-    url: '/settings/internship-nodes',
-    method: 'get'
-  })
-}
-
-export const updateInternshipNodes = (data: any) => {
-  return request({
-    url: '/settings/internship-nodes',
-    method: 'put',
-    data
-  })
-}
-
 export const getAIAnalysisSettings = () => {
   return request({
     url: '/settings/ai-analysis',
@@ -37,10 +22,33 @@ export const updateAIAnalysisSettings = (data: any) => {
   })
 }
 
-// 获取实习时间设置（学生端使用）
-export const getInternshipTimeSettings = () => {
+export interface InternshipCalendar {
+  startDate: string
+  endDate: string
+  reportCycle: number
+  appraisalDeadline: string
+  version: string | null
+}
+
+export const getInternshipCalendar = () => {
   return request({
-    url: '/settings/internship-time',
+    url: '/settings/internship-calendar',
+    method: 'get'
+  })
+}
+
+export const updateInternshipCalendar = (data: InternshipCalendar) => {
+  return request({
+    url: '/settings/internship-calendar',
+    method: 'put',
+    data
+  })
+}
+
+// 查询心得周期配置项是否可见（依赖智慧评分菜单权限 menu:evaluation 是否授予任一教师角色）
+export const getReportCycleVisible = () => {
+  return request({
+    url: '/settings/report-cycle-visible',
     method: 'get'
   })
 }

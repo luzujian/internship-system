@@ -178,4 +178,14 @@ public class TeacherPermissionServiceImpl implements TeacherPermissionService {
         
         log.info("为教师角色 {} 分配权限成功，权限数量: {}", role.getRoleCode(), permissionIds != null ? permissionIds.size() : 0);
     }
+
+    @Override
+    public boolean isPermissionGrantedToAnyTeacherRole(String permissionCode) {
+        if (permissionCode == null || permissionCode.isBlank()) {
+            return false;
+        }
+        int count = teacherRolePermissionMapper.countRolesByPermissionCode(permissionCode);
+        log.info("[isPermissionGrantedToAnyTeacherRole] 权限码: {}, 授予角色数: {}", permissionCode, count);
+        return count > 0;
+    }
 }

@@ -45,7 +45,7 @@ public class AdminPermissionController {
 
     @PostMapping("/roles")
     @PreAuthorize("hasAuthority('permission:add')")
-    @Log(module = "PERMISSION", operationType = "CREATE", description = "创建角色")
+    @Log(module = "PERMISSION", operationType = "CREATE", description = "创建角色", riskLevel = "HIGH", critical = true)
     public Result createRole(@RequestBody Role role) {
         log.info("创建角色: {}", role.getRoleName());
         try {
@@ -58,7 +58,7 @@ public class AdminPermissionController {
 
     @PutMapping("/roles/{id}")
     @PreAuthorize("hasAuthority('permission:edit')")
-    @Log(module = "PERMISSION", operationType = "UPDATE", description = "更新角色")
+    @Log(module = "PERMISSION", operationType = "UPDATE", description = "更新角色", riskLevel = "HIGH", critical = true)
     public Result updateRole(@PathVariable Long id, @RequestBody Role role) {
         log.info("更新角色: {}", id);
         try {
@@ -71,7 +71,7 @@ public class AdminPermissionController {
 
     @DeleteMapping("/roles/{id}")
     @PreAuthorize("hasAuthority('permission:delete')")
-    @Log(module = "PERMISSION", operationType = "DELETE", description = "删除角色")
+    @Log(module = "PERMISSION", operationType = "DELETE", description = "删除角色", riskLevel = "HIGH", critical = true)
     public Result deleteRole(@PathVariable Long id) {
         log.info("删除角色: {}", id);
         try {
@@ -110,7 +110,7 @@ public class AdminPermissionController {
 
     @PostMapping("/roles/{roleId}/permissions")
     @PreAuthorize("hasAuthority('permission:edit')")
-    @Log(module = "PERMISSION", operationType = "ASSIGN", description = "分配权限")
+    @Log(module = "PERMISSION_MANAGEMENT", operationType = "ASSIGN", description = "分配角色权限", riskLevel = "HIGH", targetType = "ROLE", critical = true)
     public Result assignPermissions(@PathVariable Long roleId, @RequestBody Map<String, Object> data) {
         log.info("为角色分配权限: {}, 数据: {}", roleId, data);
         try {
@@ -140,7 +140,7 @@ public class AdminPermissionController {
 
     @DeleteMapping("/clear")
     @PreAuthorize("hasRole('ADMIN')")
-    @Log(module = "PERMISSION", operationType = "DELETE", description = "清除角色权限数据")
+    @Log(module = "PERMISSION", operationType = "DELETE", description = "清除角色权限数据", riskLevel = "HIGH", critical = true)
     public Result clearRolePermissions() {
         log.info("清除角色权限数据");
         try {

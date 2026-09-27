@@ -30,6 +30,9 @@ public interface PositionService {
      * @return 更新的记录数
      */
     int update(Position position);
+
+    /** Update only a position owned by the authenticated company. */
+    int updateForCompany(Position position, Long companyId);
     
     /**
      * 删除岗位信息
@@ -37,6 +40,9 @@ public interface PositionService {
      * @return 删除的记录数
      */
     int delete(Long id);
+
+    /** Delete only a position owned by the authenticated company. */
+    int deleteForCompany(Long id, Long companyId);
     
     /**
      * 查询所有岗位信息

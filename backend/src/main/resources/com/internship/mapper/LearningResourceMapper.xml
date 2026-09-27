@@ -1,7 +1,35 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.internship.mapper.LearningResourceMapper">
-    
+
+    <insert id="insert" parameterType="com.internship.entity.LearningResource"
+            useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO learning_resources
+        (title, description, file_url, file_type, uploader_id, uploader_role,
+         status, reviewer_id, ai_summary, embedding_vector, created_time, download_count)
+        VALUES
+        (#{title}, #{description}, #{fileUrl}, #{fileType}, #{uploaderId}, #{uploaderRole},
+         #{status}, #{reviewerId}, #{aiSummary}, #{embeddingVector}, #{createdTime}, #{downloadCount})
+    </insert>
+
+    <delete id="deleteById">
+        DELETE FROM learning_resources WHERE id = #{id}
+    </delete>
+
+    <update id="updateById" parameterType="com.internship.entity.LearningResource">
+        UPDATE learning_resources
+        SET title = #{title},
+            description = #{description},
+            file_type = #{fileType},
+            status = #{status},
+            reviewer_id = #{reviewerId}
+        WHERE id = #{id}
+    </update>
+
+    <select id="selectList" resultType="com.internship.entity.LearningResource">
+        SELECT * FROM learning_resources ORDER BY created_time DESC
+    </select>
+
     <select id="selectById" resultType="com.internship.entity.LearningResource">
         SELECT * FROM learning_resources WHERE id = #{id}
     </select>
@@ -21,7 +49,7 @@
     <!-- 语义搜索相关查询 - 适配Spring AI向量嵌入 -->
     <select id="findSimilarResourcesByType" parameterType="java.util.Map" resultType="com.internship.entity.LearningResource">
         SELECT * FROM learning_resources
-        WHERE status = 'PUBLISHED'
+        WHERE status = 'APPROVED'
         <!-- 只有在fileType不为null且不为空时才添加fileType条件 -->
         <if test="fileType != null and fileType != ''">
             AND file_type = #{fileType}
@@ -42,7 +70,7 @@
     
     <select id="countSimilarResourcesByType" parameterType="java.util.Map" resultType="long">
         SELECT COUNT(*) FROM learning_resources
-        WHERE status = 'PUBLISHED'
+        WHERE status = 'APPROVED'
         <if test="fileType != null and fileType != ''">
             AND file_type = #{fileType}
         </if>
@@ -53,7 +81,7 @@
     
     <select id="findSimilarResources" parameterType="java.util.Map" resultType="com.internship.entity.LearningResource">
         SELECT * FROM learning_resources
-        WHERE status = 'PUBLISHED'
+        WHERE status = 'APPROVED'
         AND ( (#{query} IS NULL OR #{query} = '') OR (title LIKE CONCAT('%', #{query}, '%') OR description LIKE CONCAT('%', #{query}, '%')) )
         ORDER BY 
             <!-- 优化排序逻辑，优先展示包含查询词的结果 -->
@@ -71,7 +99,7 @@
     
     <select id="countSimilarResources" parameterType="java.util.Map" resultType="int">
         SELECT COUNT(*) FROM learning_resources
-        WHERE status = 'PUBLISHED'
+        WHERE status = 'APPROVED'
         AND ( (#{query} IS NULL OR #{query} = '') OR (title LIKE CONCAT('%', #{query}, '%') OR description LIKE CONCAT('%', #{query}, '%')) )
     </select>
     

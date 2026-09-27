@@ -5,7 +5,7 @@
         <div class="card-header">
           <span>专业管理</span>
           <div style="display: flex; gap: 10px;">
-            <el-button v-if="authStore.hasPermission('major:add')" type="primary" @click="showAddDialog">添加专业</el-button>
+            <el-button v-if="authStore.hasPermission('major:add')" type="primary" data-agent-open @click="showAddDialog">添加专业</el-button>
             <el-button v-if="authStore.hasPermission('major:view')" type="success" @click="handleExportToExcel">
               <el-icon><Download /></el-icon> 导出 Excel
             </el-button>
@@ -96,13 +96,15 @@
 
 <script setup lang="ts">
 import logger from '@/utils/logger'
-import { ref, onMounted, inject } from 'vue'
+import { ref, onMounted, onUnmounted, inject, watch } from 'vue'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
 import { Download } from '@element-plus/icons-vue'
 import { exportToExcel } from '../../utils/xlsx'
 import Pagination from '../../components/Pagination.vue'
 import MajorService from '../../api/major'
 import { useAuthStore } from '../../store/auth'
+import type { FormFieldDescriptor } from '@/agent/types'
+import { useFormContext } from '@/agent/formContext'
 import type { Major } from '@/types/admin'
 
 interface PreloadService {
@@ -113,6 +115,17 @@ interface PreloadService {
 interface MajorWithCounts extends Major {
   teacherCount?: number
   studentCount?: number
+  code?: string
+  description?: string
+  status?: string
+}
+interface MajorListEnvelope {
+  code?: number
+  message?: string
+  msg?: string
+  data?: MajorWithCounts[] | { rows?: MajorWithCounts[]; total?: number; list?: MajorWithCounts[] }
+  total?: number
+  rows?: MajorWithCounts[]
 }
 
 interface AddMajorForm {
@@ -166,15 +179,17 @@ const editRules = ref<FormRules>({
 const addFormRef = ref<FormInstance | null>(null)
 const editFormRef = ref<FormInstance | null>(null)
 
-// 加载专业列表
+// 加载专业列表（request 拦截器已解包：response 即 {code,data} 业务包）
 const loadMajors = (): void => {
   loading.value = true
   MajorService.getMajors()
     .then(response => {
-      const result = response.data || response
-      if (result && result.code === 200 && result.data) {
-        majors.value = Array.isArray(result.data) ? result.data : []
-        total.value = result.total || majors.value.length
+      const envelope = response as unknown as MajorListEnvelope
+      if (envelope && envelope.code === 200) {
+        const listData: unknown = envelope.data
+        const rows = Array.isArray(listData) ? listData : []
+        majors.value = rows
+        total.value = envelope.total ?? rows.length
       } else {
         majors.value = []
         total.value = 0
@@ -196,12 +211,12 @@ const searchMajors = (): void => {
   MajorService.getMajors()
     .then(response => {
       let allMajors: MajorWithCounts[] = []
-      // 提取业务数据对象（从完整响应对象中提取 Result 对象）
-      const result = response.data || response
+      // request 拦截器已解包：response 即 {code,data} 业务包
+      const envelope = response as unknown as MajorListEnvelope
 
-      // api.js 响应拦截器返回的是 Result 对象{code, message, data}
-      if (result && result.code === 200 && result.data) {
-        allMajors = Array.isArray(result.data) ? result.data : []
+      if (envelope && envelope.code === 200) {
+        const listData: unknown = envelope.data
+        allMajors = Array.isArray(listData) ? listData : []
       }
 
       if (searchQuery.value) {
@@ -224,6 +239,31 @@ const searchMajors = (): void => {
     })
 }
 
+// ===== 智能填表：新增专业弹窗（只写响应式 model，不触发提交） =====
+const formContext = useFormContext()
+const majorFillFields: FormFieldDescriptor[] = [
+  { prop: 'name', label: '专业名称', type: 'input', required: true },
+  { prop: 'code', label: '专业代码', type: 'input', required: true },
+  { prop: 'description', label: '专业描述', type: 'textarea' },
+  { prop: 'status', label: '专业状态', type: 'select', required: true,
+    options: [{ label: '激活', value: 'ACTIVE' }, { label: '禁用', value: 'INACTIVE' }] }
+]
+watch(addDialogVisible, (open) => {
+  if (!open) formContext.unregister('admin:major')
+})
+watch(editDialogVisible, (open) => {
+  if (open) {
+    formContext.register({
+      formId: 'admin:major-edit',
+      title: '编辑专业',
+      fields: [{ prop: 'name', label: '专业名称', type: 'input', required: true }],
+      getModel: () => editForm.value,
+      getFormEl: () => editFormRef.value
+    })
+  } else formContext.unregister('admin:major-edit')
+})
+onUnmounted(() => { formContext.unregister('admin:major'); formContext.unregister('admin:major-edit') })
+
 // 显示添加专业对话框
 const showAddDialog = (): void => {
   addForm.value = {
@@ -233,6 +273,13 @@ const showAddDialog = (): void => {
     status: 'ACTIVE'
   }
   addDialogVisible.value = true
+  formContext.register({
+    formId: 'admin:major',
+    title: '添加专业',
+    fields: majorFillFields,
+    getModel: () => addForm.value,
+    getFormEl: () => addFormRef.value
+  })
 }
 
 // 添加专业
@@ -242,8 +289,12 @@ const addMajor = (): void => {
   addFormRef.value.validate((valid: boolean) => {
     if (!valid) return
 
+    const operation = formContext.beginFormOperation('admin:major')
     MajorService.addMajor(addForm.value)
-      .then(() => {
+      .then(response => {
+        if (response?.code !== 200) throw new Error(response?.message || '添加专业失败')
+        operation.complete({ status: 'saved', label: '添加专业成功', url: '/admin/majors' })
+
         ElMessage.success('添加专业成功')
         addDialogVisible.value = false
         loadMajors()
@@ -268,8 +319,16 @@ const updateMajor = (): void => {
   editFormRef.value.validate((valid: boolean) => {
     if (!valid) return
 
-    MajorService.updateMajor(editForm.value.id, editForm.value)
-      .then(() => {
+    // 本地 Major(id:string) 与 api/major Major(id:number) 仅为标识形态差异，运行时 URL 拼接一致；用精确断言保持原值
+    const operation = formContext.beginFormOperation('admin:major-edit')
+    MajorService.updateMajor(
+      editForm.value.id as unknown as Parameters<typeof MajorService.updateMajor>[0],
+      editForm.value as unknown as Parameters<typeof MajorService.updateMajor>[1]
+    )
+      .then(response => {
+        if (response?.code !== 200) throw new Error(response?.message || '更新专业失败')
+        operation.complete({ status: 'saved', label: '专业已更新', url: '/admin/majors' })
+
         ElMessage.success('更新专业成功')
         editDialogVisible.value = false
         loadMajors()
@@ -373,23 +432,35 @@ const handleExportToExcel = async (): Promise<void> => {
 
 // 初始加载
 onMounted(() => {
+  interface PreloadedMajorPage {
+    data?: unknown
+    total?: number
+  }
+  const asMajorRows = (input: unknown): MajorWithCounts[] => {
+    if (Array.isArray(input)) return input as MajorWithCounts[]
+    return []
+  }
   // 检查是否有预加载服务
   if (preloadService) {
     // 尝试获取预加载的数据
-    const preloadedMajors = preloadService.get('majors')
+    const preloadedMajors: unknown = preloadService.get('majors')
 
     // 处理预加载数据（考虑不同的数据结构）
-    if (preloadedMajors) {
+    if (preloadedMajors !== null && typeof preloadedMajors === 'object') {
+      const pageData = preloadedMajors as PreloadedMajorPage
       // 如果是标准的 API 返回格式 {data: [...], total: ...}
-      if (preloadedMajors.data && Array.isArray(preloadedMajors.data)) {
-        majors.value = preloadedMajors.data as MajorWithCounts[]
-        total.value = preloadedMajors.total || preloadedMajors.data.length
+      if (Array.isArray(pageData.data)) {
+        majors.value = asMajorRows(pageData.data)
+        total.value = pageData.total ?? (pageData.data as MajorWithCounts[]).length
       }
       // 如果直接是数组格式
       else if (Array.isArray(preloadedMajors)) {
-        majors.value = preloadedMajors as MajorWithCounts[]
-        total.value = preloadedMajors.length
+        majors.value = asMajorRows(preloadedMajors)
+        total.value = (preloadedMajors as MajorWithCounts[]).length
       }
+    } else if (Array.isArray(preloadedMajors)) {
+      majors.value = asMajorRows(preloadedMajors)
+      total.value = (preloadedMajors as MajorWithCounts[]).length
     }
 
     // 如果没有有效的预加载数据，从 API 获取
@@ -399,15 +470,16 @@ onMounted(() => {
 
     // 注册预加载完成回调
     preloadService.onComplete(() => {
-      const updatedMajors = preloadService.get('majors')
-      if (updatedMajors) {
-        if (updatedMajors.data && Array.isArray(updatedMajors.data)) {
-          majors.value = updatedMajors.data as MajorWithCounts[]
-          total.value = updatedMajors.total || updatedMajors.data.length
-        } else if (Array.isArray(updatedMajors)) {
-          majors.value = updatedMajors as MajorWithCounts[]
-          total.value = updatedMajors.length
+      const updatedMajors: unknown = preloadService.get('majors')
+      if (updatedMajors !== null && typeof updatedMajors === 'object' && !Array.isArray(updatedMajors)) {
+        const updatedPage = updatedMajors as PreloadedMajorPage
+        if (Array.isArray(updatedPage.data)) {
+          majors.value = asMajorRows(updatedPage.data)
+          total.value = updatedPage.total ?? (updatedPage.data as MajorWithCounts[]).length
         }
+      } else if (Array.isArray(updatedMajors)) {
+        majors.value = asMajorRows(updatedMajors)
+        total.value = (updatedMajors as MajorWithCounts[]).length
       }
     })
   } else {
@@ -438,5 +510,38 @@ onMounted(() => {
   margin-top: 20px;
   display: flex;
   justify-content: flex-end;
+}
+
+@media (max-width: 768px) {
+  .card-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .card-header > div {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .card-header :deep(.el-button) {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .search-bar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .search-bar :deep(.el-input) {
+    width: 100% !important;
+  }
+
+  .search-bar :deep(.el-button) {
+    width: 100%;
+    margin-left: 0 !important;
+  }
 }
 </style>

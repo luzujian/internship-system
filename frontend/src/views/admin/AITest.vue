@@ -87,7 +87,7 @@
                 <div v-for="(message, index) in messages" :key="index" :class="['message', message.role]" :data-role="message.role">
                   <div class="message-content">
                     <div class="message-bubble">
-                      <div class="message-text" v-html="formatMessage(message.content)"></div>
+                      <div class="message-text">{{ message.content }}</div>
                       <div class="message-meta">
                         <div class="message-time">{{ formatTime(message.timestamp) }}</div>
                         <div v-if="message.responseTime" class="response-time">
@@ -102,7 +102,7 @@
                 <div v-if="streamingMessage" class="message ai streaming">
                   <div class="message-content">
                     <div class="message-bubble">
-                      <div class="message-text" v-html="formatMessage(streamingMessage)"></div>
+                      <div class="message-text">{{ streamingMessage }}</div>
                       <div class="streaming-indicator active">
                         <span></span>
                         <span></span>
@@ -456,8 +456,8 @@ const streamingMessage = ref('')
 const refreshing = ref(false)
 const showModelSelector = ref(false)
 const selectedModelRow = ref(null)
-const enabledModels = ref([])
-const currentModel = ref(null)
+const enabledModels = ref<Array<{ id?: number | string; isDefault?: number | boolean; modelCode?: string; modelName?: string; status?: number | string; [key: string]: unknown }>>([])
+const currentModel = ref<{ modelCode?: string; modelName?: string; status?: number | string; isDefault?: number | boolean; [key: string]: unknown } | null>(null)
 const isUserScrolling = ref(false)
 const autoScrollEnabled = ref(true)
 
@@ -501,17 +501,31 @@ const currentModelStatus = computed(() => {
 const refreshModelInfo = async () => {
   refreshing.value = true
   try {
-    const response = await aiModelService.getEnabledAIModels()
+    interface AITestModelRow {
+      id?: number | string
+      isDefault?: number | boolean
+      modelCode?: string
+      modelName?: string
+      status?: number | string
+      [key: string]: unknown
+    }
+    interface AITestModelEnvelope {
+      code?: number
+      message?: string
+      msg?: string
+      data?: AITestModelRow[]
+    }
+    const response = await aiModelService.getEnabledAIModels() as unknown as AITestModelEnvelope
     if (response.code === 200) {
-      enabledModels.value = response.data || []
-      const defaultModel = enabledModels.value.find(m => m.isDefault === 1)
+      enabledModels.value = Array.isArray(response.data) ? response.data : []
+      const defaultModel = enabledModels.value.find(m => m.isDefault === 1 || m.isDefault === true)
       if (defaultModel) {
         currentModel.value = defaultModel
       } else if (enabledModels.value.length > 0) {
         currentModel.value = enabledModels.value[0]
       }
     } else {
-      ElMessage.error(response.message || '刷新模型信息失败')
+      ElMessage.error(response.message || response.msg || '刷新模型信息失败')
     }
   } catch (error) {
     ElMessage.error('刷新模型信息失败')
@@ -806,13 +820,6 @@ const handleMessageContainerClick = (event) => {
   
 }
 
-const formatMessage = (content) => {
-  if (typeof content === 'string') {
-    return content.replace(/\n/g, '<br>')
-  }
-  return content
-}
-
 const formatTime = (timestamp) => {
   if (!timestamp) return ''
   const date = new Date(timestamp)
@@ -988,7 +995,7 @@ const analyzeReflection = async () => {
     // 传递评分规则权重给后端，用于加权计算
     formData.append('categoryWeights', JSON.stringify(categoryWeightValues.value))
 
-    const response = await request.post('/admin/internship-reflection/upload-and-analyze', formData, {
+    const response = await request.post<{ analysis?: unknown; [key: string]: unknown }>('/admin/internship-reflection/upload-and-analyze', formData, {
       headers: {
         'Content-Type': 'multipart/form-data'
       },
@@ -996,7 +1003,10 @@ const analyzeReflection = async () => {
     } as any)
 
     if (response.code === 200) {
-      await streamDisplayAnalysisResult(response.data.analysis)
+      const analysisData: unknown = response.data !== null && typeof response.data === 'object'
+        ? (response.data as { analysis?: unknown }).analysis
+        : undefined
+      await streamDisplayAnalysisResult(analysisData)
       analysisProgressVisible.value = false
       ElMessage.success(`使用 ${formatModelCode(currentModel.value.modelCode)} 分析完成`)
     } else {
@@ -1102,9 +1112,16 @@ const loadSavedAnalysisResult = () => {
 
 const fetchCategoryWeights = async () => {
   try {
-    const response = await request.get('/admin/category-weight/active')
+    interface CategoryWeightRow {
+      categoryCode?: string
+      category_code?: string
+      categoryName?: string
+      category_name?: string
+      weight?: number
+    }
+    const response = await request.get<CategoryWeightRow[]>('/admin/category-weight/active')
     if (response.code === 200) {
-      const weights = response.data || []
+      const weights = Array.isArray(response.data) ? response.data : []
       // categoryWeights: 存储中文名称（用于UI显示）
       const nameMap: Record<string, string> = {}
       // categoryWeightValues: 存储权重值（用于传递给后端）
@@ -1762,6 +1779,7 @@ const loadChatMessages = () => {
   font-size: 14px;
   line-height: 1.65;
   word-break: break-word;
+  white-space: pre-wrap;
 }
 
 .message-meta {

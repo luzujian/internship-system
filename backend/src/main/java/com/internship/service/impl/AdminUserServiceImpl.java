@@ -5,6 +5,7 @@ import com.internship.mapper.AdminUserMapper;
 import com.internship.entity.PageResult;
 import com.internship.entity.AdminUser;
 import com.internship.service.AdminUserService;
+import com.internship.utils.UserCredentialDefaults;
 import com.github.pagehelper.PageHelper;
 import com.github.pagehelper.PageInfo;
 import org.apache.commons.lang3.StringUtils;
@@ -45,6 +46,7 @@ public class AdminUserServiceImpl implements AdminUserService {
     @Override
     public int register(AdminUser adminUser) {
         log.debug("注册管理员用户: {}", adminUser.getUsername());
+        adminUser.setPassword(UserCredentialDefaults.PASSWORD);
         // 参数校验
         validateAdminRegistration(adminUser);
         

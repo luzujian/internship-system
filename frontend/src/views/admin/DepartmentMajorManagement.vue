@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import logger from '@/utils/logger'
-import { onMounted, ref, computed, nextTick } from 'vue'
+import { onMounted, onUnmounted, ref, computed, nextTick, watch } from 'vue'
+import { useFormContext } from '@/agent/formContext'
 import type { Department, Division, Major, Class } from '@/types/admin'
 
 import DepartmentService from '../../api/department'
@@ -23,11 +24,71 @@ let searchDepartment = ref({ name: '', majorId: null })
 //加载状态
 let loading = ref<boolean>(false)
 //列表展示数据 - 院系列表
-let departments = ref<unknown[]>([])
-//系列表数据
-let divisionList = ref<unknown[]>([])
+interface DepartmentRow {
+  id?: string | number
+  name?: string
+  code?: string
+  description?: string
+  createTime?: string
+  create_time?: string
+  updateTime?: string
+  update_time?: string
+}
+interface DivisionRow {
+  id?: string | number
+  name?: string
+  departmentId?: string | number
+  department_id?: string | number
+  departmentName?: string
+  createTime?: string
+  create_time?: string
+  updateTime?: string
+  update_time?: string
+  teacherCount?: number
+  studentCount?: number
+  confirmedCount?: number
+  notFoundCount?: number
+  hasOfferCount?: number
+}
+interface MajorRow {
+  id?: string | number
+  majorId?: string | number
+  name?: string
+  majorName?: string
+  departmentId?: string | number
+  department_id?: string | number
+  divisionId?: string | number
+  division_id?: string | number
+  createTime?: string
+  create_time?: string
+  updateTime?: string
+  update_time?: string
+  teacherCount?: number
+  studentCount?: number
+  confirmedCount?: number
+  notFoundCount?: number
+  hasOfferCount?: number
+}
+let departments = ref<DepartmentRow[]>([])
+// 导入处理结果：成功时带计数与详情，失败时带错误信息（与原返回对象形态一致）
+interface ImportResult {
+  success: boolean
+  successCount?: number
+  errorCount?: number
+  errorMessages?: string[]
+  errorMessage?: string
+}
+// 双层包装（缓存命中形态 { data: { code, data } }）的精确形态，用于 narrowing
+interface NestedList<T> {
+  code: number
+  data: T
+  msg?: string
+  message?: string
+}
+// 系列表数据
+let divisionList = ref<DivisionRow[]>([])
 //专业列表数据
-let majorList = ref<unknown[]>([])
+let majorList = ref<MajorRow[]>([])
 //当前悬停的院系ID
 let hoveredDepartmentId = ref(null)
 //当前固定显示的院系ID
@@ -409,10 +470,15 @@ const saveDivision = async (): Promise<void> => {
   addDivisionFormRef.value.validate(async (valid) => {
     if (valid) {
       try {
-        const result = await DivisionService.addDivision(addDivisionForm.value)
+        const operation = formContext.beginFormOperation('admin:division')
+    const result = await DivisionService.addDivision({
+          name: addDivisionForm.value.name,
+          departmentId: Number(addDivisionForm.value.departmentId)
+        })
 
-        if (result && (result.code === 200 || result.data?.code === 200)) {
-          ElMessage.success('系添加成功')
+        if (result && (result.code === 200)) {
+          operation.complete({ status: 'saved', label: '系添加成功', url: '/admin/majors' })
+      ElMessage.success('系添加成功')
           addDivisionDialogVisible.value = false
           await getDivisionList()
           await queryDepartments()
@@ -457,10 +523,15 @@ const saveEditDivision = async (): Promise<void> => {
       }
 
       try {
-        const result = await DivisionService.updateDivision(editDivisionForm.value.id, editDivisionForm.value)
+        const operation = formContext.beginFormOperation('admin:division-edit')
+    const result = await DivisionService.updateDivision(editDivisionForm.value.id, {
+          name: editDivisionForm.value.name,
+          departmentId: Number(editDivisionForm.value.departmentId)
+        })
 
-        if (result && (result.code === 200 || result.data?.code === 200)) {
-          ElMessage.success('系编辑成功')
+        if (result && (result.code === 200)) {
+          operation.complete({ status: 'saved', label: '系编辑成功', url: '/admin/majors' })
+      ElMessage.success('系编辑成功')
           editDivisionDialogVisible.value = false
           await getDivisionList()
           await queryDepartments()
@@ -508,7 +579,7 @@ const handleDeleteDivision = async (division): Promise<void> => {
     )
 
     const result = await DivisionService.deleteDivision(division.id)
-    if (result && (result.code === 200 || result.data?.code === 200)) {
+    if (result && (result.code === 200)) {
       ElMessage.success('系删除成功')
       await getDivisionList()
       await getMajorList()
@@ -658,10 +729,16 @@ const saveEditMajor = async (): Promise<void> => {
       }
       
       try {
-        const result = await MajorService.updateMajor(editMajorForm.value.id, editMajorForm.value)
+        const operation = formContext.beginFormOperation('admin:major-org-edit')
+    const result = await MajorService.updateMajor(editMajorForm.value.id, {
+          name: editMajorForm.value.name,
+          departmentId: Number(editMajorForm.value.departmentId),
+          divisionId: editMajorForm.value.divisionId === '' ? undefined : Number(editMajorForm.value.divisionId)
+        })
         
-        if (result && (result.code === 200 || result.data?.code === 200)) {
-          ElMessage.success('专业编辑成功')
+        if (result && (result.code === 200)) {
+          operation.complete({ status: 'saved', label: '专业编辑成功', url: '/admin/majors' })
+      ElMessage.success('专业编辑成功')
           editMajorDialogVisible.value = false
           await getMajorList()
           await queryDepartments()
@@ -686,7 +763,8 @@ const closeEditMajorDialog = () => {
   editMajorForm.value = {
     id: '',
     name: '',
-    departmentId: ''
+    departmentId: '',
+    divisionId: ''
   }
   // 重置表单验证状态
   if (editMajorFormRef.value) {
@@ -714,7 +792,7 @@ const handleDeleteMajor = async (major): Promise<void> => {
     )
 
     const result = await MajorService.deleteMajor(major.id)
-    if (result && (result.code === 200 || result.data?.code === 200)) {
+    if (result && (result.code === 200)) {
       ElMessage.success('专业删除成功')
       await getMajorList()
       const departmentId = major.departmentId
@@ -753,7 +831,7 @@ const searchMajorByName = async (): Promise<void> => {
     const response = await MajorService.searchMajorsByName(searchMajorName.value.trim())
 
     let foundMajors = []
-    if (response && response.code === 200 && response.data) {
+    if (response && 'code' in response && response.code === 200 && response.data) {
       // 如果后端返回了结果，使用后端结果
       if (Array.isArray(response.data)) {
         foundMajors = response.data
@@ -895,10 +973,17 @@ if (!addMajorFormRef.value) return
 addMajorFormRef.value.validate(async (valid) => {
 if (valid) {
 try {
-const result = await MajorService.addMajor(addMajorForm.value)
+const operation = formContext.beginFormOperation('admin:major-org')
+    const result = await MajorService.addMajor({
+  name: addMajorForm.value.name,
+  code: '',
+  departmentId: Number(addMajorForm.value.departmentId),
+  divisionId: addMajorForm.value.divisionId === '' ? undefined : Number(addMajorForm.value.divisionId)
+})
 
-if (result && (result.code === 200 || result.data?.code === 200)) {
-ElMessage.success('专业添加成功')
+if (result && (result.code === 200)) {
+operation.complete({ status: 'saved', label: '专业添加成功', url: '/admin/majors' })
+      ElMessage.success('专业添加成功')
 // 关闭对话框
 addMajorDialogVisible.value = false
 // 重新获取专业列表并构建映射关系
@@ -926,7 +1011,8 @@ addMajorDialogVisible.value = false
 // 重置表单数据
 addMajorForm.value = {
 name: '',
-departmentId: ''
+departmentId: '',
+divisionId: ''
 }
 // 重置表单验证状态
 if (addMajorFormRef.value) {
@@ -1056,10 +1142,10 @@ const closeImportDialog = () => {
 // 下载导入模板
 const downloadTemplate = async (): Promise<void> => {
   try {
-    // 响应拦截器已返回 Blob
-    const blob = await request.get('/admin/departments/majors/import-template', {
+    // 响应拦截器已返回 Blob（类型声明为 ApiResult，运行时即 Blob，用断言保持运行时一致）
+    const blob = await request.get<Blob>('/admin/departments/majors/import-template', {
       responseType: 'blob'
-    })
+    }) as unknown as Blob
 
     // 创建下载链接
     const url = window.URL.createObjectURL(blob)
@@ -1078,95 +1164,112 @@ const downloadTemplate = async (): Promise<void> => {
   }
 }
 
-//处理文件上传
-const handleFileUpload = (event) => {
-  const file = event.target.files[0]
+//处理文件上传（与 importExcel 同一读取链路：readExcelFile，避免全局 XLSX）
+const handleFileUpload = async (event: Event): Promise<void> => {
+  const input = event.target instanceof HTMLInputElement ? event.target : null
+  const file = input?.files?.[0]
   if (!file) return
-  
+
   // 验证文件类型
   if (!file.name.endsWith('.xlsx') && !file.name.endsWith('.xls')) {
     ElMessage.error('请选择Excel文件(.xlsx或.xls格式)')
     return
   }
-  
+
   importLoading.value = true
-  
-  const reader = new FileReader()
-  reader.onload = async (e) => {
-    try {
-      // 读取Excel文件
-      const data = new Uint8Array(e.target.result)
-      const workbook = XLSX.read(data, { type: 'array' })
-      
-      // 获取第一个工作表
-      const sheetName = workbook.SheetNames[0]
-      const worksheet = workbook.Sheets[sheetName]
-      
-      // 转换为JSON格式
-      const jsonData = XLSX.utils.sheet_to_json(worksheet)
-      
-      if (jsonData.length === 0) {
-        ElMessage.warning('Excel文件中没有数据')
-        return
-      }
-      
-      logger.log('读取到的Excel数据:', jsonData)
-      
-      // 处理读取到的数据
-      const importResult = await processImportData(jsonData)
-      
-      if (importResult.success) {
-        ElMessage.success(`成功导入${importResult.successCount}条数据`)        
-        // 重新获取数据
-        await getMajorList()
-        await queryDepartments()
-      } else {
-        ElMessage.error(`导入失败: ${importResult.errorMessage}`)
-      }
-    } catch (error) {
-      logger.error('导入 Excel文件失败:', error)
-      ElMessage.error('导入 Excel文件失败: ' + (error.message || '未知错误'))
-    } finally {
-      importLoading.value = false
-      // 清空文件输入，以便下次可以选择同一个文件
-      event.target.value = ''
+
+  try {
+    // 与 utils/xlsx.readExcelFile 同一实现（动态 import xlsx → sheet_to_json）
+    const jsonData = await readExcelFile(file)
+
+    if (jsonData.length === 0) {
+      ElMessage.warning('Excel文件中没有数据')
+      return
     }
+
+    logger.log('读取到的Excel数据:', jsonData)
+
+    // 处理读取到的数据
+    const importResult = await processImportData(jsonData)
+
+    if (importResult.success) {
+      ElMessage.success(`成功导入${importResult.successCount}条数据`)
+      // 重新获取数据
+      await getMajorList()
+      await queryDepartments()
+    } else {
+      ElMessage.error(`导入失败: ${importResult.errorMessage}`)
+    }
+  } catch (error) {
+    logger.error('导入 Excel文件失败:', error)
+    const msg = error instanceof Error ? error.message : '未知错误'
+    ElMessage.error('导入 Excel文件失败: ' + msg)
+  } finally {
+    importLoading.value = false
+    // 清空文件输入，以便下次可以选择同一个文件
+    if (input) input.value = ''
   }
-  reader.readAsArrayBuffer(file)
 }
 
 //处理导入的数据
-const processImportData = async (data): Promise<void> => {
+const processImportData = async (data: Record<string, unknown>[]): Promise<ImportResult> => {
   try {
     // 存储导入结果
     let successCount = 0
     let errorCount = 0
-    let errorMessages = []
-    
+    const errorMessages: string[] = []
+
     // 存储院系名称到ID的映射
-    const departmentMap = new Map()
-    
+    const departmentMap = new Map<string, string | number>()
+
     // 用于跟踪当前处理的院系（解决导出时同一院系只在第一行显示名称的问题）
     let currentDepartmentName = ''
-    let currentDepartmentId = ''
+    let currentDepartmentId: string | number = ''
     
     // 首先获取所有院系数据，建立映射关系
+    // getDepartments 可能是单层 ApiResult（网络）或双层 { data: { code, data } }（缓存），用 in 收窄保持原分支语义
     const allDepartments = await DepartmentService.getDepartments()
-    if (allDepartments && (allDepartments.code === 200 || allDepartments.data)) {
-      const departmentData = allDepartments.data.code === 200 ? allDepartments.data.data : allDepartments.data
-      const departmentsList = Array.isArray(departmentData) ? departmentData : []
-      
-      departmentsList.forEach(dept => {
-        departmentMap.set(dept.name, dept.id)
-      })
+    {
+      const res = allDepartments as unknown as {
+        code?: unknown
+        data?: unknown
+        msg?: unknown
+      }
+      const hasCode200 = res.code === 200
+      const hasData = res.data !== undefined && res.data !== null
+      if (allDepartments && (hasCode200 || hasData)) {
+        const rawData: unknown = res.data
+        const departmentData: unknown =
+          rawData !== null && typeof rawData === 'object' && 'code' in rawData &&
+          (rawData as NestedList<unknown>).code === 200
+            ? (rawData as NestedList<DepartmentRow[]>).data
+            : rawData
+        const departmentsList: DepartmentRow[] = Array.isArray(departmentData) ? departmentData : []
+
+        departmentsList.forEach(dept => {
+          if (dept.name !== undefined && dept.id !== undefined) {
+            departmentMap.set(String(dept.name), dept.id)
+          }
+        })
+      }
     }
-    
+
     // 获取所有专业数据，用于检查重复
     const allMajorsResponse = await MajorService.getMajors()
-    const allMajorsData = allMajorsResponse && (allMajorsResponse.code === 200 || allMajorsResponse.data) 
-      ? (allMajorsResponse.data.code === 200 ? allMajorsResponse.data.data : allMajorsResponse.data) 
-      : []
-    const allMajorsList = Array.isArray(allMajorsData) ? allMajorsData : []
+    const allMajorsRes = allMajorsResponse as unknown as { code?: unknown; data?: unknown }
+    const allMajorsHasCode = allMajorsRes.code === 200
+    const allMajorsHasData = allMajorsRes.data !== undefined && allMajorsRes.data !== null
+    const allMajorsRaw: unknown =
+      allMajorsResponse && (allMajorsHasCode || allMajorsHasData)
+        ? (() => {
+            const d: unknown = allMajorsRes.data
+            return d !== null && typeof d === 'object' && 'code' in d &&
+              (d as NestedList<unknown>).code === 200
+              ? (d as NestedList<unknown>).data
+              : d
+          })()
+        : []
+    const allMajorsList: MajorRow[] = Array.isArray(allMajorsRaw) ? (allMajorsRaw as MajorRow[]) : []
     
     // 遍历导入的数据
     for (let i = 0; i < data.length; i++) {
@@ -1174,8 +1277,13 @@ const processImportData = async (data): Promise<void> => {
       const rowNum = i + 1
       
       try {
-        let departmentName = row['院系名称'] || row['院系']
-        const majorName = row['专业名称'] || row['专业']
+        // 保持原 `||` 语义（空串回退），再收窄为 string
+        const deptPicked: unknown = row['院系名称'] ? row['院系名称'] : row['院系']
+        const majorPicked: unknown = row['专业名称'] ? row['专业名称'] : row['专业']
+        let departmentName: string =
+          typeof deptPicked === 'string' ? deptPicked : deptPicked == null ? '' : String(deptPicked)
+        const majorName: string =
+          typeof majorPicked === 'string' ? majorPicked : majorPicked == null ? '' : String(majorPicked)
         
         // 如果院系名称为空但有专业名称，则使用上一行的院系信息（解决导出格式问题）
         if (!departmentName && majorName) {
@@ -1204,20 +1312,30 @@ const processImportData = async (data): Promise<void> => {
         // 如果院系不存在，创建新院系
         if (!departmentId) {
           const deptResult = await DepartmentService.addDepartment({ name: departmentName })
-          if (deptResult && (deptResult.code === 200 || deptResult.data?.code === 200)) {
-            // 获取新创建的院系ID
-            const newDeptId = deptResult.data?.data?.id || deptResult.data?.id
+          const deptRes = deptResult as unknown as { code?: unknown; data?: unknown; msg?: unknown }
+          const deptNestedCode: unknown =
+            deptRes.data !== null && typeof deptRes.data === 'object' && 'code' in (deptRes.data as object)
+              ? (deptRes.data as NestedList<unknown>).code
+              : undefined
+          if (deptResult && (deptRes.code === 200 || deptNestedCode === 200)) {
+            // 获取新创建的院系ID（保持原 `||` 回退语义）
+            const deptDataObj = (deptRes.data ?? {}) as { data?: { id?: unknown }; id?: unknown }
+            const innerId: unknown = deptDataObj.data?.id
+            const newDeptId: unknown = innerId ? innerId : deptDataObj.id
             if (newDeptId) {
-              departmentMap.set(departmentName, newDeptId)
-              departmentId = newDeptId
+              departmentMap.set(departmentName, newDeptId as string | number)
+              departmentId = newDeptId as string | number
             } else {
               errorCount++
               errorMessages.push(`第${rowNum}行: 创建院系失败 - 无法获取新院系ID`)
               continue
             }
           } else {
-            // 检查是否是院系已存在的错误
-            const errorMsg = deptResult?.msg || deptResult?.data?.msg || '未知错误'
+            // 检查是否是院系已存在的错误（保持原 `||` 回退语义）
+            const deptDataObj = (deptRes.data ?? {}) as { msg?: unknown }
+            const msgPicked: unknown = deptRes.msg ? deptRes.msg : deptDataObj.msg
+            const rawMsg: unknown = msgPicked ? msgPicked : '未知错误'
+            const errorMsg: string = typeof rawMsg === 'string' ? rawMsg : String(rawMsg)
             if (errorMsg.includes('已存在') || errorMsg.includes('Duplicate') || errorMsg.includes('重复')) {
               errorCount++
               errorMessages.push(`第${rowNum}行: 院系"${departmentName}"已存在，跳过导入`)
@@ -1243,20 +1361,34 @@ const processImportData = async (data): Promise<void> => {
           continue
         }
         
-        // 创建专业
+        // 创建专业（api/major 的 Major 含已废弃的必填 code，后端实体无此字段，传 '' 占位，后端忽略；与原调用同 URL/同缓存清理）
         const majorResult = await MajorService.addMajor({
           name: majorName,
-          departmentId: departmentId
+          code: '',
+          departmentId: Number(departmentId)
         })
-        
-        if (majorResult && (majorResult.code === 200 || majorResult.data?.code === 200)) {
-          successCount++
-          // 将新添加的专业加入到已存在列表中，避免后续重复
-          const newMajorId = majorResult.data?.data?.id || majorResult.data?.id
-          allMajorsList.push({ id: newMajorId, name: majorName, departmentId: departmentId })
-        } else {
-          errorCount++
-          errorMessages.push(`第${rowNum}行: 添加专业失败 - ${majorResult?.msg || majorResult?.data?.msg || '未知错误'}`)
+
+        {
+          const mRes = majorResult as unknown as { code?: unknown; data?: unknown; msg?: unknown }
+          const mNestedCode: unknown =
+            mRes.data !== null && typeof mRes.data === 'object' && 'code' in (mRes.data as object)
+              ? (mRes.data as NestedList<unknown>).code
+              : undefined
+          if (majorResult && (mRes.code === 200 || mNestedCode === 200)) {
+            successCount++
+            // 将新添加的专业加入到已存在列表中，避免后续重复（保持原 `||` 回退语义）
+            const mDataObj = (mRes.data ?? {}) as { data?: { id?: unknown }; id?: unknown }
+            const mInner: unknown = mDataObj.data?.id
+            const newMajorId: unknown = mInner ? mInner : mDataObj.id
+            allMajorsList.push({ id: newMajorId as string | number, name: majorName, departmentId: departmentId })
+          } else {
+            errorCount++
+            const mDataObj = (mRes.data ?? {}) as { msg?: unknown }
+            const mMsgPicked: unknown = mRes.msg ? mRes.msg : mDataObj.msg
+            const mRawMsg: unknown = mMsgPicked ? mMsgPicked : '未知错误'
+            const mMsg: string = typeof mRawMsg === 'string' ? mRawMsg : String(mRawMsg)
+            errorMessages.push(`第${rowNum}行: 添加专业失败 - ${mMsg}`)
+          }
         }
       } catch (e) {
         errorCount++
@@ -1283,6 +1415,70 @@ const processImportData = async (data): Promise<void> => {
 let dialogFormVisible = ref<boolean>(false) //控制新增/修改的对话框的显示与隐藏
 let labelWidth = ref(80) //form表单label的宽度
 let formTitle = ref<string>('') //表单的标题
+
+// ===== 智能填表：院系/系/专业新增与编辑注册到 AI 侧栏 =====
+// 只读展示（所属学院/系名称）与 Excel 导入文件选择不声明，需手动操作
+const formContext = useFormContext()
+watch(dialogFormVisible, (open) => {
+  if (!open) { formContext.unregister('admin:department'); return }
+  const isAdd = formTitle.value === '新增院系'
+  formContext.register({
+    formId: 'admin:department',
+    title: formTitle.value || '院系维护',
+    fields: [{ prop: 'name', label: '院系名称', type: 'input', required: true }],
+    getModel: () => (isAdd ? addDepartment.value : editDepartment.value),
+    getFormEl: () => (isAdd ? addDepartmentFormRef.value : editDepartmentFormRef.value)
+  })
+})
+watch(addDivisionDialogVisible, (open) => {
+  if (open) {
+    formContext.register({
+      formId: 'admin:division',
+      title: '新增系',
+      fields: [{ prop: 'name', label: '系名称', type: 'input', required: true }],
+      getModel: () => addDivisionForm.value,
+      getFormEl: () => addDivisionFormRef.value
+    })
+  } else formContext.unregister('admin:division')
+})
+watch(editDivisionDialogVisible, (open) => {
+  if (open) {
+    formContext.register({
+      formId: 'admin:division-edit',
+      title: '编辑系',
+      fields: [{ prop: 'name', label: '系名称', type: 'input', required: true }],
+      getModel: () => editDivisionForm.value,
+      getFormEl: () => editDivisionFormRef.value
+    })
+  } else formContext.unregister('admin:division-edit')
+})
+watch(addMajorDialogVisible, (open) => {
+  if (open) {
+    formContext.register({
+      formId: 'admin:major-org',
+      title: '新增专业',
+      fields: [{ prop: 'name', label: '专业名称', type: 'input', required: true }],
+      getModel: () => addMajorForm.value,
+      getFormEl: () => addMajorFormRef.value
+    })
+  } else formContext.unregister('admin:major-org')
+})
+watch(editMajorDialogVisible, (open) => {
+  if (open) {
+    formContext.register({
+      formId: 'admin:major-org-edit',
+      title: '编辑专业',
+      fields: [{ prop: 'name', label: '专业名称', type: 'input', required: true }],
+      getModel: () => editMajorForm.value,
+      getFormEl: () => editMajorFormRef.value
+    })
+  } else formContext.unregister('admin:major-org-edit')
+})
+onUnmounted(() => {
+  formContext.unregister('admin:department'); formContext.unregister('admin:division')
+  formContext.unregister('admin:division-edit'); formContext.unregister('admin:major-org')
+  formContext.unregister('admin:major-org-edit')
+})
 
 // 为新增和编辑操作创建独立的表单数据和引用，避免数据相互干扰
 // 新增院系表单引用
@@ -1383,7 +1579,9 @@ const handleUpdateDepartment = async (id): Promise<void> => {
   try {
     const result = await DepartmentService.getDepartmentById(id)
     if (result && (result.code === 200 || result.data)) {
-      const departmentData = result.data.code === 200 ? result.data.data : result.data
+      // getDepartmentById 单层包装（网络 ApiResult / 缓存 { code, data }），data 即 Department；
+      // 原 `result.data.code === 200` 恒假（Department 无 code，运行时恒走 else 分支），等价简化为直接取 data
+      const departmentData: unknown = result.data
       editDepartment.value = JSON.parse(JSON.stringify(departmentData))
     }
   } catch (error) {
@@ -1439,7 +1637,8 @@ if (!formRef || !formRef.value) return
 formRef.value.validate(async (valid) => {
 if (valid) {
 try {
-let result
+const operation = formContext.beginFormOperation('admin:department')
+    let result
 if (formTitle.value === '新增院系') {
 // 新增操作
 result = await DepartmentService.addDepartment(formData)
@@ -1449,7 +1648,8 @@ result = await DepartmentService.updateDepartment(formData)
 }
 
 if (result && result.code === 200) {
-ElMessage.success('操作成功')
+operation.complete({ status: 'saved', label: '院系信息已保存', url: '/admin/majors' })
+      ElMessage.success('操作成功')
 dialogFormVisible.value = false
 await queryDepartments()
 } else {
@@ -1511,7 +1711,7 @@ const delById = async (id): Promise<void> => {
     )
 
     const result = await DepartmentService.deleteDepartment(id)
-    if (result && (result.code === 200 || result.data?.code === 200)) {
+    if (result && (result.code === 200)) {
       ElMessage.success('删除成功')
       await queryDepartments()
       await getMajorList()
@@ -1535,7 +1735,7 @@ const delById = async (id): Promise<void> => {
 //清空搜索栏
 const clear = () => {
 clearMajorSearch()
-searchDepartment.value = ''
+// 原连续两次赋值（先 '' 后对象），同步执行无观察点，最终值恒为对象，删首条死赋值后运行时等价
 searchDepartment.value = { name: '', majorId: null }
 searchMajorName.value = ''
 searchMajorResult.value = null
@@ -1701,13 +1901,13 @@ await queryDepartments()
     <el-card class="actions-card" shadow="never">
       <div class="actions-container">
         <div class="primary-actions">
-          <el-button v-if="authStore.hasPermission('department:add')" type="primary" @click="handleAddDepartment()" class="action-btn primary">
+          <el-button v-if="authStore.hasPermission('department:add')" type="primary" data-agent-open @click="handleAddDepartment()" class="action-btn primary">
             <el-icon><Plus /></el-icon>&nbsp;新增学院
           </el-button>
           <el-button
             v-if="authStore.hasPermission('division:add') && fixedDepartmentId"
             type="success"
-            @click="handleAddDivision"
+            data-agent-open @click="handleAddDivision"
             class="action-btn success"
           >
             <el-icon><Plus /></el-icon>&nbsp;新增系
@@ -1715,7 +1915,7 @@ await queryDepartments()
           <el-button
             v-if="authStore.hasPermission('major:add') && fixedDivisionId"
             type="warning"
-            @click="handleAddMajor"
+            data-agent-open @click="handleAddMajor"
             class="action-btn warning"
           >
             <el-icon><Plus /></el-icon>&nbsp;新增专业

@@ -1,12 +1,13 @@
 package com.internship.dto;
 
+import com.internship.entity.CompanyAlumniMember;
 import jakarta.validation.constraints.Email;
-import jakarta.validation.constraints.Max;
-import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
+
+import java.util.List;
 
 @Data
 public class CompanyRegisterDTO {
@@ -14,6 +15,10 @@ public class CompanyRegisterDTO {
     @NotBlank(message = "企业名称不能为空")
     @Size(min = 2, max = 255, message = "企业名称长度必须在 2-255 个字符之间")
     private String companyName;
+
+    @NotBlank(message = "统一社会信用代码不能为空")
+    @Size(max = 50, message = "统一社会信用代码长度不能超过50")
+    private String creditCode;
 
     @NotBlank(message = "所属行业不能为空")
     private String industry;
@@ -44,16 +49,16 @@ public class CompanyRegisterDTO {
     @Pattern(regexp = "^$|^.{5,100}$", message = "联系邮箱长度必须在 5-100 个字符之间")
     private String contactEmail;
 
+    @NotBlank(message = "个人邮箱不能为空")
     @Email(message = "个人邮箱格式不正确")
-    @Pattern(regexp = "^$|^.{5,100}$", message = "个人邮箱长度必须在 5-100 个字符之间")
     private String email;
 
+    @Pattern(regexp = "^$|^https?://.*", message = "企业网站必须以 http:// 或 https:// 开头")
     private String website;
 
     private String cooperationMode;
 
-    @NotBlank(message = "手机号不能为空")
-    @Pattern(regexp = "^1[3-9]\\d{9}$", message = "手机号格式不正确")
+    @Pattern(regexp = "^$|^1[3-9]\\d{9}$", message = "手机号格式不正确")
     private String phone;
 
     @Deprecated
@@ -62,16 +67,10 @@ public class CompanyRegisterDTO {
 
     private String introduction;
 
-    @NotBlank(message = "验证码不能为空")
-    private String verifyCode;
-
-    @NotBlank(message = "营业执照不能为空")
     private String businessLicense;
 
-    @NotBlank(message = "法人身份证正面不能为空")
     private String legalIdCardFront;
 
-    @NotBlank(message = "法人身份证反面不能为空")
     private String legalIdCardBack;
 
     private Integer isInternshipBase;
@@ -80,7 +79,18 @@ public class CompanyRegisterDTO {
 
     private Integer acceptBackup;
 
-    @Min(value = 0, message = "兜底学生数量不能小于0")
-    @Max(value = 1000, message = "兜底学生数量不能超过1000")
-    private Long maxBackupStudents;
+    private Integer isAlumniUnit;
+
+    private List<CompanyAlumniMember> alumniMembers;
+
+    @Size(max = 50, message = "校友代表姓名长度不能超过50")
+    private String alumniRepresentativeName;
+
+    @Size(max = 20, message = "校友代表联系电话长度不能超过20")
+    private String alumniRepresentativePhone;
+
+    @Size(max = 100, message = "校友代表任职长度不能超过100")
+    private String alumniRepresentativePosition;
+
+    private Integer hasTrainingBaseAgreement;
 }

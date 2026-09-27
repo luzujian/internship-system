@@ -27,15 +27,11 @@ public class SmsController {
             return Result.error("手机号不能为空");
         }
 
-        if (!smsService.checkRateLimit(phone)) {
-            return Result.error("发送过于频繁，请稍后再试");
-        }
-
         boolean success = smsService.sendVerifyCode(phone);
         if (success) {
             return Result.success("验证码已发送");
         } else {
-            return Result.error("验证码发送失败，请稍后再试");
+            return Result.error("验证码发送失败或过于频繁，请稍后再试");
         }
     }
 }

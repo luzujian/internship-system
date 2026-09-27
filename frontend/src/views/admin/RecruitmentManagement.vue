@@ -405,7 +405,7 @@ const getStatusType = (status) => {
 
 const getStatusText = (status) => {
   const statusMap = {
-    0: '未找到实习',
+    0: '尚无 Offer',
     1: '有Offer未确定',
     2: '已确定实习',
     3: '实习结束'
@@ -443,10 +443,27 @@ const getApplicationStatusText = (status) => {
 
 const loadStatistics = async () => {
   try {
-    const response = await recruitmentService.getStatistics()
+    interface RecruitmentStatsRow {
+      totalPositions?: number
+      totalPlannedRecruit?: number
+      totalRecruitedCount?: number
+      totalRemainingQuota?: number
+      totalApplications?: number
+      [key: string]: unknown
+    }
+    const response = await recruitmentService.getStatistics() as unknown as {
+      code?: number
+      message?: string
+      msg?: string
+      data?: RecruitmentStatsRow | { data?: RecruitmentStatsRow }
+    }
     logger.log('统计数据响应:', response)
-    if (response.data && response.code === 200) {
-      const data = response.data as any
+    const statsOuter = response.data
+    const statsData = (statsOuter !== null && typeof statsOuter === 'object' && 'data' in (statsOuter as Record<string, unknown>)
+      ? (statsOuter as { data?: RecruitmentStatsRow }).data
+      : statsOuter) as RecruitmentStatsRow | undefined
+    if (statsData && response.code === 200) {
+      const data = statsData
       statistics.value = {
         totalPositions: data.totalPositions || 0,
         totalPlannedRecruit: data.totalPlannedRecruit || 0,
@@ -473,9 +490,13 @@ const loadPositions = async () => {
       positionName: positionSearchForm.positionName
     })
     logger.log('岗位列表响应:', response)
-    if (response.data && response.code === 200) {
-      positionList.value = response.data.rows || []
-      positionPagination.total = response.data.total || 0
+    const positionOuter: unknown = (response as unknown as { data?: unknown }).data
+    const positionPage = (positionOuter !== null && typeof positionOuter === 'object' && 'data' in (positionOuter as Record<string, unknown>)
+      ? (positionOuter as { data?: { rows?: unknown[]; total?: number } }).data
+      : positionOuter) as { rows?: unknown[]; total?: number } | undefined
+    if (positionPage && (response as unknown as { code?: number }).code === 200) {
+      positionList.value = Array.isArray(positionPage.rows) ? positionPage.rows : []
+      positionPagination.total = typeof positionPage.total === 'number' ? positionPage.total : 0
       logger.log('岗位列表数据:', positionList.value, '总数:', positionPagination.total)
     } else {
       logger.error('岗位列表响应格式错误:', response)
@@ -500,9 +521,13 @@ const loadApplications = async () => {
       companyName: applicationSearchForm.companyName
     })
     logger.log('应聘列表响应:', response)
-    if (response.data && response.code === 200) {
-      applicationList.value = response.data.rows || []
-      applicationPagination.total = response.data.total || 0
+    const applicationOuter: unknown = (response as unknown as { data?: unknown }).data
+    const applicationPage = (applicationOuter !== null && typeof applicationOuter === 'object' && 'data' in (applicationOuter as Record<string, unknown>)
+      ? (applicationOuter as { data?: { rows?: unknown[]; total?: number } }).data
+      : applicationOuter) as { rows?: unknown[]; total?: number } | undefined
+    if (applicationPage && (response as unknown as { code?: number }).code === 200) {
+      applicationList.value = Array.isArray(applicationPage.rows) ? applicationPage.rows : []
+      applicationPagination.total = typeof applicationPage.total === 'number' ? applicationPage.total : 0
       logger.log('应聘列表数据:', applicationList.value, '总数:', applicationPagination.total)
     } else {
       logger.error('应聘列表响应格式错误:', response)

@@ -1,6 +1,7 @@
 package com.internship.controller;
 
 
+import com.internship.agent.business.AgentResponseStandard;
 import com.internship.config.DynamicChatClientFactory;
 import com.internship.service.JobRecommendationAgentService;
 import org.springframework.ai.chat.client.ChatClient;
@@ -52,13 +53,13 @@ public class AIChatController {
         if (role == null) role = "admin";
         switch (role) {
             case "student":
-                return securityConstraints + " 你的服务对象是学生，帮助解答实习申请、岗位搜索、实习记录相关问题。";
+                return securityConstraints + " 你的服务对象是学生，帮助解答实习申请、岗位搜索、实习记录相关问题。" + AgentResponseStandard.PROMPT;
             case "teacher":
-                return securityConstraints + " 你的服务对象是教师，帮助解答学生管理、审核流程、数据统计相关问题。";
+                return securityConstraints + " 你的服务对象是教师，帮助解答学生管理、审核流程、数据统计相关问题。" + AgentResponseStandard.PROMPT;
             case "company":
-                return securityConstraints + " 你的服务对象是企业用户，帮助解答岗位发布、申请管理、实习生管理相关问题。";
+                return securityConstraints + " 你的服务对象是企业用户，帮助解答岗位发布、申请管理、实习生管理相关问题。" + AgentResponseStandard.PROMPT;
             default:
-                return securityConstraints + " 你的服务对象是系统管理员，帮助解答系统管理、数据导出、配置管理相关问题。";
+                return securityConstraints + " 你的服务对象是系统管理员，帮助解答系统管理、数据导出、配置管理相关问题。" + AgentResponseStandard.PROMPT;
         }
     }
 
@@ -66,12 +67,13 @@ public class AIChatController {
         String modelCode;
         if (model != null && model.equals("deepseek-reasoner")) {
             modelCode = "deepseek-reasoner";
-        } else if (model != null && model.equals("deepseek-v4-flash")) {
-            modelCode = "deepseek-v4-flash";
+        } else if (model != null && (model.equals("deepseek-v4-flash") || model.equals("deepseek-flash"))) {
+            // deepseek-v4-flash 已下线，统一使用 v4.1 (deepseek-flash)，旧配置值作为别名兼容
+            modelCode = "deepseek-flash";
         } else if (model != null && model.equals("deepseek-v4-pro")) {
             modelCode = "deepseek-v4-pro";
         } else {
-            modelCode = "deepseek-chat";
+            modelCode = "deepseek-flash";
         }
         String systemPrompt = getSystemPromptByRole(role);
         return chatClientFactory.createChatClient(modelCode, systemPrompt);

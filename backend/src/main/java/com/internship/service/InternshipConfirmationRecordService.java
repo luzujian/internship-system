@@ -9,7 +9,19 @@ public interface InternshipConfirmationRecordService {
 
     int update(InternshipConfirmationRecord record);
 
+    int submitPending(Long id, String remark);
+
+    int resolvePending(Long id, Integer status, String remark);
+
     InternshipConfirmationRecord findById(Long id);
+
+    InternshipConfirmationRecord findByIdForUpdate(Long id);
+
+    Long lockStudent(Long studentId);
+
+    InternshipConfirmationRecord findActiveByStudentForUpdate(Long studentId);
+
+    InternshipConfirmationRecord findSubmittedPendingByStudentForUpdate(Long studentId);
 
     List<InternshipConfirmationRecord> findByStudentId(Long studentId);
 

@@ -35,7 +35,7 @@ export interface InternshipStatus {
 
 export default {
   getInternshipStatusByCompanyId(companyId: number) {
-    return request({
+    return request<Record<string, unknown>[]>({
       url: `/admin/internship-status/company/${companyId}`,
       method: 'get'
     })

@@ -2,7 +2,7 @@
   <div class="approval-container">
     <div class="page-header">
       <h2>审核管理</h2>
-      <p>管理学生实习申请、单位变更、考研延迟及企业资质审核</p>
+      <p>管理学生自主实习、考研延迟及企业资质审核</p>
     </div>
 
     <!-- 审核类型标签页 -->
@@ -19,6 +19,7 @@
         </button>
       </div>
     </el-card>
+
 
     <!-- 审核列表 -->
     <el-card class="table-card" shadow="never">
@@ -87,10 +88,18 @@
           <template #default="scope">
             <div class="company-name-display">
               <template v-if="scope.row.type === 'selfPractice'">
-                {{ scope.row.company || '-' }}
+                <div>{{ scope.row.company || '-' }}</div>
+                <el-tag v-if="scope.row.cooperativeCompany" type="warning" size="small" class="cooperative-company-tag">校企合作企业</el-tag>
               </template>
-              <template v-else-if="scope.row.type === 'unitChange'">
-                {{ scope.row.oldCompany || '-' }}
+              <template v-else>-</template>
+            </div>
+          </template>
+        </el-table-column>
+        <el-table-column v-if="activeTab !== 'companyQualification' && activeTab !== 'delay'" label="实习岗位" min-width="140" align="center">
+          <template #default="scope">
+            <div class="company-name-display">
+              <template v-if="scope.row.type === 'selfPractice'">
+                {{ scope.row.positionName || '-' }}
               </template>
               <template v-else>-</template>
             </div>
@@ -100,8 +109,8 @@
         <el-table-column label="状态" min-width="120" align="center">
           <template #default="scope">
             <div class="status-wrapper">
-              <el-tag :type="getStatusTagType(scope.row.status)" size="small" class="status-tag">
-                {{ getStatusText(scope.row.status) }}
+              <el-tag :type="getStatusTagType(getRowStatus(scope.row))" size="small" class="status-tag">
+                {{ getStatusText(getRowStatus(scope.row)) }}
               </el-tag>
               <el-tag v-if="activeTab === 'companyQualification'" :type="scope.row.isInternshipBase ? 'success' : 'danger'" size="small" class="status-tag-base">
                 {{ scope.row.isInternshipBase ? '实习基地' : '非实习基地' }}
@@ -116,7 +125,7 @@
         </el-table-column>
         <el-table-column label="操作" width="280" fixed="right" align="center">
           <template #default="scope">
-            <div class="action-buttons">
+            <MobileMoreActions>
               <el-button v-if="activeTab === 'companyQualification' ? scope.row.auditStatus === 0 : scope.row.status === 'pending'" size="small" type="success" @click="approveApplication(scope.row)" class="table-btn success">
                 通过
               </el-button>
@@ -126,7 +135,7 @@
               <el-button size="small" type="primary" @click="activeTab === 'companyQualification' ? viewCompanyQualification(scope.row) : viewApplication(scope.row)" class="table-btn primary">
                 查看
               </el-button>
-            </div>
+            </MobileMoreActions>
           </template>
         </el-table-column>
       </el-table>
@@ -173,7 +182,7 @@
           </div>
           <div class="form-group">
             <label>驳回理由：</label>
-            <textarea v-model="rejectReason" placeholder="请填写驳回理由，引导学生补充材料" rows="5"></textarea>
+            <textarea v-model="rejectReason" placeholder="请填写驳回理由" rows="5"></textarea>
           </div>
         </div>
         <div class="modal-footer">
@@ -183,58 +192,96 @@
       </div>
     </div>
 
-    <!-- 企业资质查看弹窗 -->
+    <!-- 企业注册申请审核查看弹窗 -->
     <div v-if="showCompanyQualificationModal" class="modal-overlay" @click.self="showCompanyQualificationModal = false">
       <div class="modal-content card company-qualification-modal">
         <div class="modal-header">
-          <h3>企业资质审核</h3>
+          <h3>企业注册申请审核</h3>
           <button class="close-btn" @click="showCompanyQualificationModal = false">×</button>
         </div>
         <div class="modal-body">
           <div v-if="currentApplication" class="company-qualification-info">
-            <div class="form-group">
-              <label>企业名称：</label>
-              <div class="company-name-display">{{ currentApplication.companyName }}</div>
+            <div class="form-row">
+              <div class="form-group half">
+                <label>企业名称：</label>
+                <div class="company-name-display">{{ currentApplication.companyName || '未填写' }}</div>
+              </div>
+              <div class="form-group half">
+                <label>统一社会信用代码：</label>
+                <div class="contact-info-display">{{ currentApplication.creditCode || '未填写' }}</div>
+              </div>
             </div>
-            <div class="form-group">
-              <label>企业地址：</label>
-              <div class="company-address-display">{{ currentApplication.address || currentApplication.province + currentApplication.city + currentApplication.district + currentApplication.detailAddress || '未填写' }}</div>
+            <div class="form-row">
+              <div class="form-group half">
+                <label>所属行业：</label>
+                <div class="contact-info-display">{{ getIndustryText(currentApplication.industry) }}</div>
+              </div>
+              <div class="form-group half">
+                <label>企业规模：</label>
+                <div class="contact-info-display">{{ getScaleText(currentApplication.scale) }}</div>
+              </div>
             </div>
             <div class="form-row">
               <div class="form-group half">
                 <label>联系人：</label>
-                <div class="contact-info-display">{{ currentApplication.contactPerson }} ({{ currentApplication.contactPhone }})</div>
+                <div class="contact-info-display">{{ currentApplication.contactPerson || '未填写' }}</div>
               </div>
               <div class="form-group half">
-                <label>申请时间：</label>
-                <div class="apply-time-display">{{ currentApplication.applyTime || currentApplication.registerTime }}</div>
-              </div>
-              <div class="form-group half">
-                <label>行业：</label>
-                <div class="contact-info-display">{{ getIndustryText(currentApplication.industry) }}</div>
-              </div>
-              <div class="form-group half">
-                <label>规模：</label>
-                <div class="contact-info-display">{{ currentApplication.scale }}</div>
+                <label>联系电话：</label>
+                <div class="contact-info-display">{{ currentApplication.contactPhone || '未填写' }}</div>
               </div>
             </div>
             <div class="form-group">
-              <label>企业介绍：</label>
+              <label>企业地址：</label>
+              <div class="company-address-display">{{ formatCompanyAddress(currentApplication) }}</div>
+            </div>
+            <div class="form-row">
+              <div class="form-group half">
+                <label>联系邮箱：</label>
+                <div class="contact-info-display">{{ currentApplication.contactEmail || '未填写' }}</div>
+              </div>
+              <div class="form-group half">
+                <label>个人邮箱：</label>
+                <div class="contact-info-display">{{ currentApplication.email || '未填写' }}</div>
+              </div>
+            </div>
+            <div class="form-group">
+              <label>企业网站：</label>
+              <div class="contact-info-display">{{ currentApplication.website || '未填写' }}</div>
+            </div>
+            <div class="form-group">
+              <label>企业简介：</label>
               <div class="company-address-display">{{ currentApplication.introduction || '未填写' }}</div>
             </div>
-            
-            <!-- 资质文件预览 -->
-            <div class="qualification-documents">
-              <h4>资质文件</h4>
-              <div class="document-grid horizontal">
-                <div class="document-item fade-in" v-for="doc in companyDocumentTypes" :key="doc.key">
-                  <label>{{ doc.name }}：</label>
-                  <div class="document-preview">
-                    <img v-if="getCompanyDocumentUrl(currentApplication, doc.key)" :src="getCompanyDocumentUrl(currentApplication, doc.key)" :alt="doc.name" class="document-image" @click="previewMaterial(getCompanyDocumentUrl(currentApplication, doc.key), doc.name)">
-                    <span v-else class="no-document">未上传</span>
-                  </div>
+            <div class="form-row">
+              <div class="form-group half">
+                <label>挂牌实习基地：</label>
+                <div class="contact-info-display">{{ formatYesNo(currentApplication.isInternshipBase) }}</div>
+              </div>
+              <div class="form-group half">
+                <label>接受兜底：</label>
+                <div class="contact-info-display">{{ formatYesNo(currentApplication.acceptBackup) }}</div>
+              </div>
+            </div>
+            <div class="form-group">
+              <label>是否校友单位：</label>
+              <div class="contact-info-display">{{ formatYesNo(currentApplication.isAlumniUnit) }}</div>
+            </div>
+            <div v-if="currentApplication.isAlumniUnit === 1" class="form-group">
+              <label>校友信息：</label>
+              <div v-if="currentApplication.alumniMembers?.length" class="alumni-info-display">
+                <div v-for="(member, index) in currentApplication.alumniMembers" :key="member.id || index" class="alumni-member-display">
+                  <strong>校友 {{ index + 1 }}</strong>
+                  <span>姓名：{{ member.name || '未填写' }}</span>
+                  <span>联系电话：{{ member.phone || '未填写' }}</span>
+                  <span>在企业的任职：{{ member.position || '未填写' }}</span>
                 </div>
               </div>
+              <div v-else class="contact-info-display">未填写</div>
+            </div>
+            <div class="form-group">
+              <label>是否与学校签署实训基地的协议：</label>
+              <div class="contact-info-display">{{ formatYesNo(currentApplication.hasTrainingBaseAgreement) }}</div>
             </div>
           </div>
         </div>
@@ -261,19 +308,21 @@
           <div v-if="currentApplication" class="application-detail-info">
             <!-- 基本信息 -->
             <div class="form-row">
-              <div class="form-group quarter">
+              <div class="form-group half">
                 <label>姓名：</label>
                 <div class="student-name-display">{{ currentApplication.studentName }}</div>
               </div>
-              <div class="form-group quarter">
+              <div class="form-group half">
                 <label>学号：</label>
                 <div class="student-id-display">{{ currentApplication.studentUserId || currentApplication.studentId }}</div>
               </div>
-              <div class="form-group quarter">
+            </div>
+            <div class="form-row">
+              <div class="form-group half">
                 <label>年级：</label>
                 <div class="grade-display">{{ currentApplication.grade || '未填写' }}</div>
               </div>
-              <div class="form-group quarter">
+              <div class="form-group half">
                 <label>班级：</label>
                 <div class="class-display">{{ currentApplication.className }}</div>
               </div>
@@ -284,9 +333,38 @@
             </div>
             
             <!-- 自主实习申请特有信息 -->
-            <div v-if="currentApplication.type === 'selfPractice'" class="form-group">
-              <label>实习单位：</label>
-              <div class="company-display">{{ currentApplication.company }}</div>
+            <div v-if="currentApplication.type === 'selfPractice'" class="form-row">
+              <div class="form-group half">
+                <label>实习单位：</label>
+                <div class="company-display">
+                  {{ currentApplication.company || '未填写' }}
+                  <el-tag v-if="currentApplication.cooperativeCompany" type="warning" size="small" class="cooperative-company-tag">校企合作企业</el-tag>
+                </div>
+              </div>
+              <div class="form-group half">
+                <label>实习岗位：</label>
+                <div class="company-display">{{ currentApplication.positionName || '未填写' }}</div>
+              </div>
+            </div>
+            <div v-if="currentApplication.type === 'selfPractice'" class="form-row">
+              <div class="form-group half">
+                <label>单位所在城市：</label>
+                <div class="company-display">{{ currentApplication.companyCity || '未填写' }}</div>
+              </div>
+              <div class="form-group half">
+                <label>申请时间：</label>
+                <div class="apply-time-display">{{ currentApplication.applyTime || '未填写' }}</div>
+              </div>
+            </div>
+            <div v-if="currentApplication.type === 'selfPractice'" class="form-row">
+              <div class="form-group half">
+                <label>人事经理姓名：</label>
+                <div class="company-display">{{ currentApplication.hrManagerName || '未填写' }}</div>
+              </div>
+              <div class="form-group half">
+                <label>人事经理联系电话：</label>
+                <div class="company-display">{{ currentApplication.hrManagerPhone || '未填写' }}</div>
+              </div>
             </div>
             <div v-if="currentApplication.type === 'selfPractice' && currentApplication.materials" class="form-group">
               <label>上传资料：</label>
@@ -294,24 +372,8 @@
                 <div class="document-item fade-in" v-for="label in materialItems.selfPractice" :key="label">
                   <label>{{ label }}：</label>
                   <div class="document-preview">
-                    <img v-if="currentApplication.materials[label]" :src="currentApplication.materials[label]" :alt="label" class="document-image" @click="previewMaterial(currentApplication.materials[label], label)">
-                    <span v-else class="no-document">未上传</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-            
-            <!-- 单位变更申请特有信息 -->
-            <div v-if="currentApplication.type === 'unitChange'" class="form-group">
-              <label>原实习单位：</label>
-              <div class="company-display">{{ currentApplication.oldCompany }}</div>
-            </div>
-            <div v-if="currentApplication.type === 'unitChange' && currentApplication.materials" class="form-group">
-              <label>个人申请书：</label>
-              <div class="document-grid horizontal">
-                <div class="document-item fade-in">
-                  <div class="document-preview">
-                    <img v-if="currentApplication.materials['个人申请书']" :src="currentApplication.materials['个人申请书']" alt="个人申请书" class="document-image" @click="previewMaterial(currentApplication.materials['个人申请书'], '个人申请书')">
+                    <button v-if="hasApplicationMaterial(label)" class="btn-default btn-sm"
+                      @click="downloadApplicationMaterial(label)">下载</button>
                     <span v-else class="no-document">未上传</span>
                   </div>
                 </div>
@@ -325,7 +387,8 @@
                 <div class="document-item fade-in" v-for="label in materialItems.delay" :key="label">
                   <label>{{ label }}：</label>
                   <div class="document-preview">
-                    <img v-if="currentApplication.materials[label]" :src="currentApplication.materials[label]" :alt="label" class="document-image" @click="previewMaterial(currentApplication.materials[label], label)">
+                    <button v-if="hasApplicationMaterial(label)" class="btn-default btn-sm"
+                      @click="downloadApplicationMaterial(label)">下载</button>
                     <span v-else class="no-document">未上传</span>
                   </div>
                 </div>
@@ -345,50 +408,35 @@
       </div>
     </div>
     
-    <!-- 资料预览弹窗 -->
-    <div v-if="showMaterialPreviewModal" class="modal-overlay" @click.self="showMaterialPreviewModal = false">
-      <div class="modal-content large card">
-        <div class="modal-header">
-          <h3>{{ previewFileName }} 预览</h3>
-          <button class="close-btn" @click="showMaterialPreviewModal = false">×</button>
-        </div>
-        <div class="modal-body">
-          <div class="material-preview-container">
-            <iframe v-if="previewUrl" :src="previewUrl" class="material-preview-frame"></iframe>
-            <div v-else class="no-preview">
-              <span class="no-preview-icon">📄</span>
-              <p>无法预览此文件，请尝试下载查看</p>
-              <button class="btn btn-primary" @click="downloadMaterial(previewUrl, previewFileName)">下载文件</button>
-            </div>
-          </div>
-        </div>
-        <div class="modal-footer">
-          <button class="btn btn-default btn-sm" @click="showMaterialPreviewModal = false">关闭</button>
-          <button class="btn btn-sm btn-default" @click="downloadMaterial(previewUrl, previewFileName)">下载</button>
-        </div>
-      </div>
-    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useAgentPageContext } from '@/agent/useAgentPageContext'
+import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
+import { useFormContext } from '@/agent/formContext'
 import { approvalApi } from '../../api/teacherApproval'
 import companyService from '../../api/company'
 import { getCurrentUser } from '../../utils/teacherUser'
+import { getCurrentTeacherType } from '../../utils/teacherPermissions'
 import { ElMessage } from 'element-plus'
 import { Search, Refresh } from '@element-plus/icons-vue'
+import MobileMoreActions from '../../components/MobileMoreActions.vue'
+import { studentApplicationMaterialByteUrl } from '@/utils/authorizedFileUrl'
+import { downloadAuthorizedFile } from '@/utils/authorizedFileDownload'
 
-const route = useRoute()
-
-const activeTab = ref('selfPractice')
-const approvalTabs = ref([
-  { key: 'selfPractice', name: '自主实习申请', count: 0 },
-  { key: 'unitChange', name: '单位变更申请', count: 0 },
-  { key: 'delay', name: '考研延迟申请', count: 0 },
-  { key: 'companyQualification', name: '企业注册申请审核', count: 0 }
-])
+// 自主实习申请由辅导员负责审核,考研延迟/企业注册由系室/学院教师负责
+const teacherType = getCurrentTeacherType()
+const isCounselor = teacherType === 'COUNSELOR'
+const activeTab = ref(isCounselor ? 'selfPractice' : 'delay')
+const approvalTabs = ref(
+  isCounselor
+    ? [{ key: 'selfPractice', name: '自主实习申请', count: 0 }]
+    : [
+        { key: 'delay', name: '考研延迟申请', count: 0 },
+        { key: 'companyQualification', name: '企业注册申请审核', count: 0 }
+      ]
+)
 
 const documentTypes = ref([
   { key: 'businessLicense', name: '营业执照' },
@@ -396,12 +444,6 @@ const documentTypes = ref([
   { key: 'organizationCode', name: '组织机构代码证' },
   { key: 'basePhoto', name: '牌匾照片' }
 ])
-
-const companyDocumentTypes = [
-  { key: 'businessLicense', name: '营业执照' },
-  { key: 'legalIdCard', name: '法人身份证' },
-  { key: 'plaquePhoto', name: '牌匾照片' }
-]
 
 const searchForm = reactive({
   keyword: '',
@@ -416,15 +458,11 @@ const loading = ref(false)
 const showRejectModal = ref(false)
 const showCompanyQualificationModal = ref(false)
 const showApplicationDetailModal = ref(false)
-const showMaterialPreviewModal = ref(false)
 const currentApplication = ref<any>(null)
 const rejectReason = ref('')
-const previewUrl = ref('')
-const previewFileName = ref('')
 
 const materialItems = ref({
   selfPractice: ['个人申请书', '实习接收函'],
-  unitChange: ['个人申请书'],
   delay: ['考研计划', '学习计划', '延迟申请书']
 })
 
@@ -432,17 +470,21 @@ const applications = ref<any[]>([])
 
 const fetchStats = async () => {
   try {
-    const response = await approvalApi.getStats()
-    approvalTabs.value[0].count = response.selfPracticePending
-    approvalTabs.value[1].count = response.unitChangePending
-    approvalTabs.value[2].count = response.delayPending
-    approvalTabs.value[3].count = response.companyQualificationPending
+    const response = await approvalApi.getStats() as unknown as {
+      selfPracticePending?: number
+      delayPending?: number
+      companyQualificationPending?: number
+      data?: { selfPracticePending?: number; delayPending?: number; companyQualificationPending?: number }
+    }
+    // 保持原运行时取值路径（顶层字段），仅用精确断言收敛类型
+    approvalTabs.value[0].count = response.selfPracticePending ?? 0
+    approvalTabs.value[1].count = response.delayPending ?? 0
+    approvalTabs.value[2].count = response.companyQualificationPending ?? 0
   } catch (error) {
     console.error('[Approval] 获取统计数据失败:', error)
     approvalTabs.value[0].count = 0
     approvalTabs.value[1].count = 0
     approvalTabs.value[2].count = 0
-    approvalTabs.value[3].count = 0
   }
 }
 
@@ -539,8 +581,6 @@ const getApplicationTypeText = (type: string) => {
   switch (type) {
     case 'selfPractice':
       return '自主实习申请'
-    case 'unitChange':
-      return '单位变更申请'
     case 'delay':
       return '考研延迟申请'
     case 'companyQualification':
@@ -548,6 +588,14 @@ const getApplicationTypeText = (type: string) => {
     default:
       return '未知类型'
   }
+}
+
+// 企业注册行使用 auditStatus（0待审核/1已通过/2已驳回），学生申请行使用 status
+const getRowStatus = (row: any) => {
+  if (activeTab.value === 'companyQualification') {
+    return row.auditStatus
+  }
+  return row.status
 }
 
 const getStatusText = (status: string | number) => {
@@ -604,10 +652,14 @@ const getStatusTagType = (status: string | number) => {
 
 const viewApplication = async (application: any) => {
   try {
-    const response = await approvalApi.getStudentApplicationById(application.id)
+    const response = await approvalApi.getStudentApplicationById(application.id) as unknown as {
+      applicationType?: string
+      type?: string
+      [key: string]: unknown
+    }
     currentApplication.value = {
       ...response,
-      type: response.applicationType || application.type
+      type: response.applicationType || response.type || application.type
     }
     showApplicationDetailModal.value = true
   } catch (error) {
@@ -628,7 +680,12 @@ const approveApplication = async (application: any) => {
       response = await approvalApi.approveStudentApplication(application.id, reviewerId)
     }
     
-    ElMessage.success('申请已成功通过')
+    const serverMessage = response?.message && response.message !== 'success' ? response.message : ''
+    if (application.type === 'companyQualification' && response?.data?.emailNotified === false) {
+      ElMessage.warning(serverMessage || '申请已通过，但邮件通知未完成')
+    } else {
+      ElMessage.success(serverMessage || '申请已成功通过')
+    }
     fetchApplications()
     fetchStats()
     
@@ -638,6 +695,26 @@ const approveApplication = async (application: any) => {
     ElMessage.error(error.response?.data?.message || '批准申请失败')
   }
 }
+
+// ===== 智能填表：驳回理由注册到 AI 侧栏（只写响应式代理，不触发提交） =====
+const formContext = useFormContext()
+const rejectProxy = {
+  get rejectReason() { return rejectReason.value },
+  set rejectReason(v: unknown) { rejectReason.value = String(v ?? '') }
+}
+watch(showRejectModal, (open) => {
+  if (open) {
+    formContext.register({
+      formId: 'teacher:approval-reject',
+      title: '驳回申请',
+      fields: [{ prop: 'rejectReason', label: '驳回理由', type: 'textarea', required: true }],
+      getModel: () => rejectProxy,
+      getValidationSummary: () => ({ missingFields: [], validationErrors: currentApplication.value && rejectReason.value.trim() ? [] : ['请选择申请并填写驳回理由'] }),
+      getObject: () => currentApplication.value?.id ? { type: String(currentApplication.value.type || 'application'), id: String(currentApplication.value.id) } : null
+    })
+  } else formContext.unregister('teacher:approval-reject')
+})
+onUnmounted(() => formContext.unregister('teacher:approval-reject'))
 
 // 驳回申请
 const rejectApplication = (application: any) => {
@@ -677,6 +754,7 @@ const confirmReject = async () => {
     let response
     const currentUser = getCurrentUser()
     const reviewerId = currentUser.id || 1
+    const operation = formContext.beginFormOperation('teacher:approval-reject')
     
     if (currentApplication.value.type === 'companyQualification') {
       response = await approvalApi.rejectCompanyQualification(
@@ -692,8 +770,14 @@ const confirmReject = async () => {
       )
     }
     
+    operation.complete({ status: 'submitted', label: '申请已驳回', url: '/teacher/approval' })
     showRejectModal.value = false
-    ElMessage.success('申请已成功驳回')
+    const serverMessage = response?.message && response.message !== 'success' ? response.message : ''
+    if (currentApplication.value.type === 'companyQualification' && response?.data?.emailNotified === false) {
+      ElMessage.warning(serverMessage || '申请已驳回，但邮件通知未完成')
+    } else {
+      ElMessage.success(serverMessage || '申请已成功驳回')
+    }
     fetchApplications()
     fetchStats()
   } catch (error: any) {
@@ -701,33 +785,60 @@ const confirmReject = async () => {
   }
 }
 
-const getCompanyDocumentUrl = (company: any, docKey: string) => {
-  if (!company) return null
-  
-  if (docKey === 'legalIdCard') {
-    if (company.legalIdCard) {
-      const idCardImages = company.legalIdCard.split(',')
-      return idCardImages[0] || null
-    }
-    return null
+const attachmentName = (label: string, stored: unknown): string => {
+  const extension = typeof stored === 'string' ? /\.([a-z0-9]{1,8})(?:$|[?#])/i.exec(stored)?.[1] : ''
+  return extension ? `${label}.${extension}` : label
+}
+const downloadApplicationMaterial = async (label: string) => {
+  const application = currentApplication.value
+  const key = label === '考研计划' && application?.materials?.delayPlan ? 'delayPlan' : label
+  const url = studentApplicationMaterialByteUrl(application?.id, key, true)
+  if (!url) return ElMessage.error('申请材料记录不可用')
+  try {
+    await downloadAuthorizedFile(url, attachmentName(label, application?.materials?.[key]))
+  } catch {
+    ElMessage.error('申请材料下载失败，请检查权限或联系管理员')
   }
-  
-  return company[docKey] || null
+}
+
+const hasApplicationMaterial = (label: string) => {
+  const materials = currentApplication.value?.materials
+  if (!materials || typeof materials !== 'object') return false
+  return Boolean(materials[label] || (label === '考研计划' && materials.delayPlan))
+}
+
+const formatYesNo = (value: unknown): string => {
+  if (value === 1 || value === true || value === '1') return '是'
+  if (value === 0 || value === false || value === '0') return '否'
+  return '未填写'
+}
+
+const formatCompanyAddress = (company: any): string => {
+  const address = [company?.province, company?.city, company?.district, company?.detailAddress]
+    .filter(Boolean)
+    .join('')
+  return address || company?.address || '未填写'
 }
 
 const getIndustryText = (industry: string) => {
   const industryMap: Record<string, string> = {
-    'internet': '互联网/IT',
-    'finance': '金融',
-    'education': '教育',
-    'medical': '医疗',
-    'manufacturing': '制造业',
-    'service': '服务业',
-    'realestate': '房地产',
-    'energy': '能源',
-    'other': '其他'
+    'it': 'IT企业',
+    'medical_equipment': '医疗设备企业',
+    'hospital': '医院',
+    'other': '其它'
   }
   return industryMap[industry] || industry || '未填写'
+}
+
+const getScaleText = (scale: string) => {
+  const scaleMap: Record<string, string> = {
+    '1-50': '1-50 人',
+    '51-100': '51-100 人',
+    '101-500': '101-500 人',
+    '501-1000': '501-1000 人',
+    '1000+': '1000 人以上'
+  }
+  return scaleMap[scale] || scale || '未填写'
 }
 
 const getCooperationModeText = (mode: string) => {
@@ -739,37 +850,12 @@ const getCooperationModeText = (mode: string) => {
   return modeMap[mode] || mode || '未填写'
 }
 
-// 资料预览
-const previewMaterial = (url: string, name: string) => {
-  previewUrl.value = url
-  previewFileName.value = name
-  showMaterialPreviewModal.value = true
-}
-
-// 资料下载
-const downloadMaterial = (url: string, name: string) => {
-  const link = document.createElement('a')
-  link.href = url
-  link.download = `${name}_${new Date().getTime()}.pdf`
-  document.body.appendChild(link)
-  link.click()
-  document.body.removeChild(link)
-}
-
 // 初始化
 onMounted(() => {
   fetchStats()
   fetchApplications()
   enableTableScrollBubbling()
 })
-
-// 监听路由变化，当从首页跳转过来时自动加载数据
-watch(() => route.state?.fromHome, (fromHome) => {
-  if (fromHome) {
-    fetchStats()
-    fetchApplications()
-  }
-}, { immediate: true })
 
 // 使表格区域的滚轮事件冒泡到外层，解决鼠标在表格上时页面无法滚动的问题
 const enableTableScrollBubbling = () => {
@@ -799,6 +885,11 @@ const enableTableScrollBubbling = () => {
     }, { passive: false })
   }, 500)
 }
+useAgentPageContext(() => ({
+  title: '审核管理', view: showRejectModal.value ? 'rejection-form' : showApplicationDetailModal.value || showCompanyQualificationModal.value ? 'application-detail' : 'page',
+  // Application IDs have no teacher-scoped read-tool contract yet; do not mislabel student numbers as IDs.
+  object: null, filters: { keyword: searchForm.keyword, status: searchForm.status, applicationType: activeTab.value }
+}))
 </script>
 
 <style scoped>
@@ -915,6 +1006,13 @@ const enableTableScrollBubbling = () => {
 
 .data-table :deep(.el-table__inner-wrapper) {
   overflow: visible !important;
+}
+
+/* 手机端：恢复表格内部横向滚动（桌面的 overflow:visible hack 会让触摸横滑失效） */
+@media (max-width: 768px) {
+  .data-table :deep(.el-scrollbar__wrap) {
+    overflow-x: auto !important;
+  }
 }
 
 .action-buttons {
@@ -1055,6 +1153,11 @@ const enableTableScrollBubbling = () => {
 
 .status-tag {
   font-weight: 500;
+}
+
+.cooperative-company-tag {
+  margin-top: 4px;
+  margin-left: 6px;
 }
 
 /* 状态栏样式 */
@@ -1221,6 +1324,48 @@ const enableTableScrollBubbling = () => {
   margin-bottom: 0;
 }
 
+.alumni-info-display {
+  display: grid;
+  gap: 10px;
+}
+
+.alumni-member-display {
+  display: grid;
+  grid-template-columns: 72px 1fr 1fr 1.35fr;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 12px;
+  background-color: #fff;
+  border: 1px solid #ebeef5;
+  border-radius: 4px;
+  font-size: 14px;
+  color: #333;
+}
+
+.alumni-member-display strong {
+  color: #409eff;
+  font-weight: 600;
+}
+
+.alumni-member-display span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 768px) {
+  .form-row {
+    flex-wrap: wrap;
+  }
+
+  .form-group.half {
+    flex: 1 1 240px;
+  }
+
+  .alumni-member-display {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+}
 .qualification-documents {
   margin-top: 20px;
 }

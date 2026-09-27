@@ -2,7 +2,7 @@
   <div class="home-container">
     <div class="page-header">
       <div class="header-content">
-        <h1 class="page-title">欢迎回来，{{ teacherName }}老师</h1>
+        <h1 class="page-title">欢迎回来，{{ welcomeText }}</h1>
         <p class="page-description">{{ currentDate }}</p>
       </div>
     </div>
@@ -41,7 +41,7 @@
             <p class="card-desc">合作实习单位数量</p>
           </div>
         </div>
-        <div class="card" @click="handleCardClick('evaluation')" v-if="teacherType === 'COUNSELOR'">
+        <div class="card" @click="handleCardClick('evaluation')" v-if="showPendingReflectionCard">
           <div class="card-icon purple">📝</div>
           <div class="card-content">
             <h3>待批改心得</h3>
@@ -59,7 +59,7 @@
           <el-icon><Bell /></el-icon>
           公告栏
           <el-badge v-if="notificationData.unread > 0" :value="notificationData.unread" class="unread-badge"></el-badge>
-          <span class="board-hint">我的未读消息</span>
+          <span class="board-hint">最近公告通知</span>
         </h3>
         <router-link to="/teacher/announcements" class="view-more-link">查看更多</router-link>
       </div>
@@ -68,25 +68,15 @@
             <div class="announcement-list">
               <div v-if="announcements.length === 0" class="empty-notification">
                 <el-icon><Bell /></el-icon>
-                <span>暂无未读公告</span>
+                <span>暂无公告通知</span>
               </div>
               <TransitionGroup name="notif">
-                <div
+                <AnnouncementMessageItem
                   v-for="announcement in announcements"
                   :key="announcement.id"
-                  class="announcement-item"
-                  :class="{ 'unread': !announcement.isRead }"
-                  @click="openAnnouncementDetail(announcement)"
-                >
-                  <div class="announcement-time">{{ announcement.time }}</div>
-                  <div class="announcement-content">
-                    <h4>{{ announcement.title }}</h4>
-                    <p>
-                      {{ announcement.content.length > 100 ? announcement.content.substring(0, 100) + '...' : announcement.content }}
-                    </p>
-                  </div>
-                  <div v-if="!announcement.isRead" class="unread-dot"></div>
-                </div>
+                  :announcement="announcement"
+                  @select="openAnnouncementDetail"
+                />
               </TransitionGroup>
             </div>
           </el-scrollbar>
@@ -105,13 +95,16 @@
                 <div class="legend-header">
                   <span :class="['legend-color', item.color]"></span>
                   <span class="legend-name">{{ item.name }}</span>
+                  <el-tooltip :content="getStatusExplanation(item.name)" placement="top" effect="dark">
+                    <el-icon class="legend-help-icon" :aria-label="`${item.name}说明`"><QuestionFilled /></el-icon>
+                  </el-tooltip>
                 </div>
-                <span class="legend-percentage">{{ Math.round((item.value / totalStudents) * 1000) / 10 }}%</span>
+                <span class="legend-percentage">{{ getStatusPercentage(item.value, totalStudents) }}%</span>
               </div>
               <div class="legend-progress">
                 <div 
                   :class="['progress-bar', item.color]" 
-                  :style="{ width: Math.round((item.value / totalStudents) * 1000) / 10 + '%' }"
+                  :style="{ width: getStatusPercentage(item.value, totalStudents) + '%' }"
                 ></div>
               </div>
             </div>
@@ -154,7 +147,7 @@
     </div>
 
     <!-- 查看公告对话框 -->
-    <el-dialog v-model="viewDialogVisible" title="查看公告" width="800px" class="view-dialog" @closed="handleViewDialogClosed">
+    <el-dialog v-model="viewDialogVisible" title="查看公告" width="800px" class="view-dialog">
       <div v-if="viewData" class="view-content">
         <h3 class="view-title">{{ viewData.title }}</h3>
         <div class="view-meta">
@@ -172,13 +165,9 @@
             <span class="meta-label">发布日期:</span>
             <span class="meta-value">{{ formatDate(viewData.publishDate || viewData.publishTime) }}</span>
           </div>
-          <div class="meta-item">
-            <span class="meta-label">过期日期:</span>
-            <span class="meta-value">{{ formatDate(viewData.expireDate || viewData.validTo) }}</span>
-          </div>
         </div>
         <el-divider></el-divider>
-        <div class="content-body" v-html="viewData.content"></div>
+        <div class="content-body" v-html="sanitizeHTML(viewData.content)"></div>
         <div v-if="viewData.attachments && parseAttachments(viewData.attachments).length > 0" class="attachments-section">
           <el-divider></el-divider>
           <div class="attachments-title">
@@ -224,33 +213,36 @@
       </template>
     </el-dialog>
 
-    <!-- 文件预览对话框 -->
-    <el-dialog v-model="filePreviewVisible" title="文件预览" width="90%" class="preview-dialog">
-      <div v-if="currentFileUrl" class="preview-content">
-        <iframe :src="currentFileUrl" frameborder="0" class="preview-iframe"></iframe>
-      </div>
-      <template #footer>
-        <el-button @click="filePreviewVisible = false">关闭</el-button>
-      </template>
-    </el-dialog>
+    <FilePreviewDialog
+      v-model="filePreviewVisible"
+      :file-url="currentFileUrl"
+      :file-name="currentFileName"
+      :authorized-url="currentAuthorizedUrl"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
+import { getPiePath, getStatusPercentage } from '@/utils/pieChart'
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import emitter from '../../utils/eventBus'
 import { homeApi, type HomeStats, type AnnouncementWithReadStatus } from '../../api/teacherHome'
-import * as announcementApi from '../../api/announcement'
 import store from '../../store/teacherStore'
 import { useAuthStore } from '@/store/auth'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElScrollbar } from 'element-plus'
-import { Bell, Paperclip, Document, Download, ZoomIn } from '@element-plus/icons-vue'
+import { Bell, Paperclip, Document, Download, ZoomIn, QuestionFilled } from '@element-plus/icons-vue'
 import {
   getAnnouncementWebSocket
 } from '@/utils/websocket'
 import TeacherService from '../../api/teacher'
 import request from '@/utils/request'
+import { currentUserHasRoutePermission } from '@/utils/teacherPermissions'
+import { sanitizeHTML } from '@/utils/sanitize'
+import FilePreviewDialog from '@/components/FilePreviewDialog.vue'
+import AnnouncementMessageItem from '@/components/AnnouncementMessageItem.vue'
+import { announcementAttachmentByteUrl } from '@/utils/authorizedFileUrl'
+import { downloadAuthorizedFile } from '@/utils/authorizedFileDownload'
 
 const storeInstance = store
 const authStore = useAuthStore()
@@ -258,6 +250,22 @@ const router = useRouter()
 
 const teacherName = computed(() => {
   return authStore.user?.name || '未知'
+})
+
+// 根据教师类型生成欢迎语：学院教师→"XX学院张三院长"、系室教师→"XX系李四主任"、辅导员→"辅导员王五老师"
+const welcomeText = computed(() => {
+  const name = teacherName.value
+  if (teacherType.value === 'COLLEGE') {
+    const deptName = departmentName.value || ''
+    return deptName ? `${deptName}${name}院长` : `${name}老师`
+  } else if (teacherType.value === 'DEPARTMENT') {
+    const divName = divisionName.value || ''
+    return divName ? `${divName}${name}主任` : `${name}老师`
+  } else if (teacherType.value === 'COUNSELOR') {
+    return `辅导员${name}老师`
+  }
+  // 未识别类型时的降级显示
+  return `${name}老师`
 })
 
 const currentDate = computed(() => {
@@ -276,6 +284,18 @@ const statusData = ref([
   { name: '没offer', value: 0, color: 'warning' },
   { name: '延迟', value: 0, color: 'danger' }
 ])
+
+const statusExplanations: Record<string, string> = {
+  '已确定实习': '已确定实习单位或已进入实习',
+  '有offer但未确定': '面试通过获得 offer，但尚未确定实习单位',
+  '没offer': '尚无 Offer，包含未投递、无 Offer',
+  '延迟': '因考研延迟实习安排',
+  '考研': '因考研延迟实习安排'
+}
+
+const getStatusExplanation = (name: string) => {
+  return statusExplanations[name] || '当前实习状态'
+}
 
 const announcements = ref<AnnouncementWithReadStatus[]>([])
 
@@ -306,14 +326,32 @@ const loadDateRangeFromStorage = () => {
   if (savedEndDate) endDate.value = savedEndDate
 }
 
-const teacherType = ref<string>('')
+const getInitialTeacherType = (): string => {
+  if (authStore.user?.teacherType) {
+    return authStore.user.teacherType
+  }
+
+  const roleToTeacherType: Record<string, string> = {
+    ROLE_TEACHER_COLLEGE: 'COLLEGE',
+    ROLE_TEACHER_DEPARTMENT: 'DEPARTMENT',
+    ROLE_TEACHER_COUNSELOR: 'COUNSELOR'
+  }
+
+  return roleToTeacherType[authStore.role || ''] || localStorage.getItem('teacherType') || ''
+}
+
+const teacherType = ref<string>(getInitialTeacherType())
+const showPendingReflectionCard = computed(() => (
+  teacherType.value === 'COUNSELOR'
+  && currentUserHasRoutePermission('teacherEvaluation')
+))
 
 const viewDialogVisible = ref(false)
 const viewData = ref<any>(null)
-const pendingDismissId = ref<number | null>(null)
 const filePreviewVisible = ref(false)
 const currentFileUrl = ref('')
 const currentFileName = ref('')
+const currentAuthorizedUrl = ref('')
 
 const divisionName = ref('')
 const departmentName = ref('')
@@ -348,14 +386,21 @@ const loadTeacherInfo = async () => {
     
     const response = await TeacherService.getCurrentTeacherInfo()
     if (response && response.data) {
-      const teacherInfo = response.data
+      interface TeacherInfoRow {
+        name?: string
+        teacherType?: string
+        teacher_type?: string
+        [key: string]: unknown
+      }
+      const teacherInfo = response.data as unknown as TeacherInfoRow
+      const teacherTypeText = teacherInfo.teacherType ?? teacherInfo.teacher_type
       
-      if (teacherInfo.teacherType) {
-        localStorage.setItem('teacherType', teacherInfo.teacherType)
-        teacherType.value = teacherInfo.teacherType
+      if (teacherTypeText) {
+        localStorage.setItem('teacherType', teacherTypeText)
+        teacherType.value = teacherTypeText
         
         if (authStore.user) {
-          authStore.user.teacherType = teacherInfo.teacherType
+          authStore.user.teacherType = teacherTypeText
         }
       }
       
@@ -396,19 +441,34 @@ const loadAnnouncements = async () => {
   try {
     const response = await TeacherService.getNotifications(999)
     if (response && response.data) {
-      // 后端已过滤只返回未读公告
-      const unreadAnnouncements = response.data.map((a: any) => ({
+      interface TeacherNoticeRow {
+        id?: number
+        title?: string
+        content?: string
+        time?: string
+        publishDate?: string
+        publishTime?: string
+        publish_time?: string
+        publisher?: string
+        publisherRole?: string
+        isRead?: boolean
+        [key: string]: unknown
+      }
+      const noticeRows = Array.isArray(response.data) ? (response.data as unknown as TeacherNoticeRow[]) : []
+      const recentAnnouncements = noticeRows.map((a: TeacherNoticeRow) => ({
         id: a.id,
         title: a.title,
         content: a.content,
         time: a.time || a.publishDate || a.publishTime || '',
-        isRead: a.isRead !== undefined ? a.isRead : false,
+        publisher: a.publisher,
+        publisherRole: a.publisherRole,
+        isRead: a.isRead === true,
         expanded: false
       }))
 
-      // 首页公告栏显示全部未读公告
-      notificationData.value.unread = unreadAnnouncements.length
-      announcements.value = unreadAnnouncements
+      // 首页固定显示最近五条，已读项保留；徽标统计当前用户全部未读通知
+      announcements.value = recentAnnouncements.slice(0, 5)
+      notificationData.value.unread = recentAnnouncements.filter(a => !a.isRead).length
     }
   } catch (error) {
     console.error('加载公告数据失败:', error)
@@ -455,21 +515,13 @@ const openAnnouncementDetail = async (announcement: AnnouncementWithReadStatus) 
       viewData.value = response.data
       viewDialogVisible.value = true
 
-      // 延迟移除：等弹窗关闭后再从列表移除，触发过渡动画
-      pendingDismissId.value = announcement.id
-
-      // GET /announcements/{id} 后端已自动创建阅读记录，此处补充确保幂等
-      try {
-        const userId = authStore.user?.id
-        if (userId) {
-          await announcementApi.createAnnouncementReadRecord({
-            announcementId: announcement.id,
-            userId: userId,
-            userType: 'TEACHER'
-          })
-        }
-      } catch (error) {
-        console.error('标记公告已读失败:', error)
+      const index = announcements.value.findIndex(a => a.id === announcement.id)
+      const wasUnread = index > -1 && announcements.value[index].isRead !== true
+      if (index > -1) {
+        announcements.value[index] = { ...announcements.value[index], isRead: true }
+      }
+      if (wasUnread) {
+        notificationData.value.unread = Math.max(0, notificationData.value.unread - 1)
       }
     } else {
       ElMessage.error('获取公告详情失败')
@@ -477,17 +529,6 @@ const openAnnouncementDetail = async (announcement: AnnouncementWithReadStatus) 
   } catch (error) {
     console.error('获取公告详情失败:', error)
     ElMessage.error('获取公告详情失败')
-  }
-}
-
-const handleViewDialogClosed = () => {
-  if (pendingDismissId.value) {
-    const index = announcements.value.findIndex(a => a.id === pendingDismissId.value)
-    if (index > -1) {
-      announcements.value.splice(index, 1)
-    }
-    notificationData.value.unread = announcements.value.length
-    pendingDismissId.value = null
   }
 }
 
@@ -510,40 +551,37 @@ const previewFile = (attachment: any) => {
     return
   }
 
-  const url = attachment.url ? String(attachment.url) : null
-  const name = attachment.name ? String(attachment.name) : '附件'
-  
-  if (!url) {
-    ElMessage.error('附件URL不存在')
+  const name = typeof attachment.name === 'string' ? attachment.name : ''
+  const authorizedUrl = announcementAttachmentByteUrl(viewData.value?.id, name)
+  if (!authorizedUrl) {
+    ElMessage.error('公告附件记录不完整')
     return
   }
 
-  currentFileUrl.value = url
+  currentFileUrl.value = typeof attachment.url === 'string' ? attachment.url : ''
   currentFileName.value = name
+  currentAuthorizedUrl.value = authorizedUrl
   filePreviewVisible.value = true
 }
 
-const downloadFileWithConfirm = (attachment: any) => {
+const downloadFileWithConfirm = async (attachment: any) => {
   if (!attachment) {
     ElMessage.error('附件信息不存在')
     return
   }
 
-  const url = attachment.url ? String(attachment.url) : null
-  const name = attachment.name ? String(attachment.name) : '附件'
-  
-  if (!url) {
-    ElMessage.error('附件URL不存在')
+  const name = typeof attachment.name === 'string' ? attachment.name : ''
+  const authorizedUrl = announcementAttachmentByteUrl(viewData.value?.id, name)
+  if (!authorizedUrl) {
+    ElMessage.error('公告附件记录不完整')
     return
   }
 
-  const link = document.createElement('a')
-  link.href = url
-  link.download = name
-  link.target = '_blank'
-  document.body.appendChild(link)
-  link.click()
-  document.body.removeChild(link)
+  try {
+    await downloadAuthorizedFile(authorizedUrl, name)
+  } catch (error) {
+    ElMessage.error('下载失败，请检查权限')
+  }
 }
 
 const formatDate = (date: string | Date) => {
@@ -581,29 +619,12 @@ const totalStudents = computed(() => {
   return statusData.value.reduce((sum, item) => sum + item.value, 0)
 })
 
-const getPiePath = (startAngle: number, endAngle: number) => {
-  const radius = 120
-  const centerX = 150
-  const centerY = 150
-  
-  const startRad = (startAngle - 90) * Math.PI / 180
-  const endRad = (endAngle - 90) * Math.PI / 180
-  
-  const startX = centerX + radius * Math.cos(startRad)
-  const startY = centerY + radius * Math.sin(startRad)
-  const endX = centerX + radius * Math.cos(endRad)
-  const endY = centerY + radius * Math.sin(endRad)
-  
-  const largeArcFlag = endAngle - startAngle > 180 ? 1 : 0
-  
-  return `M${centerX} ${centerY} L${startX} ${startY} A${radius} ${radius} 0 ${largeArcFlag} 1 ${endX} ${endY} Z`
-}
-
 const piePaths = computed(() => {
   const paths = []
   let currentAngle = 0
   
   for (const item of statusData.value) {
+    if (item.value <= 0) continue
     const angle = totalStudents.value > 0 ? (item.value / totalStudents.value) * 360 : 0
     const endAngle = currentAngle + angle
     paths.push({
@@ -1015,6 +1036,20 @@ onUnmounted(() => {
 .legend-name {
   font-weight: 500;
   color: #303133;
+}
+
+.legend-help-icon {
+  display: inline-flex;
+  width: 14px;
+  height: 14px;
+  margin-left: -6px;
+  color: #909399;
+  cursor: help;
+  flex: none;
+}
+
+.legend-help-icon:hover {
+  color: #409eff;
 }
 
 .legend-progress {

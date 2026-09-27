@@ -52,18 +52,87 @@
         <result property="logo" column="logo" />
         <result property="photos" column="photos" />
         <result property="videos" column="videos" />
+        <result property="isAlumniUnit" column="is_alumni_unit" />
+        <result property="alumniRepresentativeName" column="alumni_representative_name" />
+        <result property="alumniRepresentativePhone" column="alumni_representative_phone" />
+        <result property="alumniRepresentativePosition" column="alumni_representative_position" />
+        <result property="hasTrainingBaseAgreement" column="has_training_base_agreement" />
     </resultMap>
+
+    <resultMap id="TeacherCompanyResultMap" type="com.internship.dto.TeacherCompanyDTO">
+        <id property="id" column="id" />
+        <result property="companyName" column="company_name" />
+        <result property="creditCode" column="credit_code" />
+        <result property="contactPerson" column="contact_person" />
+        <result property="contactPhone" column="contact_phone" />
+        <result property="contactEmail" column="contact_email" />
+        <result property="address" column="address" />
+        <result property="introduction" column="introduction" />
+        <result property="industry" column="industry" />
+        <result property="scale" column="scale" />
+        <result property="province" column="province" />
+        <result property="city" column="city" />
+        <result property="district" column="district" />
+        <result property="detailAddress" column="detail_address" />
+        <result property="website" column="website" />
+        <result property="cooperationMode" column="cooperation_mode" />
+        <result property="logo" column="logo" />
+        <result property="photos" column="photos" />
+        <result property="videos" column="videos" />
+        <result property="isInternshipBase" column="is_internship_base" />
+        <result property="acceptBackup" column="accept_backup" />
+        <result property="hasTrainingBaseAgreement" column="has_training_base_agreement" />
+        <result property="companyTag" column="company_tag" />
+        <result property="isAlumniUnit" column="is_alumni_unit" />
+        <result property="status" column="status" />
+        <result property="applyTime" column="apply_time" />
+        <result property="auditTime" column="audit_time" />
+        <result property="createTime" column="create_time" />
+        <result property="updateTime" column="update_time" />
+    </resultMap>
+
+    <sql id="TeacherCompanyColumns">
+        c.id,
+        c.company_name,
+        c.credit_code,
+        c.contact_person,
+        c.contact_phone,
+        c.contact_email,
+        c.address,
+        c.introduction,
+        c.industry,
+        c.scale,
+        c.province,
+        c.city,
+        c.district,
+        c.detail_address,
+        c.website,
+        c.cooperation_mode,
+        c.logo,
+        c.photos,
+        c.videos,
+        c.is_internship_base,
+        c.accept_backup,
+        c.has_training_base_agreement,
+        c.company_tag,
+        c.is_alumni_unit,
+        c.status,
+        c.apply_time,
+        c.audit_time,
+        c.create_time,
+        c.update_time
+    </sql>
     
-    <insert id="insert" parameterType="com.internship.entity.CompanyUser">
-        insert into company_users (company_name, contact_person, contact_phone, contact_email, phone, email, username, password, role, address, introduction, business_license, legal_id_card, is_internship_base, plaque_photo, has_received_interns, current_employees_count, accept_backup, max_backup_students, register_time, apply_time, audit_time, audit_status, audit_remark, reviewer_id, status, recall_status, recall_reason, recall_apply_time, recall_audit_time, recall_reviewer_id, recall_audit_remark, industry, scale, province, city, district, detail_address, website, cooperation_mode, logo, photos, videos, create_time, update_time)
-        values (#{companyName}, #{contactPerson}, #{contactPhone}, #{contactEmail}, #{phone}, #{email}, #{username}, #{password}, #{role}, #{address}, #{introduction}, #{businessLicense}, #{legalIdCard}, #{isInternshipBase}, #{plaquePhoto}, #{hasReceivedInterns}, #{currentEmployeesCount}, #{acceptBackup}, #{maxBackupStudents}, #{registerTime}, #{applyTime}, #{auditTime}, #{auditStatus}, #{auditRemark}, #{reviewerId}, #{status}, #{recallStatus}, #{recallReason}, #{recallApplyTime}, #{recallAuditTime}, #{recallReviewerId}, #{recallAuditRemark}, #{industry}, #{scale}, #{province}, #{city}, #{district}, #{detailAddress}, #{website}, #{cooperationMode}, #{logo}, #{photos}, #{videos}, #{createTime}, #{updateTime})
+    <insert id="insert" parameterType="com.internship.entity.CompanyUser" useGeneratedKeys="true" keyProperty="id">
+        insert into company_users (company_name, credit_code, contact_person, contact_phone, contact_email, phone, email, username, password, role, address, introduction, business_license, legal_id_card, is_internship_base, plaque_photo, has_received_interns, current_employees_count, accept_backup, max_backup_students, is_alumni_unit, alumni_representative_name, alumni_representative_phone, alumni_representative_position, has_training_base_agreement, register_time, apply_time, audit_time, audit_status, audit_remark, reviewer_id, status, recall_status, recall_reason, recall_apply_time, recall_audit_time, recall_reviewer_id, recall_audit_remark, industry, scale, province, city, district, detail_address, website, cooperation_mode, logo, photos, videos, create_time, update_time)
+        values (#{companyName}, #{creditCode}, #{contactPerson}, #{contactPhone}, #{contactEmail}, #{phone}, #{email}, #{username}, #{password}, #{role}, #{address}, #{introduction}, #{businessLicense}, #{legalIdCard}, #{isInternshipBase}, #{plaquePhoto}, #{hasReceivedInterns}, #{currentEmployeesCount}, #{acceptBackup}, #{maxBackupStudents}, #{isAlumniUnit}, #{alumniRepresentativeName}, #{alumniRepresentativePhone}, #{alumniRepresentativePosition}, #{hasTrainingBaseAgreement}, #{registerTime}, #{applyTime}, #{auditTime}, #{auditStatus}, #{auditRemark}, #{reviewerId}, #{status}, #{recallStatus}, #{recallReason}, #{recallApplyTime}, #{recallAuditTime}, #{recallReviewerId}, #{recallAuditRemark}, #{industry}, #{scale}, #{province}, #{city}, #{district}, #{detailAddress}, #{website}, #{cooperationMode}, #{logo}, #{photos}, #{videos}, #{createTime}, #{updateTime})
     </insert>
     
     <insert id="batchInsert" parameterType="java.util.List">
-        INSERT INTO company_users (company_name, contact_person, contact_phone, contact_email, phone, email, username, password, role, address, introduction, business_license, legal_id_card, is_internship_base, plaque_photo, has_received_interns, current_employees_count, accept_backup, max_backup_students, company_tag, register_time, apply_time, audit_time, audit_status, audit_remark, reviewer_id, status, recall_status, recall_reason, recall_apply_time, recall_audit_time, recall_reviewer_id, recall_audit_remark, industry, scale, province, city, district, detail_address, website, cooperation_mode, logo, photos, videos, create_time, update_time)
+        INSERT INTO company_users (company_name, credit_code, contact_person, contact_phone, contact_email, phone, email, username, password, role, address, introduction, business_license, legal_id_card, is_internship_base, plaque_photo, has_received_interns, current_employees_count, accept_backup, max_backup_students, is_alumni_unit, alumni_representative_name, alumni_representative_phone, alumni_representative_position, has_training_base_agreement, company_tag, register_time, apply_time, audit_time, audit_status, audit_remark, reviewer_id, status, recall_status, recall_reason, recall_apply_time, recall_audit_time, recall_reviewer_id, recall_audit_remark, industry, scale, province, city, district, detail_address, website, cooperation_mode, logo, photos, videos, create_time, update_time)
         VALUES
         <foreach collection="companyUsers" item="companyUser" separator=",">
-            (#{companyUser.companyName}, #{companyUser.contactPerson}, #{companyUser.contactPhone}, #{companyUser.contactEmail}, #{companyUser.phone}, #{companyUser.email}, #{companyUser.username}, #{companyUser.password}, #{companyUser.role}, #{companyUser.address}, #{companyUser.introduction}, #{companyUser.businessLicense}, #{companyUser.legalIdCard}, #{companyUser.isInternshipBase}, #{companyUser.plaquePhoto}, #{companyUser.hasReceivedInterns}, #{companyUser.currentEmployeesCount}, #{companyUser.acceptBackup}, #{companyUser.maxBackupStudents}, #{companyUser.companyTag}, #{companyUser.registerTime}, #{companyUser.applyTime}, #{companyUser.auditTime}, #{companyUser.auditStatus}, #{companyUser.auditRemark}, #{companyUser.reviewerId}, #{companyUser.status}, #{companyUser.recallStatus}, #{companyUser.recallReason}, #{companyUser.recallApplyTime}, #{companyUser.recallAuditTime}, #{companyUser.recallReviewerId}, #{companyUser.recallAuditRemark}, #{companyUser.industry}, #{companyUser.scale}, #{companyUser.province}, #{companyUser.city}, #{companyUser.district}, #{companyUser.detailAddress}, #{companyUser.website}, #{companyUser.cooperationMode}, #{companyUser.logo}, #{companyUser.photos}, #{companyUser.videos}, #{companyUser.createTime}, #{companyUser.updateTime})
+            (#{companyUser.companyName}, #{companyUser.creditCode}, #{companyUser.contactPerson}, #{companyUser.contactPhone}, #{companyUser.contactEmail}, #{companyUser.phone}, #{companyUser.email}, #{companyUser.username}, #{companyUser.password}, #{companyUser.role}, #{companyUser.address}, #{companyUser.introduction}, #{companyUser.businessLicense}, #{companyUser.legalIdCard}, #{companyUser.isInternshipBase}, #{companyUser.plaquePhoto}, #{companyUser.hasReceivedInterns}, #{companyUser.currentEmployeesCount}, #{companyUser.acceptBackup}, #{companyUser.maxBackupStudents}, #{companyUser.isAlumniUnit}, #{companyUser.alumniRepresentativeName}, #{companyUser.alumniRepresentativePhone}, #{companyUser.alumniRepresentativePosition}, #{companyUser.hasTrainingBaseAgreement}, #{companyUser.companyTag}, #{companyUser.registerTime}, #{companyUser.applyTime}, #{companyUser.auditTime}, #{companyUser.auditStatus}, #{companyUser.auditRemark}, #{companyUser.reviewerId}, #{companyUser.status}, #{companyUser.recallStatus}, #{companyUser.recallReason}, #{companyUser.recallApplyTime}, #{companyUser.recallAuditTime}, #{companyUser.recallReviewerId}, #{companyUser.recallAuditRemark}, #{companyUser.industry}, #{companyUser.scale}, #{companyUser.province}, #{companyUser.city}, #{companyUser.district}, #{companyUser.detailAddress}, #{companyUser.website}, #{companyUser.cooperationMode}, #{companyUser.logo}, #{companyUser.photos}, #{companyUser.videos}, #{companyUser.createTime}, #{companyUser.updateTime})
         </foreach>
     </insert>
     
@@ -83,6 +152,9 @@
             </if>
             <if test="companyName != null and companyName != ''">
                 company_name = #{companyName},
+            </if>
+            <if test="creditCode != null and creditCode != ''">
+                credit_code = #{creditCode},
             </if>
             <if test="contactPerson != null and contactPerson != ''">
                 contact_person = #{contactPerson},
@@ -128,6 +200,26 @@
             </if>
             <if test="maxBackupStudents != null">
                 max_backup_students = #{maxBackupStudents},
+            </if>
+            <if test="isAlumniUnit != null">
+                is_alumni_unit = #{isAlumniUnit},
+                <if test="isAlumniUnit == 0">
+                    alumni_representative_name = NULL,
+                    alumni_representative_phone = NULL,
+                    alumni_representative_position = NULL,
+                </if>
+            </if>
+            <if test="alumniRepresentativeName != null">
+                alumni_representative_name = #{alumniRepresentativeName},
+            </if>
+            <if test="alumniRepresentativePhone != null">
+                alumni_representative_phone = #{alumniRepresentativePhone},
+            </if>
+            <if test="alumniRepresentativePosition != null">
+                alumni_representative_position = #{alumniRepresentativePosition},
+            </if>
+            <if test="hasTrainingBaseAgreement != null">
+                has_training_base_agreement = #{hasTrainingBaseAgreement},
             </if>
             <if test="companyTag != null">
                 company_tag = #{companyTag},
@@ -307,8 +399,22 @@
                     and
                 </if>
                 <foreach collection="companyTags" item="tag" separator=" and " open="(" close=")">
-                    FIND_IN_SET(#{tag}, company_tag) > 0
+                    (
+                        FIND_IN_SET(#{tag}, REPLACE(company_tag, '双向选择阶段', '校企双向选择')) > 0
+                        OR (#{tag} = '校企双向选择' AND (cooperation_mode LIKE '%双向%' OR cooperation_mode LIKE '%mutual_choice%'))
+                        OR (#{tag} = '学生自主联系' AND (cooperation_mode LIKE '%自主%' OR cooperation_mode LIKE '%student_contact%'))
+                        OR (#{tag} = '接受兜底' AND (cooperation_mode LIKE '%兜底%' OR accept_backup = 1))
+                        OR (#{tag} = '实习基地' AND is_internship_base = 1)
+                        OR (#{tag} = '已签协议' AND has_training_base_agreement = 1)
+                        OR (#{tag} = '校友单位' AND is_alumni_unit = 1)
+                    )
                 </foreach>
+            </if>
+            <if test="industry != null and industry != ''">
+                <if test="(companyName != null and companyName != '') or (status != null) or (recallStatus != null) or (companyTags != null and companyTags.size() > 0)">
+                    and
+                </if>
+                industry = #{industry}
             </if>
         </where>
         order by
@@ -319,6 +425,115 @@
                 ELSE 3
             END,
             create_time desc
+    </select>
+
+    <select id="findTeacherCompanies" resultMap="TeacherCompanyResultMap">
+        SELECT <include refid="TeacherCompanyColumns" />
+        FROM company_users c
+        <where>
+            <if test="companyName != null and companyName != ''">
+                c.company_name LIKE CONCAT('%', #{companyName}, '%')
+            </if>
+            <if test="status != null">
+                AND c.status = #{status}
+            </if>
+            <if test="recallStatus != null">
+                AND c.recall_status = #{recallStatus}
+            </if>
+            <if test="companyTags != null and companyTags.size() > 0">
+                <foreach collection="companyTags" item="tag" separator=" AND " open="AND (" close=")">
+                    (
+                        FIND_IN_SET(#{tag}, REPLACE(c.company_tag, '双向选择阶段', '校企双向选择')) &gt; 0
+                        OR (#{tag} = '校企双向选择' AND (c.cooperation_mode LIKE '%双向%' OR c.cooperation_mode LIKE '%mutual_choice%'))
+                        OR (#{tag} = '学生自主联系' AND (c.cooperation_mode LIKE '%自主%' OR c.cooperation_mode LIKE '%student_contact%'))
+                        OR (#{tag} = '接受兜底' AND (c.cooperation_mode LIKE '%兜底%' OR c.accept_backup = 1))
+                        OR (#{tag} = '实习基地' AND c.is_internship_base = 1)
+                        OR (#{tag} = '已签协议' AND c.has_training_base_agreement = 1)
+                        OR (#{tag} = '校友单位' AND c.is_alumni_unit = 1)
+                    )
+                </foreach>
+            </if>
+            <if test="industry != null and industry != ''">
+                AND c.industry = #{industry}
+            </if>
+            <if test="keyword != null and keyword != ''">
+                AND (
+                    c.company_name LIKE CONCAT('%', #{keyword}, '%')
+                    OR EXISTS (
+                        SELECT 1
+                        FROM company_school_liaison csl
+                        JOIN teacher_users liaison_teacher ON liaison_teacher.id = csl.teacher_id
+                        WHERE csl.company_id = c.id
+                          AND (liaison_teacher.name LIKE CONCAT('%', #{keyword}, '%')
+                               OR liaison_teacher.phone LIKE CONCAT('%', #{keyword}, '%'))
+                    )
+                    OR EXISTS (
+                        SELECT 1
+                        FROM company_visit_record cvr_keyword
+                        JOIN company_visit_participant cvp_keyword
+                          ON cvp_keyword.visit_record_id = cvr_keyword.id
+                        JOIN teacher_users visit_teacher ON visit_teacher.id = cvp_keyword.teacher_id
+                        WHERE cvr_keyword.company_id = c.id
+                          AND visit_teacher.name LIKE CONCAT('%', #{keyword}, '%')
+                    )
+                    OR EXISTS (
+                        SELECT 1
+                        FROM company_alumni_member cam
+                        WHERE cam.company_id = c.id
+                          AND cam.name LIKE CONCAT('%', #{keyword}, '%')
+                    )
+                )
+            </if>
+            <if test="visitState != null and visitState == 1">
+                AND EXISTS (
+                    SELECT 1 FROM company_visit_record cvr_state
+                    WHERE cvr_state.company_id = c.id
+                      AND YEAR(cvr_state.visit_date) = #{visitedYear}
+                )
+            </if>
+            <if test="visitState != null and visitState == 0">
+                AND NOT EXISTS (
+                    SELECT 1 FROM company_visit_record cvr_state
+                    WHERE cvr_state.company_id = c.id
+                      AND YEAR(cvr_state.visit_date) = #{visitedYear}
+                )
+            </if>
+            <if test="visitTeacherId != null">
+                AND EXISTS (
+                    SELECT 1
+                    FROM company_visit_record cvr_teacher
+                    JOIN company_visit_participant cvp_teacher
+                      ON cvp_teacher.visit_record_id = cvr_teacher.id
+                    WHERE cvr_teacher.company_id = c.id
+                      AND cvp_teacher.teacher_id = #{visitTeacherId}
+                    <if test="visitedYear != null">
+                      AND YEAR(cvr_teacher.visit_date) = #{visitedYear}
+                    </if>
+                )
+            </if>
+            <if test="liaisonTeacherId != null">
+                AND EXISTS (
+                    SELECT 1 FROM company_school_liaison csl_filter
+                    WHERE csl_filter.company_id = c.id
+                      AND csl_filter.teacher_id = #{liaisonTeacherId}
+                )
+            </if>
+        </where>
+        ORDER BY
+            CASE
+                WHEN c.recall_status = 1 THEN 0
+                WHEN c.status = 0 THEN 1
+                WHEN c.status = 1 THEN 2
+                ELSE 3
+            END,
+            c.create_time DESC,
+            c.id DESC
+    </select>
+
+    <select id="findTeacherCompanyById" resultMap="TeacherCompanyResultMap">
+        SELECT <include refid="TeacherCompanyColumns" />
+        FROM company_users c
+        WHERE c.id = #{id}
     </select>
     
     <select id="selectByIds" resultType="com.internship.entity.CompanyUser" parameterType="java.util.List">
@@ -385,14 +600,9 @@
     <select id="findPendingAuditWithStatus" resultMap="CompanyUserResultMap">
         SELECT * FROM company_users
         WHERE recall_status = 0
-        <choose>
-            <when test="status != null">
-                AND audit_status = #{status}
-            </when>
-            <otherwise>
-                AND audit_status = 0
-            </otherwise>
-        </choose>
+        <if test="status != null">
+            AND audit_status = #{status}
+        </if>
         <if test="companyName != null and companyName != ''">
             AND company_name LIKE CONCAT('%', #{companyName}, '%')
         </if>
@@ -489,12 +699,25 @@
             recall_reviewer_id = NULL,
             recall_audit_remark = NULL,
             update_time = NOW()
-        WHERE recall_status IS NOT NULL AND recall_status > 0
+        WHERE (
+            recall_status IS NOT NULL AND recall_status > 0
+            OR recall_reason IS NOT NULL
+            OR recall_apply_time IS NOT NULL
+            OR recall_audit_time IS NOT NULL
+            OR recall_reviewer_id IS NOT NULL
+            OR recall_audit_remark IS NOT NULL
+        )
     </update>
 
     <select id="findRecallRecords" resultMap="CompanyUserResultMap">
         SELECT * FROM company_users
-        WHERE recall_status IN (1, 2, 3)
+        WHERE (
+            recall_status IN (1, 2, 3)
+            OR recall_reason IS NOT NULL
+            OR recall_apply_time IS NOT NULL
+            OR recall_audit_time IS NOT NULL
+            OR recall_audit_remark IS NOT NULL
+        )
         <if test="companyName != null and companyName != ''">
             AND company_name LIKE CONCAT('%', #{companyName}, '%')
         </if>
@@ -529,9 +752,67 @@
         LIMIT 1
     </select>
 
+    <select id="findApprovedByCompanyName" resultMap="CompanyUserResultMap">
+        SELECT id, company_name, company_tag, cooperation_mode, status, audit_status, recall_status
+        FROM company_users
+        WHERE status = 1
+          AND audit_status = 1
+          AND COALESCE(recall_status, 0) != 1
+          AND LOWER(TRIM(company_name)) = LOWER(TRIM(#{companyName}))
+        ORDER BY id
+        LIMIT 1
+    </select>
+
+    <select id="findApprovedCompanyMatches" resultMap="CompanyUserResultMap">
+        SELECT id, company_name, company_tag, cooperation_mode, status, audit_status, recall_status
+        FROM company_users
+        WHERE status = 1
+          AND audit_status = 1
+          AND COALESCE(recall_status, 0) != 1
+          AND (company_name LIKE CONCAT('%', #{keyword}, '%')
+               OR #{keyword} LIKE CONCAT('%', company_name, '%'))
+        ORDER BY
+            CASE
+                WHEN LOWER(TRIM(company_name)) = LOWER(TRIM(#{keyword})) THEN 0
+                WHEN company_name LIKE CONCAT(#{keyword}, '%') THEN 1
+                WHEN #{keyword} LIKE CONCAT('%', company_name, '%') THEN 1
+                ELSE 2
+            END,
+            CHAR_LENGTH(company_name),
+            id
+        LIMIT 8
+    </select>
+
+    <!-- 全部有效校企合作企业（启用、审核通过、未召回），用于标记自主实习单位是否为系统内企业 -->
+    <select id="findAllApprovedCompanies" resultMap="CompanyUserResultMap">
+        SELECT id, company_name, company_tag, cooperation_mode, status, audit_status, recall_status
+        FROM company_users
+        WHERE status = 1
+          AND audit_status = 1
+          AND COALESCE(recall_status, 0) != 1
+        ORDER BY id
+    </select>
+
     <!-- 获取所有不重复的企业标签 -->
     <select id="getDistinctTags" resultType="java.lang.String">
         SELECT DISTINCT company_tag FROM company_users
         WHERE company_tag IS NOT NULL AND company_tag != ''
+    </select>
+
+    <!-- 合作模式映射的标签（校企双向选择/学生自主联系/接受兜底） -->
+    <select id="getDistinctCooperationModeTags" resultType="java.lang.String">
+        SELECT DISTINCT '校企双向选择' FROM company_users
+        WHERE cooperation_mode LIKE '%双向%' OR cooperation_mode LIKE '%mutual_choice%'
+        UNION SELECT DISTINCT '学生自主联系' FROM company_users
+        WHERE cooperation_mode LIKE '%自主%' OR cooperation_mode LIKE '%student_contact%'
+        UNION SELECT DISTINCT '接受兜底' FROM company_users
+        WHERE cooperation_mode LIKE '%兜底%'
+    </select>
+
+    <!-- 状态类标签（实习基地/已签协议/校友单位） -->
+    <select id="getDistinctFlagTags" resultType="java.lang.String">
+        SELECT DISTINCT '实习基地' FROM company_users WHERE is_internship_base = 1
+        UNION SELECT DISTINCT '已签协议' FROM company_users WHERE has_training_base_agreement = 1
+        UNION SELECT DISTINCT '校友单位' FROM company_users WHERE is_alumni_unit = 1
     </select>
 </mapper>

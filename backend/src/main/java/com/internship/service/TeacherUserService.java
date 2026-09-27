@@ -22,6 +22,8 @@ public interface TeacherUserService {
      * @return 删除的记录数
      */
     int batchDelete(List<Long> ids);
+
+    int resetAllPasswords();
     
     /**
      * 从Excel导入教师数据

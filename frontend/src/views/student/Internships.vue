@@ -8,7 +8,7 @@
       </div>
 
     <!-- 概览卡片 - 统一为面试管理卡片样式 -->
-    <div class="overview-card">
+    <div :class="['overview-card', { 'deep-link-target': Boolean(highlightedInternshipId) }]">
       <div class="overview-content">
         <div class="overview-left">
           <div class="company-info">
@@ -22,7 +22,7 @@
         </div>
         <div class="overview-right" v-if="hasInternshipRecord">
           <span class="current-period" v-if="currentPeriod">第{{ currentPeriod }}期</span>
-          <el-button type="primary" class="submit-log-button" :disabled="!canSubmit" @click="submitLog" :title="!canSubmit ? submitReason : ''">
+          <el-button type="primary" class="submit-log-button" :disabled="!canSubmit" data-agent-open @click="submitLog" :title="!canSubmit ? submitReason : ''">
             <el-icon class="button-icon"><Edit /></el-icon>
             <span>提交实习心得</span>
           </el-button>
@@ -30,7 +30,6 @@
       </div>
     </div>
 
-    <!-- 标签页区域 - 统一为面试管理筛选标签样式 -->
     <div class="tabs-section">
       <div class="tabs-container">
         <div
@@ -48,9 +47,15 @@
     <div class="content-section">
       <!-- 进行中日志 -->
       <div v-if="activeTab === 'current'" class="logs-list">
-        <div v-for="log in logs" :key="log.id" class="log-card">
+        <div
+          v-for="log in logs"
+          :key="log.id"
+          :class="['log-card', { 'deep-link-target': String(log.id) === String(highlightedReflectionId) }]"
+          :data-activity-id="log.id"
+        >
           <div class="log-header">
             <div class="log-title">{{ log.title }}</div>
+            <div v-if="log.company || log.position" class="log-context">{{ log.company || '未命名公司' }} · {{ log.position || '未命名岗位' }}</div>
             <div class="log-header-right">
               <div :class="['status-tag', log.statusClass]">
                 {{ log.status }}
@@ -103,9 +108,15 @@
 
       <!-- 全部心得 -->
       <div v-else-if="activeTab === 'all'" class="logs-list">
-        <div v-for="log in allLogs" :key="log.id" class="log-card">
+        <div
+          v-for="log in allLogs"
+          :key="log.id"
+          :class="['log-card', { 'deep-link-target': String(log.id) === String(highlightedReflectionId) }]"
+          :data-activity-id="log.id"
+        >
           <div class="log-header">
             <div class="log-title">{{ log.title }}</div>
+            <div v-if="log.company || log.position" class="log-context">{{ log.company || '未命名公司' }} · {{ log.position || '未命名岗位' }}</div>
             <div class="log-header-right">
               <div :class="['status-tag', log.statusClass]">
                 {{ log.status }}
@@ -154,7 +165,12 @@
 
       <!-- 已完成档案 -->
       <div v-else-if="activeTab === 'completed'" class="logs-list">
-        <div v-for="archive in archives" :key="archive.id" class="log-card">
+        <div
+          v-for="archive in archives"
+          :key="archive.id"
+          :class="['log-card', { 'deep-link-target': String(archive.id) === String(highlightedReflectionId) }]"
+          :data-activity-id="archive.id"
+        >
           <div class="log-header">
             <div class="log-title">{{ archive.title || archive.company || '已完成心得' }}</div>
             <div class="log-header-right">
@@ -408,7 +424,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, nextTick } from "vue";
+import { useAgentPageContext } from '@/agent/useAgentPageContext'
+import type { FormFieldDescriptor } from '@/agent/types'
+import { ref, onMounted, onUnmounted, nextTick, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import {
   Edit,
@@ -429,10 +447,11 @@ import {
   Star,
   RefreshLeft
 } from '@element-plus/icons-vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import request from '@/utils/request'
 import { useAuthStore } from '@/store/auth'
 import { onAIAnalysisResult, offAIAnalysisResult, onGradePublished, offGradePublished } from '@/utils/websocket'
+import { useFormContext } from '@/agent/formContext'
 
 const authStore = useAuthStore()
 
@@ -442,6 +461,7 @@ const getStudentId = () => {
 }
 
 const router = useRouter()
+const route = useRoute()
 const activeTab = ref('all')
 
 const showLogDialog = ref(false)
@@ -453,13 +473,15 @@ const selectedFile = ref<File | null>(null)
 const submitting = ref(false)
 const withdrawing = ref(false)
 
-// 当前阶段提交状态
+// 当前心得期次提交状态
 const currentPeriod = ref<number | null>(null)
 const canSubmit = ref(true)
 const submitReason = ref('')
 
 const hasInternshipRecord = ref(false)
 const currentRecordId = ref(null)
+const highlightedReflectionId = ref<string | number | null>(null)
+const highlightedInternshipId = ref<string | number | null>(null)
 
 // 处理WebSocket推送的AI分析结果
 const handleAIAnalysisResult = async (data: any) => {
@@ -490,7 +512,16 @@ const handleGradePublished = async (data: any) => {
   await fetchReflections()
 }
 
-const logForm = ref({
+const logForm = ref<{
+  title: string
+  date: string | Date
+  week?: number
+  content: string
+  problems?: string
+  plan?: string
+  files?: unknown[]
+  taskId?: unknown
+}>({
   title: "",
   date: "",
   week: 1,
@@ -499,6 +530,26 @@ const logForm = ref({
   plan: "",
   files: [],
 });
+
+// ===== 智能填表：实习心得弹窗注册到 AI 侧栏（只写响应式 model，不触发提交） =====
+// 弹窗中只有“实习心得”是可编辑字段（title/date 由系统生成，problems/plan 为历史遗留字段，
+// 界面不展示且提交不携带，注册它们会导致 AI“已填写”但用户看不到结果，故不注册）；
+// 附件 Word 文档需手动在“上传文件”页签上传（见 content 字段 patternHint）
+const formContext = useFormContext()
+const reflectionLogFields = (): FormFieldDescriptor[] => [
+  { prop: 'content', label: '实习心得', type: 'textarea', required: true, patternHint: '附件Word文档需手动在“上传文件”页签上传' }
+]
+const registerReflectionForm = () => {
+  if (!showLogDialog.value || reflectionActiveTab.value !== 'text') { formContext.unregister('reflection:log'); return }
+  formContext.register({
+    formId: 'reflection:log', title: '实习心得', fields: reflectionLogFields(), getFields: reflectionLogFields,
+    getModel: () => logForm.value,
+    getObject: () => isEditMode.value && currentLog.value?.id ? { type: 'reflection', id: String(currentLog.value.id) } : null,
+    getValidationSummary: () => ({ missingFields: [], validationErrors: canSubmit.value ? [] : [submitReason.value || '当前期次暂不能提交实习心得'] })
+  })
+}
+watch([showLogDialog, reflectionActiveTab], registerReflectionForm)
+onUnmounted(() => { formContext.unregister('reflection:log') })
 
 const currentInternship = ref({
   company: "",
@@ -520,11 +571,25 @@ const allLogs = ref([])
 
 const fetchInternshipRecord = async () => {
   try {
-    const response = await request.get(`/student/internship-record`)
+    interface InternshipRecordRow {
+      id?: number | string
+      status?: number | string
+      companyName?: string
+      company_name?: string
+      positionName?: string
+      position_name?: string
+      internshipStartDate?: string
+      internship_start_date?: string
+      internshipEndDate?: string
+      internship_end_date?: string
+      progress?: number
+      [key: string]: unknown
+    }
+    const response = await request.get<InternshipRecordRow>(`/student/internship-record`)
     if (response.code === 200) {
-      const record = response.data
+      const record = response.data as InternshipRecordRow
       // status=5（已中断）时视为无实习记录，不显示公司信息和心得提交
-      if (record && record.status !== 5) {
+      if (record && record.status !== 5 && record.status !== '5') {
         hasInternshipRecord.value = true
         currentRecordId.value = record.id
         currentInternship.value = {
@@ -545,7 +610,22 @@ const fetchInternshipRecord = async () => {
 // 获取实习心得列表
 const fetchReflections = async () => {
   try {
-    const response = await request.get('/student/internship-reflection/list')
+    interface InternshipReflectionRow {
+      id?: number | string
+      submitTime?: string
+      submit_time?: string
+      companyName?: string
+      positionName?: string
+      title?: string
+      periodNumber?: number | string
+      content?: string
+      remark?: string
+      teacherComment?: string
+      aiAnalysis?: string
+      totalScore?: number
+      [key: string]: unknown
+    }
+    const response = await request.get<InternshipReflectionRow[]>('/student/internship-reflection/list')
     if (response.code === 200 && response.data) {
       const reflectionList = Array.isArray(response.data) ? response.data : []
       // 将实习心得合并到logs列表
@@ -553,6 +633,8 @@ const fetchReflections = async () => {
       const reflectionLogs = reflectionList.map((item, index) => ({
         id: item.id,
         date: item.submitTime ? new Date(item.submitTime) : new Date(),
+        company: item.companyName || '',
+        position: item.positionName || '',
         // 标题格式：第X期实习心得（优先使用periodNumber，其次使用后端返回的title，最后使用序号）
         title: item.title || (item.periodNumber ? `第${item.periodNumber}期实习心得` : `第${index + 1}期实习心得`),
         description: item.content || '',
@@ -574,8 +656,8 @@ const fetchReflections = async () => {
       // 只显示实习心得，不再保留周志
       const allNewLogs = reflectionLogs
 
-      // 按日期排序，最新的在前
-      allNewLogs.sort((a, b) => new Date(b.date) - new Date(a.date))
+      // 按日期排序，最新的在前（Date 相减运行时等价于 getTime 相减，用 getTime 收敛类型）
+      allNewLogs.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
 
       // 分别设置logs和archives
       // logs: 进行中（待批阅、已提交等未完成状态）
@@ -592,13 +674,18 @@ const fetchReflections = async () => {
   }
 }
 
-// 获取当前阶段提交状态
+// 获取当前心得期次提交状态
 const fetchPeriodStatus = async () => {
   try {
     // 先等待实习记录加载完成，避免竞态条件
     await fetchInternshipRecord()
 
-    const response = await request.get('/student/internship-reflection/current-period-status')
+    const response = await request.get<{
+      currentPeriod?: number
+      canSubmit?: boolean
+      submitReason?: string
+      hasSubmitted?: boolean
+    }>('/student/internship-reflection/current-period-status')
     if (response.code === 200 && response.data) {
       currentPeriod.value = response.data.currentPeriod
       canSubmit.value = response.data.canSubmit
@@ -609,21 +696,21 @@ const fetchPeriodStatus = async () => {
         canSubmit.value = false
         submitReason.value = '暂无实习记录，无法提交实习心得'
       } else if (!response.data.canSubmit && response.data.hasSubmitted) {
-        submitReason.value = `第${response.data.currentPeriod}期实习心得已提交，请等待下一阶段再提交`
+        submitReason.value = `第${response.data.currentPeriod}期实习心得已提交，请等待下一期再提交`
       } else if (!response.data.currentPeriod) {
-        submitReason.value = '当前不在实习期间内，无法提交实习心得'
+        submitReason.value = '当前没有可提交的心得期次'
       } else {
         submitReason.value = ''
       }
     }
   } catch (error) {
-    console.error('获取阶段状态失败:', error)
+    console.error('获取心得期次状态失败:', error)
   }
 }
 
 const submitLog = () => {
   if (!canSubmit.value) {
-    ElMessage.warning(submitReason.value || '当前阶段不能提交实习心得')
+    ElMessage.warning(submitReason.value || '当前期次不能提交实习心得')
     return
   }
   isEditMode.value = false;
@@ -635,6 +722,8 @@ const submitLog = () => {
     taskId: null, // 如果有自动生成的任务ID，则填充
   };
   showLogDialog.value = true;
+  // 智能填表：弹窗打开后把表单结构注册到 AI 侧栏（只注册结构，赋值由助手写入上方响应式对象）
+  registerReflectionForm()
 };
 
 const editLog = (log) => {
@@ -650,6 +739,8 @@ const editLog = (log) => {
     taskId: log.id || null,  // 设置taskId用于更新现有心得
   };
   showLogDialog.value = true;
+  // 智能填表：弹窗打开后把表单结构注册到 AI 侧栏（只注册结构，赋值由助手写入上方响应式对象）
+  registerReflectionForm()
 };
 
 const deleteLog = async (log: any) => {
@@ -729,9 +820,9 @@ const submitLogForm = async () => {
       const formData = new FormData()
       formData.append('file', selectedFile.value)
 
-      // 如果是编辑模式（撤回后重新提交），传递taskId
+      // 如果是编辑模式（撤回后重新提交），传递taskId（String 包裹对字符串输入恒等，仅收敛类型）
       if (isEditMode.value && logForm.value.taskId) {
-        formData.append('taskId', logForm.value.taskId)
+        formData.append('taskId', String(logForm.value.taskId))
       }
 
       const response = await request({
@@ -748,7 +839,7 @@ const submitLogForm = async () => {
         selectedFile.value = null
         showLogDialog.value = false
         fetchReflections()  // 刷新实习心得列表
-        fetchPeriodStatus()  // 刷新阶段状态
+        fetchPeriodStatus()  // 刷新期次状态
       } else {
         ElMessage.error(response?.message || '提交失败')
       }
@@ -769,6 +860,8 @@ const submitLogForm = async () => {
 
   try {
     // 调用实习心得提交 API
+    const fillInstance = formContext.currentForm.value?.instanceId
+    const savedValues = formContext.captureValues('reflection:log')
     const submitData = {
       content: logForm.value.content,
       taskId: logForm.value.taskId
@@ -777,10 +870,11 @@ const submitLogForm = async () => {
     const response = await request.post(`/student/internship-reflection/submit`, submitData);
     if (response.code === 200) {
       ElMessage.success("提交成功");
+      formContext.reportFormOutcome('reflection:log', { status: 'submitted', label: '实习心得已提交', url: '/student/internships' }, fillInstance, savedValues)
       showLogDialog.value = false;
       // 刷新数据
       fetchReflections();  // 刷新实习心得列表
-      fetchPeriodStatus();  // 刷新阶段状态
+      fetchPeriodStatus();  // 刷新期次状态
     } else {
       ElMessage.error(response.message || '提交失败，不符合实习心得规范');
     }
@@ -847,12 +941,63 @@ const withdrawLog = (log: any) => {
     })
 }
 
-onMounted(() => {
+const clearInternshipDeepLink = (key: string) => {
+  const query = { ...route.query }
+  delete query[key]
+  router.replace({ path: route.path, query })
+}
+
+const clearInternshipDeepLinks = (keys: string[]) => {
+  const query = { ...route.query }
+  keys.forEach((key) => delete query[key])
+  router.replace({ path: route.path, query })
+}
+
+const scrollToActivityTarget = async (targetId: string | number) => {
+  await nextTick()
+  const element = Array.from(document.querySelectorAll<HTMLElement>('[data-activity-id]'))
+    .find((item) => item.dataset.activityId === String(targetId))
+  element?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+}
+
+const handleInternshipDeepLink = async () => {
+  const reflectionId = route.query.reflectionId
+  if (reflectionId) {
+    const reflection = allLogs.value.find((item) => String(item.id) === String(reflectionId))
+    if (!reflection) {
+      highlightedReflectionId.value = null
+      ElMessage.warning('未找到该实习心得，已为您显示心得列表')
+      clearInternshipDeepLink('reflectionId')
+    } else {
+      activeTab.value = 'all'
+      highlightedReflectionId.value = reflection.id
+      await scrollToActivityTarget(reflection.id)
+      viewLog(reflection)
+    }
+  }
+
+  const internshipId = route.query.internshipId
+  if (internshipId) {
+    const currentStatusTarget = currentRecordId.value
+      && String(currentRecordId.value) === String(internshipId)
+    if (currentStatusTarget) {
+      highlightedInternshipId.value = internshipId as string
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+    } else {
+      highlightedInternshipId.value = null
+      ElMessage.warning('未找到该实习记录，已为您显示当前实习信息')
+      clearInternshipDeepLinks(['internshipId'])
+    }
+  }
+}
+
+onMounted(async () => {
   // 并行加载心得列表和周期状态，提升加载速度
-  Promise.all([
+  await Promise.all([
     fetchReflections(),
     fetchPeriodStatus()
   ])
+  await handleInternshipDeepLink()
 
   // 注册AI分析结果监听器
   onAIAnalysisResult(handleAIAnalysisResult)
@@ -860,12 +1005,24 @@ onMounted(() => {
   onGradePublished(handleGradePublished)
 })
 
+watch(
+  () => [route.query.reflectionId, route.query.internshipId],
+  () => handleInternshipDeepLink()
+)
+
 onUnmounted(() => {
   // 移除AI分析结果监听器
   offAIAnalysisResult(handleAIAnalysisResult)
   // 移除成绩发布更新监听器
   offGradePublished(handleGradePublished)
 })
+
+useAgentPageContext(() => ({
+  title: '实习心得',
+  view: showViewDialog.value ? 'reflection-detail' : showLogDialog.value ? 'log-dialog' : 'page',
+  object: (showViewDialog.value || (showLogDialog.value && isEditMode.value)) && currentLog.value?.id ? { type: 'reflection', id: String(currentLog.value.id) } : null,
+  filters: { reflectionStatus: activeTab.value, period: currentPeriod.value ?? '' }
+}))
 </script>
 
 <style scoped>
@@ -1131,6 +1288,12 @@ onUnmounted(() => {
   background: linear-gradient(145deg, #ffffff 0%, #f0f9ff 100%);
 }
 
+.overview-card.deep-link-target,
+.log-card.deep-link-target {
+  border-color: #409eff;
+  box-shadow: 0 0 0 3px rgba(64, 158, 255, 0.18), 0 12px 32px rgba(64, 158, 255, 0.16);
+}
+
 .log-left,
 .archive-left {
   flex-shrink: 0;
@@ -1188,6 +1351,12 @@ onUnmounted(() => {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.log-context {
+  margin-top: 3px;
+  color: #64748b;
+  font-size: 12px;
 }
 
 .log-date,

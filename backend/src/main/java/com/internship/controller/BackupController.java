@@ -58,7 +58,7 @@ public class BackupController {
 
     @PostMapping("/manual")
     @PreAuthorize("hasAuthority('backup:create')")
-    @Log(module = "BACKUP", operationType = "BACKUP", description = "手动备份数据")
+    @Log(module = "BACKUP", operationType = "BACKUP", description = "手动备份数据", riskLevel = "HIGH", critical = true)
     public Result manualBackup(HttpServletRequest request) {
         String operator = getCurrentUsername();
         String operatorIp = getClientIp(request);
@@ -95,7 +95,7 @@ public class BackupController {
 
     @PostMapping("/restore/{id}")
     @PreAuthorize("hasAuthority('backup:restore')")
-    @Log(module = "BACKUP", operationType = "RESTORE", description = "恢复数据")
+    @Log(module = "BACKUP", operationType = "RESTORE", description = "恢复数据", riskLevel = "HIGH", critical = true)
     public Result restoreBackup(@PathVariable Long id, HttpServletRequest request) {
         String operator = getCurrentUsername();
         String operatorIp = getClientIp(request);
@@ -149,7 +149,7 @@ public class BackupController {
 
     @DeleteMapping("/{id}")
     @PreAuthorize("hasAuthority('backup:delete')")
-    @Log(module = "BACKUP", operationType = "DELETE", description = "删除备份")
+    @Log(module = "BACKUP", operationType = "DELETE", description = "删除备份", riskLevel = "HIGH", critical = true)
     public Result deleteBackup(@PathVariable Long id) {
         log.info("删除备份，备份ID: {}", id);
         try {
@@ -190,7 +190,7 @@ public class BackupController {
 
     @PostMapping("/incremental/{parentBackupId}")
     @PreAuthorize("hasAuthority('backup:create')")
-    @Log(module = "BACKUP", operationType = "BACKUP", description = "增量备份")
+    @Log(module = "BACKUP", operationType = "BACKUP", description = "增量备份", riskLevel = "HIGH", critical = true)
     public Result incrementalBackup(@PathVariable Long parentBackupId, HttpServletRequest request) {
         String operator = getCurrentUsername();
         String operatorIp = getClientIp(request);

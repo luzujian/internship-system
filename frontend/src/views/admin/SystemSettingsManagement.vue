@@ -1,71 +1,85 @@
 <template>
   <div class="system-settings-container">
     <div class="settings-header">
-      <el-page-header @back="goBack" title="返回">
-        <template #content>
-          <div class="page-title">
-            <el-icon class="title-icon">
-              <Setting />
-            </el-icon>
-            <span>系统参数配置</span>
-          </div>
-        </template>
-      </el-page-header>
+      <div class="page-title">
+        <el-icon class="title-icon">
+          <Setting />
+        </el-icon>
+        <span>系统参数配置</span>
+      </div>
     </div>
 
     <div class="settings-content">
       <el-card class="settings-card" shadow="hover">
         <el-tabs v-model="activeTab" class="settings-tabs" v-loading="loading">
         <el-tab-pane label="基础配置" name="basic">
-          <div class="system-status-section">
-            <h3 class="section-title">系统状态</h3>
-            <el-form :model="basicForm" :rules="basicRules" ref="basicFormRef" label-width="0" class="settings-form system-status-form">
-              <el-form-item prop="systemStatus">
-                <div class="status-content">
-                  <div class="status-card">
-                    <el-radio-group v-model="basicForm.systemStatus">
-                      <el-radio :label="1">正常运行</el-radio>
-                      <el-radio :label="0">维护模式</el-radio>
-                    </el-radio-group>
-                  </div>
-                  <div class="form-tip">
-                    <el-tag v-if="basicForm.systemStatus === 1" type="success" size="small">系统正常运行中</el-tag>
-                    <el-tag v-else type="warning" size="small">系统处于维护模式，普通用户无法登录</el-tag>
-                  </div>
+          <div class="basic-grid">
+            <!-- 系统状态 -->
+            <section class="cfg-panel">
+              <div class="cfg-panel-head">
+                <div class="cfg-panel-title">
+                  <el-icon><Monitor /></el-icon>
+                  <span>系统状态</span>
                 </div>
-              </el-form-item>
+                <el-tag :type="basicForm.systemStatus === 1 ? 'success' : 'warning'" size="small" effect="light">
+                  {{ basicForm.systemStatus === 1 ? '正常运行中' : '维护模式' }}
+                </el-tag>
+              </div>
+              <el-form :model="basicForm" :rules="basicRules" ref="basicFormRef" label-width="0" class="cfg-form">
+                <el-form-item prop="systemStatus">
+                  <el-radio-group v-model="basicForm.systemStatus">
+                    <el-radio-button :value="1">正常运行</el-radio-button>
+                    <el-radio-button :value="0">维护模式</el-radio-button>
+                  </el-radio-group>
+                </el-form-item>
+              </el-form>
+              <p class="cfg-tip">维护模式下普通用户无法登录，管理员仍可正常访问系统。</p>
+              <div class="cfg-actions">
+                <el-button v-if="authStore.hasPermission('system:settings:view')" type="primary" size="small" @click="saveSystemStatus" :loading="savingStatus">保存状态</el-button>
+              </div>
+            </section>
 
-              <el-form-item>
-                <div class="button-group">
-                  <el-button v-if="authStore.hasPermission('system:settings:view')" type="primary" @click="saveBasicSettings" :loading="saving">保存基础配置</el-button>
-                  <el-button v-if="authStore.hasPermission('system:settings:view')" @click="resetBasicSettings">重置</el-button>
+            <!-- 系统邮件提醒 -->
+            <section class="cfg-panel">
+              <div class="cfg-panel-head">
+                <div class="cfg-panel-title">
+                  <el-icon><Message /></el-icon>
+                  <span>系统邮件提醒</span>
                 </div>
-              </el-form-item>
-            </el-form>
+                <el-switch v-model="emailForm.enabled" inline-prompt :active-text="'开'" :inactive-text="'关'" />
+              </div>
+              <p class="cfg-tip">
+                开启后，勾选的业务在审核通过或驳回时会向相关人员发送邮件提醒；关闭后不再发送任何业务提醒邮件，<b>不影响系统其他功能正常使用</b>。
+              </p>
+              <el-checkbox-group v-model="emailForm.scopes" class="scope-group" :class="{ 'scope-disabled': !emailForm.enabled }" :disabled="!emailForm.enabled">
+                <el-checkbox v-for="opt in emailScopeOptions" :key="opt.code" :value="opt.code" class="scope-item">
+                  {{ opt.label }}
+                </el-checkbox>
+              </el-checkbox-group>
+              <div class="cfg-actions">
+                <el-button size="small" plain @click="sendTestEmail" :loading="testingEmail">发送测试邮件</el-button>
+                <el-button v-if="authStore.hasPermission('system:settings:view')" type="primary" size="small" @click="saveEmailNotify" :loading="savingEmail">保存邮件设置</el-button>
+              </div>
+            </section>
           </div>
 
-          <el-divider />
-
-          <div class="data-management-section">
-            <h3 class="section-title">数据管理</h3>
-            <el-alert
-              title="危险操作警告"
-              type="warning"
-              :closable="false"
-              show-icon
-              class="warning-alert"
-            >
-              以下操作将永久删除数据，且不可恢复！请谨慎操作。
-            </el-alert>
-            <el-button v-if="authStore.hasPermission('system:settings:view')" type="danger" @click="showClearDataDialog" class="clear-data-btn">
-              <el-icon><Delete /></el-icon>
-              清除数据
-            </el-button>
-          </div>
+          <!-- 数据管理（危险操作区） -->
+          <section class="cfg-panel danger-panel">
+            <div class="cfg-panel-head">
+              <div class="cfg-panel-title danger">
+                <el-icon><WarningFilled /></el-icon>
+                <span>数据管理</span>
+              </div>
+              <el-button v-if="authStore.hasPermission('system:settings:view')" type="danger" size="small" plain @click="showClearDataDialog">
+                <el-icon><Delete /></el-icon>&nbsp;清除数据
+              </el-button>
+            </div>
+            <p class="cfg-tip danger-tip">清除数据为危险操作：将永久删除所选模块的数据且不可恢复，建议操作前先前往备份页面完成备份。</p>
+          </section>
         </el-tab-pane>
 
         <el-tab-pane label="安全配置" name="security">
-          <el-form :model="securityForm" :rules="securityRules" ref="securityFormRef" label-width="180px" class="settings-form">
+          <el-form :model="securityForm" :rules="securityRules" ref="securityFormRef" label-width="150px" class="settings-form security-grid">
             <el-form-item label="密码最小长度" prop="minPasswordLength">
               <el-input-number v-model="securityForm.minPasswordLength" :min="6" :max="20" />
               <div class="form-tip">用户密码的最小长度要求</div>
@@ -188,20 +202,20 @@
 
 <script lang="ts" setup>
 import logger from '@/utils/logger'
-import { ref, reactive, onMounted, computed } from 'vue'
+import { ref, reactive, onMounted, onUnmounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRouter } from 'vue-router'
-import { Delete, WarningFilled, Setting, ArrowRight } from '@element-plus/icons-vue'
+import { Delete, WarningFilled, Setting, ArrowRight, Monitor, Message } from '@element-plus/icons-vue'
 import request from '../../utils/request'
 import { useSystemSettingsStore } from '../../store/systemSettings'
 import { useAuthStore } from '../../store/auth'
+import { useFormContext } from '@/agent/formContext'
 import AdminUserService from '../../api/AdminUserService'
 import StudentUserService from '../../api/StudentUserService'
 import TeacherUserService from '../../api/TeacherUserService'
 import ClassService from '../../api/class'
 import MajorService from '../../api/major'
 import DepartmentService from '../../api/department'
-import { cleanLogsApi } from '../../api/log'
 import companyService from '../../api/company'
 import PositionCategoryService from '../../api/positionCategory'
 import positionService from '../../api/position'
@@ -211,6 +225,28 @@ import * as resourceDocumentApi from '../../api/resourceDocument'
 import recruitmentService from '../../api/recruitment'
 import aiModelService from '../../api/aiModel'
 import internshipService from '../../api/internship'
+import type { FormFieldDescriptor } from '@/agent/types'
+// 系统设置载荷精确局部接口（/admin/settings 返回体 data 形态）
+interface SystemSettingsPayload {
+  basic?: {
+    systemStatus?: number | string | null
+    emailNotifyEnabled?: number | string | boolean | null
+    emailNotifyScopes?: string[] | string | null
+  }
+  emailNotifyScopeOptions?: { code: string; label: string }[]
+  security?: {
+    minPasswordLength?: number
+    passwordComplexity?: string | string[]
+    maxLoginAttempts?: number
+    lockTime?: number
+    sessionTimeout?: number
+    enableTwoFactor?: number
+  }
+}
+// 清除数据各列表项最小行接口（仅取 id）
+interface ClearableRow {
+  id?: string | number
+}
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -222,6 +258,7 @@ const goToBackupPage = () => {
 
 const activeTab = ref('basic')
 const saving = ref(false)
+const savingStatus = ref(false)
 const clearing = ref(false)
 const loading = ref(false)
 
@@ -229,10 +266,24 @@ const basicFormRef = ref(null)
 const securityFormRef = ref(null)
 
 const basicForm = reactive({
-  systemStatus: 1,
-  dualSelectionStartDate: null,
-  dualSelectionEndDate: null
+  systemStatus: 1
 })
+
+// ===== 系统邮件提醒（基础配置）=====
+// 与后端 EmailNotifyScope 枚举保持一致；接口返回 emailNotifyScopeOptions 时以接口为准
+const DEFAULT_EMAIL_SCOPES = ['COMPANY_AUDIT', 'STUDENT_APPLICATION', 'JOB_APPLICATION', 'INTERNSHIP_CONFIRMATION']
+const emailForm = reactive({
+  enabled: true,
+  scopes: [...DEFAULT_EMAIL_SCOPES] as string[]
+})
+const emailScopeOptions = ref<{ code: string; label: string }[]>([
+  { code: 'COMPANY_AUDIT', label: '企业注册审核结果' },
+  { code: 'STUDENT_APPLICATION', label: '学生申请审核结果' },
+  { code: 'JOB_APPLICATION', label: '岗位申请结果' },
+  { code: 'INTERNSHIP_CONFIRMATION', label: '实习确认结果' }
+])
+const savingEmail = ref(false)
+const testingEmail = ref(false)
 
 const securityForm = reactive({
   minPasswordLength: 6,
@@ -267,20 +318,45 @@ const securityRules = {
   ]
 }
 
+// ===== 智能填表：安全设置页面表单（页面级常驻；密码复杂度为 checkbox 需手动勾选，不声明） =====
+const formContext = useFormContext()
+const securityFillFields: FormFieldDescriptor[] = [
+  { prop: 'minPasswordLength', label: '密码最小长度', type: 'number', valueType: 'number', required: true,
+    patternHint: '密码复杂度（大小写/数字/特殊字符复选框）需手动勾选' },
+  { prop: 'maxLoginAttempts', label: '最大登录失败次数', type: 'number', valueType: 'number', required: true },
+  { prop: 'lockTime', label: '账号锁定时间(分钟)', type: 'number', valueType: 'number', required: true },
+  { prop: 'sessionTimeout', label: '会话超时时间(分钟)', type: 'number', valueType: 'number', required: true }
+]
+onUnmounted(() => formContext.unregister('admin:security'))
+
 const loadSettings = async () => {
   loading.value = true
   try {
     const response = await request.get('/admin/settings')
     if (response.code === 200) {
-      const settings = response.data
-      
+      // /admin/settings 的 data 为未知载荷，用精确局部接口收窄后使用
+      const settings = response.data as SystemSettingsPayload
+
+      if (Array.isArray(settings.emailNotifyScopeOptions) && settings.emailNotifyScopeOptions.length > 0) {
+        emailScopeOptions.value = settings.emailNotifyScopeOptions
+      }
       if (settings.basic) {
-        Object.assign(basicForm, settings.basic)
+        basicForm.systemStatus = Number(settings.basic.systemStatus ?? 1)
+        emailForm.enabled = Number(settings.basic.emailNotifyEnabled ?? 1) === 1
+        const scopes = settings.basic.emailNotifyScopes
+        if (Array.isArray(scopes)) {
+          emailForm.scopes = scopes.filter((s): s is string => typeof s === 'string')
+        } else if (typeof scopes === 'string' && scopes.trim()) {
+          emailForm.scopes = scopes.split(',').map(s => s.trim()).filter(Boolean)
+        } else {
+          emailForm.scopes = [...DEFAULT_EMAIL_SCOPES]
+        }
       }
       if (settings.security) {
         Object.assign(securityForm, settings.security)
-        if (typeof (settings.security as any).passwordComplexity === 'string') {
-          securityForm.passwordComplexity = (settings.security as any).passwordComplexity.split(',')
+        const complexity: unknown = settings.security.passwordComplexity
+        if (typeof complexity === 'string') {
+          securityForm.passwordComplexity = complexity.split(',')
         }
       }
     }
@@ -292,29 +368,68 @@ const loadSettings = async () => {
   }
 }
 
-const saveBasicSettings = async () => {
+const saveSystemStatus = async () => {
   if (!basicFormRef.value) return
-  
+
   await basicFormRef.value.validate(async (valid) => {
     if (valid) {
-      saving.value = true
+      savingStatus.value = true
       try {
         const response = await request.put('/admin/settings', {
-          basic: basicForm
+          basic: { systemStatus: basicForm.systemStatus }
         })
         if (response.code === 200) {
-          ElMessage.success('基础配置保存成功')
+          ElMessage.success('系统状态保存成功')
         } else {
           ElMessage.error(response.message || '保存失败')
         }
       } catch (error) {
-        logger.error('保存基础配置失败:', error)
-        ElMessage.error('保存基础配置失败')
+        logger.error('保存系统状态失败:', error)
+        ElMessage.error('保存系统状态失败')
       } finally {
-        saving.value = false
+        savingStatus.value = false
       }
     }
   })
+}
+
+const saveEmailNotify = async () => {
+  savingEmail.value = true
+  try {
+    const response = await request.put('/admin/settings', {
+      basic: {
+        emailNotifyEnabled: emailForm.enabled ? 1 : 0,
+        emailNotifyScopes: emailForm.scopes
+      }
+    })
+    if (response.code === 200) {
+      ElMessage.success(emailForm.enabled ? '邮件提醒设置已保存' : '邮件提醒已关闭，系统不再发送业务提醒邮件')
+    } else {
+      ElMessage.error(response.message || '保存失败')
+    }
+  } catch (error) {
+    logger.error('保存邮件提醒设置失败:', error)
+    ElMessage.error('保存邮件提醒设置失败')
+  } finally {
+    savingEmail.value = false
+  }
+}
+
+const sendTestEmail = async () => {
+  testingEmail.value = true
+  try {
+    const response = await request.post('/admin/settings/test-email')
+    if (response.code === 200) {
+      ElMessage.success(response.message || '测试邮件已发送，请到系统邮箱查收')
+    } else {
+      ElMessage.error(response.message || '测试邮件发送失败')
+    }
+  } catch (error) {
+    logger.error('测试邮件发送失败:', error)
+    ElMessage.error('测试邮件发送失败')
+  } finally {
+    testingEmail.value = false
+  }
 }
 
 const saveSecuritySettings = async () => {
@@ -324,14 +439,16 @@ const saveSecuritySettings = async () => {
     if (valid) {
       saving.value = true
       try {
-        const securityData = { ...securityForm } as any
-        securityData.passwordComplexity = securityForm.passwordComplexity.join(',')
-        
-        const response = await request.put('/admin/settings', {
+        // 展开并把多选复杂度 join 为字符串，与原运行时对象形态一致
+        const securityData = { ...securityForm, passwordComplexity: securityForm.passwordComplexity.join(',') }
+
+        const operation = formContext.beginFormOperation('admin:security')
+    const response = await request.put('/admin/settings', {
           security: securityData
         })
         if (response.code === 200) {
-          ElMessage.success('安全配置保存成功')
+          operation.complete({ status: 'saved', label: '安全配置已保存', url: '/admin/system-settings' })
+      ElMessage.success('安全配置保存成功')
           systemSettingsStore.updateSecuritySettings(securityData)
         } else {
           ElMessage.error(response.message || '保存失败')
@@ -346,9 +463,6 @@ const saveSecuritySettings = async () => {
   })
 }
 
-const resetBasicSettings = () => {
-  basicFormRef.value?.resetFields()
-}
 
 const resetSecuritySettings = () => {
   securityFormRef.value?.resetFields()
@@ -623,10 +737,19 @@ const clearStudentData = async () => {
 const clearCompanyData = async () => {
   try {
     const response = await companyService.getAdminCompanies({ page: 1, pageSize: 10000 })
-    if (response.code === 200) {
-      const companies = response.data?.rows || response.data || []
+    // 声明为双层 AxiosResponseWithMeta，运行时为单层 ApiResult；data 为分页 { rows } 或数组，保持原语义收窄
+    const compRes = response as unknown as { code?: unknown; data?: unknown }
+    if (response && compRes.code === 200) {
+      const compRaw: unknown = compRes.data
+      const compRows: unknown =
+        compRaw !== null && typeof compRaw === 'object' && !Array.isArray(compRaw)
+          ? (compRaw as { rows?: unknown }).rows
+          : undefined
+      const compList: unknown = compRows ? compRows : (compRaw ? compRaw : [])
+      const companies: ClearableRow[] = Array.isArray(compList) ? (compList as ClearableRow[]) : []
       if (companies.length > 0) {
-        const ids = companies.map(c => c.id).filter(id => id)
+        // id 转 Number 后请求体数值与运行时一致（后端 Long 接受数字；原 filter 真值语义保留）
+        const ids = companies.map(c => Number(c.id)).filter(id => id)
         if (ids.length > 0) {
           await companyService.batchDeleteCompanies(ids)
         }
@@ -664,11 +787,15 @@ const clearRecallAuditData = async () => {
 const clearPositionCategoryData = async () => {
   try {
     const response = await PositionCategoryService.getCategories()
-    if (response.code === 200) {
-      const categories = response.data || []
+    // 声明为双层 AxiosResponseWithMeta，运行时为单层 ApiResult（data 为数组），收窄后使用
+    const catRes = response as unknown as { code?: unknown; data?: unknown }
+    if (response && catRes.code === 200) {
+      const catRaw: unknown = catRes.data
+      const categories: ClearableRow[] = Array.isArray(catRaw) ? (catRaw as ClearableRow[]) : []
       if (categories.length > 0) {
         for (const category of categories) {
-          await PositionCategoryService.deleteCategory(category.id)
+          // id 转 Number 后 URL 与运行时一致（后端 Long 接受数字）
+          await PositionCategoryService.deleteCategory(Number(category.id))
         }
       }
     }
@@ -681,10 +808,13 @@ const clearPositionCategoryData = async () => {
 const clearClassData = async () => {
   try {
     const response = await ClassService.getClasses()
-    if (response.code === 200) {
-      const classes = response.data || []
+    // getClasses 声明返回 ClassAPIResponse（AxiosResponse 双层），运行时为单层 ApiResult（data 为数组），收窄后使用
+    const clsRes = response as unknown as { code?: unknown; data?: unknown }
+    if (response && clsRes.code === 200) {
+      const clsRaw: unknown = clsRes.data
+      const classes: ClearableRow[] = Array.isArray(clsRaw) ? (clsRaw as ClearableRow[]) : []
       if (classes.length > 0) {
-        const ids = classes.map(c => c.id).filter(id => id)
+        const ids = classes.map(c => Number(c.id)).filter(id => id)
         if (ids.length > 0) {
           await ClassService.batchDeleteClass(ids)
         }
@@ -700,10 +830,13 @@ const clearMajorData = async () => {
   try {
     const response = await MajorService.getMajors()
     if (response.code === 200) {
-      const majors = response.data || []
+      // getMajors 的 data 为 unknown（运行时为数组），收窄后迭代
+      const majorRaw: unknown = (response as unknown as { data?: unknown }).data
+      const majors: ClearableRow[] = Array.isArray(majorRaw) ? (majorRaw as ClearableRow[]) : []
       if (majors.length > 0) {
         for (const major of majors) {
-          await MajorService.deleteMajor(major.id)
+          // id 转 Number 后 URL 与运行时一致（后端接受数字）
+          await MajorService.deleteMajor(Number(major.id))
         }
       }
     }
@@ -726,10 +859,18 @@ const clearMajorData = async () => {
 const clearInternshipConfirmData = async () => {
   try {
     const response = await internshipService.getInternshipStatusList({ page: 1, pageSize: 10000 })
-    if (response.code === 200) {
-      const statuses = response.data?.rows || response.data || []
+    // 声明为双层 AxiosResponseWithMeta，运行时为单层 ApiResult；data 为分页 { rows } 或数组，保持原语义收窄
+    const stRes = response as unknown as { code?: unknown; data?: unknown }
+    if (response && stRes.code === 200) {
+      const stRaw: unknown = stRes.data
+      const stRows: unknown =
+        stRaw !== null && typeof stRaw === 'object' && !Array.isArray(stRaw)
+          ? (stRaw as { rows?: unknown }).rows
+          : undefined
+      const stList: unknown = stRows ? stRows : (stRaw ? stRaw : [])
+      const statuses: ClearableRow[] = Array.isArray(stList) ? (stList as ClearableRow[]) : []
       if (statuses.length > 0) {
-        const ids = statuses.map(s => s.id).filter(id => id)
+        const ids = statuses.map(s => Number(s.id)).filter(id => id)
         if (ids.length > 0) {
           await internshipService.batchDeleteInternshipStatus(ids)
         }
@@ -760,10 +901,14 @@ const clearRecruitmentData = async () => {
 const clearAnnouncementData = async () => {
   try {
     const response = await announcementApi.getAllAnnouncements()
-    if (response.code === 200) {
-      const announcements = response.data || []
+    // getAllAnnouncements 直接返回 Announcement[]（运行时无 code 字段）；
+    // 原 `response.code === 200` 恒假，保留该语义（分支不可达），仅做类型收窄
+    const annRes = response as unknown as { code?: unknown; data?: unknown }
+    if (annRes.code === 200) {
+      const annRaw: unknown = annRes.data
+      const announcements: ClearableRow[] = Array.isArray(annRaw) ? (annRaw as ClearableRow[]) : []
       if (announcements.length > 0) {
-        const ids = announcements.map(a => a.id).filter(id => id)
+        const ids = announcements.map(a => Number(a.id)).filter(id => id)
         if (ids.length > 0) {
           await announcementApi.batchDeleteAnnouncements(ids)
         }
@@ -778,10 +923,13 @@ const clearAnnouncementData = async () => {
 const clearResourceDocumentsData = async () => {
   try {
     const response = await resourceDocumentApi.getAllResourceDocuments()
-    if (response.code === 200) {
-      const documents = response.data || []
+    // 声明为双层 AxiosResponseWithMeta，运行时为单层 ApiResult（data 为数组），收窄后使用
+    const docRes = response as unknown as { code?: unknown; data?: unknown }
+    if (response && docRes.code === 200) {
+      const docRaw: unknown = docRes.data
+      const documents: ClearableRow[] = Array.isArray(docRaw) ? (docRaw as ClearableRow[]) : []
       if (documents.length > 0) {
-        const ids = documents.map(d => d.id).filter(id => id)
+        const ids = documents.map(d => Number(d.id)).filter(id => id)
         if (ids.length > 0) {
           await resourceDocumentApi.batchDeleteResourceDocuments(ids)
         }
@@ -796,10 +944,13 @@ const clearResourceDocumentsData = async () => {
 const clearFeedbackData = async () => {
   try {
     const response = await feedbackApi.getAllFeedback()
-    if (response.code === 200) {
-      const feedbacks = response.data || []
+    // 声明为双层 AxiosResponseWithMeta，运行时为单层 ApiResult（data 为数组），收窄后使用
+    const fbRes = response as unknown as { code?: unknown; data?: unknown }
+    if (response && fbRes.code === 200) {
+      const fbRaw: unknown = fbRes.data
+      const feedbacks: ClearableRow[] = Array.isArray(fbRaw) ? (fbRaw as ClearableRow[]) : []
       if (feedbacks.length > 0) {
-        const ids = feedbacks.map(f => f.id).filter(id => id)
+        const ids = feedbacks.map(f => Number(f.id)).filter(id => id)
         if (ids.length > 0) {
           await feedbackApi.batchDeleteFeedback(ids)
         }
@@ -815,7 +966,9 @@ const clearKeywordLibraryData = async () => {
   try {
     const response = await request.get('/admin/keyword-library')
     if (response.code === 200) {
-      const keywords = response.data || []
+      // data 为 unknown（运行时为数组），收窄后迭代
+      const kwRaw: unknown = response.data
+      const keywords: ClearableRow[] = Array.isArray(kwRaw) ? (kwRaw as ClearableRow[]) : []
       if (keywords.length > 0) {
         for (const keyword of keywords) {
           await request.delete(`/admin/keyword-library/${keyword.id}`)
@@ -832,7 +985,9 @@ const clearScoringRuleData = async () => {
   try {
     const response = await request.get('/admin/scoring-rule')
     if (response.code === 200) {
-      const rules = response.data || []
+      // data 为 unknown（运行时为数组），收窄后迭代
+      const ruleRaw: unknown = response.data
+      const rules: ClearableRow[] = Array.isArray(ruleRaw) ? (ruleRaw as ClearableRow[]) : []
       if (rules.length > 0) {
         for (const rule of rules) {
           await request.delete(`/admin/scoring-rule/${rule.id}`)
@@ -841,8 +996,15 @@ const clearScoringRuleData = async () => {
     }
 
     const categoryWeightResponse = await request.get('/admin/category-weight/active')
-    if (categoryWeightResponse.data.code === 200) {
-      const weights = categoryWeightResponse.data.data || []
+    // data 为 unknown；原 `data.code === 200` 仅双层形态成立，运行时单层 data 为数组时恒假，收窄保留该语义
+    const cwRaw: unknown = categoryWeightResponse.data
+    const cwNested: { code?: unknown; data?: unknown } | null =
+      cwRaw !== null && typeof cwRaw === 'object' && !Array.isArray(cwRaw) && 'code' in cwRaw
+        ? (cwRaw as { code?: unknown; data?: unknown })
+        : null
+    if (cwNested && cwNested.code === 200) {
+      const weightRaw: unknown = cwNested.data
+      const weights: ClearableRow[] = Array.isArray(weightRaw) ? (weightRaw as ClearableRow[]) : []
       if (weights.length > 0) {
         for (const weight of weights) {
           await request.delete(`/admin/category-weight/${weight.id}`)
@@ -860,10 +1022,16 @@ const clearAiModelData = async () => {
     logger.log('开始批量删除所有AI模型')
     const response = await aiModelService.deleteAllAIModels()
     logger.log('批量删除AI模型响应:', response)
-    if (response.code === 200) {
+    // deleteAllAIModels 声明为双层 AxiosResponseWithMeta，运行时为单层 ApiResult，收窄后使用
+    const aiRes = response as unknown as { code?: unknown; data?: unknown }
+    if (response && aiRes.code === 200) {
       logger.log('批量删除AI模型成功')
     } else {
-      throw new Error(response.data?.msg || '删除失败')
+      // data 为 unknown（void 载荷），收窄后读 msg，保持原 `response.data?.msg || '删除失败'` 语义
+      const aiRaw: unknown = aiRes.data
+      const aiMsg: unknown =
+        aiRaw !== null && typeof aiRaw === 'object' ? (aiRaw as { msg?: unknown }).msg : undefined
+      throw new Error(typeof aiMsg === 'string' && aiMsg ? aiMsg : '删除失败')
     }
   } catch (error) {
     logger.error('清除AI大模型数据失败:', error)
@@ -873,7 +1041,8 @@ const clearAiModelData = async () => {
 
 const clearLogData = async () => {
   try {
-    await cleanLogsApi(null, true)
+    // 直接调用后端兼容清理接口（需 log:delete 权限，全量清空）
+    await request.delete('/admin/logs/operation/clean', { params: { deleteAll: true } })
   } catch (error) {
     logger.error('清除日志数据失败:', error)
     throw error
@@ -930,37 +1099,41 @@ const displayClearResults = (results) => {
   }
 }
 
-const goBack = () => {
-  router.back()
-}
-
 onMounted(() => {
   loadSettings()
+  // 智能填表：安全设置表单注册到 AI 侧栏（只写响应式 model，不触发提交）
+  formContext.register({
+    formId: 'admin:security',
+    title: '安全配置',
+    fields: securityFillFields,
+    getModel: () => securityForm,
+    getFormEl: () => securityFormRef.value
+  })
 })
 </script>
 
 <style scoped>
 .system-settings-container {
-  padding: 30px;
+  padding: 24px 28px;
   background: #f5f7fa;
   min-height: 100vh;
 }
 
 .settings-header {
-  margin-bottom: 30px;
+  margin-bottom: 18px;
 }
 
 .page-title {
   display: flex;
   align-items: center;
-  gap: 12px;
-  font-size: 24px;
+  gap: 10px;
+  font-size: 21px;
   font-weight: 600;
   color: #303133;
 }
 
 .title-icon {
-  font-size: 28px;
+  font-size: 24px;
   color: #409EFF;
 }
 
@@ -974,7 +1147,7 @@ onMounted(() => {
 }
 
 .settings-card :deep(.el-card__body) {
-  padding: 40px;
+  padding: 8px 28px 24px;
 }
 
 .el-tabs {
@@ -982,14 +1155,14 @@ onMounted(() => {
 }
 
 .el-tabs :deep(.el-tabs__header) {
-  margin-bottom: 30px;
+  margin-bottom: 20px;
 }
 
 .el-tabs :deep(.el-tabs__item) {
-  font-size: 16px;
-  padding: 0 30px;
-  height: 50px;
-  line-height: 50px;
+  font-size: 15px;
+  padding: 0 22px;
+  height: 44px;
+  line-height: 44px;
 }
 
 .el-tabs :deep(.el-tabs__nav-wrap::after) {
@@ -997,25 +1170,25 @@ onMounted(() => {
 }
 
 .settings-form {
-  max-width: 800px;
-  margin-top: 20px;
+  max-width: 960px;
+  margin-top: 6px;
 }
 
 .settings-form :deep(.el-form-item__label) {
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 500;
   color: #606266;
 }
 
 .settings-form :deep(.el-input__inner),
 .settings-form :deep(.el-input-number) {
-  height: 48px;
-  font-size: 16px;
+  height: 38px;
+  font-size: 14px;
 }
 
 .settings-form :deep(.el-button) {
-  padding: 12px 36px;
-  font-size: 16px;
+  padding: 9px 24px;
+  font-size: 14px;
 }
 
 .settings-form .button-group {
@@ -1029,11 +1202,11 @@ onMounted(() => {
 }
 
 .form-tip {
-  font-size: 14px;
+  font-size: 12.5px;
   color: #909399;
-  margin-top: 12px;
+  margin-top: 6px;
   line-height: 1.6;
-  padding: 8px 12px;
+  padding: 5px 10px;
   background: #f5f7fa;
   border-radius: 4px;
   border-left: 3px solid #409EFF;
@@ -1046,7 +1219,7 @@ onMounted(() => {
 }
 
 .el-form-item {
-  margin-bottom: 30px;
+  margin-bottom: 20px;
 }
 
 .el-form-item :deep(.el-form-item__content) {
@@ -1067,7 +1240,7 @@ onMounted(() => {
 }
 
 .complexity-card {
-  padding: 20px;
+  padding: 12px 14px;
   background: #f5f7fa;
   border-radius: 12px;
   border: 1px solid #e4e7ed;
@@ -1085,7 +1258,7 @@ onMounted(() => {
 
 .complexity-card .el-checkbox {
   flex: 1;
-  padding: 12px 16px;
+  padding: 8px 10px;
   background: white;
   border-radius: 8px;
   border: 1px solid #dcdfe6;
@@ -1104,137 +1277,138 @@ onMounted(() => {
   border-color: #409EFF;
 }
 
-.status-card {
-  padding: 12px;
-  background: #f5f7fa;
-  border-radius: 12px;
-  border: 1px solid #e4e7ed;
-  width: fit-content;
-  max-width: 100%;
+/* ===== 基础配置：紧凑面板布局 ===== */
+.basic-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  gap: 18px;
+  margin-bottom: 18px;
 }
 
-.status-card .el-radio-group {
-  margin: 0;
-  display: flex;
-  flex-direction: row;
-  flex-wrap: nowrap;
-  gap: 12px;
-  justify-content: flex-start;
+.cfg-panel {
+  background: #fff;
+  border: 1px solid #ebeef5;
+  border-radius: 10px;
+  padding: 18px 20px 16px;
+  transition: box-shadow 0.2s ease;
 }
 
-.status-card .el-radio {
-  flex: none;
-  min-width: 100px;
-  padding: 8px 12px;
-  background: white;
-  border-radius: 8px;
-  border: 1px solid #dcdfe6;
-  text-align: center;
-  justify-content: center;
-  transition: all 0.3s ease;
+.cfg-panel:hover {
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.05);
 }
 
-.status-card .el-radio:hover {
-  border-color: #409EFF;
-  box-shadow: 0 2px 8px rgba(64, 158, 255, 0.1);
-}
-
-.status-card .el-radio.is-checked {
-  background: #e6f7ff;
-  border-color: #409EFF;
-}
-
-.system-status-section {
-  margin-bottom: 40px;
-  padding-bottom: 30px;
-}
-
-.system-status-form {
-  max-width: 100%;
-}
-
-.system-status-form .el-form-item {
-  margin-bottom: 20px;
-}
-
-.status-content {
-  width: 100%;
-}
-
-.system-status-section .section-title {
-  font-size: 20px;
-  font-weight: 600;
-  color: #303133;
-  margin-bottom: 20px;
+.cfg-panel-head {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 12px;
+  margin-bottom: 8px;
 }
 
-.system-status-section .section-title::before {
-  content: '';
-  width: 4px;
-  height: 24px;
-  background: #409EFF;
-  border-radius: 2px;
-}
-
-.dual-selection-section {
-  margin-bottom: 40px;
-  padding-bottom: 30px;
-}
-
-.dual-selection-section .section-title {
-  font-size: 20px;
-  font-weight: 600;
-  color: #303133;
-  margin-bottom: 20px;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.dual-selection-section .section-title::before {
-  content: '';
-  width: 4px;
-  height: 24px;
-  background: #409EFF;
-  border-radius: 2px;
-}
-
-.data-management-section {
-  margin-top: 40px;
-  padding-top: 30px;
-}
-
-.data-management-section .warning-alert {
-  margin-bottom: 20px;
-}
-
-.data-management-section .clear-data-btn {
+.cfg-panel-title {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 12px 30px;
-  font-size: 16px;
-}
-
-.data-management-section .section-title {
-  font-size: 20px;
+  font-size: 15px;
   font-weight: 600;
   color: #303133;
-  margin-bottom: 20px;
-  display: flex;
-  align-items: center;
-  gap: 12px;
 }
 
-.data-management-section .section-title::before {
-  content: '';
-  width: 4px;
-  height: 24px;
-  background: #409EFF;
-  border-radius: 2px;
+.cfg-panel-title .el-icon {
+  font-size: 17px;
+  color: #409EFF;
+}
+
+.cfg-panel-title.danger .el-icon {
+  color: #F56C6C;
+}
+
+.cfg-form :deep(.el-form-item) {
+  margin-bottom: 2px;
+}
+
+.cfg-tip {
+  font-size: 12.5px;
+  color: #909399;
+  line-height: 1.7;
+  margin: 8px 0 14px;
+}
+
+.cfg-tip b {
+  color: #606266;
+  font-weight: 600;
+}
+
+.cfg-tip.danger-tip {
+  color: #c45656;
+  margin-bottom: 0;
+}
+
+.scope-group {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.scope-group.scope-disabled {
+  opacity: 0.5;
+}
+
+.scope-item {
+  margin: 0 !important;
+  padding: 9px 12px;
+  height: auto;
+  width: 100%;
+  border: 1px solid #e4e7ed;
+  border-radius: 8px;
+  background: #fafbfc;
+  transition: all 0.2s ease;
+}
+
+.scope-item:hover {
+  border-color: #c6e2ff;
+  background: #f4f9ff;
+}
+
+.scope-item.is-checked {
+  border-color: #409EFF;
+  background: #ecf5ff;
+}
+
+.scope-item :deep(.el-checkbox__label) {
+  font-size: 13px;
+  color: #606266;
+  padding-left: 8px;
+  white-space: normal;
+  line-height: 1.4;
+}
+
+.cfg-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.cfg-actions .el-button + .el-button {
+  margin-left: 0;
+}
+
+.danger-panel {
+  border-color: #fde2e2;
+  background: #fffbfb;
+}
+
+/* ===== 安全配置：两列紧凑布局 ===== */
+.security-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(330px, 1fr));
+  gap: 0 40px;
+  max-width: 100%;
+}
+
+.security-grid > .el-form-item:last-child {
+  grid-column: 1 / -1;
 }
 
 .clear-data-container {

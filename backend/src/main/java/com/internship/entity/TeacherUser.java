@@ -1,10 +1,12 @@
 package com.internship.entity;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
+import lombok.ToString;
 import java.util.Date;
 
 /**
@@ -16,10 +18,12 @@ public class TeacherUser {
     
     private String username; // 用户名，与teacherUserId相同
     
-    // 密码字段在DTO中验证，实体类不需要验证注解，防止密码被序列化
+    // 密码只接受输入、永不输出（防哈希泄露）；更新接口空密码表示保持原密码
+    @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
+    @ToString.Exclude
     private String password;
     
-    private String role = "ROLE_TEACHER"; // 教师角色固定为ROLE_TEACHER
+    private String role; // 由经确认的教师类型派生，不接受通用教师角色
     
     @NotBlank(message = "姓名不能为空")
     private String name;

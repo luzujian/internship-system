@@ -18,7 +18,8 @@
     </resultMap>
     
     <!-- 插入文件上传记录 -->
-    <insert id="insert" parameterType="com.internship.entity.FileUpload">
+    <insert id="insert" parameterType="com.internship.entity.FileUpload"
+            useGeneratedKeys="true" keyProperty="id">
         insert into file_upload (file_name, file_path, file_size, file_type, uploader_id, uploader_type, upload_time, business_type)
         values (#{fileName}, #{filePath}, #{fileSize}, #{fileType}, #{uploaderId}, #{uploaderType}, #{uploadTime}, #{businessType})
     </insert>

@@ -1,0 +1,236 @@
+{
+  "fields": [
+    {
+      "prop": "companyName",
+      "label": "企业名称",
+      "description": "企业对外使用的名称。"
+    },
+    {
+      "prop": "cooperationMode",
+      "label": "企业标签",
+      "description": "由学校准入审核确定的合作方式，企业不可自行修改。当前注册仅面向校企合作企业，由后端统一设为校企双向选择，审核通过后才显示该合作标签。历史合作方式保留，不代表现在仍允许自主联系企业注册。"
+    },
+    {
+      "prop": "industry",
+      "label": "所属行业",
+      "description": "企业所属的业务行业。",
+      "options": [
+        {
+          "value": "it",
+          "label": "IT企业"
+        },
+        {
+          "value": "medical_equipment",
+          "label": "医疗设备企业"
+        },
+        {
+          "value": "hospital",
+          "label": "医院"
+        },
+        {
+          "value": "other",
+          "label": "其它"
+        }
+      ]
+    },
+    {
+      "prop": "scale",
+      "label": "企业规模",
+      "description": "企业员工人数所在区间。",
+      "options": [
+        {
+          "value": "1-50",
+          "label": "1-50人"
+        },
+        {
+          "value": "51-100",
+          "label": "51-100人"
+        },
+        {
+          "value": "101-500",
+          "label": "101-500人"
+        },
+        {
+          "value": "501-1000",
+          "label": "501-1000人"
+        },
+        {
+          "value": "1000+",
+          "label": "1000人以上"
+        }
+      ]
+    },
+    {
+      "prop": "address",
+      "label": "企业地址",
+      "description": "企业所在省、市、区及地址；详细地址补充街道、门牌号。"
+    },
+    {
+      "prop": "detailAddress",
+      "label": "详细地址",
+      "description": "企业街道、门牌号等具体地址。"
+    },
+    {
+      "prop": "contactPerson",
+      "label": "联系人",
+      "description": "负责与学校及学生联系的企业联系人。"
+    },
+    {
+      "prop": "contactPhone",
+      "label": "联系电话",
+      "description": "企业业务联系人的电话。"
+    },
+    {
+      "prop": "contactEmail",
+      "label": "联系邮箱",
+      "description": "企业业务联系邮箱，与账号设置里的登录账号邮箱分别维护。"
+    },
+    {
+      "prop": "schoolLiaisons",
+      "label": "校内对接人",
+      "description": "学校为本企业设置的对接教师及联系电话；未设置表示当前没有登记。"
+    },
+    {
+      "prop": "website",
+      "label": "企业网站",
+      "description": "企业官方网站地址。"
+    },
+    {
+      "prop": "isAlumniUnit",
+      "label": "是否校友单位",
+      "description": "企业是否登记为校友单位；选择是时填写校友姓名、电话和在企业任职。",
+      "options": [
+        {
+          "value": 0,
+          "label": "否"
+        },
+        {
+          "value": 1,
+          "label": "是"
+        }
+      ],
+      "defaultValue": 0
+    },
+    {
+      "prop": "isInternshipBase",
+      "label": "挂牌实习基地",
+      "description": "企业是否登记为挂牌实习基地。",
+      "options": [
+        {
+          "value": 0,
+          "label": "否"
+        },
+        {
+          "value": 1,
+          "label": "是"
+        }
+      ],
+      "defaultValue": 0
+    },
+    {
+      "prop": "acceptBackup",
+      "label": "接受兜底",
+      "description": "企业是否愿意接收需要学校兜底安排实习的学生；该标记不等于已经分配或录用学生。",
+      "options": [
+        {
+          "value": 0,
+          "label": "不接受"
+        },
+        {
+          "value": 1,
+          "label": "接受"
+        }
+      ],
+      "defaultValue": 0
+    },
+    {
+      "prop": "hasTrainingBaseAgreement",
+      "label": "签署实训基地协议",
+      "description": "是否已签署实训基地协议；不等同于挂牌实习基地。",
+      "options": [
+        {
+          "value": 0,
+          "label": "未签署"
+        },
+        {
+          "value": 1,
+          "label": "已签署"
+        }
+      ],
+      "defaultValue": 0
+    },
+    {
+      "prop": "alumniMembers",
+      "label": "校友信息",
+      "description": "在本企业任职的校友信息，包括姓名、联系电话和任职，可登记多人。"
+    }
+  ],
+  "tags": [
+    {
+      "prop": "cooperationMode",
+      "values": [
+        "mutual_choice",
+        "双向"
+      ],
+      "label": "校企双向选择",
+      "requiresApproval": true,
+      "type": "success",
+      "description": "与学校建立合作关系，通过学校组织的双向选择开展实习招聘的企业。当前注册申请无需选择合作模式，后端统一赋值，审核通过后显示该标签；提交申请本身不代表合作已获确认。挂牌实习基地及签署实训基地协议由对应选项单独标记。"
+    },
+    {
+      "prop": "cooperationMode",
+      "values": [
+        "student_contact",
+        "自主"
+      ],
+      "label": "学生自主联系",
+      "type": "warning",
+      "description": "历史记录中由学生自行联系的实习企业。当前企业注册不再提供该合作方式；历史记录保留，与学生是否可申请自主实习是不同规则。"
+    },
+    {
+      "prop": "cooperationMode",
+      "values": [
+        "兜底"
+      ],
+      "label": "接受兜底",
+      "type": "danger",
+      "description": "历史合作方式记录中的兜底接收标记。"
+    },
+    {
+      "prop": "isInternshipBase",
+      "values": [
+        1
+      ],
+      "label": "实习基地",
+      "type": "success",
+      "description": "对应基础信息中的挂牌实习基地选项。"
+    },
+    {
+      "prop": "acceptBackup",
+      "values": [
+        1
+      ],
+      "label": "接受兜底",
+      "type": "danger",
+      "description": "对应接受兜底选项；表示愿意接收学校兜底安排的实习学生，不代表已录用。"
+    },
+    {
+      "prop": "hasTrainingBaseAgreement",
+      "values": [
+        1
+      ],
+      "label": "已签协议",
+      "type": "info",
+      "description": "对应签署实训基地协议选项。"
+    },
+    {
+      "prop": "isAlumniUnit",
+      "values": [
+        1
+      ],
+      "label": "校友单位",
+      "type": "warning",
+      "description": "对应是否校友单位选项，校友详情见校友信息。"
+    }
+  ]
+}

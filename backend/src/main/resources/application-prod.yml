@@ -1,5 +1,5 @@
 # 生产环境配置文件
-# 激活方式：java -jar -Dspring.profiles.active=prod internship.jar
+# 激活方式：java -Dspring.profiles.active=prod -jar internship.jar
 
 management:
   health:
@@ -15,7 +15,7 @@ spring:
     allow-circular-references: true
     allow-bean-definition-overriding: true
   datasource:
-    url: jdbc:mysql://${DB_HOST:8.148.216.84}:${DB_PORT:3306}/${DB_NAME:internship}?useSSL=true&serverTimezone=Asia/Shanghai&characterEncoding=utf8&useUnicode=true
+    url: jdbc:mysql://${DB_HOST}:${DB_PORT:3306}/${DB_NAME:internship}?useSSL=true&serverTimezone=Asia/Shanghai&characterEncoding=utf8&useUnicode=true
     driver-class-name: com.mysql.cj.jdbc.Driver
     username: ${DB_USERNAME:user}
     password: ${DB_PASSWORD:}
@@ -28,7 +28,7 @@ spring:
       auto-commit: true
   data:
     redis:
-      host: ${REDIS_HOST:redis}
+      host: ${REDIS_HOST}
       port: ${REDIS_PORT:6379}
       password: ${REDIS_PASSWORD:}
       database: 0
@@ -47,26 +47,27 @@ spring:
       cache-null-values: false
   servlet:
     multipart:
-      max-file-size: 10MB
+      max-file-size: 20MB
       max-request-size: 100MB
       enabled: true
   mail:
-    host: ${MAIL_HOST:smtp.qq.com}
+    host: ${MAIL_HOST:smtp.exmail.qq.com}
     port: ${MAIL_PORT:465}
     username: ${MAIL_USERNAME:}
     password: ${MAIL_PASSWORD:}
-    protocol: smtps
+    protocol: ${MAIL_PROTOCOL:smtps}
     properties:
       mail:
         smtp:
-          auth: true
+          auth: ${MAIL_SMTP_AUTH:true}
           ssl:
-            enable: true
+            enable: ${MAIL_SMTP_SSL_ENABLE:true}
           starttls:
-            enable: true
+            enable: ${MAIL_SMTP_STARTTLS_ENABLE:true}
           connectiontimeout: 5000
           timeout: 5000
           writetimeout: 5000
+          localhost: deepintern.wecom.work
     default-encoding: UTF-8
   jackson:
     date-format: yyyy-MM-dd HH:mm:ss
@@ -98,13 +99,17 @@ spring:
         max-idle-time: 60000
         max-life-time: 900000
       ssl:
-        verify: false
+        verify: true
 
 file:
   upload:
     path: ${FILE_UPLOAD_PATH:/app/uploads}
     url-prefix: /uploads
     max-size: ${FILE_MAX_SIZE:10485760}
+
+internship:
+  appraisal:
+    max-size: ${INTERNSHIP_APPRAISAL_MAX_SIZE:20971520}
 
 backup:
   path: ${BACKUP_PATH:OSS}
@@ -118,7 +123,7 @@ backup:
       enabled: true
 
 sms:
-  enabled: true
+  enabled: ${SMS_ENABLED:true}
   debug: false
   access-key-id: ${SMS_ACCESS_KEY_ID:}
   access-key-secret: ${SMS_ACCESS_KEY_SECRET:}
@@ -160,6 +165,14 @@ jwt:
   refresh-expiration: ${JWT_REFRESH_EXPIRATION:604800000}
   enabled: true
 
+teacher:
+  auto-task:
+    cron: ${TEACHER_AUTO_TASK_CRON:0 * * * * ?}
+    zone: ${TEACHER_AUTO_TASK_ZONE:Asia/Shanghai}
+    missed-grace-minutes: ${TEACHER_AUTO_TASK_MISSED_GRACE_MINUTES:60}
+    test-mode: ${TEACHER_AUTO_TASK_TEST_MODE:false}
+    recipient-allowlist: ${TEACHER_AUTO_TASK_RECIPIENT_ALLOWLIST:}
+
 aliyun:
   oss:
     endpoint: ${ALIYUN_OSS_ENDPOINT:https://oss-cn-beijing.aliyuncs.com}
@@ -182,5 +195,6 @@ server:
       enabled: true
       protocol-header: X-Forwarded-Proto
       remote-ip-header: CF-Connecting-IP
-      # 允许所有经过 Cloudflare 的代理 IP
-      internal-proxies: ".*"
+      # 仅信任已核实的反向代理地址；部署时按实际源站连接来源覆盖此属性。
+      # 禁止使用 .*，否则直连源站的请求可伪造 CF-Connecting-IP。
+      internal-proxies: "127[.]0[.]0[.]1|::1"

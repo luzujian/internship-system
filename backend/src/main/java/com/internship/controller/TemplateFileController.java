@@ -117,7 +117,7 @@ public class TemplateFileController {
     /**
      * 批量删除模板
      */
-    @Log(operationType = "DELETE", module = "TEMPLATE_MANAGEMENT", description = "批量删除模板文件")
+    @Log(operationType = "DELETE", module = "TEMPLATE_MANAGEMENT", description = "批量删除模板文件", riskLevel = "HIGH", critical = true)
     @DeleteMapping("/batch")
     @PreAuthorize("hasRole('ADMIN')")
     public Result batchDeleteTemplates(@RequestBody List<Long> ids) {
@@ -137,7 +137,9 @@ public class TemplateFileController {
     /**
      * 下载模板（增加下载次数，返回实际文件）
      */
+    @Log(operationType = "DOWNLOAD", module = "TEMPLATE_MANAGEMENT", description = "下载模板文件", riskLevel = "MEDIUM")
     @GetMapping("/{id}/download")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<byte[]> downloadTemplate(@PathVariable Long id) {
         log.info("下载模板，ID: {}", id);
         TemplateFile template = templateFileService.findById(id);

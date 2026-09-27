@@ -21,6 +21,7 @@ public class InterviewInvitation {
     private String contactPhone;
     private String website;
     private String companyAddress;
+    private Boolean directHire;
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
 }

@@ -23,6 +23,10 @@
             <label>手机号：</label>
             <input type="tel" v-model="userInfo.phone" readonly class="readonly-input">
           </div>
+          <div class="form-item">
+            <label>邮箱：</label>
+            <input type="text" :value="userInfo.email || '未绑定'" readonly class="readonly-input">
+          </div>
         </div>
       </div>
 
@@ -35,7 +39,7 @@
               <h4>登录密码</h4>
               <p>定期修改密码可以保护账号安全</p>
             </div>
-            <button class="btn-default" @click="showPasswordDialog = true">修改密码</button>
+            <button class="btn-default" @click="openPasswordDialog">修改密码</button>
           </div>
 
           <div class="security-item">
@@ -44,6 +48,14 @@
               <p>已绑定: {{ userInfo.phone || '未绑定' }}</p>
             </div>
             <button class="btn-default" @click="changePhone">更换手机</button>
+          </div>
+
+          <div class="security-item">
+            <div class="security-info">
+              <h4>绑定邮箱</h4>
+              <p>已绑定: {{ userInfo.email || '未绑定' }}</p>
+            </div>
+            <button class="btn-default" @click="openEmailDialog">{{ userInfo.email ? '更换邮箱' : '绑定邮箱' }}</button>
           </div>
 
           <div class="security-item logout-item">
@@ -98,13 +110,6 @@
             <label>新手机号：</label>
             <input type="tel" v-model="phoneForm.newPhone" placeholder="请输入新手机号">
           </div>
-          <div class="form-item full-width">
-            <label>验证码：</label>
-            <div class="input-with-action">
-              <input type="text" v-model="phoneForm.verifyCode" placeholder="请输入验证码">
-              <button class="verify-btn" @click="getPhoneVerifyCode" :disabled="!phoneForm.newPhone">获取验证码</button>
-            </div>
-          </div>
         </div>
         <div class="dialog-footer">
           <button class="btn-default" @click="showPhoneDialog = false">取消</button>
@@ -113,20 +118,51 @@
       </div>
     </div>
 
+    <!-- 绑定/更换邮箱弹窗 -->
+    <div v-if="showEmailDialog" class="dialog-overlay" @click="showEmailDialog = false">
+      <div class="dialog-content" @click.stop>
+        <div class="dialog-header">
+          <h3>{{ userInfo.email ? '更换邮箱' : '绑定邮箱' }}</h3>
+          <button class="dialog-close" @click="showEmailDialog = false">×</button>
+        </div>
+        <div class="dialog-body">
+          <div v-if="userInfo.email" class="form-item full-width">
+            <label>当前邮箱：</label>
+            <input type="text" :value="userInfo.email" readonly class="readonly-input">
+          </div>
+          <div class="form-item full-width">
+            <label>新邮箱：</label>
+            <input type="email" v-model="emailForm.newEmail" placeholder="请输入新邮箱，绑定后可用于找回密码">
+          </div>
+        </div>
+        <div class="dialog-footer">
+          <button class="btn-default" @click="showEmailDialog = false">取消</button>
+          <button class="btn-primary" @click="updateEmail" :disabled="!isEmailFormValid">确认绑定</button>
+        </div>
+      </div>
+    </div>
+
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { useFormContext } from '@/agent/formContext'
 import { accountSettingsApi, type UserInfo } from '../../api/teacherAccountSettings'
 import { useAuthStore } from '../../store/auth'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import request from '../../utils/request'
+import { useRouter } from 'vue-router'
 
 const authStore = useAuthStore()
+const router = useRouter()
 
 const showPasswordDialog = ref(false)
 const showPhoneDialog = ref(false)
+const showEmailDialog = ref(false)
+
+// 邮箱格式校验（与后端保持一致，直接保存、无验证码）
+const EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/
 
 const userInfo = ref<UserInfo>({
   id: 0,
@@ -155,9 +191,18 @@ const passwordRules = ref({
 // 获取密码规则
 const fetchPasswordRules = async () => {
   try {
-    const response = await request.get('/auth/password-rules')
+    interface PasswordRuleRow {
+      minLength?: number
+      min_length?: number
+      complexity?: string
+    }
+    const response = await request.get<PasswordRuleRow>('/auth/password-rules')
     if (response.code === 200) {
-      passwordRules.value = response.data
+      const ruleData = response.data as PasswordRuleRow
+      passwordRules.value = {
+        minLength: ruleData.minLength ?? ruleData.min_length ?? 6,
+        complexity: ruleData.complexity ?? 'lowercase,number'
+      }
     }
   } catch (error) {
     console.error('获取密码规则失败:', error)
@@ -178,6 +223,33 @@ const passwordRulesText = computed(() => {
   return rules.join('、')
 })
 
+// ===== 智能填表：更换手机/绑定邮箱注册到 AI 侧栏 =====
+// 修改密码涉及口令安全，不接入语音填表
+const formContext = useFormContext()
+watch(showPhoneDialog, (open) => {
+  if (open) {
+    formContext.register({
+      formId: 'teacher:account-phone',
+      title: '更换手机',
+      fields: [{ prop: 'newPhone', label: '新手机号', type: 'input', required: true, patternHint: '11位手机号码' }],
+      getModel: () => phoneForm.value,
+      getValidationSummary: () => ({ missingFields: [], validationErrors: isPhoneFormValid.value ? [] : ['请输入正确的11位手机号'] })
+    })
+  } else formContext.unregister('teacher:account-phone')
+})
+watch(showEmailDialog, (open) => {
+  if (open) {
+    formContext.register({
+      formId: 'teacher:account-email',
+      title: '绑定邮箱',
+      fields: [{ prop: 'newEmail', label: '新邮箱', type: 'input', required: true, patternHint: '邮箱地址' }],
+      getModel: () => emailForm.value,
+      getValidationSummary: () => ({ missingFields: [], validationErrors: isEmailFormValid.value ? [] : ['请输入正确的邮箱格式'] })
+    })
+  } else formContext.unregister('teacher:account-email')
+})
+onUnmounted(() => { formContext.unregister('teacher:account-phone'); formContext.unregister('teacher:account-email') })
+
 // 监听密码对话框打开
 watch(showPasswordDialog, (newVal) => {
   if (newVal) {
@@ -186,9 +258,11 @@ watch(showPasswordDialog, (newVal) => {
 })
 
 const phoneForm = ref({
-  newPhone: '',
-  verifyCode: '',
-  requestId: ''
+  newPhone: ''
+})
+
+const emailForm = ref({
+  newEmail: ''
 })
 
 const isPasswordFormValid = computed(() => {
@@ -204,8 +278,14 @@ const isPasswordFormValid = computed(() => {
 const isPhoneFormValid = computed(() => {
   return (
     phoneForm.value.newPhone.trim() !== '' &&
-    phoneForm.value.verifyCode.trim() !== '' &&
     /^1[3-9]\d{9}$/.test(phoneForm.value.newPhone)
+  )
+})
+
+const isEmailFormValid = computed(() => {
+  return (
+    emailForm.value.newEmail.trim() !== '' &&
+    EMAIL_REGEX.test(emailForm.value.newEmail.trim())
   )
 })
 
@@ -215,8 +295,10 @@ onMounted(() => {
 
 const loadUserInfo = async () => {
   try {
-    const data = await accountSettingsApi.getAccountInfo()
-    userInfo.value = data
+    const data = await accountSettingsApi.getAccountInfo() as unknown as Partial<UserInfo>
+    if (data !== null && typeof data === 'object') {
+      userInfo.value = { ...userInfo.value, ...(data as Partial<UserInfo>) }
+    }
   } catch (error) {
     console.error('获取用户信息失败:', error)
   }
@@ -228,9 +310,18 @@ const savePersonalInfo = () => {
 }
 
 const changePassword = async () => {
+  if (!userInfo.value.email) {
+    ElMessage.warning('请先绑定邮箱后再修改密码')
+    showPasswordDialog.value = false
+    openEmailDialog()
+    return
+  }
   if (isPasswordFormValid.value) {
     try {
-      await accountSettingsApi.changePassword(passwordForm.value)
+      // 后端 changePassword 声明含 phoneCode（短信改密流程），账号设置页为口令改密不传该键；
+      // 保持原请求体不变，用精确断言适配声明
+      const payload = passwordForm.value as unknown as Parameters<typeof accountSettingsApi.changePassword>[0]
+      await accountSettingsApi.changePassword(payload)
 
       ElMessage.success('密码修改成功，请重新登录')
       showPasswordDialog.value = false
@@ -244,7 +335,7 @@ const changePassword = async () => {
       localStorage.removeItem('role')
       localStorage.removeItem('userId')
       localStorage.removeItem('current_role')
-      window.location.href = '/login'
+      router.push('/login')
     } catch (error: any) {
       ElMessage.error(error.message || '修改密码失败')
     }
@@ -257,41 +348,59 @@ const showOperationFeedback = (message: string, type: 'success' | 'error' | 'war
   console.log(`${type === 'success' ? '✅' : type === 'error' ? '❌' : '⚠️'} ${message}`)
 }
 
-const getPhoneVerifyCode = async () => {
-  if (!phoneForm.value.newPhone) {
-    showOperationFeedback('请先输入新手机号', 'error')
+const changePhone = () => {
+  showPhoneDialog.value = true
+}
+
+const openPasswordDialog = () => {
+  if (!userInfo.value.email) {
+    ElMessage.warning('请先绑定邮箱后再修改密码')
+    openEmailDialog()
+    return
+  }
+  showPasswordDialog.value = true
+}
+
+const openEmailDialog = () => {
+  emailForm.value = {
+    newEmail: ''
+  }
+  showEmailDialog.value = true
+}
+
+const updateEmail = async () => {
+  if (!isEmailFormValid.value) {
+    ElMessage.error('请输入正确的邮箱格式')
     return
   }
   try {
-    const response = await accountSettingsApi.sendVerifyCode(phoneForm.value.newPhone)
-    if (response.code === 200) {
-      phoneForm.value.requestId = response.data?.requestId || ''
-      showOperationFeedback('验证码已发送', 'success')
-    } else {
-      showOperationFeedback(response.message || '发送验证码失败', 'error')
+    const operation = formContext.beginFormOperation('teacher:account-email')
+    await accountSettingsApi.updateContact({
+      email: emailForm.value.newEmail.trim()
+    })
+    operation.complete({ status: 'saved', label: '邮箱已绑定', url: '/teacher/account-settings' })
+    ElMessage.success('邮箱绑定成功')
+    emailForm.value = {
+      newEmail: ''
     }
+    showEmailDialog.value = false
+    await loadUserInfo()
   } catch (error: any) {
-    showOperationFeedback(error.message || '发送验证码失败', 'error')
+    ElMessage.error(error.message || '绑定邮箱失败')
   }
-}
-
-const changePhone = () => {
-  showPhoneDialog.value = true
 }
 
 const updatePhone = async () => {
   if (isPhoneFormValid.value) {
     try {
+      const operation = formContext.beginFormOperation('teacher:account-phone')
       await accountSettingsApi.updateContact({
-        phone: phoneForm.value.newPhone,
-        verifyCode: phoneForm.value.verifyCode,
-        requestId: phoneForm.value.requestId
+        phone: phoneForm.value.newPhone
       })
+      operation.complete({ status: 'saved', label: '手机号已更换', url: '/teacher/account-settings' })
       showOperationFeedback('手机号已成功更换', 'success')
       phoneForm.value = {
-        newPhone: '',
-        verifyCode: '',
-        requestId: ''
+        newPhone: ''
       }
       showPhoneDialog.value = false
       await loadUserInfo()

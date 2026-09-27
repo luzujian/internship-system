@@ -4,7 +4,7 @@ import type { Announcement, AnnouncementFormData, PageResult, ApiResponse } from
 export const announcementApi = {
   async getAllAnnouncements(): Promise<Announcement[]> {
     try {
-      const response = await request.get<{ code: number; message: string; data: Announcement[] }>('/announcements')
+      const response = await request.get<Announcement[]>('/announcements')
       return response.data
     } catch (error) {
       throw new Error(`Failed to fetch all announcements: ${error}`)
@@ -13,7 +13,7 @@ export const announcementApi = {
 
   async getAnnouncementById(id: number): Promise<Announcement> {
     try {
-      const response = await request.get<{ code: number; message: string; data: Announcement }>(`/announcements/${id}`)
+      const response = await request.get<Announcement>(`/announcements/${id}`)
       return response.data
     } catch (error) {
       throw new Error(`Failed to fetch announcement ${id}: ${error}`)
@@ -24,7 +24,7 @@ export const announcementApi = {
     params?: { page?: number; pageSize?: number; title?: string; status?: string }
   ): Promise<PageResult<Announcement>> {
     try {
-      const response = await request.get<{ code: number; message: string; data: PageResult<Announcement> }>('/announcements/page', {
+      const response = await request.get<PageResult<Announcement>>('/announcements/page', {
         params: params || {}
       })
       return response.data
@@ -70,7 +70,7 @@ export const announcementApi = {
     status?: string
   ): Promise<Announcement[]> {
     try {
-      const response = await request.get<{ code: number; message: string; data: Announcement[] }>('/announcements/search', {
+      const response = await request.get<Announcement[]>('/announcements/search', {
         params: { title, status }
       })
       return response.data
@@ -84,7 +84,7 @@ export const announcementApi = {
     userInfo?: string
   ): Promise<Announcement[]> {
     try {
-      const response = await request.get<{ code: number; message: string; data: Announcement[] }>('/announcements/user', {
+      const response = await request.get<Announcement[]>('/announcements/user', {
         params: { userType, userInfo }
       })
       return response.data
@@ -107,7 +107,7 @@ export const announcementApi = {
 
   async checkReadStatus(announcementId: number, userId: number, userType: string): Promise<boolean> {
     try {
-      const response = await request.get<{ code: number; message: string; data: boolean }>('/announcement-read-records/check', {
+      const response = await request.get<boolean>('/announcement-read-records/check', {
         params: { announcementId, userId, userType }
       })
       return response.data
@@ -118,7 +118,7 @@ export const announcementApi = {
 
   async getUnreadCount(announcementId: number, targetType?: string, targetValue?: string): Promise<number> {
     try {
-      const response = await request.get<{ code: number; message: string; data: number }>(`/announcement-read-records/unread-count/${announcementId}`, {
+      const response = await request.get<number>(`/announcement-read-records/unread-count/${announcementId}`, {
         params: { targetType, targetValue }
       })
       return response.data
@@ -129,7 +129,7 @@ export const announcementApi = {
 
   async getReadCount(announcementId: number): Promise<number> {
     try {
-      const response = await request.get<{ code: number; message: string; data: number }>(`/announcement-read-records/read-count/${announcementId}`)
+      const response = await request.get<number>(`/announcement-read-records/read-count/${announcementId}`)
       return response.data
     } catch (error) {
       throw new Error(`Failed to get read count: ${error}`)
@@ -138,7 +138,7 @@ export const announcementApi = {
 
   async getUserUnreadCount(userId: number, userType: string): Promise<number> {
     try {
-      const response = await request.get<{ code: number; message: string; data: number }>('/announcement-read-records/user-unread-count', {
+      const response = await request.get<number>('/announcement-read-records/user-unread-count', {
         params: { userId, userType }
       })
       return response.data

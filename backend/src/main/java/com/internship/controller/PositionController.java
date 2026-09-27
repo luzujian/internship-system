@@ -129,7 +129,7 @@ public class PositionController {
     @Log(operationType = "UPDATE", module = "POSITION_MANAGEMENT", description = "更新招聘岗位")
     @PutMapping("/{id}")
     @PreAuthorize("hasAnyRole('ADMIN', 'COMPANY') or hasAuthority('recruitment:edit')")
-    public Result updatePosition(@PathVariable Long id, @RequestBody Position position) {
+    public Result updatePosition(@PathVariable Long id, @RequestBody @Validated Position position) {
         log.info("更新岗位，ID: {}", id);
         try {
             // 安全校验：非管理员只能更新自己公司的岗位
@@ -217,7 +217,7 @@ public class PositionController {
     /**
      * 批量删除岗位
      */
-    @Log(operationType = "DELETE", module = "POSITION_MANAGEMENT", description = "批量删除招聘岗位")
+    @Log(operationType = "DELETE", module = "POSITION_MANAGEMENT", description = "批量删除招聘岗位", riskLevel = "HIGH", critical = true)
     @DeleteMapping("/batch")
     @PreAuthorize("hasAnyRole('ADMIN', 'COMPANY') or hasAuthority('recruitment:delete')")
     public Result batchDeletePositions(@RequestBody List<Long> ids) {
@@ -292,6 +292,7 @@ public class PositionController {
 
     @PutMapping("/{id}/pause")
     @PreAuthorize("hasAnyRole('ADMIN', 'COMPANY') or hasAuthority('recruitment:edit')")
+    @Log(operationType = "UPDATE", module = "POSITION_MANAGEMENT", description = "暂停岗位招聘", riskLevel = "MEDIUM")
     public Result pausePosition(@PathVariable Long id) {
         log.info("暂停岗位招聘，岗位 ID: {}", id);
         try {
@@ -327,6 +328,7 @@ public class PositionController {
 
     @PutMapping("/{id}/resume")
     @PreAuthorize("hasAnyRole('ADMIN', 'COMPANY') or hasAuthority('recruitment:edit')")
+    @Log(operationType = "UPDATE", module = "POSITION_MANAGEMENT", description = "恢复岗位招聘", riskLevel = "MEDIUM")
     public Result resumePosition(@PathVariable Long id) {
         log.info("恢复岗位招聘，岗位 ID: {}", id);
         try {

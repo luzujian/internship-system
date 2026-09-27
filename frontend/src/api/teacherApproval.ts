@@ -10,6 +10,12 @@ export interface StudentApplication {
   applicationType?: string
   reason?: string
   company?: string
+  positionName?: string
+  companyCity?: string
+  hrManagerName?: string
+  hrManagerPhone?: string
+  cooperativeCompany?: boolean
+  cooperativeCompanyId?: number
   oldCompany?: string
   newCompany?: string
   materials?: Record<string, string>
@@ -45,9 +51,16 @@ export interface CompanyQualification {
   updateTime?: string
 }
 
+export interface ApprovalActionResult {
+  code: number
+  message?: string
+  data?: {
+    emailNotified?: boolean
+  }
+}
+
 export interface ApprovalStats {
   selfPracticePending: number
-  unitChangePending: number
   delayPending: number
   companyQualificationPending: number
 }
@@ -87,19 +100,21 @@ export const approvalApi = {
     }
   },
 
-  approveStudentApplication: async (id: number, reviewerId: number) => {
+  approveStudentApplication: async (id: number, reviewerId: number): Promise<ApprovalActionResult> => {
     try {
-      await request.post(`/approval/student-applications/${id}/approve`, null, { params: { reviewerId } })
+      const response = await request.post(`/approval/student-applications/${id}/approve`, null, { params: { reviewerId } })
+      return response as unknown as ApprovalActionResult
     } catch (error) {
       throw new Error(`Failed to approve student application ${id}: ${error}`)
     }
   },
 
-  rejectStudentApplication: async (id: number, reviewerId: number, rejectReason: string) => {
+  rejectStudentApplication: async (id: number, reviewerId: number, rejectReason: string): Promise<ApprovalActionResult> => {
     try {
-      await request.post(`/approval/student-applications/${id}/reject`, null, { 
-        params: { reviewerId, rejectReason } 
+      const response = await request.post(`/approval/student-applications/${id}/reject`, null, {
+        params: { reviewerId, rejectReason }
       })
+      return response as unknown as ApprovalActionResult
     } catch (error) {
       throw new Error(`Failed to reject student application ${id}: ${error}`)
     }
@@ -128,19 +143,21 @@ export const approvalApi = {
     }
   },
 
-  approveCompanyQualification: async (id: number, reviewerId: number) => {
+  approveCompanyQualification: async (id: number, reviewerId: number): Promise<ApprovalActionResult> => {
     try {
-      await request.post(`/approval/company-qualifications/${id}/approve`, null, { params: { reviewerId } })
+      const response = await request.post(`/approval/company-qualifications/${id}/approve`, null, { params: { reviewerId } })
+      return response as unknown as ApprovalActionResult
     } catch (error) {
       throw new Error(`Failed to approve company qualification ${id}: ${error}`)
     }
   },
 
-  rejectCompanyQualification: async (id: number, reviewerId: number, rejectReason: string) => {
+  rejectCompanyQualification: async (id: number, reviewerId: number, rejectReason: string): Promise<ApprovalActionResult> => {
     try {
-      await request.post(`/approval/company-qualifications/${id}/reject`, null, { 
-        params: { reviewerId, rejectReason } 
+      const response = await request.post(`/approval/company-qualifications/${id}/reject`, null, {
+        params: { reviewerId, rejectReason }
       })
+      return response as unknown as ApprovalActionResult
     } catch (error) {
       throw new Error(`Failed to reject company qualification ${id}: ${error}`)
     }

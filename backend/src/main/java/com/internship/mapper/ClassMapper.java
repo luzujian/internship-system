@@ -27,4 +27,5 @@ public interface ClassMapper {
     
     // 删除班级
     int delete(Long id);
+
 }

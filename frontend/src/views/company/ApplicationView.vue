@@ -1,7 +1,8 @@
 <script setup lang="ts">
+import { useAgentPageContext } from '@/agent/useAgentPageContext'
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Document, Download } from '@element-plus/icons-vue'
+import { Document, Download, Folder, Picture } from '@element-plus/icons-vue'
 import { createWorkbook, jsonToSheet, appendSheet, writeWorkbook, writeWorkbookToBuffer } from '../../utils/xlsx'
 import { usePositionStore } from '../../store/position'
 import { useAuthStore } from '@/store/auth'
@@ -11,6 +12,23 @@ import { onNewApplication, offNewApplication } from '@/utils/websocket'
 
 const positionStore = usePositionStore()
 const authStore = useAuthStore()
+
+// 岗位申请在不同后端版本中岗位名称字段为 position（旧）或 positionName（新），本地行类型兼容两种形态
+interface ApplicationViewRow {
+  id?: number | string
+  position?: string
+  positionName?: string
+  positionId?: number | string
+  status?: string
+  rejectReason?: string
+  applyDate?: string
+  createTime?: string
+  studentName?: string
+  studentNo?: string
+  [key: string]: unknown
+}
+const asApplicationRows = (input: unknown): ApplicationViewRow[] =>
+  Array.isArray(input) ? (input as ApplicationViewRow[]) : []
 
 const companyId = computed(() => {
   if (authStore.user?.id) {
@@ -28,6 +46,8 @@ const companyId = computed(() => {
 
 const exporting = ref(false)
 const exportMode = ref('excel')
+// 模板使用 isMobile 做响应式列数适配；本页此前未定义（运行时恒为 undefined 即 falsy），此处以静态 false 收敛类型，渲染结果等价
+const isMobile = ref(false)
 
 const searchForm = ref({
   keyword: '',
@@ -80,10 +100,14 @@ onUnmounted(() => {
 
 const detailDialogVisible = ref(false)
 const currentStudent = ref(null)
+const rejectDialogVisible = ref(false)
+const rejectSubmitting = ref(false)
+const rejectTarget = ref<ApplicationViewRow | null>(null)
+const rejectReason = ref('')
 const studentArchives = ref([])
 
 const groupedApplications = computed(() => {
-  const groups = {}
+  const groups: Record<string, { applications: ApplicationViewRow[]; status?: string | number; isSystemPosition: boolean }> = {}
 
   // 只从当前岗位列表初始化岗位（不包含历史岗位）
   if (positionStore.positions && Array.isArray(positionStore.positions)) {
@@ -100,10 +124,10 @@ const groupedApplications = computed(() => {
 
   // 遍历申请列表，只将申请分配到当前存在的岗位组
   if (positionStore.jobApplications && Array.isArray(positionStore.jobApplications)) {
-    positionStore.jobApplications.forEach(item => {
+    asApplicationRows(positionStore.jobApplications).forEach(item => {
       const positionName = item.position || item.positionName || ''
       // 只处理当前存在的岗位，忽略历史岗位的申请
-      if (groups[positionName]) {
+      if (positionName && groups[positionName]) {
         groups[positionName].applications.push(item)
       }
     })
@@ -113,7 +137,7 @@ const groupedApplications = computed(() => {
     groups[position].applications.sort((a, b) => {
       if (a.status === 'pending' && b.status !== 'pending') return -1
       if (a.status !== 'pending' && b.status === 'pending') return 1
-      return new Date(b.applyDate) - new Date(a.applyDate)
+      return new Date(String(b.applyDate ?? '')).getTime() - new Date(String(a.applyDate ?? '')).getTime()
     })
   })
 
@@ -140,7 +164,7 @@ const filteredTableData = computed(() => {
     positionStore.positions.map(pos => pos.positionName)
   )
 
-  let data = positionStore.jobApplications.filter(item => {
+  let data = asApplicationRows(positionStore.jobApplications).filter(item => {
     // 只保留当前存在的岗位申请
     const positionName = item.position || item.positionName || ''
     return currentPositionNames.has(positionName)
@@ -148,8 +172,8 @@ const filteredTableData = computed(() => {
 
   if (searchForm.value.keyword) {
     data = data.filter(item =>
-      item.studentName.includes(searchForm.value.keyword) ||
-      item.studentNo.includes(searchForm.value.keyword)
+      String(item.studentName ?? '').includes(searchForm.value.keyword) ||
+      String(item.studentNo ?? '').includes(searchForm.value.keyword)
     )
   }
 
@@ -158,12 +182,14 @@ const filteredTableData = computed(() => {
   }
 
   // StudentJobApplication uses 'status' instead of 'viewed'
-  if (searchForm.value.status === true || searchForm.value.status === false) {
+  // searchForm.status 为字符串形态，与布尔恒不相等（恒假空分支）；保持原语义不断言删除，仅收敛类型
+  const statusFilter = searchForm.value.status as unknown
+  if (statusFilter === true || statusFilter === false) {
     // No viewed field in StudentJobApplication, so no filtering by viewed status
   }
 
   data.sort((a, b) => {
-    return new Date(b.applyDate || b.createTime) - new Date(a.applyDate || a.createTime)
+    return new Date(String(b.applyDate ?? b.createTime ?? '')).getTime() - new Date(String(a.applyDate ?? a.createTime ?? '')).getTime()
   })
 
   return data
@@ -221,25 +247,80 @@ const handleApprove = async (row) => {
   }
 }
 
-const handleReject = async (row) => {
-  try {
-    await ElMessageBox.confirm('拒绝该学生的申请，代表该学生未获得面试资格，是否继续？', '确认拒绝', {
-      confirmButtonText: '确定拒绝',
-      cancelButtonText: '取消',
-      type: 'warning'
-    })
+const handleReject = (row) => {
+  rejectTarget.value = row
+  rejectReason.value = ''
+  rejectDialogVisible.value = true
+}
 
-    const response = await applicationApi.updateJobApplicationStatus(row.id, 'rejected')
+const handleRejectCancel = () => {
+  if (rejectSubmitting.value) return
+  rejectDialogVisible.value = false
+  rejectTarget.value = null
+  rejectReason.value = ''
+}
+
+const handleRejectConfirm = async () => {
+  const target = rejectTarget.value
+  const reason = rejectReason.value.trim()
+  if (!target) return
+  const applicationId = Number(target.id)
+  if (!Number.isInteger(applicationId) || applicationId <= 0) {
+    ElMessage.error('申请编号无效')
+    return
+  }
+  if (!reason) {
+    ElMessage.warning('请填写拒绝理由')
+    return
+  }
+  if (reason.length > 500) {
+    ElMessage.warning('拒绝理由不能超过500个字')
+    return
+  }
+
+  rejectSubmitting.value = true
+  try {
+    const response = await applicationApi.updateJobApplicationStatus(applicationId, 'rejected', reason)
     if (response.code === 200) {
-      ElMessage.success('已拒绝该学生的申请')
-      // 刷新数据
+      ElMessage.success('已拒绝该学生的申请，并通知学生')
+      rejectDialogVisible.value = false
+      rejectTarget.value = null
+      rejectReason.value = ''
       await positionStore.fetchJobApplications()
     } else {
       ElMessage.error(response.message || '操作失败')
     }
   } catch (error) {
-    if (error !== 'cancel') {
-      ElMessage.error('操作失败')
+    console.error('拒绝申请失败:', error)
+    ElMessage.error('操作失败')
+  } finally {
+    rejectSubmitting.value = false
+  }
+}
+
+const handleDirectHire = async (row) => {
+  try {
+    await ElMessageBox.confirm(
+      '此操作将跳过面试流程，并将该学生标记为面试通过。学生随后可以填写并提交实习确认表，企业确认实习表后才正式获得该岗位。本操作暂不支持撤销。',
+      '确认直接录取该学生？',
+      {
+        confirmButtonText: '确认直接录取',
+        cancelButtonText: '返回检查',
+        type: 'warning',
+        distinguishCancelAndClose: true
+      }
+    )
+
+    const response = await applicationApi.directHire(row.id)
+    if (response.code === 200) {
+      ElMessage.success('已直接录取该学生，等待学生提交实习确认表')
+      await positionStore.fetchJobApplications()
+    } else {
+      ElMessage.error(response.message || '直接录取失败')
+    }
+  } catch (error) {
+    if (error !== 'cancel' && error !== 'close') {
+      ElMessage.error('直接录取失败')
     }
   }
 }
@@ -297,9 +378,17 @@ const handleViewDetail = async (row) => {
   // 获取学生申请材料
   if (row.studentId) {
     try {
-      const response = await studentArchiveService.getStudentArchives(row.studentId)
+      interface StudentArchiveRow {
+        id?: number | string
+        fileName?: string
+        [key: string]: unknown
+      }
+      const response = await studentArchiveService.getStudentArchives(row.studentId) as unknown as {
+        code?: number
+        data?: StudentArchiveRow[]
+      }
       if (response.code === 200) {
-        studentArchives.value = response.data || []
+        studentArchives.value = Array.isArray(response.data) ? response.data : []
       } else {
         studentArchives.value = []
       }
@@ -315,7 +404,7 @@ const handleViewDetail = async (row) => {
 // 下载申请材料
 const handleDownloadArchive = async (archive) => {
   try {
-    const response = await studentArchiveService.downloadArchive(archive.id)
+    const response = await studentArchiveService.downloadArchive(archive.id) as unknown as Blob
     // 根据文件类型设置正确的 MIME type
     const fileExt = archive.fileName?.split('.').pop()?.toLowerCase() || ''
     let mimeType = 'application/octet-stream'
@@ -345,8 +434,12 @@ const handleDownloadArchive = async (archive) => {
 // 预览申请材料
 const handlePreviewArchive = async (archive) => {
   try {
-    const response = await studentArchiveService.previewArchive(archive.id)
-    const blob = new Blob([response.data])
+    const response = await studentArchiveService.previewArchive(archive.id) as unknown as {
+      code?: number
+      data?: Blob
+    }
+    const previewBlob = response.data as unknown as Blob
+    const blob = new Blob([previewBlob])
     const url = window.URL.createObjectURL(blob)
     window.open(url, '_blank')
   } catch (error) {
@@ -356,12 +449,12 @@ const handlePreviewArchive = async (archive) => {
 }
 
 const handleExport = async () => {
-  let dataToExport = [...positionStore.jobApplications]
+  let dataToExport = asApplicationRows([...positionStore.jobApplications])
 
   if (searchForm.value.keyword) {
     dataToExport = dataToExport.filter(item =>
-      item.studentName.includes(searchForm.value.keyword) ||
-      item.studentNo.includes(searchForm.value.keyword)
+      String(item.studentName ?? '').includes(searchForm.value.keyword) ||
+      String(item.studentNo ?? '').includes(searchForm.value.keyword)
     )
   }
 
@@ -387,7 +480,7 @@ const handleExport = async () => {
 
     Object.keys(groupedData).forEach(position => {
       groupedData[position].sort((a, b) => {
-        return new Date(b.applyDate || b.createTime) - new Date(a.applyDate || a.createTime)
+        return new Date(String(b.applyDate ?? b.createTime ?? '')).getTime() - new Date(String(a.applyDate ?? a.createTime ?? '')).getTime()
       })
     })
 
@@ -401,7 +494,8 @@ const handleExport = async () => {
       '专业': item.major,
       '联系电话': item.phone,
       '申请日期': item.applyDate,
-      '申请状态': item.status === 'pending' ? '待审核' : item.status === 'approved' ? '已通过' : item.status === 'rejected' ? '已拒绝' : item.status === 'interview_passed' ? '面试通过' : item.status === 'interview_failed' ? '面试没通过' : item.status === 'withdrawn' ? '已撤回' : item.status === 'defaulted' ? '已失效' : '未知状态',
+      '申请状态': item.status === 'pending' ? '待审核' : item.status === 'approved' ? '已通过' : item.status === 'rejected' ? '已拒绝' : item.status === 'interview_passed' && item.directHire ? '直接录取（免面试）' : item.status === 'interview_passed' ? '面试通过' : item.status === 'interview_failed' ? '面试没通过' : item.status === 'withdrawn' ? '已撤回' : item.status === 'defaulted' ? '已失效' : '未知状态',
+      '拒绝理由': item.rejectReason || '',
       '自我介绍': item.selfIntroduction
     }))
 
@@ -443,7 +537,7 @@ const exportWithFiles = async (workbook, baseFileName, data) => {
           
           for (const archive of archives) {
             try {
-              const response = await studentArchiveService.downloadArchive(archive.id)
+              const response = await studentArchiveService.downloadArchive(archive.id) as unknown as Blob
               const blob = new Blob([response], { type: response.type })
               const arrayBuffer = await blob.arrayBuffer()
               studentFolder.file(archive.fileName, arrayBuffer)
@@ -487,7 +581,7 @@ const getFileIcon = (fileName) => {
 
 const handleDownloadFile = async (archiveId, fileName) => {
   try {
-    const response = await studentArchiveService.downloadArchive(archiveId)
+    const response = await studentArchiveService.downloadArchive(archiveId) as unknown as Blob
     
     const blob = new Blob([response], { type: response.type })
     const url = window.URL.createObjectURL(blob)
@@ -505,6 +599,18 @@ const handleDownloadFile = async (archiveId, fileName) => {
     ElMessage.error('下载失败，请稍后重试')
   }
 }
+
+useAgentPageContext(() => {
+  const positions = positionStore.positions.filter(position => position.positionName === searchForm.value.position)
+  return {
+  title: '申请查看',
+  view: detailDialogVisible.value ? 'application-detail' : 'page',
+  object: (detailDialogVisible.value && (currentStudent.value as any)?.id) ? { type: 'company_application', id: String((currentStudent.value as any).id) } : null,
+  filters: { keyword: searchForm.value.keyword, status: searchForm.value.status,
+    positionId: positions.length === 1 ? String(positions[0].id) : '',
+    visibleIds: paginatedTableData.value.slice(0, 20).map(row => String(row.id)) }
+  }
+})
 </script>
 
 <template>
@@ -515,42 +621,53 @@ const handleDownloadFile = async (archiveId, fileName) => {
     </div>
 
     <div class="search-card">
-      <el-form :inline="true" :model="searchForm" class="search-form">
-        <el-form-item label="关键词">
-          <el-input 
-            v-model="searchForm.keyword" 
-            placeholder="请输入学生姓名或学号" 
-            clearable
-            style="width: 200px"
-          />
-        </el-form-item>
-        <el-form-item label="应聘岗位">
-          <el-select v-model="searchForm.position" placeholder="请选择岗位" clearable style="width: 180px">
-            <el-option
-              v-for="item in positionOptions"
-              :key="item.value"
-              :label="item.label"
-              :value="item.value"
+      <div class="search-section">
+        <div class="section-title">岗位申请查询</div>
+        <el-form :inline="true" :model="searchForm" class="search-form">
+          <el-form-item label="关键词">
+            <el-input 
+              v-model="searchForm.keyword" 
+              placeholder="请输入学生姓名或学号" 
+              clearable
+              style="width: 200px"
             />
-          </el-select>
-        </el-form-item>
-        <el-form-item>
-          <el-button type="primary" @click="handleSearch">搜索</el-button>
-          <el-button @click="handleReset">重置</el-button>
-        </el-form-item>
-        <el-form-item label="导出格式">
-          <el-radio-group v-model="exportMode">
-            <el-radio value="excel">仅Excel表格</el-radio>
-            <el-radio value="zip">压缩包（含附件）</el-radio>
-          </el-radio-group>
-        </el-form-item>
-        <el-form-item>
-          <el-button type="success" @click="handleExport" :loading="exporting">
-            <el-icon style="margin-right: 4px"><Download /></el-icon>
-            {{ exportMode === 'zip' ? '导出压缩包' : '导出Excel' }}
-          </el-button>
-        </el-form-item>
-      </el-form>
+          </el-form-item>
+          <el-form-item label="应聘岗位">
+            <el-select v-model="searchForm.position" placeholder="请选择岗位" clearable style="width: 180px">
+              <el-option
+                v-for="item in positionOptions"
+                :key="item.value"
+                :label="item.label"
+                :value="item.value"
+              />
+            </el-select>
+          </el-form-item>
+          <el-form-item>
+            <el-button type="primary" @click="handleSearch">搜索</el-button>
+            <el-button @click="handleReset">重置</el-button>
+          </el-form-item>
+        </el-form>
+      </div>
+      <div class="search-divider"></div>
+      <div class="search-section">
+        <div class="section-title">数据导出</div>
+        <div class="export-actions">
+          <el-form :inline="true" class="export-form">
+            <el-form-item label="导出格式">
+              <el-radio-group v-model="exportMode">
+                <el-radio value="excel">仅Excel表格</el-radio>
+                <el-radio value="zip">压缩包（含附件）</el-radio>
+              </el-radio-group>
+            </el-form-item>
+            <el-form-item>
+              <el-button type="success" @click="handleExport" :loading="exporting">
+                <el-icon style="margin-right: 4px"><Download /></el-icon>
+                {{ exportMode === 'zip' ? '导出压缩包' : '导出Excel' }}
+              </el-button>
+            </el-form-item>
+          </el-form>
+        </div>
+      </div>
     </div>
 
     <div class="stats-cards">
@@ -588,13 +705,14 @@ const handleDownloadFile = async (archiveId, fileName) => {
 
     <div class="table-card">
       <el-alert
-        title="提示：同意申请后，方可对该学生进行面试结果（通过 / 没通过）的操作"
+        title="提示：可先同意面试后处理面试结果，也可使用“直接录取”跳过面试流程"
         type="info"
         :closable="false"
         show-icon
         style="margin-bottom: 12px;"
       />
       <el-table
+        v-if="!isMobile"
         :data="paginatedTableData"
         border
         style="width: 100%"
@@ -612,6 +730,7 @@ const handleDownloadFile = async (archiveId, fileName) => {
             <el-tag v-if="row.status === 'pending'" type="warning" size="small">待审核</el-tag>
             <el-tag v-else-if="row.status === 'approved'" type="success" size="small">已同意</el-tag>
             <el-tag v-else-if="row.status === 'rejected'" type="danger" size="small">已拒绝</el-tag>
+            <el-tag v-else-if="row.status === 'interview_passed' && row.directHire" type="success" size="small">已录取，待提交确认表</el-tag>
             <el-tag v-else-if="row.status === 'interview_passed'" type="success" size="small">面试通过</el-tag>
             <el-tag v-else-if="row.status === 'interview_failed'" type="danger" size="small">面试没通过</el-tag>
             <el-tag v-else-if="row.status === 'withdrawn'" type="info" size="small">已撤回</el-tag>
@@ -619,7 +738,7 @@ const handleDownloadFile = async (archiveId, fileName) => {
             <el-tag v-else type="info" size="small">未知状态</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" fixed="right" width="280" align="center">
+        <el-table-column label="操作" fixed="right" width="430" align="center">
           <template #default="{ row }">
             <el-button
               v-if="row.status === 'pending'"
@@ -627,7 +746,7 @@ const handleDownloadFile = async (archiveId, fileName) => {
               size="small"
               @click="handleApprove(row)"
             >
-              同意
+              同意面试
             </el-button>
             <el-button
               v-if="row.status === 'pending'"
@@ -635,8 +754,21 @@ const handleDownloadFile = async (archiveId, fileName) => {
               size="small"
               @click="handleReject(row)"
             >
-              拒绝
+              拒绝申请
             </el-button>
+            <el-tooltip
+              v-if="row.status === 'pending'"
+              content="跳过面试流程，直接允许学生提交实习确认表"
+              placement="top"
+            >
+              <el-button
+                type="warning"
+                size="small"
+                @click="handleDirectHire(row)"
+              >
+                直接录取
+              </el-button>
+            </el-tooltip>
 
             <template v-else-if="row.status === 'approved'">
               <el-button
@@ -683,6 +815,48 @@ const handleDownloadFile = async (archiveId, fileName) => {
     </div>
 
     <el-dialog
+      v-model="rejectDialogVisible"
+      title="填写拒绝理由"
+      width="520px"
+      :close-on-click-modal="false"
+      :close-on-press-escape="!rejectSubmitting"
+      @closed="handleRejectCancel"
+    >
+      <el-alert
+        type="info"
+        :closable="false"
+        show-icon
+        title="拒绝理由将随结果邮件发送给学生"
+        style="margin-bottom: 16px;"
+      />
+      <el-form label-position="top">
+        <el-form-item label="学生">
+          <el-input :model-value="rejectTarget?.studentName || ''" disabled />
+        </el-form-item>
+        <el-form-item label="拒绝理由" required>
+          <el-input
+            v-model="rejectReason"
+            type="textarea"
+            :rows="5"
+            maxlength="500"
+            show-word-limit
+            placeholder="请说明本次申请未通过的原因，例如：专业方向与岗位要求不匹配"
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="handleRejectCancel" :disabled="rejectSubmitting">取消</el-button>
+        <el-button
+          type="danger"
+          @click="handleRejectConfirm"
+          :loading="rejectSubmitting"
+        >
+          确认拒绝并通知学生
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog
       v-model="detailDialogVisible"
       title="学生岗位申请详情"
       width="700px"
@@ -697,18 +871,27 @@ const handleDownloadFile = async (archiveId, fileName) => {
             <el-descriptions-item label="年级">{{ currentStudent.grade }}</el-descriptions-item>
             <el-descriptions-item label="专业">{{ currentStudent.major }}</el-descriptions-item>
             <el-descriptions-item label="联系电话">{{ currentStudent.phone }}</el-descriptions-item>
+            <el-descriptions-item label="邮箱">{{ currentStudent.email || '未填写' }}</el-descriptions-item>
           </el-descriptions>
         </div>
 
         <div class="detail-section">
           <h3 class="section-title">申请信息</h3>
-          <el-descriptions :column="2" border>
+          <el-descriptions :column="isMobile ? 1 : 2" border>
             <el-descriptions-item label="应聘岗位">{{ currentStudent.positionName }}</el-descriptions-item>
             <el-descriptions-item label="申请日期">{{ currentStudent.applyDate }}</el-descriptions-item>
-            <el-descriptions-item label="申请状态" :span="2">
+            <el-descriptions-item
+              v-if="currentStudent.status === 'rejected' && currentStudent.rejectReason"
+              label="拒绝理由"
+              :span="isMobile ? 1 : 2"
+            >
+              {{ currentStudent.rejectReason }}
+            </el-descriptions-item>
+            <el-descriptions-item label="申请状态" :span="isMobile ? 1 : 2">
               <el-tag v-if="currentStudent.status === 'pending'" type="warning">待审核</el-tag>
               <el-tag v-else-if="currentStudent.status === 'approved'" type="success">已通过</el-tag>
               <el-tag v-else-if="currentStudent.status === 'rejected'" type="danger">已拒绝</el-tag>
+              <el-tag v-else-if="currentStudent.status === 'interview_passed' && currentStudent.directHire" type="success">直接录取（免面试）</el-tag>
               <el-tag v-else-if="currentStudent.status === 'interview_passed'" type="success">面试通过</el-tag>
               <el-tag v-else-if="currentStudent.status === 'interview_failed'" type="danger">面试没通过</el-tag>
               <el-tag v-else-if="currentStudent.status === 'withdrawn'" type="info">已撤回</el-tag>
@@ -785,10 +968,51 @@ const handleDownloadFile = async (archiveId, fileName) => {
 
 .search-card {
   background: white;
-  padding: 12px 16px;
+  padding: 20px 24px;
   border-radius: 8px;
   margin-bottom: 12px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  display: flex;
+  align-items: stretch;
+  gap: 24px;
+}
+
+.search-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.search-section:first-child {
+  flex: 1;
+}
+
+.section-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #303133;
+  padding-left: 12px;
+  border-left: 3px solid #409EFF;
+}
+
+.search-section:last-child .section-title {
+  border-left-color: #67c23a;
+}
+
+.search-divider {
+  width: 1px;
+  background: #e4e7ed;
+}
+
+.export-actions {
+  display: flex;
+  align-items: center;
+  flex: 1;
+}
+
+.export-form {
+  display: flex;
+  align-items: center;
 }
 
 .search-form {
@@ -796,6 +1020,10 @@ const handleDownloadFile = async (archiveId, fileName) => {
   align-items: center;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.search-card :deep(.el-form-item) {
+  margin-bottom: 0;
 }
 
 .stats-cards {
@@ -1021,7 +1249,7 @@ const handleDownloadFile = async (archiveId, fileName) => {
   margin-bottom: 24px;
 }
 
-.section-title {
+.student-detail .section-title {
   font-size: 16px;
   font-weight: 600;
   color: #303133;
@@ -1264,5 +1492,76 @@ const handleDownloadFile = async (archiveId, fileName) => {
 
 :deep(.el-radio__input.is-checked + .el-radio__label) {
   color: #409EFF !important;
+}
+
+@media (max-width: 768px) {
+  .page-header {
+    padding: 18px 20px;
+    margin-bottom: 16px;
+  }
+
+  .page-header h2 {
+    font-size: 22px;
+  }
+
+  .search-card {
+    flex-direction: column;
+    gap: 16px;
+    padding: 16px 18px;
+  }
+
+  .search-section:first-child {
+    flex: none;
+  }
+
+  .search-divider {
+    width: 100%;
+    height: 1px;
+  }
+
+  .search-form :deep(.el-form-item),
+  .export-form :deep(.el-form-item) {
+    width: 100%;
+    margin-right: 0;
+  }
+
+  .search-form :deep(.el-input),
+  .search-form :deep(.el-select) {
+    width: 100% !important;
+  }
+
+  .export-actions,
+  .export-form {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .export-form :deep(.el-radio-group) {
+    flex-wrap: wrap;
+  }
+
+  .export-form :deep(.el-button) {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .stats-cards {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+  }
+
+  .stat-card {
+    padding: 12px;
+  }
+
+  .stat-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+
+  .table-card {
+    padding: 12px;
+  }
 }
 </style>

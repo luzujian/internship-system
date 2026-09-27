@@ -1,0 +1,57 @@
+{
+  "code": 200,
+  "data": {
+    "items": [
+      {
+        "id": 401,
+        "eventType": "job_applied",
+        "category": "recruitment",
+        "title": "投递岗位",
+        "description": "星河科技 · Java 实习生",
+        "status": "pending",
+        "statusText": "待企业处理",
+        "occurredAt": "2026-07-18T14:00:00+08:00",
+        "relatedId": 401,
+        "action": { "key": "VIEW_APPLICATION", "targetId": 401, "params": {} }
+      },
+      {
+        "id": 402,
+        "eventType": "reflection_submitted",
+        "category": "reflection",
+        "title": "第 2 期心得提交",
+        "description": "实习心得提交",
+        "status": "submitted",
+        "statusText": "待评分",
+        "occurredAt": "2026-07-18T11:00:00+08:00",
+        "relatedId": 402,
+        "action": { "key": "VIEW_REFLECTION", "targetId": 402, "params": {} }
+      },
+      {
+        "id": 403,
+        "eventType": "interview_invited",
+        "category": "recruitment",
+        "title": "面试邀请",
+        "description": "云海科技 · 前端实习生",
+        "status": "info",
+        "statusText": "待面试",
+        "occurredAt": "2026-07-18T09:00:00+08:00",
+        "relatedId": 403,
+        "action": { "key": "VIEW_INTERVIEW", "targetId": 403, "params": {} }
+      },
+      {
+        "id": 404,
+        "eventType": "internship_confirmed",
+        "category": "lifecycle",
+        "title": "新实习岗位已确认",
+        "description": "当前实习记录已更新",
+        "status": "success",
+        "statusText": "已生效",
+        "occurredAt": "2026-07-17T16:00:00+08:00",
+        "relatedId": 404,
+        "action": { "key": "VIEW_CONFIRMATION", "targetId": 404, "params": {} }
+      }
+    ],
+    "nextCursor": null,
+    "hasMore": false
+  }
+}

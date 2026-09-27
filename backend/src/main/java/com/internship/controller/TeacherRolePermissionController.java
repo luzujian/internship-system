@@ -1,10 +1,12 @@
 package com.internship.controller;
 
+import com.internship.anno.Log;
 import com.internship.entity.Result;
 import com.internship.entity.TeacherRolePermission;
 import com.internship.service.TeacherRolePermissionService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -49,6 +51,8 @@ public class TeacherRolePermissionController {
     }
     
     @PostMapping
+    @PreAuthorize("hasRole('ADMIN')")
+    @Log(operationType = "CREATE", module = "PERMISSION_MANAGEMENT", description = "新增角色权限", riskLevel = "HIGH", critical = true)
     public Result createRolePermission(@RequestBody TeacherRolePermission teacherRolePermission) {
         log.info("创建角色权限关联: roleId={}, permissionId={}", 
                 teacherRolePermission.getRoleId(), teacherRolePermission.getPermissionId());
@@ -62,6 +66,8 @@ public class TeacherRolePermissionController {
     }
     
     @PutMapping("/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Log(operationType = "UPDATE", module = "PERMISSION_MANAGEMENT", description = "更新角色权限", riskLevel = "HIGH", critical = true)
     public Result updateRolePermission(@PathVariable Long id, @RequestBody TeacherRolePermission teacherRolePermission) {
         log.info("更新角色权限关联: {}", id);
         try {
@@ -75,6 +81,8 @@ public class TeacherRolePermissionController {
     }
     
     @DeleteMapping("/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Log(operationType = "DELETE", module = "PERMISSION_MANAGEMENT", description = "删除角色权限", riskLevel = "HIGH", critical = true)
     public Result deleteRolePermission(@PathVariable Long id) {
         log.info("删除角色权限关联: {}", id);
         try {
@@ -87,6 +95,8 @@ public class TeacherRolePermissionController {
     }
     
     @DeleteMapping("/role/{roleId}")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Log(operationType = "DELETE", module = "PERMISSION_MANAGEMENT", description = "清空角色权限", riskLevel = "HIGH", critical = true)
     public Result deleteRolePermissionsByRoleId(@PathVariable Long roleId) {
         log.info("删除角色的所有权限关联: {}", roleId);
         try {

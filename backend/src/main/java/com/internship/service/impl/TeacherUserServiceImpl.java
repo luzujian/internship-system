@@ -8,9 +8,12 @@ import com.internship.entity.CounselorCategoryWeight;
 import com.internship.entity.CounselorScoringRule;
 import com.internship.entity.PageResult;
 import com.internship.entity.Department;
+import com.internship.entity.Division;
 import com.internship.entity.TeacherUser;
 import com.internship.service.DepartmentService;
+import com.internship.service.DivisionService;
 import com.internship.service.TeacherUserService;
+import com.internship.utils.UserCredentialDefaults;
 import com.github.pagehelper.PageHelper;
 import com.github.pagehelper.PageInfo;
 import org.apache.commons.lang3.StringUtils;
@@ -40,6 +43,9 @@ public class TeacherUserServiceImpl implements TeacherUserService {
     private DepartmentService departmentService;
 
     @Autowired
+    private DivisionService divisionService;
+
+    @Autowired
     private CounselorScoringRuleMapper counselorScoringRuleMapper;
 
     @Autowired
@@ -47,6 +53,9 @@ public class TeacherUserServiceImpl implements TeacherUserService {
 
     @Autowired
     private com.internship.mapper.CounselorAISettingsMapper counselorAISettingsMapper;
+
+    @Autowired
+    private com.internship.service.automation.AutomationTemplates automationTemplates;
 
     @Override
     public TeacherUser findByTeacherUserId(String teacherUserId) {
@@ -62,6 +71,7 @@ public class TeacherUserServiceImpl implements TeacherUserService {
     @Override
     public int register(TeacherUser teacherUser) {
         log.debug("注册教师用户: {}", teacherUser.getTeacherUserId());
+        teacherUser.setPassword(UserCredentialDefaults.PASSWORD);
         // 参数校验
         validateTeacherRegistration(teacherUser);
         
@@ -85,21 +95,11 @@ public class TeacherUserServiceImpl implements TeacherUserService {
             teacherUser.setGender(1);
         }
         
-        // 如果没有设置教师类型，默认设置为系室教师
-        if (teacherUser.getTeacherType() == null || teacherUser.getTeacherType().isEmpty()) {
-            teacherUser.setTeacherType("DEPARTMENT");
-        }
-        
-        // 根据教师类型设置角色
-        String role = switch (teacherUser.getTeacherType()) {
-            case "COLLEGE" -> "ROLE_TEACHER_COLLEGE";
-            case "DEPARTMENT" -> "ROLE_TEACHER_DEPARTMENT";
-            case "COUNSELOR" -> "ROLE_TEACHER_COUNSELOR";
-            default -> "ROLE_TEACHER";
-        };
+        String role = roleForTeacherType(teacherUser.getTeacherType());
         teacherUser.setRole(role);
         
         int result = teacherUserMapper.insert(teacherUser);
+        automationTemplates.initialize(teacherUser);
         log.info("教师INSERT完成，ID: {}, 教师编号: {}", teacherUser.getId(), teacherUser.getTeacherUserId());
 
         // 仅辅导员初始化默认评分规则 + AI 开启
@@ -152,6 +152,28 @@ public class TeacherUserServiceImpl implements TeacherUserService {
         if (existingUser == null) {
             throw new BusinessException("用户不存在");
         }
+
+        String effectiveType = StringUtils.isNotBlank(teacherUser.getTeacherType())
+                ? teacherUser.getTeacherType() : existingUser.getTeacherType();
+        boolean scopeChanged = StringUtils.isNotBlank(teacherUser.getTeacherType())
+                || StringUtils.isNotBlank(teacherUser.getDepartmentId())
+                || StringUtils.isNotBlank(teacherUser.getDivisionId());
+        if (scopeChanged && "DEPARTMENT".equals(effectiveType)) {
+            String effectiveDepartment = StringUtils.isNotBlank(teacherUser.getDepartmentId())
+                    ? teacherUser.getDepartmentId() : existingUser.getDepartmentId();
+            String effectiveDivision = StringUtils.isNotBlank(teacherUser.getDivisionId())
+                    ? teacherUser.getDivisionId() : existingUser.getDivisionId();
+            validateDepartmentDivision(effectiveDepartment, effectiveDivision);
+        }
+
+        // 工号唯一性校验：仅在工号被修改时检查（且不能与其他用户工号重复）
+        if (StringUtils.isNotBlank(teacherUser.getTeacherUserId())
+                && !teacherUser.getTeacherUserId().equals(existingUser.getTeacherUserId())) {
+            TeacherUser duplicate = teacherUserMapper.findByTeacherUserId(teacherUser.getTeacherUserId());
+            if (duplicate != null) {
+                throw new BusinessException("工号已存在，请修改");
+            }
+        }
         
         // 如果提供了新密码，则进行加密
         if (StringUtils.isNotBlank(teacherUser.getPassword())) {
@@ -162,16 +184,12 @@ public class TeacherUserServiceImpl implements TeacherUserService {
         }
         
         // 如果更新了教师类型，需要同步更新角色
-        if (teacherUser.getTeacherType() != null && !teacherUser.getTeacherType().isEmpty()) {
-            String role = switch (teacherUser.getTeacherType()) {
-                case "COLLEGE" -> "ROLE_TEACHER_COLLEGE";
-                case "DEPARTMENT" -> "ROLE_TEACHER_DEPARTMENT";
-                case "COUNSELOR" -> "ROLE_TEACHER_COUNSELOR";
-                default -> "ROLE_TEACHER";
-            };
-            teacherUser.setRole(role);
+        if (StringUtils.isNotBlank(teacherUser.getTeacherType())) {
+            teacherUser.setRole(roleForTeacherType(teacherUser.getTeacherType()));
+        } else if (StringUtils.isNotBlank(existingUser.getTeacherType())) {
+            teacherUser.setRole(roleForTeacherType(existingUser.getTeacherType()));
         } else {
-            // 如果没有更新教师类型，保持原角色
+            // Legacy rows without a type cannot authenticate, but must remain disableable.
             teacherUser.setRole(existingUser.getRole());
         }
         
@@ -202,7 +220,8 @@ public class TeacherUserServiceImpl implements TeacherUserService {
     
     @Override
     public PageResult<TeacherUser> findPageByCondition(Integer page, Integer pageSize, Map<String, Object> params) {
-        log.debug("条件分页查询教师用户，页码: {}, 每页条数: {}, 查询条件: {}", page, pageSize, params);
+        log.debug("条件分页查询教师用户：page={}, pageSize={}, filterCount={}",
+                page, pageSize, params != null ? params.size() : 0);
         // 设置分页参数
         PageHelper.startPage(page, pageSize);
         
@@ -292,6 +311,13 @@ public class TeacherUserServiceImpl implements TeacherUserService {
     
     @Transactional(rollbackFor = Exception.class)
     @Override
+    public int resetAllPasswords() {
+        String passwordHash = passwordEncoder.encode(UserCredentialDefaults.PASSWORD);
+        return teacherUserMapper.resetAllPasswords(passwordHash);
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    @Override
     public int batchDelete(List<Long> ids) {
         log.debug("批量删除教师用户，ID列表: {}", ids);
         
@@ -312,6 +338,7 @@ public class TeacherUserServiceImpl implements TeacherUserService {
         return result;
     }
     
+    @Transactional(rollbackFor = Exception.class)
     @Override
     public Map<String, Object> importFromExcel(List<Map<String, Object>> teacherDataList) {
         log.info("开始从Excel导入教师数据，总数据量: {}", teacherDataList != null ? teacherDataList.size() : 0);
@@ -349,6 +376,8 @@ public class TeacherUserServiceImpl implements TeacherUserService {
         
         // 遍历Excel数据，转换为TeacherUser对象并验证
         List<TeacherUser> validTeacherList = new ArrayList<>();
+        Map<String, String> pendingInitialPasswords = new HashMap<>();
+        List<Map<String, String>> initialCredentials = new ArrayList<>();
         
         for (int i = 0; i < teacherDataList.size(); i++) {
             Map<String, Object> rowData = teacherDataList.get(i);
@@ -357,6 +386,10 @@ public class TeacherUserServiceImpl implements TeacherUserService {
             failInfo.putAll(rowData);
             
             try {
+                // 跳过工号为空的空行（如模板自带的填写说明行）
+                if (StringUtils.isBlank(getStringValue(rowData, "工号"))) {
+                    continue;
+                }
                 // 转换为TeacherUser对象
                 TeacherUser teacherUser = convertToTeacherUser(rowData);
                 
@@ -370,9 +403,13 @@ public class TeacherUserServiceImpl implements TeacherUserService {
                 
                 // 验证数据有效性
                 validateTeacherRegistration(teacherUser);
-                
+                teacherUser.setRole(roleForTeacherType(teacherUser.getTeacherType()));
+                String initialPassword = UserCredentialDefaults.PASSWORD;
+                teacherUser.setPassword(passwordEncoder.encode(initialPassword));
+
                 // 添加到有效列表
                 validTeacherList.add(teacherUser);
+                pendingInitialPasswords.put(teacherUser.getTeacherUserId(), initialPassword);
                 existingTeacherMap.put(teacherUser.getTeacherUserId(), teacherUser); // 防止同一文件内重复
                 
             } catch (Exception e) {
@@ -396,11 +433,22 @@ public class TeacherUserServiceImpl implements TeacherUserService {
                 List<TeacherUser> batchList = validTeacherList.subList(start, end);
                 
                 int batchResult = teacherUserMapper.batchInsert(batchList);
+                if (batchResult != batchList.size()) {
+                    throw new BusinessException("教师导入未全部写入，请重试");
+                }
                 successCount += batchResult;
+                for (TeacherUser insertedTeacher : batchList) {
+                    initialCredentials.add(Map.of("username", insertedTeacher.getUsername(),
+                            "password", pendingInitialPasswords.get(insertedTeacher.getTeacherUserId())));
+                }
 
                 // 为导入的辅导员初始化默认评分规则 + AI 开启
-                for (TeacherUser tu : batchList) {
-                    if ("COUNSELOR".equals(tu.getTeacherType())) {
+                  for (TeacherUser tu : batchList) {
+                      TeacherUser saved = tu.getId() == null ? teacherUserMapper.findByTeacherUserId(tu.getTeacherUserId()) : tu;
+                      if (saved == null || saved.getId() == null) throw new BusinessException("导入教师信息未能保存，请重试。");
+                      automationTemplates.initialize(saved);
+                      tu.setId(saved.getId());
+                      if ("COUNSELOR".equals(tu.getTeacherType())) {
                         initDefaultScoringRules(tu.getId());
                         if (counselorAISettingsMapper.findByCounselorId(tu.getId()) == null) {
                             com.internship.entity.CounselorAISettings aiSettings = new com.internship.entity.CounselorAISettings();
@@ -424,65 +472,109 @@ public class TeacherUserServiceImpl implements TeacherUserService {
         result.put("successCount", successCount);
         result.put("failCount", failCount);
         result.put("failList", failList);
+        result.put("initialCredentials", initialCredentials);
         
         return result;
     }
     
     // 将Excel行数据转换为TeacherUser对象
+    // 表头兼容：新模板（工号/姓名/院系/教师类型）与旧模板（院系 ID/身份/手机号/邮箱）均可导入
     private TeacherUser convertToTeacherUser(Map<String, Object> rowData) {
         log.debug("处理Excel行数据: {}", rowData);
         TeacherUser teacherUser = new TeacherUser();
-        
+
         String teacherUserId = getStringValue(rowData, "工号");
         String name = getStringValue(rowData, "姓名");
-        String genderStr = getStringValue(rowData, "性别");
-        String teacherTypeStr = getStringValue(rowData, "身份");
-        String departmentName = getStringValue(rowData, "院系");
+        String teacherTypeStr = firstNonBlank(
+                getStringValue(rowData, "教师类型"),
+                getStringValue(rowData, "身份"));
+        String departmentValue = firstNonBlank(
+                getStringValue(rowData, "学院"),
+                getStringValue(rowData, "院系"),
+                getStringValue(rowData, "院系 ID"));
+        String divisionValue = firstNonBlank(
+                getStringValue(rowData, "系"),
+                getStringValue(rowData, "系室"),
+                getStringValue(rowData, "系室 ID"));
         String phone = getStringValue(rowData, "手机号");
         String email = getStringValue(rowData, "邮箱");
 
         teacherUser.setUsername(teacherUserId);
         teacherUser.setTeacherUserId(teacherUserId);
         teacherUser.setName(name);
-        teacherUser.setPassword(passwordEncoder.encode("123456"));
         teacherUser.setCreateTime(new Date());
         teacherUser.setUpdateTime(new Date());
         teacherUser.setPhone(phone);
         teacherUser.setEmail(email);
-        
-        if (StringUtils.isNotBlank(genderStr)) {
-            if ("男".equals(genderStr)) {
-                teacherUser.setGender(1);
-            } else if ("女".equals(genderStr)) {
-                teacherUser.setGender(2);
-            }
+
+        if (StringUtils.isBlank(teacherTypeStr)) {
+            throw new BusinessException("教师类型不能为空");
         }
-        
-        if (StringUtils.isNotBlank(teacherTypeStr)) {
-            switch (teacherTypeStr) {
-                case "学院教师":
-                    teacherUser.setTeacherType("COLLEGE");
-                    break;
-                case "系室教师":
-                    teacherUser.setTeacherType("DEPARTMENT");
-                    break;
-                case "辅导员":
-                    teacherUser.setTeacherType("COUNSELOR");
-                    break;
-                default:
-                    teacherUser.setTeacherType(teacherTypeStr);
-            }
+        String normalizedType = teacherTypeStr.trim();
+        switch (normalizedType) {
+            case "学院教师":
+            case "COLLEGE":
+                teacherUser.setTeacherType("COLLEGE");
+                break;
+            case "系室教师":
+            case "DEPARTMENT":
+                teacherUser.setTeacherType("DEPARTMENT");
+                break;
+            case "辅导员":
+            case "COUNSELOR":
+                teacherUser.setTeacherType("COUNSELOR");
+                break;
+            default:
+                throw new BusinessException("教师类型填写不正确，应为学院教师/系室教师/辅导员");
         }
-        
-        if (StringUtils.isNotBlank(departmentName)) {
-            List<Department> departments = departmentService.findByName(departmentName);
+
+        if (StringUtils.isBlank(departmentValue)) {
+            throw new BusinessException("院系不能为空");
+        }
+        String deptText = departmentValue.trim();
+        if (deptText.matches("^\\d+$")) {
+            // 兼容旧模板填写的数字院系 ID
+            teacherUser.setDepartmentId(deptText);
+        } else {
+            List<Department> departments = departmentService.findByName(deptText);
             if (departments == null || departments.isEmpty()) {
-                throw new BusinessException("院系名称不存在: " + departmentName);
+                throw new BusinessException("院系名称不存在: " + deptText);
             }
             teacherUser.setDepartmentId(String.valueOf(departments.get(0).getId()));
         }
-        
+
+        if ("DEPARTMENT".equals(teacherUser.getTeacherType())) {
+            if (StringUtils.isBlank(divisionValue)) {
+                throw new BusinessException("系室教师必须填写所属系");
+            }
+            String divisionText = divisionValue.trim();
+            if (divisionText.matches("^\\d+$")) {
+                teacherUser.setDivisionId(divisionText);
+            } else {
+                List<Division> divisions = divisionService.findByDepartmentId(Long.parseLong(teacherUser.getDepartmentId()));
+                Division division = divisions == null ? null : divisions.stream()
+                        .filter(item -> divisionText.equals(item.getName())).findFirst().orElse(null);
+                if (division == null) {
+                    throw new BusinessException("所属学院内不存在该系: " + divisionText);
+                }
+                teacherUser.setDivisionId(String.valueOf(division.getId()));
+            }
+        }
+
         return teacherUser;
+    }
+
+    // 取多个候选值中第一个非空字符串，用于兼容新旧导入模板的不同表头
+    private String firstNonBlank(String... values) {
+        if (values == null) {
+            return "";
+        }
+        for (String value : values) {
+            if (StringUtils.isNotBlank(value)) {
+                return value;
+            }
+        }
+        return "";
     }
     
     // 验证教师注册信息
@@ -498,6 +590,42 @@ public class TeacherUserServiceImpl implements TeacherUserService {
         if (StringUtils.isBlank(teacherUser.getDepartmentId())) {
             throw new BusinessException("院系不能为空");
         }
+        roleForTeacherType(teacherUser.getTeacherType());
+        if ("DEPARTMENT".equals(teacherUser.getTeacherType())) {
+            validateDepartmentDivision(teacherUser.getDepartmentId(), teacherUser.getDivisionId());
+        }
+    }
+
+    private void validateDepartmentDivision(String departmentId, String divisionIdValue) {
+        if (StringUtils.isBlank(departmentId) || StringUtils.isBlank(divisionIdValue)) {
+            throw new BusinessException("系室教师必须填写所属学院和系");
+        }
+        Long divisionId;
+        try {
+            divisionId = Long.parseLong(divisionIdValue);
+        } catch (NumberFormatException e) {
+            throw new BusinessException("所属系 ID 无效");
+        }
+        if (divisionId <= 0) {
+            throw new BusinessException("所属系 ID 无效");
+        }
+        Division division = divisionService.findById(divisionId);
+        if (division == null || division.getDepartmentId() == null
+                || !departmentId.equals(String.valueOf(division.getDepartmentId()))) {
+            throw new BusinessException("所属系与学院不匹配");
+        }
+    }
+
+    private String roleForTeacherType(String teacherType) {
+        if (teacherType == null) {
+            throw new BusinessException("教师类型必须为学院教师、系室教师或辅导员");
+        }
+        return switch (teacherType) {
+            case "COLLEGE" -> "ROLE_TEACHER_COLLEGE";
+            case "DEPARTMENT" -> "ROLE_TEACHER_DEPARTMENT";
+            case "COUNSELOR" -> "ROLE_TEACHER_COUNSELOR";
+            default -> throw new BusinessException("教师类型必须为学院教师、系室教师或辅导员");
+        };
     }
     
     // 获取字符串值，如果为null则返回空字符串

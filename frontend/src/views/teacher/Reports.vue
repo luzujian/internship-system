@@ -9,7 +9,42 @@
 
     <!-- 趋势图表 -->
     <div class="charts-section">
-      <div class="chart-container card fade-in" style="animation-delay: 0.5s">
+      <!-- 核心数据卡片 -->
+      <div class="core-metrics card fade-in" style="animation-delay: 0.5s">
+        <h3>核心指标</h3>
+        <div class="metrics-grid">
+          <div class="metric-card">
+            <div class="metric-icon primary">🏢</div>
+            <div class="metric-content">
+              <h4>企业入驻数量</h4>
+              <p class="metric-value">{{ metrics.companyCount }}</p>
+            </div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-icon success">👥</div>
+            <div class="metric-content">
+              <h4>学生实习率</h4>
+              <p class="metric-value">{{ metrics.internshipRate }}%</p>
+            </div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-icon info">💼</div>
+            <div class="metric-content">
+              <h4>剩余岗位数量</h4>
+              <p class="metric-value">{{ metrics.remainingPositionCount }}</p>
+            </div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-icon warning">🔍</div>
+            <div class="metric-content">
+              <h4>尚无 Offer 学生数量</h4>
+              <p class="metric-value">{{ metrics.unplacedStudentCount }}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="chart-container card fade-in" style="animation-delay: 0.6s">
         <h3>企业入驻趋势 <span class="chart-subtitle">(2026年季度)</span></h3>
         <div class="trend-chart">
           <div class="chart-y-axis">
@@ -29,39 +64,11 @@
           </div>
         </div>
       </div>
-      
-      <!-- 核心数据卡片 -->
-      <div class="core-metrics card fade-in" style="animation-delay: 0.6s">
-        <h3>核心指标</h3>
-        <div class="metrics-grid">
-          <div class="metric-card">
-            <div class="metric-icon primary">🏢</div>
-            <div class="metric-content">
-              <h4>企业入驻数量</h4>
-              <p class="metric-value">{{ metrics.companyCount }}</p>
-            </div>
-          </div>
-          <div class="metric-card">
-            <div class="metric-icon success">👥</div>
-            <div class="metric-content">
-              <h4>学生实习率</h4>
-              <p class="metric-value">{{ metrics.internshipRate }}%</p>
-            </div>
-          </div>
-          <div class="metric-card">
-            <div class="metric-icon info">📊</div>
-            <div class="metric-content">
-              <h4>申请审核数量</h4>
-              <p class="metric-value">{{ metrics.approvalCount }}</p>
-            </div>
-          </div>
-        </div>
-      </div>
     </div>
 
-    <!-- 详细数据表格 -->
+    <!-- 实习详细数据表格 -->
     <div class="details-section card fade-in" style="animation-delay: 0.7s">
-      <h3>详细数据</h3>
+      <h3>实习详细数据</h3>
 
       <div class="details-tabs-header">
         <div class="details-tabs">
@@ -93,7 +100,7 @@
         </div>
       </div>
 
-      <!-- 企业入驻详情 -->
+      <!-- 企业招聘详情 -->
       <div v-if="activeDetailTab === 'companies'" class="details-table-wrapper">
         <div class="details-table">
           <table>
@@ -147,7 +154,6 @@
           <table>
             <thead>
               <tr>
-                <th>学院</th>
                 <th>专业</th>
                 <th>学生总数</th>
                 <th>已实习人数</th>
@@ -156,7 +162,6 @@
             </thead>
             <tbody>
               <tr v-for="dept in paginatedStudents" :key="dept.id" class="fade-in">
-                <td>{{ dept.college }}</td>
                 <td>{{ dept.major }}</td>
                 <td>{{ dept.totalCount }}</td>
                 <td>{{ dept.internshipCount }}</td>
@@ -194,8 +199,6 @@
                 <th>申请类型</th>
                 <th>申请数量</th>
                 <th>通过数量</th>
-                <th>驳回数量</th>
-                <th>通过率</th>
               </tr>
             </thead>
             <tbody>
@@ -203,8 +206,6 @@
                 <td>{{ approval.type }}</td>
                 <td>{{ approval.totalCount }}</td>
                 <td>{{ approval.approvedCount }}</td>
-                <td>{{ approval.rejectedCount }}</td>
-                <td>{{ approval.approvalRate }}%</td>
               </tr>
             </tbody>
           </table>
@@ -236,7 +237,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { reportsApi, type CoreMetrics, type CompanyTrend, type CompanyDetail, type StudentInternshipDetail, type ApprovalDetail } from '../../api/teacherReports'
-import { getInternshipNodes } from '../../api/teacherSettings'
+import { getInternshipCalendar } from '../../api/teacherSettings'
 
 const route = useRoute()
 
@@ -248,7 +249,7 @@ const hasLoadedSettings = ref(false)
 // 详细数据标签页
 const activeDetailTab = ref('companies')
 const detailTabs = ref([
-  { key: 'companies', name: '企业入驻详情' },
+  { key: 'companies', name: '企业招聘详情' },
   { key: 'students', name: '学生实习详情' },
   { key: 'approvals', name: '申请审核详情' }
 ])
@@ -291,7 +292,9 @@ const metrics = ref<CoreMetrics>({
   approvalCount: 0,
   approvalCountChange: 0,
   resourceDownloads: 0,
-  resourceDownloadsChange: 0
+  resourceDownloadsChange: 0,
+  remainingPositionCount: 0,
+  unplacedStudentCount: 0
 })
 
 // 企业入驻趋势数据
@@ -302,7 +305,7 @@ const companyTrend = ref<CompanyTrend[]>([
   { label: '第四季度', value: 0 }
 ])
 
-// 企业入驻详情数据
+// 企业招聘详情数据
 const companiesData = ref<CompanyDetail[]>([])
 
 // 学生实习详情数据
@@ -311,13 +314,25 @@ const studentsData = ref<StudentInternshipDetail[]>([])
 // 申请审核详情数据
 const approvalsData = ref<ApprovalDetail[]>([])
 
+// request 拦截器已解包但 reportsApi 又包了一层 {code,message,data}，此处兼容直包与嵌套包两种形态
+const unwrapReportData = <T,>(response: unknown): T | undefined => {
+  if (response === null || typeof response !== 'object') return undefined
+  const outer = response as { data?: unknown }
+  const outerData: unknown = outer.data
+  if (outerData !== null && typeof outerData === 'object' && 'data' in (outerData as Record<string, unknown>)) {
+    return (outerData as { data?: T }).data
+  }
+  return outerData as T | undefined
+}
+
 // 加载核心指标数据
 const loadCoreMetrics = async () => {
   loading.value.metrics = true
   try {
     const response = await reportsApi.getCoreMetrics({ startDate: startDate.value, endDate: endDate.value })
-    if (response.data) {
-      metrics.value = response.data
+    const metricsData = unwrapReportData<CoreMetrics>(response)
+    if (metricsData) {
+      metrics.value = metricsData
     }
   } catch (error) {
   } finally {
@@ -330,8 +345,9 @@ const loadCompanyTrend = async () => {
   loading.value.companyTrend = true
   try {
     const response = await reportsApi.getCompanyTrend({ year: new Date().getFullYear() })
-    if (response.data) {
-      companyTrend.value = response.data
+    const trendData = unwrapReportData<CompanyTrend[]>(response)
+    if (trendData) {
+      companyTrend.value = trendData
     }
   } catch (error) {
   } finally {
@@ -339,7 +355,7 @@ const loadCompanyTrend = async () => {
   }
 }
 
-// 加载企业入驻详情数据
+// 加载企业招聘详情数据
 const loadCompanyDetails = async () => {
   loading.value.companies = true
   try {
@@ -347,8 +363,9 @@ const loadCompanyDetails = async () => {
       page: currentPages.value.companies, 
       pageSize: pageSize.value 
     })
-    if (response.data) {
-      companiesData.value = response.data
+    const companiesRows = unwrapReportData<CompanyDetail[]>(response)
+    if (companiesRows) {
+      companiesData.value = companiesRows
     }
   } catch (error) {
   } finally {
@@ -356,12 +373,13 @@ const loadCompanyDetails = async () => {
   }
 }
 
-// 加载企业入驻详情总数
+// 加载企业招聘详情总数
 const loadCompanyDetailsCount = async () => {
   try {
     const response = await reportsApi.getCompanyDetailsCount()
-    if (response.data !== undefined) {
-      totalCounts.value.companies = response.data
+    const companiesCount = unwrapReportData<number>(response)
+    if (companiesCount !== undefined) {
+      totalCounts.value.companies = companiesCount
     }
   } catch (error) {
   }
@@ -375,8 +393,9 @@ const loadStudentInternshipDetails = async () => {
       page: currentPages.value.students, 
       pageSize: pageSize.value 
     })
-    if (response.data) {
-      studentsData.value = response.data
+    const studentRows = unwrapReportData<StudentInternshipDetail[]>(response)
+    if (studentRows) {
+      studentsData.value = studentRows
     }
   } catch (error) {
   } finally {
@@ -388,8 +407,9 @@ const loadStudentInternshipDetails = async () => {
 const loadStudentInternshipDetailsCount = async () => {
   try {
     const response = await reportsApi.getStudentInternshipDetailsCount()
-    if (response.data !== undefined) {
-      totalCounts.value.students = response.data
+    const studentsCount = unwrapReportData<number>(response)
+    if (studentsCount !== undefined) {
+      totalCounts.value.students = studentsCount
     }
   } catch (error) {
   }
@@ -403,8 +423,9 @@ const loadApprovalDetails = async () => {
       page: currentPages.value.approvals, 
       pageSize: pageSize.value 
     })
-    if (response.data) {
-      approvalsData.value = response.data
+    const approvalRows = unwrapReportData<ApprovalDetail[]>(response)
+    if (approvalRows) {
+      approvalsData.value = approvalRows
     }
   } catch (error) {
   } finally {
@@ -416,8 +437,9 @@ const loadApprovalDetails = async () => {
 const loadApprovalDetailsCount = async () => {
   try {
     const response = await reportsApi.getApprovalDetailsCount()
-    if (response.data !== undefined) {
-      totalCounts.value.approvals = response.data
+    const approvalsCount = unwrapReportData<number>(response)
+    if (approvalsCount !== undefined) {
+      totalCounts.value.approvals = approvalsCount
     }
   } catch (error) {
   }
@@ -449,7 +471,7 @@ onMounted(async () => {
 const loadInternshipTimeSettings = async () => {
   if (hasLoadedSettings.value) return
   try {
-    const response = await getInternshipNodes()
+    const response = await getInternshipCalendar()
     if (response.data) {
       const data = response.data as any
       if (data.startDate) {
@@ -462,17 +484,20 @@ const loadInternshipTimeSettings = async () => {
     }
   } catch (error) {
     console.error('加载实习时间设置失败:', error)
+    const currentYear = new Date().getFullYear()
     if (!startDate.value) {
-      startDate.value = '2026-01-01'
+      startDate.value = `${currentYear}-01-01`
     }
     if (!endDate.value) {
-      endDate.value = '2026-12-31'
+      endDate.value = `${currentYear}-12-31`
     }
   }
 }
 
 // 监听路由变化，当从首页跳转过来时自动加载数据
-watch(() => route.state?.fromHome, (fromHome) => {
+// vue-router 4 的 RouteLocationNormalized 无 state 字段，history state 经 router.push state 透传；
+// 保持原运行时访问语义，用精确断言收敛类型
+watch(() => (route as unknown as { state?: { fromHome?: boolean } }).state?.fromHome, (fromHome) => {
   if (fromHome) {
     loadAllData()
   }
@@ -610,7 +635,7 @@ const exportReport = async () => {
       timeRange: 'custom',
       startDate: startDate.value,
       endDate: endDate.value
-    })
+    }) as unknown as Blob
     const blob = new Blob([response], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
     downloadBlob(blob, `综合统计报表_${new Date().toLocaleDateString()}.xlsx`)
     alert('综合统计报表已成功导出')
@@ -623,7 +648,7 @@ const exportReport = async () => {
 // 导出企业入驻报表
 const exportCompanyReport = async () => {
   try {
-    const response = await reportsApi.exportCompanyReport()
+    const response = await reportsApi.exportCompanyReport() as unknown as Blob
     const blob = new Blob([response], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
     downloadBlob(blob, `企业入驻报表_${new Date().toLocaleDateString()}.xlsx`)
     alert('企业入驻报表已成功导出')
@@ -636,7 +661,7 @@ const exportCompanyReport = async () => {
 // 导出学生实习报表
 const exportStudentReport = async () => {
   try {
-    const response = await reportsApi.exportStudentReport()
+    const response = await reportsApi.exportStudentReport() as unknown as Blob
     const blob = new Blob([response], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
     downloadBlob(blob, `学生实习报表_${new Date().toLocaleDateString()}.xlsx`)
     alert('学生实习报表已成功导出')
@@ -649,7 +674,7 @@ const exportStudentReport = async () => {
 // 导出申请审核报表
 const exportApprovalReport = async () => {
   try {
-    const response = await reportsApi.exportApprovalReport()
+    const response = await reportsApi.exportApprovalReport() as unknown as Blob
     const blob = new Blob([response], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
     downloadBlob(blob, `申请审核报表_${new Date().toLocaleDateString()}.xlsx`)
     alert('申请审核报表已成功导出')
@@ -662,6 +687,8 @@ const exportApprovalReport = async () => {
 // 获取标签样式类
 const getTagClass = (tag: string) => {
   switch (tag) {
+    case '基地':
+      return 'tag-primary'
     case '自主':
       return 'tag-success'
     case '双向':
@@ -960,7 +987,7 @@ const getTagClass = (tag: string) => {
 .trend-chart {
   display: flex;
   flex-wrap: wrap;
-  height: 240px;
+  height: 340px;
   position: relative;
   margin-bottom: 28px;
 }
@@ -1358,6 +1385,11 @@ const getTagClass = (tag: string) => {
 
 .tag-default {
   background: var(--color-primary);
+  color: white;
+}
+
+.tag-primary {
+  background: #52c41a;
   color: white;
 }
 

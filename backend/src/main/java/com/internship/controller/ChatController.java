@@ -176,6 +176,7 @@ public class ChatController {
      * 从群聊移除成员
      */
     @DeleteMapping("/{chatId}/members")
+    @Log(operationType = "DELETE", module = "CHAT_MANAGEMENT", description = "移除聊天成员", riskLevel = "MEDIUM")
     public Result removeMemberFromChat(
             @PathVariable Long chatId,
             @RequestParam Long memberId,
@@ -188,6 +189,7 @@ public class ChatController {
      * 退出群聊
      */
     @PostMapping("/{chatId}/exit")
+    @Log(operationType = "UPDATE", module = "CHAT_MANAGEMENT", description = "退出聊天", riskLevel = "LOW")
     public Result exitChat(@PathVariable Long chatId, @RequestBody Map<String, Object> params) {
         // 安全转换userId为Long类型
         Object userIdObj = params.get("userId");

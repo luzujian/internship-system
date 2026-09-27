@@ -4,10 +4,10 @@ import com.internship.entity.Announcement;
 import com.internship.entity.AnnouncementReadRecord;
 import com.internship.entity.ClassCounselorRelation;
 import com.internship.entity.Division;
-import com.internship.entity.InternshipTimeSettings;
 import com.internship.entity.TeacherUser;
 import com.internship.entity.dto.AnnouncementWithReadStatusDTO;
 import com.internship.entity.dto.HomeStatsDTO;
+import com.internship.entity.dto.InternshipCalendar;
 import com.internship.entity.dto.InternshipStatusDTO;
 import com.internship.mapper.AnnouncementMapper;
 import com.internship.mapper.AnnouncementReadRecordMapper;
@@ -21,7 +21,7 @@ import com.internship.mapper.StudentInternshipStatusMapper;
 import com.internship.mapper.TeacherUserMapper;
 import com.internship.service.CompanyUserService;
 import com.internship.service.HomeService;
-import com.internship.service.InternshipTimeSettingsService;
+import com.internship.service.InternshipCalendarService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -69,7 +69,7 @@ public class HomeServiceImpl implements HomeService {
     private DepartmentMapper departmentMapper;
 
     @Autowired
-    private InternshipTimeSettingsService internshipTimeSettingsService;
+    private InternshipCalendarService internshipCalendarService;
 
     @Autowired
     private InternshipReflectionMapper internshipReflectionMapper;
@@ -84,17 +84,17 @@ public class HomeServiceImpl implements HomeService {
         HomeStatsDTO homeStats = new HomeStatsDTO();
 
         try {
-            // 如果外部没有传入时间范围，则从配置中获取
+            // 如果外部没有传入时间范围，则使用全局教学日历作为统计范围。
             if (startDate == null || endDate == null) {
-                InternshipTimeSettings timeSettings = internshipTimeSettingsService.findLatest();
-                if (timeSettings != null) {
+                InternshipCalendar calendar = internshipCalendarService.getCalendar();
+                if (calendar != null) {
                     if (startDate == null) {
-                        startDate = timeSettings.getApplicationStartDate();
+                        startDate = calendar.getStartDate();
                     }
                     if (endDate == null) {
-                        endDate = timeSettings.getApplicationEndDate();
+                        endDate = calendar.getEndDate();
                     }
-                    log.info("当前学期时间范围（应聘开始~应聘结束）: {} ~ {}", startDate, endDate);
+                    log.info("全局教学日历统计范围: {} ~ {}", startDate, endDate);
                 }
             } else {
                 log.info("使用外部传入时间范围: {} ~ {}", startDate, endDate);

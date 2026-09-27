@@ -1,91 +1,118 @@
 package com.internship.service.impl;
 
 import com.internship.entity.LearningResource;
+import com.internship.mapper.LearningResourceMapper;
+import com.internship.mapper.ResourceCategoryMapper;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
+import java.util.Map;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
-/**
- * ResourceServiceImpl 集成测试类
- * 验证 AI 搜索功能与 Spring AI 向量嵌入集成是否正常工作
- */
-@SpringBootTest
-public class ResourceServiceImplTest {
+@ExtendWith(MockitoExtension.class)
+class ResourceServiceImplTest {
+    @Mock
+    private LearningResourceMapper learningResourceMapper;
 
-    private static final Logger log = LoggerFactory.getLogger(ResourceServiceImplTest.class);
+    @Mock
+    private ResourceCategoryMapper resourceCategoryMapper;
 
-    @Autowired
-    private ResourceServiceImpl resourceService;
+    private ResourceServiceImpl service;
 
-    @Test
-    public void testSemanticSearch() {
-        // 测试语义搜索功能
-        String query = "Java Spring Boot 学习资源";
-
-        List<LearningResource> resources = resourceService.semanticSearch(query);
-        log.info("语义搜索结果数量：{}", resources.size());
-
-        // 验证结果不为空（假设数据库中有数据）
-        // 注意：由于我们不能生成模拟数据，这里只做基本验证
-        assertNotNull(resources, "搜索结果列表不应为空");
-
-        // 记录结果详情以便分析
-        for (int i = 0; i < Math.min(5, resources.size()); i++) {
-            LearningResource resource = resources.get(i);
-            log.info("搜索结果 [{}]: 标题={}, 描述={}, 嵌入向量={}",
-                    i+1, resource.getTitle(), resource.getDescription(), resource.getEmbeddingVector());
-        }
+    @BeforeEach
+    void setUp() {
+        service = new ResourceServiceImpl(learningResourceMapper, resourceCategoryMapper);
     }
 
     @Test
-    public void testAiSmartSearch() {
-        // 测试 AI 智能搜索功能
-        String query = "数据库优化技术";
-        String fileType = null; // 不指定文件类型
-        int page = 0;
-        int pageSize = 5;
+    void semanticSearchReturnsMapperResources() {
+        when(learningResourceMapper.findSimilarResources(any()))
+                .thenReturn(List.of(resource(1L, "Java Spring Boot")));
 
-        List<LearningResource> resources = (List<LearningResource>) resourceService.aiSmartSearch(query, fileType, page, pageSize);
-        log.info("AI 智能搜索结果数量：{}", resources != null ? resources.size() : 0);
+        List<LearningResource> resources = service.semanticSearch("Java Spring Boot");
 
-        assertNotNull(resources, "AI 智能搜索结果列表不应为空");
-
-        // 记录部分结果详情
-        for (int i = 0; i < Math.min(3, resources.size()); i++) {
-            LearningResource resource = resources.get(i);
-            log.info("AI 搜索结果 [{}]: 标题={}, 嵌入向量={}",
-                    i+1, resource.getTitle(), resource.getEmbeddingVector());
-        }
+        assertEquals(1, resources.size());
+        assertEquals("Java Spring Boot", resources.getFirst().getTitle());
     }
 
     @Test
-    public void testSearchWithFileTypeFilter() {
-        // 测试带文件类型过滤的搜索
-        String query = "编程";
-        String fileType = "PDF"; // 假设系统中有 PDF 类型文件
-        int page = 0;
-        int pageSize = 5;
+    void aiSmartSearchReturnsPagedMapContract() {
+        when(learningResourceMapper.findSimilarResourcesByType(any()))
+                .thenReturn(List.of(resource(2L, "数据库优化技术")));
+        when(learningResourceMapper.countSimilarResourcesByType(any())).thenReturn(1L);
 
-        List<LearningResource> resources = (List<LearningResource>) resourceService.aiSmartSearch(query, fileType, page, pageSize);
-        log.info("带文件类型过滤的搜索结果数量：{}", resources.size());
+        Object result = service.aiSmartSearch("数据库优化技术", null, 0, 5);
 
-        assertNotNull(resources, "带过滤条件的搜索结果不应为空");
+        Map<?, ?> pagedResult = assertMap(result);
+        assertEquals(1, ((Number) pagedResult.get("total")).intValue());
+        List<?> list = assertList(pagedResult.get("list"));
+        assertEquals(1, list.size());
+        assertEquals("数据库优化技术", ((Map<?, ?>) list.getFirst()).get("title"));
     }
 
     @Test
-    public void testEmptyQueryHandling() {
-        // 测试空查询处理
-        String query = "";
+    void aiSmartSearchIgnoresFileTypeForCurrentSearchContract() {
+        when(learningResourceMapper.findSimilarResourcesByType(any())).thenReturn(List.of());
+        when(learningResourceMapper.countSimilarResourcesByType(any())).thenReturn(0L);
 
-        List<LearningResource> resources = resourceService.semanticSearch(query);
-        log.info("空查询搜索结果数量：{}", resources.size());
+        Map<?, ?> result = assertMap(service.aiSmartSearch("编程", "PDF", 1, 5));
 
-        assertNotNull(resources, "空查询应返回结果列表");
+        assertEquals(0, ((Number) result.get("total")).intValue());
+        assertTrue(assertList(result.get("list")).isEmpty());
+        verify(learningResourceMapper).findSimilarResourcesByType(any());
+    }
+
+    @Test
+    void emptyQueryReturnsPublishedResourcesWithPagedMapContract() {
+        when(learningResourceMapper.selectByStatus("APPROVED"))
+                .thenReturn(List.of(resource(3L, "空查询资源")));
+
+        Map<?, ?> result = assertMap(service.aiSmartSearch("", null, 2, 10));
+
+        assertEquals(1, ((Number) result.get("total")).intValue());
+        assertTrue(assertList(result.get("list")).isEmpty());
+    }
+
+    @Test
+    void publishedResourcesUseTheStatusAllowedByTheLearningResourcesTable() {
+        when(learningResourceMapper.selectByStatus("APPROVED"))
+                .thenReturn(List.of(resource(4L, "已审核资源")));
+
+        Map<?, ?> result = assertMap(service.getPublishedResources(1, 10));
+
+        assertEquals(1, ((Number) result.get("total")).intValue());
+        verify(learningResourceMapper).selectByStatus("APPROVED");
+    }
+
+    private LearningResource resource(Long id, String title) {
+        LearningResource resource = new LearningResource();
+        resource.setId(id);
+        resource.setTitle(title);
+        resource.setDescription("测试资源");
+        resource.setFileUrl("/api/uploads/test.pdf");
+        resource.setFileType("application/pdf");
+        return resource;
+    }
+
+    private Map<?, ?> assertMap(Object result) {
+        assertNotNull(result);
+        assertTrue(result instanceof Map, "搜索结果应为 Map");
+        return (Map<?, ?>) result;
+    }
+
+    private List<?> assertList(Object result) {
+        assertNotNull(result);
+        assertTrue(result instanceof List, "搜索结果 list 应为 List");
+        return (List<?>) result;
     }
 }

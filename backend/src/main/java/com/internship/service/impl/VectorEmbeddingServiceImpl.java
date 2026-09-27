@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.regex.Pattern;
 import java.util.Random;
 
@@ -25,14 +26,6 @@ public class VectorEmbeddingServiceImpl implements VectorEmbeddingService {
     // 向量格式验证正则表达式
     private static final Pattern EMBEDDING_PATTERN = Pattern.compile("\\[([-\\d.]+,\\s*)*[-\\d.]+\\]");
     
-    // 用于生成伪随机嵌入向量的Random对象
-    private final Random random;
-    
-    public VectorEmbeddingServiceImpl() {
-        // 使用文本的哈希码作为随机数种子，确保相同文本生成相同的向量
-        this.random = new Random();
-    }
-    
     @Override
     public String generateEmbedding(String text) {
         try {
@@ -41,21 +34,20 @@ public class VectorEmbeddingServiceImpl implements VectorEmbeddingService {
                 return "[]";
             }
             
-            // 本地实现：基于文本内容生成伪嵌入向量
-            // 使用文本的哈希码作为种子，确保相同文本生成相同的向量
+            // 本地实现：基于文本内容生成伪嵌入向量；同一段文本结果保持稳定。
             long seed = text.hashCode();
-            random.setSeed(seed);
+            Random random = new Random(seed);
             
-            List<Double> embedding = new ArrayList<>(DEFAULT_EMBEDDING_DIMENSION);
+            List<String> embedding = new ArrayList<>(DEFAULT_EMBEDDING_DIMENSION);
             for (int i = 0; i < DEFAULT_EMBEDDING_DIMENSION; i++) {
                 // 生成范围在[-1.0, 1.0]之间的随机值
                 double value = (random.nextDouble() * 2) - 1;
-                // 保留6位小数
-                embedding.add(Math.round(value * 1000000.0) / 1000000.0);
+                // 固定保留 6 位小数，避免 Java 序列化为科学计数法。
+                embedding.add(String.format(Locale.ROOT, "%.6f", value));
             }
             
             // 将嵌入向量转换为JSON字符串
-            String embeddingJson = embedding.toString();
+            String embeddingJson = "[" + String.join(",", embedding) + "]";
             log.info("成功生成文本嵌入向量（本地实现），文本长度: {}, 向量维度: {}", 
                      text.length(), embedding.size());
             

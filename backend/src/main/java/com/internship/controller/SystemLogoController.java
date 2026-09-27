@@ -10,6 +10,12 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.io.ByteArrayInputStream;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.Locale;
+import java.util.UUID;
+import javax.imageio.ImageIO;
 
 @Slf4j
 @RestController
@@ -43,7 +49,15 @@ public class SystemLogoController {
                 return Result.error("Logo大小不能超过2MB");
             }
             
-            String fileUrl = aliyunOSSOperator.upload(file.getBytes(), "logo/" + originalFilename);
+            byte[] content = file.getBytes();
+            if (ImageIO.read(new ByteArrayInputStream(content)) == null) {
+                return Result.error("图片内容格式不正确");
+            }
+            String extension = originalFilename.substring(originalFilename.lastIndexOf('.') + 1)
+                    .toLowerCase(Locale.ROOT);
+            String objectName = "system/logo/" + new SimpleDateFormat("yyyy/MM").format(new Date())
+                    + "/" + UUID.randomUUID() + "." + extension;
+            String fileUrl = aliyunOSSOperator.uploadPublicMediaWithObjectName(content, objectName);
             
             log.info("Logo上传成功: {}", fileUrl);
             return Result.success(fileUrl);

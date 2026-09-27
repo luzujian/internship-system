@@ -165,19 +165,50 @@ public class DivisionServiceImpl implements DivisionService {
             throw new RuntimeException("系不存在");
         }
 
-        // 级联删除：系 → 专业 → 班级
+        // ===== 先清理教师 teacher_users.division_id 外键绑定 =====
+        safeCleanupDivisionRelations(id);
+
+        // ===== 级联删除：系 → 专业 → 班级（单条失败不阻塞整体，打 WARN）=====
         log.info("开始删除系 {} 下的所有专业", id);
         List<Major> majors = majorService.findByDivisionId(id);
         if (majors != null && !majors.isEmpty()) {
             for (Major major : majors) {
-                log.info("删除专业: {}", major.getName());
-                majorService.delete(major.getId());
+                try {
+                    log.info("删除专业: {}", major.getName());
+                    majorService.delete(major.getId());
+                } catch (Exception e) {
+                    log.warn("删除系下的专业时跳过（majorId={}, name={}）: {}",
+                            major.getId(), major.getName(), trimErr(e));
+                }
             }
         }
-        log.info("成功删除系 {} 下的 {} 个专业", id, majors != null ? majors.size() : 0);
+        log.info("成功处理系 {} 下的 {} 个专业（含跳过失败项）", id, majors != null ? majors.size() : 0);
 
         int result = divisionMapper.delete(id);
         log.info("系删除成功，系ID: {}", id);
         return result;
+    }
+
+    /** 清理 division 直接外键引用：teacher_users.division_id 置 NULL，不删教师本人 */
+    private void safeCleanupDivisionRelations(Long divisionId) {
+        try {
+            divisionMapper.clearDivisionIdOnTeachers(divisionId);
+        } catch (Exception e) { log.warn("跳过清理 division→teacher_users.division_id: {}", trimErr(e)); }
+    }
+
+    /** 提取精简错误信息，避免超长 SQL 堆栈刷屏 */
+    private String trimErr(Throwable e) {
+        Throwable c = e;
+        String lastMsg = (e.getMessage() == null ? "" : e.getMessage().split(";")[0].trim());
+        int depth = 0;
+        while (c.getCause() != null && depth < 5) {
+            c = c.getCause();
+            if (c.getMessage() != null) {
+                String m = c.getMessage().split(";")[0].trim();
+                if (m.length() < 160) lastMsg = m;
+            }
+            depth++;
+        }
+        return lastMsg.length() > 160 ? lastMsg.substring(0, 160) : lastMsg;
     }
 }

@@ -5,6 +5,7 @@ import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Delete;
+import org.apache.ibatis.annotations.Update;
 
 import java.util.List;
 
@@ -14,6 +15,9 @@ public interface TeacherUserMapper {
     int insert(TeacherUser teacherUser);
     TeacherUser findById(Long id);
     int update(TeacherUser teacherUser);
+
+    @Update("update teacher_users set password = #{passwordHash}, update_time = CURRENT_TIMESTAMP")
+    int resetAllPasswords(@Param("passwordHash") String passwordHash);
     
     // 查询所有教师用户，配合PageHelper使用
     List<TeacherUser> findAll();
@@ -79,4 +83,6 @@ public interface TeacherUserMapper {
      * @return 教师用户列表
      */
     List<TeacherUser> findByTeacherType(@Param("teacherType") String teacherType);
+
+    List<TeacherUser> findActiveOptions(@Param("keyword") String keyword);
 }

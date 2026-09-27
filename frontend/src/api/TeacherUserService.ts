@@ -1,4 +1,5 @@
 import request from '@/utils/request'
+import type { ApiResult } from '@/utils/request'
 import cacheService, { CACHE_CONFIG } from './cacheService'
 import logger from '@/utils/logger'
 
@@ -11,6 +12,7 @@ export interface TeacherUser {
   departmentId?: number
   divisionId?: string
   phone?: string
+  email?: string
   teacherType?: number
   status?: number
   createTime?: string
@@ -31,7 +33,7 @@ export interface TeacherListResponse {
   data: {
     rows: TeacherUser[]
     total: number
-  }
+  } | null
   msg?: string
 }
 
@@ -39,7 +41,7 @@ const TeacherUserService = {
   // 获取教师用户列表（分页）
   getTeachers: async (currentPage: number, pageSize: number, searchParams: Record<string, unknown> = {}): Promise<TeacherListResponse> => {
     try {
-      const response = await request.get('/admin/teachers', {
+      const response: ApiResult<{ rows: TeacherUser[]; total: number }> = await request.get('/admin/teachers', {
         params: {
           page: currentPage,
           pageSize: pageSize,
@@ -56,7 +58,7 @@ const TeacherUserService = {
       const result = response
       return {
         code: result.code === 200 || result.code === undefined ? 200 : result.code,
-        data: result.data || result,
+        data: result.data ?? null,
         msg: result.msg || '查询成功'
       }
     } catch (error) {
@@ -120,7 +122,8 @@ const TeacherUserService = {
         departmentId: teacherData.departmentId,
         divisionId: teacherData.divisionId,
         teacherType: teacherData.teacherType,
-        phone: teacherData.phone
+        phone: teacherData.phone,
+        email: teacherData.email
         // 不包含密码字段，后端会保持原密码
         // 后端会自动设置 updateTime
       }
@@ -130,8 +133,9 @@ const TeacherUserService = {
       logger.log('更新教师响应:', response)
       logger.log('响应数据详情:', response.data)
       // 显示返回的 message 字段内容（如果存在）
-      if (response.data && response.data.message) {
-        logger.log('后端返回的消息:', response.data.message)
+      const payload = response.data as { message?: string } | null | undefined
+      if (payload && payload.message) {
+        logger.log('后端返回的消息:', payload.message)
       }
       // 更新成功后清除相关缓存
       cacheService.clear()
@@ -168,9 +172,9 @@ const TeacherUserService = {
   },
 
   // 重置教师用户密码
-  resetTeacherPassword: async (id: number, password: string) => {
+  resetTeacherPassword: async (id: number) => {
     try {
-      const response = await request.post(`/admin/teachers/${id}/reset-password`, { password })
+      const response = await request.post(`/admin/teachers/${id}/reset-password`, {})
       return response
     } catch (error) {
       logger.error('重置教师用户密码失败:', error)
@@ -401,20 +405,35 @@ export const deleteApi = async (id: number): Promise<{ code: number; msg: string
   }
 }
 
-export const resetPasswordApi = async (id: number): Promise<{ code: number; msg: string }> => {
+export const resetAllPasswordsApi = async (): Promise<{ code: number; msg: string; data?: unknown }> => {
   try {
-    const response = await TeacherUserService.resetTeacherPassword(id, '123456')
+    const response = await request.post('/admin/teachers/reset-password/all', {})
+    const result = response as { code?: number; msg?: string; data?: unknown }
+    return {
+      code: result.code === 200 ? 200 : 500,
+      msg: result.msg || (result.code === 200 ? '全部教师用户密码重置成功' : '全部教师用户密码重置失败'),
+      data: result.data
+    }
+  } catch (error) {
+    logger.error('一键重置全部教师用户密码失败:', error)
+    return { code: 500, msg: '一键重置全部教师用户密码失败' }
+  }
+}
+
+export const resetPasswordApi = async (id: number): Promise<{ code: number; msg: string; data?: string }> => {
+  try {
+    const response = await TeacherUserService.resetTeacherPassword(id)
     // 响应拦截器已返回 response.data，直接使用 response
     const result = response
     // 检查 result 是否直接包含 code 和 msg 字段（后端 Result 对象）
     if ((result as { code?: number }).code !== undefined) {
       return {
         code: (result as { code?: number }).code === 200 ? 200 : 500,
-        msg: (result as { code?: number }).code === 200 ? ((result as { msg?: string }).msg || '重置密码成功') : ((result as { msg?: string }).msg || '重置密码失败')
+        msg: (result as { code?: number }).code === 200 ? ((result as { msg?: string }).msg || '重置密码成功') : ((result as { msg?: string }).msg || '重置密码失败'),
+        data: typeof (result as { data?: unknown }).data === 'string' ? (result as { data: string }).data : undefined
       }
     }
-    // 如果 result 是直接的成功响应，返回默认成功结果
-    return { code: 200, msg: '重置密码成功' }
+    return { code: 500, msg: '重置密码响应无效' }
   } catch (error) {
     logger.error('重置教师密码失败:', error)
     return {

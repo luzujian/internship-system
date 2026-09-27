@@ -1,16 +1,18 @@
 package com.internship.auth.config;
 
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
+import org.junit.jupiter.api.BeforeEach;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-@SpringBootTest
 public class CustomPasswordEncoderTest {
 
-    @Autowired
     private CustomPasswordEncoder passwordEncoder;
+
+    @BeforeEach
+    void setUp() {
+        passwordEncoder = new CustomPasswordEncoder();
+    }
 
     @Test
     public void testEncode_PlainTextPassword_ShouldReturnBCryptHash() {
@@ -33,11 +35,17 @@ public class CustomPasswordEncoderTest {
     }
 
     @Test
-    public void testMatches_PlainTextPassword_ShouldReturnTrue() {
+    public void testMatches_PlainTextPassword_DefaultsToDisabled() {
         String rawPassword = "plainTextPassword";
         String plainEncodedPassword = "plainTextPassword";
-        assertTrue(passwordEncoder.matches(rawPassword, plainEncodedPassword),
-            "Plain text password should be compatible");
+        assertFalse(passwordEncoder.matches(rawPassword, plainEncodedPassword));
+    }
+
+    @Test
+    public void testMatches_PlainTextPassword_OnlyWhenMigrationExplicitlyEnabled() {
+        passwordEncoder.setAllowLegacyPlaintextPasswords(true);
+        assertTrue(passwordEncoder.matches("legacyPassword", "legacyPassword"));
+        assertFalse(passwordEncoder.matches("wrongPassword", "legacyPassword"));
     }
 
     @Test

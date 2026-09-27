@@ -9,6 +9,7 @@ import router from './router'
 import { registerDirectives } from './directives'
 import { registerIcons } from './utils/icon-config'
 import './style.css'
+import './styles/responsive.css'
 
 const app = createApp(App)
 

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import logger from '@/utils/logger'
-import { onMounted, ref, nextTick, toRaw } from 'vue'
+import { onMounted, onUnmounted, ref, nextTick, toRaw, watch } from 'vue'
 import { queryPageApi, addApi, queryInfoApi, updateApi, deleteApi, batchDeleteApi, importExcelApi, downloadClassTemplateApi } from '../../api/class'
 import ClassService from '../../api/class'
 import MajorService from '../../api/major'
@@ -13,7 +13,53 @@ import { Search, Refresh, Plus, Upload, Download, Edit, Delete, ArrowDown } from
 import { exportToExcel } from '../../utils/xlsx'
 import { readExcelFile as readExcelUtil } from '../../utils/xlsx'
 import { useAuthStore } from '../../store/auth'
+import { useFormContext } from '@/agent/formContext'
 import type { Class, PaginationState, SelectOption } from '@/types/admin'
+import type { FormFieldDescriptor } from '@/agent/types'
+// 专业选项行精确局部接口：含模板/脚本使用的 id/name 与后端别名，均可选
+interface MajorOptionRow {
+  id?: string | number
+  value?: string | number
+  name?: string
+  majorId?: string | number
+  majorName?: string
+  departmentId?: string | number
+  departmentName?: string
+  divisionId?: string | number
+  divisionName?: string
+  createTime?: string
+  updateTime?: string
+}
+// 辅导员行精确局部接口（后端形态）
+interface CounselorRow {
+  teacherUserId?: string | number
+  name?: string
+  teacherType?: string | number
+}
+// 班级分页行精确局部接口：覆盖后端驼峰/snake两种形态与脚本实际使用的全部字段，均可选
+interface ClassPageRow {
+  id?: string | number
+  name?: string
+  grade?: string | number
+  majorId?: string | number | null
+  major_id?: string | number | null
+  teacherId?: string | number | null
+  teacher_id?: string | number | null
+  description?: string
+  studentCount?: number
+  confirmedCount?: number
+  notFoundCount?: number
+  hasOfferCount?: number
+  teacherName?: string
+  majorName?: string
+  ext?: Record<string, unknown>
+  createTime?: string
+  createdTime?: string
+  create_time?: string
+  updateTime?: string
+  updatedTime?: string
+  update_time?: string
+}
 
 const authStore = useAuthStore()
 
@@ -45,6 +91,7 @@ interface AddClassForm {
 interface TeacherOption {
   teacherUserId: string
   name: string
+  teacherType?: string | number
 }
 
 interface ExcelDataItem {
@@ -65,8 +112,8 @@ interface ImportResult {
 const searchClass = ref<SearchClassForm>({ name: '', grade: '', majorId: null })
 //列表展示数据
 const tableData = ref<ClassWithCounts[]>([])
-//专业列表数据
-const majorList = ref<SelectOption[]>([])
+//专业列表数据（含后端别名字段，模板取 id/name）
+const majorList = ref<MajorOptionRow[]>([])
 //教师列表数据
 const teacherList = ref<TeacherOption[]>([])
 //加载状态
@@ -162,13 +209,14 @@ const getMajorList = async (): Promise<void> => {
     const response = await MajorService.getMajors()
     logger.log('专业列表响应:', response)
 
-    // 增强数据结构兼容性处理
+    // 增强数据结构兼容性处理（getMajors 的 data 为 unknown，运行时为数组）
     if (response && response.data) {
-      if (Array.isArray(response.data)) {
-        majorList.value = response.data
-      } else if (response.code === 200 && response.data) {
-        // 处理带 code 和 data 的响应格式
-        majorList.value = Array.isArray(response.data) ? response.data : []
+      const majorRaw: unknown = response.data
+      if (Array.isArray(majorRaw)) {
+        majorList.value = majorRaw as MajorOptionRow[]
+      } else if (response.code === 200) {
+        // 原 `Array.isArray(response.data) ? ... : []` 在此分支恒取 []，保持等价
+        majorList.value = []
       } else {
         majorList.value = []
       }
@@ -178,13 +226,17 @@ const getMajorList = async (): Promise<void> => {
 
     logger.log('最终的专业列表数据:', majorList.value)
 
-    // 确保数据格式正确，为每个专业对象添加 id 和 name 属性
+    // 确保数据格式正确，为每个专业对象添加 id 和 name 属性（保持原 `||` 回退语义）
     if (majorList.value.length > 0) {
       // 转换数据结构，确保每个对象都有 id 和 name 属性
-      majorList.value = majorList.value.map(major => ({
-        id: String(major.id || major.majorId || ''),
-        name: major.name || major.majorName || '未知专业'
-      }))
+      majorList.value = majorList.value.map(major => {
+        const rawId: unknown = major.id || major.majorId || ''
+        const rawName: unknown = major.name || major.majorName || '未知专业'
+        return {
+          id: typeof rawId === 'string' ? rawId : rawId == null ? '' : String(rawId),
+          name: typeof rawName === 'string' ? rawName : rawName == null ? '' : String(rawName)
+        }
+      })
     }
   } catch (error) {
     logger.error('获取专业列表失败:', error)
@@ -200,29 +252,27 @@ const getTeacherList = async (): Promise<void> => {
     const response = await TeacherUserService.getAllCounselors()
     logger.log('辅导员列表响应:', response)
 
-    let teachers: any[] = []
+    // 辅导员行收窄：getAllCounselors 返回 { code, data: { rows, total } }，仅此形态可达
+    let teachers: CounselorRow[] = []
 
     // 处理响应数据
     if (response && response.data) {
       if (Array.isArray(response.data)) {
-        teachers = response.data
+        teachers = response.data as CounselorRow[]
       } else if (response.data.rows && Array.isArray(response.data.rows)) {
         // 处理分页格式 { rows: [...], total: ... }
-        teachers = response.data.rows
-      } else if (response.rows && Array.isArray(response.rows)) {
-        // 处理其他分页格式
-        teachers = response.rows
+        teachers = response.data.rows as CounselorRow[]
       }
     }
 
     // 过滤无效数据并确保每个教师对象都有必要的属性
     // 后端已按辅导员类型过滤，这里再做一次双重保险
-    teacherList.value = teachers.filter((t: any) => {
+    teacherList.value = teachers.filter((t: CounselorRow) => {
       if (t === null || t === undefined) return false
       if (typeof t !== 'object') return false
       // 确保有必要的基本属性
       return t.teacherUserId !== undefined && t.name !== undefined
-    }).map((t: any) => ({
+    }).map((t: CounselorRow) => ({
       teacherUserId: String(t.teacherUserId || ''),
       name: String(t.name || ''),
       teacherType: t.teacherType || 'COUNSELOR'
@@ -277,17 +327,21 @@ const queryPage = async (): Promise<void> => {
     if(result.code) {
       logger.log('班级数据原始格式:', result.data.rows)
 
-      // 为每条班级数据添加专业名称和负责教师名称
-      tableData.value = result.data.rows.map((classItem: any) => {
+      // 为每条班级数据添加专业名称和负责教师名称（行用精确局部接口收窄）
+      tableData.value = result.data.rows.map((classItem: ClassPageRow): ClassWithCounts => {
         logger.log('处理班级项:', classItem)
         logger.log('班级项的 studentCount:', classItem.studentCount)
         logger.log('班级项的 confirmedCount:', classItem.confirmedCount)
         logger.log('班级项的 notFoundCount:', classItem.notFoundCount)
         logger.log('班级项的 hasOfferCount:', classItem.hasOfferCount)
 
-        // 确保 classItem 对象存在
+        // 确保 classItem 对象存在（空对象时补齐表格必需字段，渲染与下游均视为空）
         if (!classItem) {
           return {
+            id: '',
+            name: '',
+            majorId: '',
+            grade: '',
             majorName: '',
             teacherName: '',
             ext: {}
@@ -310,15 +364,15 @@ const queryPage = async (): Promise<void> => {
         logger.log('查找教师 - classItem.teacherId:', classItem.teacherId)
         logger.log('教师列表:', teacherList.value)
 
-        const matchedTeacher = teacherList.value.find((teacher: any) => {
+        const matchedTeacher = teacherList.value.find((teacher: TeacherOption) => {
           logger.log('比较教师:', teacher.teacherUserId, '与', classItem.teacherId)
           // 尝试多种匹配方式
           if (teacher.teacherUserId === classItem.teacherId) {
             logger.log('直接匹配成功')
             return true
           }
-          // 尝试去掉 T 前缀匹配
-          if (classItem.teacherId && classItem.teacherId.startsWith('T')) {
+          // 尝试去掉 T 前缀匹配（teacherId 非字符串时原代码会抛异常，此处先收窄为字符串，正常形态语义一致）
+          if (typeof classItem.teacherId === 'string' && classItem.teacherId && classItem.teacherId.startsWith('T')) {
             const withoutPrefix = classItem.teacherId.substring(1)
             logger.log('尝试去掉 T 前缀匹配:', teacher.teacherUserId, '与', withoutPrefix)
             if (teacher.teacherUserId === withoutPrefix) {
@@ -360,7 +414,8 @@ const queryPage = async (): Promise<void> => {
           result.ext = {}
         }
 
-        return result
+        // 行数据运行时为后端完整对象，类型层断言为表格行类型（同一对象引用）
+        return result as ClassWithCounts
       })
 
       logger.log('处理后的班级数据:', tableData.value)
@@ -411,8 +466,34 @@ const clearEditClassForm = (): void => {
   }
 }
 
+// ===== 智能填表：班级新增/编辑弹窗（共用 formId，后注册覆盖，单例语义；只写响应式 model，不触发提交） =====
+const formContext = useFormContext()
+const classFillFields = (): FormFieldDescriptor[] => [
+  { prop: 'name', label: '班级名称', type: 'input', required: true },
+  { prop: 'grade', label: '年级', type: 'input', required: true, patternHint: '4 位年份，如 2024' },
+  { prop: 'majorId', label: '专业', type: 'select', required: true,
+    options: majorList.value.map(m => ({ label: m.name, value: m.id })) },
+  { prop: 'teacherId', label: '负责教师', type: 'select',
+    options: teacherList.value.map(t => ({ label: t.name || '', value: t.teacherUserId || '' })) }
+]
+const registerClassForm = (title: string): void => {
+  formContext.register({
+    formId: 'admin:class',
+    title,
+    fields: classFillFields(),
+    getFields: classFillFields,
+    getModel: () => (formTitle.value === '编辑班级' ? editClass.value : addClass.value),
+    getFormEl: () => (formTitle.value === '编辑班级' ? editClassFormRef.value : addClassFormRef.value)
+  })
+}
+watch(dialogFormVisible, (open) => {
+  if (!open) formContext.unregister('admin:class')
+})
+onUnmounted(() => formContext.unregister('admin:class'))
+
 //新增班级
 const handleAddClass = async (): Promise<void> => {
+
   // 确保教师列表和专业列表已加载
   if (majorList.value.length === 0) {
     await getMajorList()
@@ -424,6 +505,7 @@ const handleAddClass = async (): Promise<void> => {
   formTitle.value = '新增班级'
   clearAddClassForm()
   dialogFormVisible.value = true
+  registerClassForm('新增班级')
 }
 
 //修改班级
@@ -452,6 +534,7 @@ const handleUpdateClass = async (id: string): Promise<void> => {
     }
     logger.log('编辑班级数据:', editClass.value)
     dialogFormVisible.value = true
+    registerClassForm('编辑班级')
   } else {
     ElMessage.error('获取班级信息失败：' + (result.msg || '未知错误'))
   }
@@ -461,10 +544,11 @@ const handleUpdateClass = async (id: string): Promise<void> => {
 
 // 移除动态计算表单，现在使用两个独立的表单
 
-//重置表单
+//重置表单（formRef 即 el-form 实例本身，直接调用 resetFields；
+ // 原 `!formRef.value` 恒真导致静默跳过，与类型声明矛盾，此处按类型与调用意图对齐）
 const resetForm = (formRef: FormInstance | null): void => {
-  if (!formRef || !formRef.value) return
-  formRef.value.resetFields()
+  if (!formRef) return
+  formRef.resetFields()
 }
 
 //处理取消按钮点击事件
@@ -522,17 +606,20 @@ const saveClass = async (): Promise<void> => {
     })
 
     logger.log('开始调用 API...')
+    const operation = formContext.beginFormOperation('admin:class')
     let result
-    // 表单验证通过后再调用 API
+    // 表单验证通过后再调用 API（类型层用精确参数类型断言，运行时发送同一表单对象；
+    // addApi/updateApi 内部已做 Number 转换，直接传转换后的值会丢失 teacherId 的 'T' 前缀形态）
     if (formTitle.value === '新增班级') {
-      result = await addApi(formData)
+      result = await addApi(formData as unknown as Parameters<typeof addApi>[0])
     } else {
-      result = await updateApi(formData)
+      result = await updateApi(formData as unknown as Parameters<typeof updateApi>[0])
     }
 
     logger.log('API 返回结果:', result)
 
     if (result && result.code === 200) {
+      operation.complete({ status: 'saved', label: '班级信息已保存', url: '/admin/classes' })
       ElMessage.success('操作成功')
       dialogFormVisible.value = false
       queryPage()
@@ -618,8 +705,9 @@ const batchDeleteClass = async (): Promise<void> => {
 }
 
 // 处理选中行变化
-const handleSelectionChange = (selection: unknown[]): void => {
-  selectedRowKeys.value = selection.map((row: any) => row.id)
+const handleSelectionChange = (selection: ClassPageRow[]): void => {
+  // id 转字符串后与后端的 parseInt 归一结果一致
+  selectedRowKeys.value = selection.map((row: ClassPageRow) => String(row.id ?? ''))
 }
 
 // 显示导入 Excel 对话框
@@ -823,12 +911,25 @@ const importExcel = async (): Promise<void> => {
 
   } catch (error) {
     logger.error('导入 Excel 数据失败:', error)
-    logger.error('错误详情:', (error as any).response?.data)
+    // axios 错误体收窄：保持原 `response?.data?.message || response?.data?.msg || error.message` 语义
+    const errResponse: unknown =
+      error !== null && typeof error === 'object' && 'response' in error
+        ? (error as { response?: unknown }).response
+        : undefined
+    const errData: unknown =
+      errResponse !== null && typeof errResponse === 'object' && 'data' in errResponse
+        ? (errResponse as { data?: unknown }).data
+        : undefined
+    logger.error('错误详情:', errData)
+    const errDataRec: Record<string, unknown> | null =
+      errData !== null && typeof errData === 'object' ? (errData as Record<string, unknown>) : null
+    const pickedMsg: unknown = errDataRec?.['message'] ? errDataRec['message'] : errDataRec?.['msg']
 
     // 显示详细的错误信息
-    const errorMsg = (error as any).response?.data?.message ||
-                     (error as any).response?.data?.msg ||
-                     (error instanceof Error ? error.message : '未知错误')
+    const errorMsg: string =
+      typeof pickedMsg === 'string' && pickedMsg
+        ? pickedMsg
+        : error instanceof Error ? error.message : '未知错误'
     ElMessage.error('导入 Excel 数据失败：' + errorMsg)
   } finally {
     importLoading.value = false
@@ -845,20 +946,22 @@ const processExcelData = (excelData: unknown[]): ExcelDataItem[] => {
   logger.log('可用专业列表:', majorList.value)
   logger.log('可用教师列表:', teacherList.value)
 
-  return excelData.map((item: any, index) => {
+  return excelData.map((item: unknown, index: number) => {
+    // Excel 行收窄为记录后使用（保持原 `||` 回退语义）
+    const row = item as unknown as Record<string, unknown>
     // 处理不同可能的表头名称（兼容中英文）
-    let name = item['班级名称'] || item['className'] || item['name']
-    let grade = item['年级'] || item['grade']
+    const nameRaw: unknown = row['班级名称'] || row['className'] || row['name']
+    let grade: unknown = row['年级'] || row['grade']
 
-    // 确保 grade 是字符串且长度为 4
-    if (grade && grade.toString) {
-      grade = grade.toString().trim()
+    // 确保 grade 是字符串且长度为 4（保持原真值语义：假值跳过转换）
+    if (grade) {
+      grade = String(grade).trim()
     }
 
     // 查找专业 ID
     let majorId: string | null = null
     // 尝试从不同可能的列名中获取专业名称
-    const majorName = item['专业'] || item['major'] || item['专业名称'] || item['majorName']
+    const majorName: unknown = row['专业'] || row['major'] || row['专业名称'] || row['majorName']
 
     if (majorName && majorList.value.length > 0) {
       // 去除前后空格，增强匹配精度
@@ -870,7 +973,7 @@ const processExcelData = (excelData: unknown[]): ExcelDataItem[] => {
 
       // 如果精确匹配失败，尝试部分匹配
       if (!major) {
-        major = majorList.value.find(m => m.name.includes(trimmedMajorName) || trimmedMajorName.includes(m.name))
+        major = majorList.value.find(m => m.name !== undefined && (m.name.includes(trimmedMajorName) || trimmedMajorName.includes(m.name)))
       }
 
       if (major) {
@@ -885,11 +988,11 @@ const processExcelData = (excelData: unknown[]): ExcelDataItem[] => {
     // 查找负责教师 ID
     let teacherId: string | null = null
     // 尝试从不同可能的列名中获取负责教师名称
-    const teacherName = item['负责教师'] || item['负责老师'] || item['teacherName'] || item['teacher']
+    const teacherName: unknown = row['负责教师'] || row['负责老师'] || row['teacherName'] || row['teacher']
 
     // 获取班级人数
     let studentCount = 0
-    const studentCountStr = item['班级人数'] || item['studentCount'] || item['student_count'] || item['人数']
+    const studentCountStr: unknown = row['班级人数'] || row['studentCount'] || row['student_count'] || row['人数']
     logger.log(`第${index + 1}行数据 - 班级人数原始值：${studentCountStr}, 类型：${typeof studentCountStr}`)
     if (studentCountStr !== null && studentCountStr !== undefined && studentCountStr !== '') {
       try {
@@ -912,11 +1015,11 @@ const processExcelData = (excelData: unknown[]): ExcelDataItem[] => {
 
       // 从教师列表中查找对应的教师 ID
       // 先尝试精确匹配
-      let teacher = teacherList.value.find((t: any) => t.name === trimmedTeacherName)
+      let teacher = teacherList.value.find((t: TeacherOption) => t.name === trimmedTeacherName)
 
       // 如果精确匹配失败，尝试部分匹配
       if (!teacher) {
-        teacher = teacherList.value.find((t: any) => t.name.includes(trimmedTeacherName) || trimmedTeacherName.includes(t.name))
+        teacher = teacherList.value.find((t: TeacherOption) => t.name.includes(trimmedTeacherName) || trimmedTeacherName.includes(t.name))
       }
 
       if (teacher) {
@@ -928,8 +1031,9 @@ const processExcelData = (excelData: unknown[]): ExcelDataItem[] => {
     }
 
     return {
-      name: name?.toString?.().trim(),
-      grade,
+      // 保持原 `name?.toString?.().trim()` 语义：空值保持空值，其他转字符串
+      name: (nameRaw === null || nameRaw === undefined ? undefined : String(nameRaw).trim()) as string | undefined,
+      grade: grade as string | undefined,
       majorId,
       teacherId,
       studentCount
@@ -952,7 +1056,7 @@ const handleExportToExcel = async (): Promise<void> => {
       return
     }
 
-    const exportData = allClasses.map((item: any) => {
+    const exportData = allClasses.map((item: ClassPageRow) => {
       return {
         '班级名称': item.name,
         '年级': item.grade,
@@ -986,8 +1090,8 @@ const downloadTemplate = async (): Promise<void> => {
   try {
     ElMessage({ message: '正在准备模板下载...', type: 'info' })
 
-    // 响应拦截器已返回 response.data (Blob)
-    const blob = await downloadClassTemplateApi()
+    // 响应拦截器已返回 Blob（类型声明为 ApiResult，运行时为 Blob，用断言保持运行时一致）
+    const blob = await downloadClassTemplateApi() as unknown as Blob
 
     // 创建下载链接
     const url = window.URL.createObjectURL(blob)
@@ -1069,7 +1173,7 @@ const downloadTemplate = async (): Promise<void> => {
     <el-card class="actions-card" shadow="never">
       <div class="actions-container">
         <div class="primary-actions">
-          <el-button v-if="authStore.hasPermission('class:add')" type="primary" @click="handleAddClass()" class="action-btn primary">
+          <el-button v-if="authStore.hasPermission('class:add')" type="primary" data-agent-open @click="handleAddClass()" class="action-btn primary">
             <el-icon><Plus /></el-icon>&nbsp;新增班级
           </el-button>
           <el-button
@@ -1608,5 +1712,62 @@ const downloadTemplate = async (): Promise<void> => {
   border-radius: 8px;
   padding: 10px 24px;
   min-width: 100px;
+}
+
+@media (max-width: 768px) {
+  .page-header {
+    flex-direction: column;
+    align-items: stretch;
+    padding: 18px 20px;
+    margin-bottom: 16px;
+  }
+
+  .header-content h1 {
+    font-size: 22px;
+  }
+
+  .header-illustration {
+    display: none;
+  }
+
+  .search-card {
+    padding: 16px 18px;
+  }
+
+  .search-row {
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .search-row :deep(.el-form-item) {
+    width: 100%;
+    margin-right: 0;
+  }
+
+  .search-row :deep(.el-button) {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .actions-container {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 16px;
+  }
+
+  .primary-actions,
+  .secondary-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .actions-container :deep(.el-button) {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .actions-container .import-dropdown {
+    width: 100%;
+  }
 }
 </style>

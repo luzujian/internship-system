@@ -5,6 +5,7 @@ import com.internship.entity.CompanyUser;
 import com.internship.entity.Position;
 import com.internship.entity.StudentJobApplication;
 import com.internship.entity.StudentUser;
+import com.internship.utils.SalaryFormatter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -15,6 +16,7 @@ import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
 import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -61,7 +63,8 @@ public class JobRecommendationAgentService {
      * @return 推荐结果
      */
     public Map<String, Object> processJobRecommendation(String query, String studentUserId, String model) {
-        log.info("开始处理岗位推荐: query={}, studentUserId={}", query, studentUserId);
+        log.info("开始处理岗位推荐: queryLength={}, model={}",
+                query != null ? query.length() : 0, model);
 
         try {
             // 1. 获取学生信息
@@ -70,7 +73,7 @@ public class JobRecommendationAgentService {
                 log.warn("未找到学生信息, studentUserId={}", studentUserId);
                 return buildErrorResult("未找到学生信息");
             }
-            log.info("学生信息: 专业={}, 年级={}", student.getMajor(), student.getGrade());
+            log.debug("岗位推荐所需学生信息已加载");
 
             // 2. 获取所有active岗位
             List<Position> allActivePositions = positionService.findAll().stream()
@@ -98,7 +101,7 @@ public class JobRecommendationAgentService {
                         .filter(Objects::nonNull)
                         .collect(Collectors.toList());
 
-                log.info("按AI匹配度排序后的岗位ID顺序: {}", matchedPositions.stream().map(Position::getId).collect(Collectors.toList()));
+                log.debug("AI 岗位匹配排序完成：count={}", matchedPositions.size());
             }
 
             // 5. 获取学生的收藏和投递状态（使用学生的内部ID）
@@ -155,7 +158,8 @@ public class JobRecommendationAgentService {
             ));
 
             String aiResponse = client.prompt(prompt).call().content();
-            log.info("AI岗位匹配结果:\n{}", aiResponse);
+            log.debug("AI 岗位匹配响应已返回：length={}",
+                    aiResponse != null ? aiResponse.length() : 0);
 
             // 解析AI返回的岗位ID列表
             return parsePositionIdsFromResponse(aiResponse);
@@ -236,7 +240,8 @@ public class JobRecommendationAgentService {
                 return ids;
             }
 
-            log.warn("无法从AI响应中解析岗位ID: {}", aiResponse);
+            log.warn("无法从 AI 响应中解析岗位 ID：responseLength={}",
+                    aiResponse != null ? aiResponse.length() : 0);
             return Collections.emptyList();
 
         } catch (Exception e) {
@@ -304,7 +309,8 @@ public class JobRecommendationAgentService {
             Map<String, Object> job = new HashMap<>();
             job.put("id", position.getId());
             job.put("positionName", position.getPositionName());
-            job.put("salary", formatSalary(position.getSalaryMin(), position.getSalaryMax()));
+            job.put("salary", SalaryFormatter.format(
+                    position.getSalaryMin(), position.getSalaryMax(), position.getSalaryUnit()));
             job.put("location", formatLocation(position.getProvince(), position.getCity()));
             job.put("requirements", position.getRequirements());
             job.put("description", position.getDescription());
@@ -327,22 +333,6 @@ public class JobRecommendationAgentService {
         }
 
         return results;
-    }
-
-    /**
-     * 格式化薪资显示（单位：K/月）
-     */
-    private String formatSalary(Integer salaryMin, Integer salaryMax) {
-        if (salaryMin == null && salaryMax == null) {
-            return "薪资面议";
-        }
-        if (salaryMin != null && salaryMax != null) {
-            return salaryMin + "-" + salaryMax + "K/月";
-        }
-        if (salaryMin != null) {
-            return salaryMin + "K/月起";
-        }
-        return "最高" + salaryMax + "K/月";
     }
 
     /**
@@ -393,7 +383,7 @@ public class JobRecommendationAgentService {
         }
 
         // 检查薪资
-        if (position.getSalaryMin() != null && position.getSalaryMin() > 100) {
+        if (position.getSalaryMin() != null && position.getSalaryMin().compareTo(new BigDecimal("100")) > 0) {
             reasons.add("薪资待遇较好");
         }
 
@@ -424,15 +414,16 @@ public class JobRecommendationAgentService {
     private ChatClient getChatClientByModel(String model) {
         String modelCode;
         if (model == null || model.trim().isEmpty()) {
-            modelCode = "deepseek-chat";
+            modelCode = "deepseek-flash";
         } else if ("deepseek-reasoner".equalsIgnoreCase(model)) {
             modelCode = "deepseek-reasoner";
-        } else if ("deepseek-v4-flash".equalsIgnoreCase(model)) {
-            modelCode = "deepseek-v4-flash";
+        } else if ("deepseek-v4-flash".equalsIgnoreCase(model) || "deepseek-flash".equalsIgnoreCase(model)) {
+            // deepseek-v4-flash 已下线，统一使用 v4.1 (deepseek-flash)，旧配置值作为别名兼容
+            modelCode = "deepseek-flash";
         } else if ("deepseek-v4-pro".equalsIgnoreCase(model)) {
             modelCode = "deepseek-v4-pro";
         } else {
-            modelCode = "deepseek-chat";
+            modelCode = "deepseek-flash";
         }
         return chatClientFactory.createChatClient(modelCode, SYSTEM_PROMPT);
     }

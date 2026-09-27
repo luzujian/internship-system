@@ -4,8 +4,12 @@ import com.internship.anno.Log;
 import com.internship.entity.PageResult;
 import com.internship.entity.Result;
 import com.internship.entity.StudentArchive;
+import com.internship.entity.StudentJobApplication;
+import com.internship.mapper.StudentJobApplicationMapper;
 import com.internship.service.StudentArchiveService;
+import com.internship.service.StudentJobApplicationStatuses;
 import com.internship.utils.AliyunOSSOperator;
+import com.internship.utils.CurrentHolder;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ContentDisposition;
@@ -13,12 +17,16 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.annotation.*;
 
 import java.io.IOException;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
+import java.util.List;
+import java.util.Objects;
+import java.util.stream.Collectors;
 
 /**
  * 学生材料归档管理控制器
@@ -33,6 +41,9 @@ public class StudentArchiveController {
 
     @Autowired
     private AliyunOSSOperator aliyunOSSOperator;
+
+    @Autowired
+    private StudentJobApplicationMapper studentJobApplicationMapper;
 
     /**
      * 分页查询材料列表
@@ -96,7 +107,7 @@ public class StudentArchiveController {
     /**
      * 批量删除材料
      */
-    @Log(operationType = "DELETE", module = "ARCHIVE_MANAGEMENT", description = "批量删除学生材料")
+    @Log(operationType = "DELETE", module = "ARCHIVE_MANAGEMENT", description = "批量删除学生材料", riskLevel = "HIGH", critical = true)
     @DeleteMapping("/batch")
     @PreAuthorize("hasRole('ADMIN')")
     public Result batchDeleteArchives(@RequestBody java.util.List<Long> ids) {
@@ -128,12 +139,18 @@ public class StudentArchiveController {
     @GetMapping("/company/student/{studentId}")
     @PreAuthorize("hasRole('COMPANY')")
     public Result getCompanyStudentArchives(@PathVariable Long studentId) {
-        return Result.success(studentArchiveService.findByStudentId(studentId));
+        requireCompanyApplicationForStudent(studentId);
+        List<StudentArchive> archives = studentArchiveService.findByStudentId(studentId);
+        return Result.success(archives == null ? List.of() : archives.stream()
+                .filter(archive -> isApprovedForCompany(archive)
+                        && Objects.equals(studentId, archive.getStudentId()))
+                .collect(Collectors.toList()));
     }
 
     /**
      * 下载归档文件
      */
+    @Log(operationType = "DOWNLOAD", module = "ARCHIVE_MANAGEMENT", description = "下载学生档案", riskLevel = "MEDIUM")
     @GetMapping("/download/{id}")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<byte[]> downloadArchive(@PathVariable Long id) {
@@ -170,6 +187,7 @@ public class StudentArchiveController {
     /**
      * 企业用户下载归档文件
      */
+    @Log(operationType = "DOWNLOAD", module = "ARCHIVE_MANAGEMENT", description = "企业下载学生档案", riskLevel = "MEDIUM")
     @GetMapping("/company/download/{id}")
     @PreAuthorize("hasRole('COMPANY')")
     public ResponseEntity<byte[]> downloadArchiveForCompany(@PathVariable Long id) {
@@ -180,6 +198,8 @@ public class StudentArchiveController {
                 log.warn("归档文件不存在，ID: {}", id);
                 return ResponseEntity.notFound().build();
             }
+
+            requireCompanyAccessToArchive(archive);
 
             String fileUrl = archive.getFileUrl();
             String fileName = archive.getFileName();
@@ -197,6 +217,8 @@ public class StudentArchiveController {
             return ResponseEntity.ok()
                     .headers(headers)
                     .body(fileBytes);
+        } catch (AccessDeniedException e) {
+            throw e;
         } catch (Exception e) {
             log.error("下载文件失败: {}", e.getMessage(), e);
             return ResponseEntity.internalServerError().build();
@@ -206,6 +228,7 @@ public class StudentArchiveController {
     /**
      * 预览归档文件
      */
+    @Log(operationType = "READ", module = "ARCHIVE_MANAGEMENT", description = "预览学生档案（敏感读取）", riskLevel = "MEDIUM")
     @GetMapping("/preview/{id}")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<byte[]> previewArchive(@PathVariable Long id) {
@@ -241,9 +264,34 @@ public class StudentArchiveController {
         }
     }
 
+    private void requireCompanyAccessToArchive(StudentArchive archive) {
+        if (!isApprovedForCompany(archive)) {
+            throw new AccessDeniedException("无权访问该学生材料");
+        }
+        requireCompanyApplicationForStudent(archive.getStudentId());
+    }
+
+    private boolean isApprovedForCompany(StudentArchive archive) {
+        return archive != null && Integer.valueOf(1).equals(archive.getStatus());
+    }
+
+    private void requireCompanyApplicationForStudent(Long studentId) {
+        Long companyId = CurrentHolder.getUserId();
+        if (!"ROLE_COMPANY".equals(CurrentHolder.getUserRole()) || companyId == null || studentId == null) {
+            throw new AccessDeniedException("无权访问该学生材料");
+        }
+        List<StudentJobApplication> applications = studentJobApplicationMapper.findByStudentId(studentId);
+        if (applications == null || applications.stream().noneMatch(application -> application != null
+                && Objects.equals(companyId, application.getCompanyId())
+                && StudentJobApplicationStatuses.isActive(application.getStatus()))) {
+            throw new AccessDeniedException("无权访问该学生材料");
+        }
+    }
+
     /**
      * 企业用户预览归档文件
      */
+    @Log(operationType = "READ", module = "ARCHIVE_MANAGEMENT", description = "企业预览学生档案（敏感读取）", riskLevel = "MEDIUM")
     @GetMapping("/company/preview/{id}")
     @PreAuthorize("hasRole('COMPANY')")
     public ResponseEntity<byte[]> previewArchiveForCompany(@PathVariable Long id) {
@@ -254,6 +302,8 @@ public class StudentArchiveController {
                 log.warn("归档文件不存在，ID: {}", id);
                 return ResponseEntity.notFound().build();
             }
+
+            requireCompanyAccessToArchive(archive);
 
             String fileUrl = archive.getFileUrl();
             String fileName = archive.getFileName();
@@ -273,6 +323,8 @@ public class StudentArchiveController {
             return ResponseEntity.ok()
                     .headers(headers)
                     .body(fileBytes);
+        } catch (AccessDeniedException e) {
+            throw e;
         } catch (Exception e) {
             log.error("预览文件失败: {}", e.getMessage(), e);
             return ResponseEntity.internalServerError().build();

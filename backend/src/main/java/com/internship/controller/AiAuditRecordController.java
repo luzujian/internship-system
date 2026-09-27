@@ -103,7 +103,7 @@ public class AiAuditRecordController {
 
     @DeleteMapping("/by-type/{auditType}")
     @PreAuthorize("hasRole('ADMIN')")
-    @Log(operationType = "DELETE", module = "AI_MODEL", description = "批量删除AI审核记录")
+    @Log(operationType = "DELETE", module = "AI_MODEL", description = "批量删除AI审核记录", riskLevel = "HIGH", critical = true)
     public Result deleteByAuditType(@PathVariable String auditType) {
         try {
             int count = aiAuditRecordMapper.deleteByAuditType(auditType);

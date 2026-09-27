@@ -40,7 +40,7 @@
             <el-button type="warning" @click="handleReset" class="reset-btn">
               <el-icon><Refresh /></el-icon>&nbsp;重置
             </el-button>
-            <el-button v-if="authStore.hasPermission('scoring:view')" type="primary" @click="handleAdd" class="action-btn primary">
+            <el-button v-if="authStore.hasPermission('scoring:view')" type="primary" data-agent-open @click="handleAdd" class="action-btn primary">
               <el-icon><Plus /></el-icon>&nbsp;新增评分规则
             </el-button>
           </el-form-item>
@@ -83,7 +83,7 @@
               </el-button>
             </div>
           </template>
-          
+
           <div class="rules-grid">
             <div 
               v-for="rule in sortedRules(rules)" 
@@ -179,7 +179,7 @@
       >
         所有类别的权重总和必须为100，请合理分配各维度的权重。
       </el-alert>
-      
+
       <el-form :model="weightForm" :rules="weightRules" ref="weightFormRef" label-width="120px">
         <div v-for="(weight, categoryCode) in weightForm.weights" :key="categoryCode" class="weight-item">
           <el-form-item :label="getCategoryName(categoryCode)">
@@ -191,7 +191,7 @@
             />
           </el-form-item>
         </div>
-        
+
         <div class="weight-total-display">
             <span class="total-label">总权重：</span>
             <span class="total-value" :class="{ 'valid': totalWeight === 100, 'invalid': totalWeight !== 100 }">
@@ -211,29 +211,45 @@
 
 <script setup lang="ts">
 import logger from '@/utils/logger'
-import { ref, onMounted, nextTick, computed } from 'vue'
-import type { ScoringRule } from '@/types/admin'
+import { ref, onMounted, onUnmounted, nextTick, computed, watch } from 'vue'
 
 import { ElMessage, ElMessageBox } from 'element-plus'
+import type { FormInstance } from 'element-plus'
 import { Plus, Edit, Delete, Document, Search, Refresh } from '@element-plus/icons-vue'
 import request from '@/utils/request'
 import { useAuthStore } from '@/store/auth'
+import type { FormFieldDescriptor } from '@/agent/types'
+import { useFormContext } from '@/agent/formContext'
 
 const authStore = useAuthStore()
+
+interface ScoringRuleRow {
+  id?: number | string
+  ruleName?: string
+  category?: string
+  minScore?: number
+  maxScore?: number
+  status?: number
+  description?: string
+  evaluationCriteria?: string
+  applicableScenarios?: string
+  weight?: number
+  [key: string]: unknown
+}
 
 const loading = ref<boolean>(false)
 const saving = ref<boolean>(false)
 const dialogVisible = ref<boolean>(false)
 const weightDialogVisible = ref<boolean>(false)
 const dialogTitle = ref<string>('')
-const ruleList = ref<unknown[]>([])
+const ruleList = ref<ScoringRuleRow[]>([])
 const filterCategory = ref<string>('')
 const filterStatus = ref<string>('')
-const activeCategories = ref<unknown[]>([])
-const formRef = ref<InstanceType<typeof ElForm> | null>(null)
-const weightFormRef = ref<InstanceType<typeof ElForm> | null>(null)
+const activeCategories = ref<string[]>([])
+const formRef = ref<FormInstance | null>(null)
+const weightFormRef = ref<FormInstance | null>(null)
 
-const categoryWeights = ref<Record<string, unknown>>({})
+const categoryWeights = ref<Record<string, number>>({})
 
 const currentTotalWeight = computed(() => {
   const existingCategories = Object.keys(groupedRules.value)
@@ -249,7 +265,18 @@ const totalWeight = computed(() => {
   return Object.values(weights).reduce((sum, weight) => sum + (weight || 0), 0)
 })
 
-const form = ref({
+const form = ref<{
+  id: number | string | null
+  ruleName: string
+  category: string
+  minScore: number
+  maxScore: number
+  weight?: number
+  status: number
+  description: string
+  evaluationCriteria: string
+  applicableScenarios: string
+}>({
   id: null,
   ruleName: '',
   category: '',
@@ -261,7 +288,9 @@ const form = ref({
   applicableScenarios: ''
 })
 
-const weightForm = ref({
+const weightForm = ref<{
+  weights: Record<string, number>
+}>({
   weights: {
     'teamwork': 20,
     'problemSolving': 20,
@@ -315,12 +344,13 @@ const existingCategories = computed(() => {
 })
 
 const groupedRules = computed(() => {
-  const grouped = {}
+  const grouped: Record<string, ScoringRuleRow[]> = {}
   ruleList.value.forEach(rule => {
-    if (!grouped[rule.category]) {
-      grouped[rule.category] = []
+    const categoryKey = rule.category ?? ''
+    if (!grouped[categoryKey]) {
+      grouped[categoryKey] = []
     }
-    grouped[rule.category].push(rule)
+    grouped[categoryKey].push(rule)
   })
   return grouped
 })
@@ -340,11 +370,11 @@ const getScoreLevelClass = (rule) => {
 const fetchRules = async (): Promise<void> => {
   loading.value = true
   try {
-    const response = await request.get('/admin/scoring-rule')
+    const response = await request.get<ScoringRuleRow[]>('/admin/scoring-rule')
     if (response.code === 200) {
-      ruleList.value = response.data || []
+      ruleList.value = Array.isArray(response.data) ? response.data : []
     } else {
-      ElMessage.error(response.message || '获取评分规则列表失败')
+      ElMessage.error(response.message || response.msg || '获取评分规则列表失败')
     }
   } catch (error) {
     ElMessage.error('获取评分规则列表失败')
@@ -355,12 +385,19 @@ const fetchRules = async (): Promise<void> => {
 
 const fetchCategoryWeights = async (): Promise<void> => {
   try {
-    const response = await request.get('/admin/category-weight/active')
+    interface CategoryWeightRow {
+      categoryCode?: string
+      category_code?: string
+      weight?: number
+      [key: string]: unknown
+    }
+    const response = await request.get<CategoryWeightRow[]>('/admin/category-weight/active')
     if (response.code === 200) {
-      const weights = response.data || []
-      const weightMap = {}
+      const weights = Array.isArray(response.data) ? response.data : []
+      const weightMap: Record<string, number> = {}
       weights.forEach(item => {
-        weightMap[item.categoryCode] = item.weight
+        const code = item.categoryCode ?? item.category_code
+        if (code !== undefined) weightMap[code] = item.weight ?? 0
       })
       categoryWeights.value = weightMap
       logger.log('获取到的权重数据:', weightMap)
@@ -380,12 +417,12 @@ const handleFilter = async (): Promise<void> => {
     if (filterStatus.value !== '') {
       url += `/status/${filterStatus.value}`
     }
-    
-    const response = await request.get(url)
+
+    const response = await request.get<ScoringRuleRow[]>(url)
     if (response.code === 200) {
-      ruleList.value = response.data || []
+      ruleList.value = Array.isArray(response.data) ? response.data : []
     } else {
-      ElMessage.error(response.message || '筛选失败')
+      ElMessage.error(response.message || response.msg || '筛选失败')
     }
   } catch (error) {
     ElMessage.error('筛选失败')
@@ -399,6 +436,56 @@ const handleReset = () => {
   filterStatus.value = ''
   fetchRules()
 }
+
+// ===== 智能填表：评分规则弹窗（ruleName/minScore/maxScore/status/description 仅编辑态显示，照常声明；新增态仅填分类） =====
+const formContext = useFormContext()
+const scoringRuleFillFields = (): FormFieldDescriptor[] => [
+  { prop: 'category', label: '分类', type: 'select', required: true, allowCustom: true,
+    options: [...availableCategories.value, ...existingCategories.value].map(c => ({ label: c.label, value: c.value })),
+    patternHint: '编辑态只读不可改，可输入新类别' },
+  { prop: 'ruleName', label: '等级', type: 'select',
+    options: ['优秀', '良好', '中等', '及格', '不及格'].map(v => ({ label: v, value: v })),
+    patternHint: '仅编辑态显示' },
+  { prop: 'minScore', label: '最低分', type: 'number', valueType: 'number', patternHint: '仅编辑态显示' },
+  { prop: 'maxScore', label: '最高分', type: 'number', valueType: 'number', patternHint: '仅编辑态显示' },
+  { prop: 'status', label: '状态', type: 'radio', valueType: 'number',
+    options: [{ label: '启用', value: 1 }, { label: '禁用', value: 0 }], patternHint: '仅编辑态显示' },
+  { prop: 'description', label: '描述', type: 'textarea', patternHint: '仅编辑态显示' }
+]
+const registerScoringRuleForm = (title: string) => {
+  formContext.register({
+    formId: 'admin:scoring-rule',
+    title,
+    fields: scoringRuleFillFields(),
+    getFields: scoringRuleFillFields,
+    getModel: () => form.value,
+    getFormEl: () => formRef.value
+  })
+}
+// ===== 智能填表：类别权重弹窗（按动态 key 生成 number 字段） =====
+const scoreWeightFillFields = (): FormFieldDescriptor[] => Object.keys(weightForm.value.weights).map(key => ({
+  prop: key,
+  label: `${getCategoryName(key)}权重`,
+  type: 'number',
+  valueType: 'number'
+}))
+const registerScoreWeightForm = () => {
+  formContext.register({
+    formId: 'admin:score-weights',
+    title: '调整类别权重',
+    fields: scoreWeightFillFields(),
+    getFields: scoreWeightFillFields,
+    getModel: () => weightForm.value.weights,
+    getFormEl: () => weightFormRef.value
+  })
+}
+watch(dialogVisible, (open) => {
+  if (!open) formContext.unregister('admin:scoring-rule')
+})
+watch(weightDialogVisible, (open) => {
+  if (!open) formContext.unregister('admin:score-weights')
+})
+onUnmounted(() => { formContext.unregister('admin:scoring-rule'); formContext.unregister('admin:score-weights') })
 
 const handleAdd = () => {
   dialogTitle.value = '新增评分规则'
@@ -415,7 +502,8 @@ const handleAdd = () => {
     applicableScenarios: ''
   }
   dialogVisible.value = true
-  
+  registerScoringRuleForm('新增评分规则')
+
   nextTick(() => {
     if (formRef.value) {
       formRef.value.clearValidate()
@@ -438,7 +526,8 @@ const handleEdit = (row) => {
     applicableScenarios: row.applicableScenarios || ''
   }
   dialogVisible.value = true
-  
+  registerScoringRuleForm('编辑评分规则')
+
   nextTick(() => {
     if (formRef.value) {
       formRef.value.clearValidate()
@@ -453,7 +542,7 @@ const handleDelete = async (row): Promise<void> => {
       cancelButtonText: '取消',
       type: 'warning'
     })
-    
+
     const response = await request.delete(`/admin/scoring-rule/${row.id}`)
     if (response.code === 200) {
       ElMessage.success('删除成功')
@@ -472,7 +561,7 @@ const handleDeleteCategory = async (categoryName): Promise<void> => {
   try {
     const rules = groupedRules.value[categoryName]
     const categoryDisplayName = getCategoryName(categoryName)
-    
+
     await ElMessageBox.confirm(
       `确定要删除"${categoryDisplayName}"类别及其所有${rules.length}条评分规则吗？此操作不可恢复！`, 
       '删除类别', 
@@ -483,11 +572,11 @@ const handleDeleteCategory = async (categoryName): Promise<void> => {
         confirmButtonClass: 'el-button--danger'
       }
     )
-    
+
     const response = await request.delete(`/admin/scoring-rule/category/${categoryName}`)
     if (response.code === 200) {
       await request.delete(`/admin/category-weight/category/${categoryName}`)
-      
+
       ElMessage.success(`已删除"${categoryDisplayName}"类别及其所有评分规则`)
       await fetchRules()
       await nextTick()
@@ -505,14 +594,15 @@ const handleDeleteCategory = async (categoryName): Promise<void> => {
 
 const handleSave = async (): Promise<void> => {
   if (!formRef.value) return
-  
+
   try {
     await formRef.value.validate()
   } catch (error) {
     return
   }
-  
-  saving.value = true
+
+  const operation = formContext.beginFormOperation('admin:scoring-rule', form.value.id ? undefined : ['category'])
+    saving.value = true
   try {
     let response
     if (form.value.id) {
@@ -523,6 +613,7 @@ const handleSave = async (): Promise<void> => {
     }
 
     if (response.code === 200) {
+      operation.complete({ status: 'saved', label: '评分规则已保存', url: '/admin/scoring-rule' })
       ElMessage.success(response.message || '保存成功')
       dialogVisible.value = false
       await fetchRules()
@@ -602,29 +693,30 @@ const getCategoryWeight = (categoryName) => {
 
 const handleEditAllWeights = () => {
   const existingCategories = Object.keys(groupedRules.value)
-  
+
   if (existingCategories.length === 0) {
     ElMessage.warning('暂无类别，请先添加类别')
     return
   }
-  
-  const newWeights = {}
-  
+
+  const newWeights: Record<string, number> = {}
+
   existingCategories.forEach((category) => {
     newWeights[category] = categoryWeights.value[category] || 0
   })
-  
+
   weightForm.value.weights = newWeights
   weightDialogVisible.value = true
+  registerScoreWeightForm()
 }
 
 const handleSaveAllWeights = async (): Promise<void> => {
   try {
     saving.value = true
-    
+
     const weights = weightForm.value.weights
     const categoryWeightsList = []
-    
+
     for (const [categoryCode, weight] of Object.entries(weights)) {
       categoryWeightsList.push({
         categoryCode: categoryCode,
@@ -633,10 +725,13 @@ const handleSaveAllWeights = async (): Promise<void> => {
         status: 1
       })
     }
-    
+
+    const operation = formContext.beginFormOperation('admin:score-weights')
     const response = await request.post('/admin/category-weight/batch', categoryWeightsList)
 
     if (response.code === 200) {
+      operation.complete({ status: 'saved', label: '类别权重已保存', url: '/admin/scoring-rule' })
+
       await fetchCategoryWeights()
       ElMessage.success('权重保存成功')
       weightDialogVisible.value = false
@@ -1056,5 +1151,80 @@ onMounted(() => {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+@media (max-width: 768px) {
+  .scoring-rule-container {
+    padding: 15px;
+  }
+
+  .page-header {
+    flex-direction: column;
+    text-align: center;
+    padding: 20px;
+  }
+
+  .page-title {
+    font-size: 22px;
+  }
+
+  .header-illustration {
+    margin-top: 15px;
+  }
+
+  .search-row {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .search-row :deep(.el-form-item) {
+    width: 100%;
+    margin-right: 0;
+  }
+
+  .search-row :deep(.el-select) {
+    width: 100% !important;
+  }
+
+  .search-actions {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .search-actions :deep(.el-button) {
+    width: 100%;
+    margin-left: 0 !important;
+    margin-right: 0;
+  }
+
+  .weight-summary {
+    padding: 12px 16px;
+  }
+
+  .summary-content {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+
+  .rules-collapse :deep(.el-collapse-item__header) {
+    height: auto;
+    min-height: 56px;
+    line-height: 1.4;
+    padding: 10px 12px;
+  }
+
+  .collapse-title {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+
+  .category-name {
+    min-width: 0;
+    word-break: break-word;
+  }
+
+  .rules-grid {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

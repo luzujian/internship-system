@@ -14,18 +14,6 @@ interface User {
   updateTime?: string
 }
 
-interface RegisterData {
-  username: string
-  password: string
-  name: string
-  role: string
-  phone?: string
-  majorId?: string
-  classId?: string
-  grade?: string
-  departmentId?: string
-}
-
 interface PasswordData {
   oldPassword: string
   newPassword: string
@@ -49,7 +37,7 @@ const UserService = {
     if (response.data) {
       cacheService.set(cacheKey, response.data, CACHE_CONFIG.EXPIRATION_TIME.MEDIUM)
     }
-    return response
+    return response.data
   },
 
   // 根据角色获取用户列表
@@ -63,7 +51,7 @@ const UserService = {
     }
 
     // 缓存未命中，请求数据
-    const response = await request.get(`/users/role/${role}`)
+    const response = await request.get<User[]>(`/users/role/${role}`)
     logger.log(`getUsersByRole(${role}) - response:`, response)
     logger.log(`getUsersByRole(${role}) - response.code:`, response.code)
     logger.log(`getUsersByRole(${role}) - response.data:`, response.data)
@@ -90,16 +78,6 @@ const UserService = {
   // 用户登录 - 不缓存
   login: (credentials: { username: string; password: string; userType: string }) => {
     return request.post('/auth/login', credentials)
-  },
-
-  // 用户注册 - 注册后清除相关缓存
-  register: async (userData: RegisterData) => {
-    const response = await request.post('/auth/register', userData)
-    // 清除相关缓存
-    if (userData.role) {
-      cacheService.delete(`users_by_role_${userData.role}`)
-    }
-    return response
   },
 
   // 获取当前登录用户信息 - 不缓存，确保获取最新信息

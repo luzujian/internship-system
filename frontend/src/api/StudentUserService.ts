@@ -1,4 +1,5 @@
 import request from '@/utils/request'
+import type { ApiResult } from '@/utils/request'
 import cacheService, { CACHE_CONFIG } from './cacheService'
 import { getRoleFromPath } from '@/utils/request'
 import { useAuthStore } from '@/store/auth'
@@ -14,6 +15,10 @@ export interface StudentUser {
   majorId?: number
   classId?: number
   status?: number
+  phone?: string
+  email?: string
+  department?: string
+  school?: string
   createTime?: string
   updateTime?: string
 }
@@ -33,7 +38,7 @@ export interface StudentListResponse {
   data: {
     rows: StudentUser[]
     total: number
-  }
+  } | null
   msg?: string
 }
 
@@ -77,7 +82,7 @@ const StudentUserService = {
         }
       }
 
-      const response = await request.get(apiPath, { params })
+      const response = await request.get<{ rows: StudentUser[]; total: number }>(apiPath, { params })
       logger.log('getStudents - axios response:', response)
       logger.log('getStudents - response.code:', response?.code)
       logger.log('getStudents - response.data:', response?.data)
@@ -119,7 +124,8 @@ const StudentUserService = {
     const cachedData = cacheService.get(cacheKey)
 
     if (cachedData) {
-      return Promise.resolve({ data: cachedData })
+      // 返回与请求一致的业务包形态（此前缺 code 会被调用方判为失败）
+      return Promise.resolve({ code: 200, message: 'cached', data: cachedData })
     }
 
     const response = await request.get<StudentUser>(`/admin/students/${id}`)
@@ -168,7 +174,11 @@ const StudentUserService = {
         gender: studentData.gender,
         grade: studentData.grade,
         majorId: studentData.majorId,
-        classId: studentData.classId
+        classId: studentData.classId,
+        phone: studentData.phone,
+        email: studentData.email,
+        department: studentData.department,
+        school: studentData.school
       }
       logger.log('提交的更新数据:', updateData)
       const response = await request.put('/admin/students', updateData)
@@ -208,9 +218,9 @@ const StudentUserService = {
     }
   },
 
-  resetStudentPassword: async (id: number, password: string) => {
+  resetStudentPassword: async (id: number) => {
     try {
-      const response = await request.post(`/admin/students/${id}/reset-password`, { password })
+      const response = await request.post(`/admin/students/${id}/reset-password`, {})
       return response
     } catch (error) {
       logger.error('重置学生用户密码失败:', error)
@@ -322,7 +332,7 @@ export const queryPageApi = async (params: {
 export const addApi = async (studentData: Omit<StudentUser, 'id' | 'createTime' | 'updateTime'>): Promise<{ code: number; data?: unknown; msg: string }> => {
   try {
     const response = await StudentUserService.addStudent(studentData)
-    const result = response || { code: 500, msg: '响应为空' }
+    const result: ApiResult<unknown> = response || { code: 500, message: '响应为空', data: null }
 
     if (result.code === 200) {
       return {
@@ -344,10 +354,10 @@ export const addApi = async (studentData: Omit<StudentUser, 'id' | 'createTime' 
   }
 }
 
-export const queryInfoApi = async (id: number) => {
+export const queryInfoApi = async (id: number): Promise<{ code: number; data?: unknown; msg: string }> => {
   try {
     const response = await StudentUserService.getStudentById(id)
-    const result = response || { code: 500, msg: '响应为空' }
+    const result: ApiResult<unknown> = response || { code: 500, message: '响应为空', data: null }
 
     if ((result as { code?: number }).code === 200) {
       return {
@@ -371,7 +381,7 @@ export const queryInfoApi = async (id: number) => {
 export const updateApi = async (studentData: Partial<StudentUser>) => {
   try {
     const response = await StudentUserService.updateStudent(studentData.id!, studentData)
-    const result = response || { code: 500, msg: '响应为空' }
+    const result: ApiResult<unknown> = response || { code: 500, message: '响应为空', data: null }
     return {
       code: (result as { code?: number }).code === 200 ? 200 : 500,
       data: (result as { data?: unknown }).data || result,
@@ -392,12 +402,12 @@ export const deleteApi = async (id: number): Promise<{ code: number; msg: string
     logger.log('准备删除学生 ID:', id)
 
     const response = await StudentUserService.deleteStudent(id)
-    const result = response || { code: 500, msg: '响应为空' }
+    const result: ApiResult<unknown> = response || { code: 500, message: '响应为空', data: null }
     logger.log('删除学生响应:', response)
     logger.log('删除学生结果:', result)
 
     // 直接检查 response 的 code，保留后端返回的原始错误码
-    if (result.code === 200 || result.code === '200') {
+    if (result.code === 200) {
       return {
         code: 200,
         msg: (result as { msg?: string; message?: string }).msg || (result as { msg?: string; message?: string }).message || '删除成功',
@@ -439,18 +449,34 @@ export const deleteApi = async (id: number): Promise<{ code: number; msg: string
   }
 }
 
-export const resetPasswordApi = async (id: number): Promise<{ code: number; msg: string }> => {
+export const resetAllPasswordsApi = async (): Promise<{ code: number; msg: string; data?: unknown }> => {
   try {
-    const response = await StudentUserService.resetStudentPassword(id, '123456')
-    const result = response || { code: 500, msg: '响应为空' }
+    const response = await request.post('/admin/students/reset-password/all', {})
+    const result = response as { code?: number; msg?: string; data?: unknown }
+    return {
+      code: result.code === 200 ? 200 : 500,
+      msg: result.msg || (result.code === 200 ? '全部学生用户密码重置成功' : '全部学生用户密码重置失败'),
+      data: result.data
+    }
+  } catch (error) {
+    logger.error('一键重置全部学生用户密码失败:', error)
+    return { code: 500, msg: '一键重置全部学生用户密码失败' }
+  }
+}
+
+export const resetPasswordApi = async (id: number): Promise<{ code: number; msg: string; data?: string }> => {
+  try {
+    const response = await StudentUserService.resetStudentPassword(id)
+    const result: ApiResult<unknown> = response || { code: 500, message: '响应为空', data: null }
 
     if (result.code !== undefined) {
       return {
         code: result.code === 200 ? 200 : 500,
-        msg: result.code === 200 ? (result.msg || '重置密码成功') : (result.msg || '重置密码失败')
+        msg: result.code === 200 ? (result.msg || '重置密码成功') : (result.msg || '重置密码失败'),
+        data: typeof result.data === 'string' ? result.data : undefined
       }
     }
-    return { code: 200, msg: '重置密码成功' }
+    return { code: 500, msg: '重置密码响应无效' }
   } catch (error) {
     logger.error('重置学生密码失败:', error)
     return {
@@ -476,7 +502,7 @@ export const batchDeleteApi = async (ids: number[]): Promise<{ code: number; msg
 
       try {
         const response = await StudentUserService.batchDeleteStudents(batchIds)
-        const result = response || { code: 500, msg: '响应为空' }
+        const result: ApiResult<unknown> = response || { code: 500, message: '响应为空', data: null }
         logger.log(`批量删除批次 ${Math.floor(i / batchSize) + 1} 响应:`, result)
 
         const isBatchSuccess = (result as { code?: number | string }).code === 200 || (result as { code?: number | string }).code === '200' ||
@@ -565,7 +591,7 @@ export const importExcelApi = async (formData: FormData): Promise<{ code: number
         'Content-Type': 'multipart/form-data'
       }
     })
-    const result = response || { code: 500, msg: '响应为空' }
+    const result: ApiResult<unknown> = response || { code: 500, message: '响应为空', data: null }
 
     if (result.code === 200) {
       return {
@@ -593,7 +619,7 @@ export const updateStatusApi = async (id: number, status: number): Promise<{ cod
       status: status
     })
 
-    const result = response || { code: 500, msg: '响应为空' }
+    const result: ApiResult<unknown> = response || { code: 500, message: '响应为空', data: null }
     return {
       code: result.code || 200,
       msg: result.msg || (status === 1 ? '启用成功' : '禁用成功')

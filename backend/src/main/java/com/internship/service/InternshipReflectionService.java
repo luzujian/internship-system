@@ -11,6 +11,8 @@ public interface InternshipReflectionService {
 
     int updateById(InternshipReflection internshipReflection);
 
+    int withdrawSubmitted(Long id, Long studentId, java.util.Date updateTime);
+
     int deleteById(Long id);
 
     InternshipReflection findById(Long id);

@@ -1,12 +1,12 @@
 <template>
-  <div class="app-container">
+  <div class="app-container" @wheel.capture="forwardTableWheelToPage">
     <!-- 路由出口 -->
     <router-view />
   </div>
 </template>
 
 <script lang="ts" setup>
-// 根组件，主要用于路由出口
+import { forwardTableWheelToPage } from '@/utils/tableWheel'
 </script>
 
 <style>

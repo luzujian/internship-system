@@ -65,9 +65,7 @@
             <if test="validFrom != null">
                 valid_from = #{validFrom},
             </if>
-            <if test="validTo != null">
-                valid_to = #{validTo},
-            </if>
+            valid_to = NULL,
             <if test="targetType != null and targetType != ''">
                 target_type = #{targetType},
             </if>
@@ -104,7 +102,6 @@
             GROUP BY announcement_id
         ) read_counts ON a.id = read_counts.announcement_id
         ORDER BY
-            CASE WHEN a.priority = 'important' THEN 0 ELSE 1 END,
             a.create_time DESC
     </select>
     
@@ -126,7 +123,6 @@
             </if>
         </where>
         ORDER BY
-            CASE WHEN a.priority = 'important' THEN 0 ELSE 1 END,
             a.create_time DESC
     </select>
 
@@ -137,6 +133,7 @@
                 SELECT 1 FROM announcement_read_records r
                 WHERE r.announcement_id = a.id
                 AND r.user_id = #{userId}
+                AND r.user_type = #{userType}
             ) THEN 1 ELSE 0 END as is_read
         FROM announcements a
         LEFT JOIN (
@@ -159,8 +156,6 @@
             </if>
         </where>
         ORDER BY
-            is_read ASC,
-            CASE WHEN a.priority = 'important' THEN 0 ELSE 1 END,
             a.create_time DESC
     </select>
     
@@ -203,7 +198,6 @@
             </if>
         </where>
         ORDER BY
-            CASE WHEN a.priority = 'important' THEN 0 ELSE 1 END,
             a.publish_time DESC
         LIMIT #{offset}, #{pageSize}
     </select>
@@ -216,28 +210,36 @@
                 SELECT 1 FROM announcement_read_records r
                 WHERE r.announcement_id = a.id
                 AND r.user_id = #{userId}
+                AND r.user_type = #{readerType}
             ) THEN 1 ELSE 0 END as is_read
         FROM announcements a
         WHERE a.status = 'PUBLISHED'
-        AND (a.valid_to IS NULL OR a.valid_to > NOW())
         <choose>
             <when test="userType == 'STUDENT'">
                 AND (
-                    a.target_type LIKE '%ALL%'
-                    OR a.target_type LIKE '%STUDENT%'
-                    OR (a.target_type LIKE '%MAJOR%' AND a.target_value = #{userInfo})
+                    a.target_type LIKE '%"ALL"%' OR a.target_type = 'ALL'
+                    OR a.target_type LIKE '%"STUDENT"%' OR a.target_type = 'STUDENT'
+                    OR ((a.target_type LIKE '%"MAJOR"%' OR a.target_type = 'MAJOR')
+                        AND (a.target_value IS NULL OR a.target_value LIKE CONCAT('%\"', #{userInfo}, '\"%')))
                 )
             </when>
             <when test="userType == 'TEACHER'">
                 AND (
-                    a.target_type LIKE '%ALL%'
-                    OR a.target_type LIKE '%TEACHER%'
-                    OR (a.target_type LIKE '%TEACHER_TYPE%' AND a.target_value = #{userInfo})
+                    a.target_type LIKE '%"ALL"%' OR a.target_type = 'ALL'
+                    OR a.target_type LIKE '%"TEACHER"%' OR a.target_type = 'TEACHER'
+                    OR ((a.target_type LIKE '%"TEACHER_TYPE"%' OR a.target_type = 'TEACHER_TYPE')
+                        AND (a.target_value IS NULL OR a.target_value LIKE CONCAT('%\"', #{userInfo}, '\"%')))
+                )
+            </when>
+            <when test="userType == 'COMPANY'">
+                AND (
+                    a.target_type LIKE '%"ALL"%' OR a.target_type = 'ALL'
+                    OR a.target_type LIKE '%"COMPANY"%' OR a.target_type = 'COMPANY'
                 )
             </when>
         </choose>
         ORDER BY
-            a.publish_time DESC
+            COALESCE(a.publish_time, a.create_time) DESC
     </select>
     
     <!-- 增加公告阅读次数 -->

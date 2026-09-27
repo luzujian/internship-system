@@ -64,7 +64,7 @@ public class ResourceQueryAgentService {
      * @return 查询结果
      */
     public Map<String, Object> processResourceQuery(String query, String context, String model) {
-        log.info("开始处理资源查询: {}", query);
+        log.info("开始处理资源查询: queryLength={}", query != null ? query.length() : 0);
         
         try {
             // 构建系统提示词
@@ -90,7 +90,8 @@ public class ResourceQueryAgentService {
             
             // 适配不同版本的Spring AI API
             String aiResponse = client.prompt(prompt).call().content();
-            log.debug("AI解析结果: {}", aiResponse);
+            log.debug("AI 资源查询解析响应已返回：length={}",
+                    aiResponse != null ? aiResponse.length() : 0);
             
             // 解析AI响应，提取查询参数
             ResourceSearchParams searchParams = parseResourceSearchParams(aiResponse, query);
@@ -105,9 +106,8 @@ public class ResourceQueryAgentService {
             result.put("searchResult", searchResult);
             result.put("searchTime", System.currentTimeMillis());
             
-            log.info("资源查询完成，提取参数: {}, 查询结果数量: {}", 
-                     searchParams.toMap(), 
-                     searchResult instanceof Map ? ((Map<?, ?>) searchResult).get("total") : "未知");
+            log.info("资源查询完成，查询结果数量: {}",
+                    searchResult instanceof Map ? ((Map<?, ?>) searchResult).get("total") : "未知");
             
             return result;
         } catch (Exception e) {
@@ -197,13 +197,15 @@ public class ResourceQueryAgentService {
                     modelCode = "deepseek-reasoner";
                     break;
                 case "deepseek-v4-flash":
-                    modelCode = "deepseek-v4-flash";
+                case "deepseek-flash":
+                    // deepseek-v4-flash 已下线，统一使用 v4.1 (deepseek-flash)，旧配置值作为别名兼容
+                    modelCode = "deepseek-flash";
                     break;
                 case "deepseek-v4-pro":
                     modelCode = "deepseek-v4-pro";
                     break;
                 default:
-                    modelCode = "deepseek-chat";
+                    modelCode = "deepseek-flash";
             }
         }
 

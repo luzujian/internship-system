@@ -5,12 +5,15 @@ import com.internship.exception.BusinessException;
 import com.internship.entity.PageResult;
 import com.internship.entity.Result;
 import com.internship.entity.Department;
+import com.internship.entity.Division;
 import com.internship.entity.TeacherUser;
 import com.internship.service.DepartmentService;
+import com.internship.service.DivisionService;
 import com.internship.service.TeacherUserService;
 import com.internship.utils.ExcelUtils;
 import com.internship.utils.JwtUtils;
 import com.internship.utils.PasswordValidator;
+import com.internship.utils.UserCredentialDefaults;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
@@ -27,10 +30,10 @@ import java.io.OutputStream;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Date;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 
 /**
  * 教师用户控制器
@@ -48,9 +51,15 @@ public class TeacherUserController {
 
     @Autowired
     private DepartmentService departmentService;
+
+    @Autowired
+    private DivisionService divisionService;
     
     @Autowired
     private JwtUtils jwtUtils;
+
+    @Autowired(required = false)
+    private com.internship.service.UserCacheService userCacheService;
 
     // 获取所有教师用户（分页，支持多条件查询）
     @GetMapping
@@ -118,13 +127,15 @@ public class TeacherUserController {
     public Result addTeacherUser(@RequestBody @Validated TeacherUser teacherUser) {
         log.info("添加教师用户: {}", teacherUser.getTeacherUserId());
         try {
+            String initialPassword = UserCredentialDefaults.PASSWORD;
+            teacherUser.setPassword(initialPassword);
             // 设置username字段，与teacherUserId相同
             if (teacherUser.getUsername() == null || teacherUser.getUsername().isEmpty()) {
                 teacherUser.setUsername(teacherUser.getTeacherUserId());
             }
-            teacherUser.setRole("ROLE_TEACHER"); // 确保角色正确
             teacherUserService.register(teacherUser);
-            return Result.success("添加成功");
+            return Result.success("添加成功", Map.of("initialCredentials",
+                    List.of(Map.of("username", teacherUser.getUsername(), "password", initialPassword))));
         } catch (BusinessException e) {
             log.warn("添加教师用户失败: {}", e.getMessage());
             return Result.error(e.getMessage());
@@ -139,20 +150,24 @@ public class TeacherUserController {
         log.info("批量添加教师用户，数量: {}", teacherUsers.size());
         try {
             int successCount = 0;
+            List<Map<String, String>> initialCredentials = new ArrayList<>();
             for (TeacherUser teacherUser : teacherUsers) {
                 try {
+                    String initialPassword = UserCredentialDefaults.PASSWORD;
+                    teacherUser.setPassword(initialPassword);
                     // 设置username字段，与teacherUserId相同
                     if (teacherUser.getUsername() == null || teacherUser.getUsername().isEmpty()) {
                         teacherUser.setUsername(teacherUser.getTeacherUserId());
                     }
-                    teacherUser.setRole("ROLE_TEACHER"); // 确保角色正确
                     teacherUserService.register(teacherUser);
                     successCount++;
+                    initialCredentials.add(Map.of("username", teacherUser.getUsername(), "password", initialPassword));
                 } catch (Exception e) {
                     log.warn("添加教师用户 {} 失败: {}", teacherUser.getTeacherUserId(), e.getMessage());
                 }
             }
-            return Result.success("批量添加完成，成功: " + successCount + " 个用户");
+            return Result.success("批量添加完成，成功: " + successCount + " 个用户",
+                    Map.of("initialCredentials", initialCredentials));
         } catch (Exception e) {
             log.error("批量添加教师用户失败: {}", e.getMessage());
             return Result.error("批量添加用户失败");
@@ -181,7 +196,7 @@ public class TeacherUserController {
     @PutMapping("/status")
     @PreAuthorize("hasAuthority('user:teacher:edit')")
     public Result updateTeacherUserStatus(@RequestBody Map<String, Object> params) {
-        log.info("更新教师用户状态: {}", params);
+        log.info("收到教师用户状态更新请求");
         try {
             Long id = Long.valueOf(params.get("id").toString());
             Integer status = Integer.valueOf(params.get("status").toString());
@@ -215,7 +230,7 @@ public class TeacherUserController {
     }
 
     // 批量删除教师用户
-    @Log(operationType = "DELETE", module = "TEACHER_MANAGEMENT", description = "批量删除教师用户")
+    @Log(operationType = "DELETE", module = "TEACHER_MANAGEMENT", description = "批量删除教师用户", riskLevel = "HIGH", critical = true)
     @DeleteMapping("/batch")
     @PreAuthorize("hasAuthority('user:teacher:delete')")
     public Result batchDeleteTeacherUsers(@RequestBody List<Long> ids) {
@@ -226,6 +241,25 @@ public class TeacherUserController {
         } catch (BusinessException e) {
             log.warn("批量删除教师用户失败: {}", e.getMessage());
             return Result.error(e.getMessage());
+        }
+    }
+
+    @Log(operationType = "RESET_PASSWORD", module = "TEACHER_MANAGEMENT", description = "一键重置全部教师用户密码",
+            riskLevel = "HIGH", targetType = "TEACHER", critical = true)
+    @PostMapping("/reset-password/all")
+    @PreAuthorize("hasAuthority('user:teacher:reset')")
+    public Result resetAllTeacherUserPasswords() {
+        log.info("一键重置全部教师用户密码");
+        try {
+            List<TeacherUser> teachers = teacherUserService.findAll(null, null, null);
+            int resetCount = teacherUserService.resetAllPasswords();
+            for (TeacherUser teacher : teachers) {
+                invalidateUserCredentials(teacher.getTeacherUserId(), teacher.getUsername());
+            }
+            return Result.success("全部教师用户密码已重置为 123456", Map.of("resetCount", resetCount));
+        } catch (Exception e) {
+            log.error("一键重置全部教师用户密码失败", e);
+            return Result.error("一键重置全部教师用户密码失败：" + e.getMessage());
         }
     }
 
@@ -247,19 +281,15 @@ public class TeacherUserController {
                 return Result.error("用户不存在");
             }
 
-            String newPassword = passwordDTO.get("password");
-            if (StringUtils.isBlank(newPassword)) {
-                newPassword = UUID.randomUUID().toString().substring(0, 8);
-            }
-
-            PasswordValidator.ValidationResult validationResult = PasswordValidator.validatePassword(newPassword);
-            if (!validationResult.isValid()) {
-                log.warn("重置教师用户密码失败：新密码不符合复杂度要求 - {}", validationResult.getMessage());
-                return Result.error(validationResult.getMessage());
-            }
+            // 管理员端统一重置口令，服务端固定生效，不信任前端传值。
+            String newPassword = UserCredentialDefaults.PASSWORD;
 
             teacherUser.setPassword(newPassword);
             teacherUserService.update(teacherUser);
+            // 清除 Redis 用户缓存，避免被重置用户登录时命中旧密码哈希
+            if (userCacheService != null) {
+                userCacheService.evictUserCache(teacherUser.getTeacherUserId());
+            }
 
             jwtUtils.incrementUserTokenVersion(teacherUser.getTeacherUserId());
 
@@ -271,6 +301,17 @@ public class TeacherUserController {
         }
     }
 
+    private void invalidateUserCredentials(String... usernames) {
+        for (String username : usernames) {
+            if (StringUtils.isNotBlank(username)) {
+                if (userCacheService != null) {
+                    userCacheService.evictUserCache(username);
+                }
+                jwtUtils.incrementUserTokenVersion(username);
+            }
+        }
+    }
+
     /**
      * 导出教师数据到Excel文件
      * @param response HTTP响应对象
@@ -278,6 +319,7 @@ public class TeacherUserController {
      * @param name 姓名筛选条件
      * @param departmentId 院系ID筛选条件
      */
+    @Log(operationType = "EXPORT", module = "TEACHER_MANAGEMENT", description = "导出教师数据", riskLevel = "MEDIUM", critical = true)
     @GetMapping("/export")
     @PreAuthorize("hasRole('ROLE_ADMIN')")
     public void exportTeacherData(HttpServletResponse response,
@@ -296,6 +338,21 @@ public class TeacherUserController {
             
             // 获取所有满足条件的教师数据（不使用分页）
             List<TeacherUser> teachers = teacherUserService.findAll(teacherUserId, name, departmentId);
+
+            // 构建系ID -> 系名称映射（一次查询，避免逐行查库）
+            Map<String, String> divisionNameMap = new HashMap<>();
+            try {
+                List<Division> divisionList = divisionService.findAll();
+                if (divisionList != null) {
+                    for (Division d : divisionList) {
+                        if (d.getId() != null && d.getName() != null) {
+                            divisionNameMap.put(String.valueOf(d.getId()), d.getName());
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                log.warn("获取系列表失败，导出时系名称将为空: {}", e.getMessage());
+            }
             
             // 创建Excel工作簿
             Workbook workbook = new XSSFWorkbook();
@@ -303,7 +360,7 @@ public class TeacherUserController {
             
             // 创建表头行
             Row headerRow = sheet.createRow(0);
-            String[] headers = {"工号", "姓名", "性别", "身份", "院系", "手机号"};
+            String[] headers = {"工号", "姓名", "学院", "系", "身份", "手机号", "邮箱"};
             CellStyle headerStyle = workbook.createCellStyle();
             headerStyle.setFillForegroundColor(IndexedColors.GREEN.getIndex());
             headerStyle.setFillPattern(FillPatternType.SOLID_FOREGROUND);
@@ -345,43 +402,47 @@ public class TeacherUserController {
                 cell1.setCellStyle(dataStyle);
                 
                 Cell cell2 = dataRow.createCell(2);
-                cell2.setCellValue(teacher.getGender() != null ? (teacher.getGender() == 1 ? "男" : "女") : "");
-                cell2.setCellStyle(dataStyle);
-                
-                Cell cell3 = dataRow.createCell(3);
-                String teacherType = teacher.getTeacherType();
-                if (teacherType != null && !teacherType.isEmpty()) {
-                    switch (teacherType) {
-                        case "COLLEGE":
-                            cell3.setCellValue("学院教师");
-                            break;
-                        case "DEPARTMENT":
-                            cell3.setCellValue("系室教师");
-                            break;
-                        case "COUNSELOR":
-                            cell3.setCellValue("辅导员");
-                            break;
-                        default:
-                            cell3.setCellValue(teacherType);
-                    }
-                } else {
-                    cell3.setCellValue("");
-                }
-                cell3.setCellStyle(dataStyle);
-                
-                Cell cell4 = dataRow.createCell(4);
                 if (teacher.getDepartmentId() != null && !teacher.getDepartmentId().isEmpty()) {
                     try {
                         Long deptId = Long.parseLong(teacher.getDepartmentId());
                         Department department = departmentService.findById(deptId);
                         if (department != null) {
-                            cell4.setCellValue(department.getName());
+                            cell2.setCellValue(department.getName());
                         } else {
-                            cell4.setCellValue("未知院系");
+                            cell2.setCellValue("未知学院");
                         }
                     } catch (Exception e) {
                         log.error("获取院系名称失败: {}", e.getMessage());
-                        cell4.setCellValue(teacher.getDepartmentId());
+                        cell2.setCellValue(teacher.getDepartmentId());
+                    }
+                } else {
+                    cell2.setCellValue("");
+                }
+                cell2.setCellStyle(dataStyle);
+
+                Cell cell3 = dataRow.createCell(3);
+                String divisionName = "";
+                if (teacher.getDivisionId() != null && !teacher.getDivisionId().isEmpty()) {
+                    divisionName = divisionNameMap.getOrDefault(String.valueOf(teacher.getDivisionId()).trim(), "");
+                }
+                cell3.setCellValue(divisionName);
+                cell3.setCellStyle(dataStyle);
+
+                Cell cell4 = dataRow.createCell(4);
+                String teacherType = teacher.getTeacherType();
+                if (teacherType != null && !teacherType.isEmpty()) {
+                    switch (teacherType) {
+                        case "COLLEGE":
+                            cell4.setCellValue("学院教师");
+                            break;
+                        case "DEPARTMENT":
+                            cell4.setCellValue("系室教师");
+                            break;
+                        case "COUNSELOR":
+                            cell4.setCellValue("辅导员");
+                            break;
+                        default:
+                            cell4.setCellValue(teacherType);
                     }
                 } else {
                     cell4.setCellValue("");
@@ -391,6 +452,10 @@ public class TeacherUserController {
                 Cell cell5 = dataRow.createCell(5);
                 cell5.setCellValue(teacher.getPhone() != null ? teacher.getPhone() : "");
                 cell5.setCellStyle(dataStyle);
+
+                Cell cell6 = dataRow.createCell(6);
+                cell6.setCellValue(teacher.getEmail() != null ? teacher.getEmail() : "");
+                cell6.setCellStyle(dataStyle);
             }
             
             // 调整列宽
@@ -463,9 +528,9 @@ public class TeacherUserController {
             Workbook workbook = new XSSFWorkbook();
             Sheet sheet = workbook.createSheet("教师导入模板");
 
-            // 创建表头行（第 1 行）
+            // 创建表头行（第 1 行）：仅必填项，手机号/邮箱可在管理人员编辑页或个人中心后续绑定
             Row headerRow = sheet.createRow(0);
-            String[] headers = {"工号", "姓名", "性别", "手机号", "邮箱", "院系 ID", "教师类型", "说明"};
+            String[] headers = {"工号", "姓名", "学院", "系", "身份", "说明"};
 
             // 创建表头样式
             CellStyle headerStyle = workbook.createCellStyle();
@@ -480,6 +545,7 @@ public class TeacherUserController {
 
             Font headerFont = workbook.createFont();
             headerFont.setBold(true);
+            headerFont.setColor(IndexedColors.WHITE.getIndex());
             headerFont.setFontHeightInPoints((short) 11);
             headerStyle.setFont(headerFont);
 
@@ -498,8 +564,8 @@ public class TeacherUserController {
 
             // 在表头行的最后一列右边添加说明
             Row descRow = sheet.createRow(1);
-            Cell descCell = descRow.createCell(7);
-            descCell.setCellValue("说明：工号、姓名、性别、院系 ID、教师类型为必填项，教师类型：COLLEGE(学院教师)/DEPARTMENT(系室教师)/COUNSELOR(辅导员)");
+            Cell descCell = descRow.createCell(5);
+            descCell.setCellValue("说明：工号、姓名、学院、身份为必填项；系室教师还须填写所属系；身份请填写学院教师/系室教师/辅导员");
 
             CellStyle descStyle = workbook.createCellStyle();
             descStyle.setFillForegroundColor(IndexedColors.YELLOW.getIndex());

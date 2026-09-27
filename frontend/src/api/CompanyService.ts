@@ -12,6 +12,13 @@ export interface CompanyInfo {
   website?: string
   contactPhone?: string
   contactEmail?: string
+  isAlumniUnit?: number
+  alumniMembers?: Array<{
+    id?: number
+    name: string
+    phone: string
+    position: string
+  }>
   status?: number
   createTime?: string
   updateTime?: string
@@ -38,6 +45,12 @@ export interface CompanyStats {
   [key: string]: unknown
 }
 
+export interface CompanySchoolLiaison {
+  teacherId: number
+  teacherName: string
+  teacherPhone?: string
+}
+
 export default {
   getCompanyInfo(companyId: number) {
     return request<CompanyInfo>({
@@ -53,6 +66,15 @@ export default {
       method: 'put',
       data: companyInfo
     })
+  },
+
+  getSchoolLiaisons() {
+    const config = {
+      url: '/company/school-liaisons',
+      method: 'get' as const,
+      skipErrorMessage: true
+    }
+    return request<CompanySchoolLiaison[]>(config)
   },
 
   getStats() {

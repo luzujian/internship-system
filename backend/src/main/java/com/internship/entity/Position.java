@@ -1,9 +1,13 @@
 package com.internship.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
+import java.math.BigDecimal;
 import java.util.Date;
 
 /**
@@ -34,10 +38,14 @@ public class Position {
     private String detailAddress;
 
     @Min(value = 0, message = "最低薪资不能为负数")
-    private Integer salaryMin;
+    private BigDecimal salaryMin;
 
     @Min(value = 0, message = "最高薪资不能为负数")
-    private Integer salaryMax;
+    private BigDecimal salaryMax;
+
+    @Size(max = 20, message = "薪资单位长度不能超过 20 个字符")
+    @Pattern(regexp = "^(K/月|元/天|元/小时|面议)$", message = "薪资单位不合法")
+    private String salaryUnit = "K/月";
 
     private String description;
 
@@ -56,8 +64,10 @@ public class Position {
 
     private Date publishDate;
 
+    @JsonIgnore
     private Date internshipStartDate;
 
+    @JsonIgnore
     private Date internshipEndDate;
 
     private Date interviewTime;
@@ -68,9 +78,21 @@ public class Position {
 
     private String interviewRemark;
 
+    private String internshipEnvironment;
+
+    private Integer providesAccommodation = 0;
+
+    private String requiredMajors;
+
     @Min(value = 0, message = "浏览次数不能为负数")
     private Integer viewCount = 0;
 
     private Date createTime;
     private Date updateTime;
+
+    @JsonIgnore
+    @AssertTrue(message = "最低薪资不能高于最高薪资")
+    public boolean isSalaryRangeValid() {
+        return salaryMin == null || salaryMax == null || salaryMin.compareTo(salaryMax) <= 0;
+    }
 }

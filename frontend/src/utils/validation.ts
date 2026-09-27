@@ -43,11 +43,19 @@ export const createPhoneValidator = (message = '请输入 11 位中国大陆手�
 /**
  * 邮箱验证器
  * @param message 自定义错误消息
+ * @param required 是否必填，默认 true；false 时允许为空（有值仍校验格式）
  */
-export const createEmailValidator = (message = '请输入有效的邮箱地址，如 example@email.com') => ({
+export const createEmailValidator = (
+  message = '请输入有效的邮箱地址，如 example@email.com',
+  required = true
+) => ({
   validator: (_rule: any, value: string, callback: (error?: Error) => void) => {
     if (!value) {
-      callback(new Error('请输入邮箱'))
+      if (required) {
+        callback(new Error('请输入邮箱'))
+      } else {
+        callback()
+      }
     } else if (!/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(value)) {
       callback(new Error(message))
     } else {

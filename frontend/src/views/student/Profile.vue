@@ -18,8 +18,6 @@
 
     <div class="profile-card">
       <div class="card-glass-bg"></div>
-      <div class="card-gradient-left"></div>
-      <div class="card-gradient-right"></div>
       
       <div class="profile-content">
         <div class="avatar-section">
@@ -45,9 +43,9 @@
           <div class="info-header">
             <div class="name-group">
               <h3 class="user-name">{{ userInfo.name }}</h3>
-              <div :class="['status-badge', getStatusClass(internshipStatus.status)]">
+              <div :class="['status-badge', getStatusClass(internshipStatus.status, internshipStatus.jobSearchStatus)]">
                 <span class="status-dot"></span>
-                {{ getStatusText(internshipStatus.status) }}
+                {{ getStatusText(internshipStatus.status, internshipStatus.jobSearchStatusText) }}
               </div>
             </div>
           </div>
@@ -280,26 +278,45 @@
               <div class="favorite-icon">
                 <el-icon :size="24"><Star /></el-icon>
               </div>
-              <div class="favorite-title">{{ item.companyName }}</div>
+              <div class="favorite-title">
+                <span class="favorite-position">{{ item.industryName ? item.industryName + ' - ' + item.title : item.title }}</span>
+                <div class="favorite-badges">
+                  <el-tag v-if="item.internshipBase && item.internshipBase !== 'none'" size="small" type="success">实习基地</el-tag>
+                  <el-tag v-if="item.isAlumniUnit === 1" size="small" type="warning">校友单位</el-tag>
+                </div>
+              </div>
             </div>
             <div class="favorite-body">
               <div class="favorite-info-grid">
                 <div class="favorite-info">
-                  <span class="info-label">职位</span>
-                  <span class="info-value">{{ item.position }}</span>
+                  <span class="info-label">企业</span>
+                  <span class="info-value">{{ item.companyName }}</span>
+                </div>
+                <div class="favorite-info">
+                  <span class="info-label">企业推荐</span>
+                  <span class="info-value">
+                    <template v-if="Number(item.companyRatingCount) > 0 && item.companyRatingAverage != null">
+                      {{ Number(item.companyRatingAverage).toFixed(1) }} ★（{{ item.companyRatingCount }}人）
+                    </template>
+                    <template v-else>暂无评分</template>
+                  </span>
+                </div>
+                <div class="favorite-info">
+                  <span class="info-label">地点</span>
+                  <span class="info-value">{{ item.location }}</span>
                 </div>
                 <div class="favorite-info">
                   <span class="info-label">薪资</span>
                   <span class="info-value">{{ item.salary }}</span>
                 </div>
                 <div class="favorite-info">
-                  <span class="info-label">地点</span>
-                  <span class="info-value">{{ item.location }}</span>
+                  <span class="info-label">剩余名额</span>
+                  <span class="info-value">{{ item.remainingQuota }}</span>
                 </div>
               </div>
-              <div class="favorite-tags">
+              <div v-if="filterJobTags(item.tags).length" class="favorite-tags">
                 <el-tag
-                  v-for="tag in item.tags"
+                  v-for="tag in filterJobTags(item.tags)"
                   :key="tag"
                   size="small"
                   type="success"
@@ -313,21 +330,18 @@
                   <el-button type="primary" size="small" plain @click="viewJobDetail(item)">
                     查看详情
                   </el-button>
-                  <!-- 学生已确认实习岗位后，不显示任何申请按钮 -->
-                  <template v-if="statusLoaded && internshipStatus.status < 2">
-                    <!-- 未申请：显示申请按钮 -->
+                  <template>
+                    <el-tag v-if="item.id === internshipStatus.positionId" type="success" size="small">
+                      当前实习
+                    </el-tag>
                     <el-button
-                      v-if="!item.isApplied"
+                      v-else-if="!item.isApplied"
                       type="primary"
                       size="small"
                       @click="applyJob(item)"
                     >
-                      立即申请
+                      立即投递
                     </el-button>
-                    <!-- 已招满 -->
-                    <el-tag v-else-if="item.remainingQuota === 0" type="info" size="small">
-                      已招满
-                    </el-tag>
                     <!-- 待审核状态：可以取消 -->
                     <el-button
                       v-else-if="item.applicationStatus === 'pending'"
@@ -341,27 +355,14 @@
                     <el-tag v-else-if="item.applicationStatus === 'interview_passed'" type="success" size="small">
                       面试通过
                     </el-tag>
-                    <!-- 面试未通过：显示状态 -->
-                    <el-tag v-else-if="item.applicationStatus === 'interview_failed'" type="danger" size="small">
-                      面试未通过
-                    </el-tag>
                     <!-- 已通过：显示状态，不显示取消 -->
                     <el-tag v-else-if="item.applicationStatus === 'approved'" type="success" size="small">
                       已通过
                     </el-tag>
-                    <!-- 已拒绝：显示状态 -->
-                    <el-tag v-else-if="item.applicationStatus === 'rejected'" type="danger" size="small">
-                      已拒绝
-                    </el-tag>
-                    <!-- 已撤回：显示状态 -->
-                    <el-tag v-else-if="item.applicationStatus === 'withdrawn'" type="info" size="small">
-                      已撤回
+                    <el-tag v-else-if="item.isApplied" type="warning" size="small">
+                      招聘流程中
                     </el-tag>
                   </template>
-                  <!-- 仅对学生已确认的职位显示此标签 -->
-                  <el-tag v-else-if="item.id === internshipStatus.positionId" type="success" size="small">
-                    已确认实习
-                  </el-tag>
                   <el-button type="danger" size="small" @click="removeFavorite(item.id)">
                     <el-icon><Delete /></el-icon>
                     取消收藏
@@ -398,39 +399,8 @@
           <h1 class="header-title">申请职位</h1>
         </div>
 
-        <el-form :model="applicationForm" :rules="applicationRules" ref="applicationFormRef" label-width="100px">
+        <el-form :model="applicationForm" ref="applicationFormRef" label-width="100px">
           <div class="form-content">
-            <div class="form-module">
-              <div class="module-header">
-                <div class="module-icon-container">
-                  <el-icon class="module-icon"><User /></el-icon>
-                </div>
-                <h2 class="module-title">基本信息</h2>
-              </div>
-              <div class="form-grid">
-                <el-form-item label="学生姓名" prop="studentName">
-                  <el-input v-model="applicationForm.studentName" placeholder="请输入姓名" clearable />
-                </el-form-item>
-                <el-form-item label="学号" prop="studentNo">
-                  <el-input v-model="applicationForm.studentNo" placeholder="请输入学号" clearable />
-                </el-form-item>
-                <el-form-item label="专业" prop="major">
-                  <el-input v-model="applicationForm.major" placeholder="请输入专业" clearable />
-                </el-form-item>
-                <el-form-item label="年级" prop="grade">
-                  <el-select v-model="applicationForm.grade" placeholder="请选择年级" clearable style="width: 100%">
-                    <el-option label="一年级" value="一年级" />
-                    <el-option label="二年级" value="二年级" />
-                    <el-option label="三年级" value="三年级" />
-                    <el-option label="四年级" value="四年级" />
-                  </el-select>
-                </el-form-item>
-                <el-form-item label="联系电话" prop="phone">
-                  <el-input v-model="applicationForm.phone" placeholder="请输入联系电话" clearable />
-                </el-form-item>
-              </div>
-            </div>
-
             <div class="form-module">
               <div class="module-header">
                 <div class="module-icon-container">
@@ -439,11 +409,14 @@
                 <h2 class="module-title">申请信息</h2>
               </div>
               <div class="form-grid">
-                <el-form-item label="应聘岗位">
-                  <el-input :model-value="applicationForm.positionName" disabled />
-                </el-form-item>
                 <el-form-item label="应聘单位">
                   <el-input :model-value="applicationForm.companyName" disabled />
+                </el-form-item>
+                <el-form-item label="岗位类别">
+                  <el-input :model-value="applicationForm.industryName" disabled />
+                </el-form-item>
+                <el-form-item label="岗位名称">
+                  <el-input :model-value="applicationForm.positionName" disabled />
                 </el-form-item>
               </div>
             </div>
@@ -466,17 +439,20 @@
               </el-form-item>
             </div>
 
-            <!-- 我的申请材料模块 -->
+            <!-- 上传简历和证书模块 -->
             <div class="form-module">
               <div class="module-header">
                 <div class="module-icon-container">
                   <el-icon class="module-icon"><Upload /></el-icon>
                 </div>
-                <h2 class="module-title">我的申请材料</h2>
+                <h2 class="module-title">上传简历和证书</h2>
               </div>
               <div class="material-list">
                 <div v-if="resumeList.length === 0 && certificateList.length === 0" class="no-material-tip">
-                  暂无可用的申请材料，请在个人中心上传简历和证书
+                  <span>暂无可用的申请材料，请在个人中心上传简历和证书</span>
+                  <el-link type="primary" :underline="false" class="material-upload-link" @click="goToMaterialManagement">
+                    去个人中心上传
+                  </el-link>
                 </div>
                 <div v-for="resume in resumeList" :key="resume.id" class="material-item">
                   <el-icon class="material-icon"><Document /></el-icon>
@@ -513,14 +489,10 @@
       <div v-if="selectedJob" class="job-detail-content">
         <div class="detail-header">
           <div class="detail-title">
-            <h3>{{ selectedJob.position }}</h3>
-            <div v-if="selectedJob.internshipBase" class="internship-base-badges">
-              <el-tag v-if="selectedJob.internshipBase === 'national'" size="small" type="danger" class="base-badge national">
-                国家级实习基地
-              </el-tag>
-              <el-tag v-else-if="selectedJob.internshipBase === 'provincial'" size="small" type="warning" class="base-badge provincial">
-                省级实习基地
-              </el-tag>
+            <h3>{{ selectedJob.industryName ? selectedJob.industryName + ' - ' + selectedJob.position : selectedJob.position }}</h3>
+            <div class="internship-base-badges">
+              <el-tag v-if="selectedJob.internshipBase && selectedJob.internshipBase !== 'none'" size="small" type="success" class="base-badge">实习基地</el-tag>
+              <el-tag v-if="selectedJob.isAlumniUnit === 1" size="small" type="warning" class="base-badge">校友单位</el-tag>
             </div>
           </div>
           <div class="detail-actions">
@@ -544,6 +516,11 @@
               <span class="info-value">{{ selectedJob.companyName }}</span>
             </div>
             <div class="info-item">
+              <el-icon><OfficeBuilding /></el-icon>
+              <span class="info-label">合作模式：</span>
+              <span class="info-value">{{ formatCooperationMode(selectedJob.cooperationMode) }}</span>
+            </div>
+            <div class="info-item">
               <el-icon><Location /></el-icon>
               <span class="info-label">地点：</span>
               <span class="info-value">{{ selectedJob.location }}</span>
@@ -554,45 +531,56 @@
               <span class="info-value">{{ selectedJob.salary }}</span>
             </div>
             <div class="info-item">
-              <el-icon><Clock /></el-icon>
-              <span class="info-label">时长：</span>
-              <span class="info-value">{{ selectedJob.duration }}</span>
-            </div>
-            <div class="info-item">
               <el-icon><OfficeBuilding /></el-icon>
-              <span class="info-label">类型：</span>
-              <span class="info-value">{{ selectedJob.type }}</span>
-            </div>
-            <div class="info-item">
-              <el-icon><OfficeBuilding /></el-icon>
-              <span class="info-label">行业：</span>
+              <span class="info-label">岗位类别：</span>
               <span class="info-value">{{ selectedJob.industryName }}</span>
             </div>
           </div>
         </div>
 
+        <div
+          v-if="selectedJob.logo || selectedJob.companyIntroduction || favoritePhotos.length || favoriteVideos.length"
+          class="detail-section"
+        >
+          <h4 class="section-title">企业信息</h4>
+          <div v-if="selectedJob.logo || selectedJob.companyIntroduction" class="company-card-header">
+            <img v-if="selectedJob.logo" :src="selectedJob.logo" class="company-logo-large" alt="企业Logo" />
+            <div class="company-card-body">
+              <div class="company-card-title">
+                <span class="company-name-text">{{ selectedJob.companyName }}</span>
+              </div>
+              <p v-if="selectedJob.companyIntroduction" class="company-intro-text">{{ selectedJob.companyIntroduction }}</p>
+            </div>
+          </div>
+          <template v-if="favoritePhotos.length">
+            <h5 class="sub-section-title">企业照片</h5>
+            <div class="company-photo-grid">
+              <img v-for="(url, i) in favoritePhotos" :key="i" :src="url" class="company-photo" alt="企业照片" />
+            </div>
+          </template>
+          <template v-if="favoriteVideos.length">
+            <h5 class="sub-section-title">企业视频</h5>
+            <div class="company-video-list">
+              <video v-for="(url, i) in favoriteVideos" :key="i" :src="url" controls class="company-video" />
+            </div>
+          </template>
+        </div>
+
         <div class="detail-section">
           <h4 class="section-title">职位描述</h4>
-          <p class="detail-description">{{ selectedJob.description }}</p>
+          <p v-if="selectedJob.description" class="detail-description">{{ selectedJob.description }}</p>
         </div>
 
         <div class="detail-section">
           <h4 class="section-title">任职要求</h4>
-          <ul class="detail-list">
+          <ul v-if="selectedJob.requirements?.length" class="detail-list">
             <li v-for="(item, index) in selectedJob.requirements" :key="index">{{ item }}</li>
           </ul>
         </div>
 
         <div class="detail-section">
-          <h4 class="section-title">福利待遇</h4>
-          <ul class="detail-list">
-            <li v-for="(item, index) in selectedJob.benefits" :key="index">{{ item }}</li>
-          </ul>
-        </div>
-
-        <div class="detail-section">
           <h4 class="section-title">联系方式</h4>
-          <div class="contact-info">
+          <div v-if="selectedJob.contactPerson || selectedJob.contactPhone || selectedJob.contactEmail" class="contact-info">
             <div class="contact-item">
               <span class="contact-label">联系人：</span>
               <span class="contact-value">{{ selectedJob.contactPerson }}</span>
@@ -608,46 +596,57 @@
           </div>
         </div>
 
-        <div class="detail-section">
-          <h4 class="section-title">职位统计</h4>
-          <div class="stats-info">
-            <div class="stat-item">
-              <span class="stat-label">发布时间：</span>
-              <span class="stat-value">{{ selectedJob.publishTime }}</span>
-            </div>
-            <div class="stat-item">
-              <span class="stat-label">浏览次数：</span>
-              <span class="stat-value">{{ selectedJob.viewCount }}</span>
-            </div>
-            <div class="stat-item">
-              <span class="stat-label">申请人数：</span>
-              <span class="stat-value">{{ selectedJob.applyCount }}</span>
-            </div>
-          </div>
-        </div>
-
-        <div class="detail-footer">
+        <div
+          v-if="selectedJob.id === internshipStatus.positionId || !selectedJob.isApplied || !!selectedJob.applicationStatus"
+          class="detail-footer"
+        >
+          <el-tag v-if="selectedJob.id === internshipStatus.positionId" type="success">
+            当前实习
+          </el-tag>
           <el-button
-            v-if="!selectedJob.isApplied && selectedJob.remainingQuota > 0 && (studentStatus < 2 || studentStatus === 5)"
+            v-else-if="!selectedJob.isApplied"
             type="primary"
             size="large"
             @click="applyJob(selectedJob)"
             class="detail-apply-button"
           >
-            立即申请
+            立即投递
           </el-button>
-          <el-tag v-else-if="selectedJob.remainingQuota === 0" type="info">
-            已招满
+          <!-- 待审核状态 -->
+          <el-tag v-else-if="selectedJob.applicationStatus === 'pending'" type="warning">
+            待审核
           </el-tag>
-          <el-button
-            v-else-if="selectedJob.isApplied"
-            type="warning"
-            size="large"
-            @click="cancelApply(selectedJob)"
-            class="detail-cancel-apply-button"
-          >
-            取消申请
-          </el-button>
+          <!-- 待面试 -->
+          <el-tag v-else-if="selectedJob.applicationStatus === 'pending_interview'" type="warning">
+            待面试
+          </el-tag>
+          <!-- 面试中 -->
+          <el-tag v-else-if="selectedJob.applicationStatus === 'interview'" type="warning">
+            面试中
+          </el-tag>
+          <!-- 面试通过：显示状态，不显示取消 -->
+          <el-tag v-else-if="selectedJob.applicationStatus === 'interview_passed'" type="success">
+            面试通过
+          </el-tag>
+          <!-- 面试未通过：显示状态 -->
+          <el-tag v-else-if="selectedJob.applicationStatus === 'interview_failed'" type="danger">
+            面试未通过
+          </el-tag>
+          <!-- 已通过：显示状态，不显示取消 -->
+          <el-tag v-else-if="selectedJob.applicationStatus === 'approved'" type="success">
+            已通过
+          </el-tag>
+          <!-- 已拒绝：显示状态 -->
+          <el-tag v-else-if="selectedJob.applicationStatus === 'rejected'" type="danger">
+            已拒绝
+          </el-tag>
+          <!-- 已撤回：显示状态 -->
+          <el-tag v-else-if="selectedJob.applicationStatus === 'withdrawn'" type="info">
+            已撤回
+          </el-tag>
+          <el-tag v-else-if="selectedJob.isApplied" type="warning">
+            招聘流程中
+          </el-tag>
         </div>
       </div>
     </el-dialog>
@@ -779,16 +778,25 @@
       modal-class="global-modal"
     >
       <div class="resume-management-container">
-        <div class="resume-section">
+        <div
+          class="resume-section material-drop-section"
+          :class="{ 'is-drag-over': resumeDragActive }"
+          @dragenter.prevent="resumeDragActive = true"
+          @dragover.prevent="resumeDragActive = true"
+          @dragleave.prevent="handleResumeDragLeave"
+          @drop.prevent="handleResumeDrop"
+        >
           <div class="section-title">
             <el-icon :size="20"><Document /></el-icon>
             我的简历
-            <el-button type="primary" size="small" @click="openUploadResumeInDialog" class="upload-btn">
-              <el-icon><Upload /></el-icon>
-              上传简历
-            </el-button>
+            <div class="section-upload-actions">
+              <el-button type="primary" size="small" @click="openResumeFilePicker">
+                <el-icon><Upload /></el-icon>
+                上传简历
+              </el-button>
+            </div>
           </div>
-          <div v-if="resumeList.length === 0" class="empty-tip">暂无简历，请上传</div>
+          <div v-if="resumeList.length === 0 && resumeFileList.length === 0" class="empty-tip">暂无简历，可点击“上传简历”或拖拽文件到此处</div>
           <div
             v-for="resume in resumeList"
             :key="resume.id"
@@ -815,17 +823,48 @@
               </el-button>
             </div>
           </div>
+          <div
+            v-for="(pendingResume, index) in resumeFileList"
+            :key="`pending-resume-${pendingResume.uid || index}`"
+            class="resume-item pending-material-item"
+          >
+            <div class="resume-icon">
+              <el-icon :size="32"><DocumentCopy /></el-icon>
+            </div>
+            <div class="resume-info">
+              <div class="resume-name">
+                {{ pendingResume.name || '个人简历' }}
+                <el-tag size="small" type="warning" effect="plain">待上传</el-tag>
+              </div>
+              <div class="resume-meta">
+                <span>确认上传后正式保存</span>
+                <span>大小：{{ formatFileSize(pendingResume.size) }}</span>
+              </div>
+            </div>
+            <div class="resume-actions">
+              <el-button size="small" @click="removePendingResume">移除</el-button>
+            </div>
+          </div>
         </div>
-        <div class="certificate-section">
+        <div
+          class="certificate-section material-drop-section"
+          :class="{ 'is-drag-over': certificateDragActive }"
+          @dragenter.prevent="certificateDragActive = true"
+          @dragover.prevent="certificateDragActive = true"
+          @dragleave.prevent="handleCertificateDragLeave"
+          @drop.prevent="handleCertificateDrop"
+        >
           <div class="section-title">
             <el-icon :size="20"><FolderOpened /></el-icon>
             我的证书
-            <el-button type="primary" size="small" @click="openUploadCertificateInDialog" class="upload-btn">
-              <el-icon><Upload /></el-icon>
-              上传证书
-            </el-button>
+            <div class="section-upload-actions">
+              <el-button type="primary" size="small" @click="openCertificateFilePicker">
+                <el-icon><Upload /></el-icon>
+                上传证书
+              </el-button>
+            </div>
           </div>
-          <div v-if="certificateList.length === 0" class="empty-tip">暂无证书，请上传</div>
+          <div v-if="certificateList.length === 0 && certificateFileList.length === 0" class="empty-tip">暂无证书，可点击“上传证书”或拖拽文件到此处</div>
           <div
             v-for="cert in certificateList"
             :key="cert.id"
@@ -852,78 +891,66 @@
               </el-button>
             </div>
           </div>
+          <div
+            v-for="(pendingCertificate, index) in certificateFileList"
+            :key="`pending-certificate-${pendingCertificate.uid || index}`"
+            class="certificate-item pending-material-item"
+          >
+            <div class="cert-icon">
+              <el-icon :size="32"><FolderOpened /></el-icon>
+            </div>
+            <div class="cert-info">
+              <div class="cert-name">
+                {{ pendingCertificate.name || '证书文件' }}
+                <el-tag size="small" type="warning" effect="plain">待上传</el-tag>
+              </div>
+              <div class="cert-meta">
+                <span>确认上传后正式保存</span>
+                <span>大小：{{ formatFileSize(pendingCertificate.size) }}</span>
+              </div>
+            </div>
+            <div class="cert-actions">
+              <el-button size="small" @click="removePendingCertificate(index)">移除</el-button>
+            </div>
+          </div>
         </div>
       </div>
 
-      <!-- 简历上传区域 -->
-      <div class="upload-area" v-if="showResumeUploadArea">
-        <el-divider content-position="left">上传简历</el-divider>
-        <el-upload
-          class="upload-demo"
-          drag
-          action="#"
-          :auto-upload="false"
-          :on-change="handleResumeChange"
-          :limit="1"
-          :file-list="resumeFileList"
-          accept=".pdf,.doc,.docx"
-          :show-file-list="true"
-        >
-          <el-icon class="el-icon--upload"><Document /></el-icon>
-          <div class="el-upload__text">
-            拖拽文件到此处，或 <em>点击上传</em>
-          </div>
-          <template #tip>
-            <div class="el-upload__tip">
-              请上传 PDF、Word 格式的简历文件，大小不超过 10MB
-            </div>
-          </template>
-        </el-upload>
-        <div class="upload-actions">
-          <el-button @click="cancelResumeUpload">取消</el-button>
-          <el-button type="primary" @click="uploadResume" :disabled="resumeFileList.length === 0">
-            确认上传
-          </el-button>
-        </div>
-      </div>
+      <input
+        ref="resumeFileInput"
+        class="hidden-file-input"
+        type="file"
+        accept=".pdf,.doc,.docx"
+        @change="handleResumeInputChange"
+      >
+      <input
+        ref="certificateFileInput"
+        class="hidden-file-input"
+        type="file"
+        accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+        multiple
+        @change="handleCertificateInputChange"
+      >
 
-      <!-- 证书上传区域 -->
-      <div class="upload-area" v-if="showCertificateUploadArea">
-        <el-divider content-position="left">上传证书</el-divider>
-        <el-upload
-          class="upload-demo"
-          drag
-          action="#"
-          :auto-upload="false"
-          :on-change="handleCertificateChange"
-          :file-list="certificateFileList"
-          accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
-          :show-file-list="true"
-        >
-          <el-icon class="el-icon--upload"><FolderOpened /></el-icon>
-          <div class="el-upload__text">
-            拖拽文件到此处，或 <em>点击上传</em>
-          </div>
-          <template #tip>
-            <div class="el-upload__tip">
-              请上传 PDF、图片或 Word 格式的证书文件，大小不超过 10MB
-            </div>
-          </template>
-        </el-upload>
-        <div class="upload-actions">
-          <el-button @click="cancelCertificateUpload">取消</el-button>
-          <el-button type="primary" @click="uploadCertificate" :disabled="certificateFileList.length === 0">
+      <template #footer>
+        <div class="resume-management-footer">
+          <el-button
+            type="primary"
+            :loading="materialUploading"
+            :disabled="resumeFileList.length === 0 && certificateFileList.length === 0"
+            @click="confirmMaterialUpload"
+          >
             确认上传
           </el-button>
         </div>
-      </div>
+      </template>
     </el-dialog>
 
     <!-- 消息中心对话框 -->
     <el-dialog
       v-model="showMessageCenterDialog"
       title="消息中心"
-      width="900px"
+      width="min(1100px, calc(100vw - 32px))"
       class="message-center-dialog"
       :append-to-body="true"
       :lock-scroll="true"
@@ -931,100 +958,18 @@
     >
       <div v-loading="messageLoading" class="message-center-container">
         <el-empty v-if="!messageLoading && announcementList.length === 0" description="暂无公告通知" />
-        <div
+        <StudentAnnouncementMessageItem
           v-for="announcement in announcementList"
           :key="announcement.id"
-          :class="['message-item', { 'unread': !announcement.isRead }]"
-          @click="viewAnnouncementDetail(announcement)"
-        >
-          <div class="message-header">
-            <div class="message-sender">
-              <el-tag v-if="announcement.priority === 'important'" type="warning" size="small" class="priority-tag">重要</el-tag>
-              <el-tag
-                :type="getPublisherRoleTagType(announcement.publisherRole)"
-                size="small"
-              >
-                {{ getPublisherRoleText(announcement.publisherRole) }}
-              </el-tag>
-              <span class="sender-name">{{ announcement.publisher }}</span>
-            </div>
-            <div class="message-meta-right">
-              <span class="message-time">{{ formatAnnouncementTime(announcement.publishTime) }}</span>
-              <el-tag v-if="!announcement.isRead" type="danger" size="small" effect="plain">未读</el-tag>
-            </div>
-          </div>
-          <div class="message-content">
-            <div class="message-title">{{ announcement.title }}</div>
-            <div class="message-text">{{ getPreviewText(announcement.content) }}</div>
-          </div>
-          <div class="message-footer">
-            <span class="target-info">发送给: {{ getTargetText(announcement.targetType, announcement.targetValue) }}</span>
-            <span class="read-count">阅读: {{ announcement.readCount || 0 }}</span>
-          </div>
-        </div>
+          :announcement="announcement"
+          @select="viewAnnouncementDetail"
+        />
       </div>
     </el-dialog>
-
-    <!-- 公告详情对话框 -->
-    <el-dialog
+    <StudentAnnouncementDetailDialog
       v-model="showAnnouncementDetailDialog"
-      title="公告详情"
-      width="700px"
-      class="announcement-detail-dialog"
-      :append-to-body="true"
-      :lock-scroll="true"
-      modal-class="global-modal"
-    >
-      <div v-if="currentAnnouncement" class="announcement-detail">
-        <h2 class="detail-title">{{ currentAnnouncement.title }}</h2>
-        <div class="detail-meta">
-          <div class="meta-item">
-            <span class="meta-label">发布人:</span>
-            <span class="meta-value">{{ currentAnnouncement.publisher }}</span>
-          </div>
-          <el-tag :type="getPublisherRoleTagType(currentAnnouncement.publisherRole)" size="small">
-            {{ getPublisherRoleText(currentAnnouncement.publisherRole) }}
-          </el-tag>
-          <div class="meta-item">
-            <span class="meta-label">目标群体:</span>
-            <span class="meta-value">{{ getTargetText(currentAnnouncement.targetType, currentAnnouncement.targetValue) }}</span>
-          </div>
-          <div class="meta-item">
-            <span class="meta-label">发布时间:</span>
-            <span class="meta-value">{{ formatAnnouncementTime(currentAnnouncement.publishTime) }}</span>
-          </div>
-          <div class="meta-item">
-            <span class="meta-label">阅读次数:</span>
-            <span class="meta-value">{{ currentAnnouncement.readCount || 0 }}</span>
-          </div>
-        </div>
-        <el-divider />
-        <div class="detail-content" v-html="currentAnnouncement.content"></div>
-        <div v-if="currentAnnouncement.attachments && parseAttachments(currentAnnouncement.attachments).length > 0" class="attachments-section">
-          <el-divider></el-divider>
-          <div class="attachments-title">
-            <el-icon><Paperclip /></el-icon>
-            <span>附件列表</span>
-          </div>
-          <div class="attachments-list">
-            <el-tag
-              v-for="(attachment, index) in parseAttachments(currentAnnouncement.attachments)"
-              :key="index"
-              class="attachment-tag"
-              @click.stop="previewAnnouncementFile(attachment)"
-            >
-              <el-icon class="attachment-icon"><Document /></el-icon>
-              {{ attachment.name }}
-              <el-icon class="preview-icon"><ZoomIn /></el-icon>
-            </el-tag>
-          </div>
-        </div>
-      </div>
-      <template #footer>
-        <el-button @click="showAnnouncementDetailDialog = false">关闭</el-button>
-      </template>
-    </el-dialog>
-
+      :announcement="currentAnnouncement"
+    />
     <!-- Blob文件预览对话框 -->
     <el-dialog
       v-model="blobPreviewVisible"
@@ -1053,6 +998,7 @@
       v-model="filePreviewVisible"
       :file-url="currentFileUrl"
       :file-name="currentFileName"
+      :authorized-url="currentAuthorizedUrl"
     />
 
     <!-- 修改密码对话框 -->
@@ -1084,10 +1030,10 @@
       </template>
     </el-dialog>
 
-    <!-- 绑定手机对话框 -->
+    <!-- 绑定手机/邮箱对话框 -->
     <el-dialog
       v-model="showBindPhoneDialog"
-      :title="isPhoneBound ? '更换手机' : '绑定手机'"
+      title="绑定手机/邮箱"
       width="500px"
       class="edit-profile-dialog"
       :append-to-body="true"
@@ -1104,16 +1050,18 @@
         <el-form-item label="新手机号">
           <el-input v-model="bindPhoneForm.phone" placeholder="请输入新手机号码" />
         </el-form-item>
-        <el-form-item label="验证码">
-          <div class="code-input-group">
-            <el-input v-model="bindPhoneForm.code" placeholder="请输入验证码" />
-            <el-button type="primary" @click="sendCode">获取验证码</el-button>
-          </div>
+        <!-- 已绑定邮箱时显示当前邮箱 -->
+        <el-form-item v-if="isEmailBound" label="当前邮箱">
+          <el-input :value="maskEmail(authStore.user?.email)" disabled />
+        </el-form-item>
+        <!-- 新邮箱输入框 -->
+        <el-form-item label="新邮箱">
+          <el-input v-model="bindPhoneForm.email" placeholder="请输入新邮箱，绑定后可用于找回密码" />
         </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="showBindPhoneDialog = false">取消</el-button>
-        <el-button type="primary" @click="handleBindPhone">{{ isPhoneBound ? '更换' : '绑定' }}</el-button>
+        <el-button type="primary" @click="handleBindPhone">确定</el-button>
       </template>
     </el-dialog>
   </div>
@@ -1121,6 +1069,8 @@
 </template>
 
 <script setup>
+import { useAgentPageContext } from '@/agent/useAgentPageContext'
+import { useFormContext } from '@/agent/formContext'
 import { ref, reactive, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -1160,8 +1110,11 @@ import request from '@/utils/request'
 import positionService from '@/api/PositionService'
 import studentJobApplicationService from '@/api/StudentJobApplicationService'
 import { getPublishedResourceDocuments } from '@/api/resourceDocument'
-import { getAnnouncementsForUser, createAnnouncementReadRecord } from '@/api/announcement'
+import { getAnnouncementsForUser, markAnnouncementRead } from '@/api/announcement'
 import FilePreviewDialog from '@/components/FilePreviewDialog.vue'
+import StudentAnnouncementMessageItem from '@/components/student/StudentAnnouncementMessageItem.vue'
+import StudentAnnouncementDetailDialog from '@/components/student/StudentAnnouncementDetailDialog.vue'
+import { resourceDocumentByteUrl } from '@/utils/authorizedFileUrl'
 import eventBus from '@/utils/eventBus'
 
 const authStore = useAuthStore()
@@ -1179,17 +1132,49 @@ const showTemplateCenterDialog = ref(false)
 const showFavoritesDialog = ref(false)
 const showJobDetailDialog = ref(false)
 const selectedJob = ref(null)
+
+// 卡片底部企业标签：排除与徽章重复的（实习基地/校友单位）及不宜展示的（接受兜底）
+const filterJobTags = (tags) => (tags || []).filter(t => !['接受兜底', '实习基地', '校友单位'].includes(t))
+
+// 合作模式：兼容新格式(mutual_choice/student_contact)与老格式(双向,兜底,自主)
+const formatCooperationMode = (mode) => {
+  if (!mode) return '-'
+  const map = {
+    '双向': '校企双向选择',
+    '自主': '学生自主联系',
+    '兜底': '接受兜底',
+    mutual_choice: '校企双向选择',
+    student_contact: '学生自主联系'
+  }
+  return mode.split(',').map(m => map[m.trim()] || m.trim()).join('、')
+}
+
+// 企业宣传资料：photos/videos 为 JSON 数组字符串，容错解析
+const favoritePhotos = computed(() => {
+  try {
+    const arr = JSON.parse(selectedJob.value?.photos || '[]')
+    return Array.isArray(arr) ? arr.filter(u => !u.startsWith('blob:')) : []
+  } catch { return [] }
+})
+const favoriteVideos = computed(() => {
+  try {
+    const arr = JSON.parse(selectedJob.value?.videos || '[]')
+    return Array.isArray(arr) ? arr.filter(u => !u.startsWith('blob:')) : []
+  } catch { return [] }
+})
 const showResumeManagementDialog = ref(false)
 const showMessageCenterDialog = ref(false)
 const showChangePasswordDialog = ref(false)
 const showBindPhoneDialog = ref(false)
 const isPhoneBound = ref(false) // 是否已绑定手机
+const isEmailBound = ref(false) // 是否已绑定邮箱
 const showWeeklyLogsDialog = ref(false)
-const AVATAR_CACHE_KEY = 'student_avatar_url'
 const avatarInput = ref(null)
-const avatarUrl = ref(localStorage.getItem(AVATAR_CACHE_KEY) || '')
-const showResumeUploadArea = ref(false)
-const showCertificateUploadArea = ref(false)
+const avatarUrl = ref('')
+const resumeFileInput = ref(null)
+const certificateFileInput = ref(null)
+const resumeDragActive = ref(false)
+const certificateDragActive = ref(false)
 
 // 申请相关变量
 const showApplicationDialog = ref(false)
@@ -1202,27 +1187,29 @@ const applicationForm = ref({
   major: '',
   grade: '',
   phone: '',
+  industryName: '',
   positionName: '',
   companyName: '',
   selfIntroduction: ''
 })
-const applicationRules = {
-  studentName: [{ required: true, message: '请输入姓名', trigger: 'blur' }],
-  studentNo: [{ required: true, message: '请输入学号', trigger: 'blur' }],
-  major: [{ required: true, message: '请输入专业', trigger: 'blur' }],
-  grade: [{ required: true, message: '请选择年级', trigger: 'change' }],
-  phone: [{ required: true, message: '请输入联系电话', trigger: 'blur' }]
-}
 
-// 学生实习状态：0=无offer, 1=待确认, 2=已确定, 3=实习中, 4=已结束
-const studentStatus = ref(0)
-
-// 实习状态
+// 数据库实习状态保持兼容；未找到/无 Offer 使用后端派生的求职进度展示
 const internshipStatus = ref({
   status: null,
-  positionId: null
+  positionId: null,
+  jobSearchStatus: null,
+  jobSearchStatusText: ''
 })
-const statusLoaded = ref(false) // 状态是否已加载，默认false防止初始状态显示申请按钮
+
+const ACTIVE_APPLICATION_STATUSES = new Set([
+  'pending',
+  'approved',
+  'accepted',
+  'interview',
+  'interview_pending',
+  'interview_invited',
+  'interview_passed'
+])
 
 // 初始化默认用户信息，确保页面加载时立即显示
 const userInfo = ref({
@@ -1287,6 +1274,7 @@ const gradeOptions = ref([
 
 const resumeFileList = ref([])
 const certificateFileList = ref([])
+const materialUploading = ref(false)
 const myResumes = ref([])  // 从API加载的简历列表
 const myCertificates = ref([])  // 从API加载的证书列表
 const currentArchive = ref(null)
@@ -1453,6 +1441,14 @@ const loadFavorites = async () => {
         industry: item.industry,
         duration: item.duration,
         internshipBase: item.internshipBase,
+        isAlumniUnit: item.isAlumniUnit,
+        cooperationMode: item.cooperationMode,
+        companyIntroduction: item.companyIntroduction,
+        logo: item.logo,
+        photos: item.photos,
+        videos: item.videos,
+        companyRatingAverage: item.companyRatingAverage,
+        companyRatingCount: item.companyRatingCount,
         description: item.description,
         requirements: typeof item.requirements === 'string' ? item.requirements.split('\n') : (item.requirements || []),
         benefits: typeof item.benefits === 'string' ? item.benefits.split('\n') : (item.benefits || []),
@@ -1478,7 +1474,10 @@ const loadFavorites = async () => {
           // 创建一个 Map 用于快速查找职位对应的申请状态
           const applicationStatusMap = new Map()
           appResponse.data.forEach((app) => {
-            applicationStatusMap.set(String(app.positionId), app.status)
+            const status = String(app.status || '').toLowerCase()
+            if (ACTIVE_APPLICATION_STATUSES.has(status)) {
+              applicationStatusMap.set(String(app.positionId), app.status)
+            }
           })
           console.log('申请状态映射:', Array.from(applicationStatusMap.entries()))
 
@@ -1509,29 +1508,20 @@ const markAppliedFavorites = async () => {
     console.log('当前用户信息:', authStore.user)
     console.log('当前用户ID:', authStore.user?.id)
     if (response.code === 200 && response.data) {
-      // 将 appliedPositionIds 转为字符串类型，避免类型不一致
-      const appliedPositionIds = new Set(response.data.map((app) => String(app.positionId)))
-      console.log('已申请的职位ID集合:', Array.from(appliedPositionIds))
-      console.log('收藏列表的职位ID:', favoritesList.value.map(item => ({ id: item.id, idType: typeof item.id, position: item.position })))
-
-      // 先将所有设为未申请，再根据申请记录标记
-      favoritesList.value.forEach(item => {
-        item.isApplied = false
-      })
-
-      // 标记已申请的职位
-      favoritesList.value.forEach(item => {
-        const itemIdStr = String(item.id)
-        const isApplied = appliedPositionIds.has(itemIdStr) || response.data.some((app) => String(app.positionId) === itemIdStr)
-        console.log('检查职位:', item.position, 'ID:', item.id, '是否已申请:', isApplied, 'appliedPositionIds包含:', appliedPositionIds.has(itemIdStr))
-        if (isApplied) {
-          item.isApplied = true
-          console.log('标记为已申请:', item.position, 'ID:', item.id)
+      const applicationStatusMap = new Map()
+      response.data.forEach((app) => {
+        const status = String(app.status || '').toLowerCase()
+        if (ACTIVE_APPLICATION_STATUSES.has(status)) {
+          applicationStatusMap.set(String(app.positionId), app.status)
         }
       })
+      console.log('进行中的职位申请:', Array.from(applicationStatusMap.keys()))
+      console.log('收藏列表的职位ID:', favoritesList.value.map(item => ({ id: item.id, idType: typeof item.id, position: item.position })))
 
-      // 强制触发响应式更新
-      favoritesList.value = [...favoritesList.value]
+      favoritesList.value = favoritesList.value.map(item => {
+        const applicationStatus = applicationStatusMap.get(String(item.id)) || null
+        return { ...item, isApplied: Boolean(applicationStatus), applicationStatus }
+      })
     }
   } catch (error) {
     console.error('获取申请列表失败:', error)
@@ -1554,6 +1544,7 @@ const currentAnnouncement = ref(null)
 const filePreviewVisible = ref(false)
 const currentFileUrl = ref('')
 const currentFileName = ref('')
+const currentAuthorizedUrl = ref('')
 
 // Blob文件预览相关
 const blobPreviewVisible = ref(false)
@@ -1594,130 +1585,22 @@ const viewAnnouncementDetail = async (announcement) => {
   currentAnnouncement.value = announcement
 
   try {
-    const userId = authStore.user?.id ? parseInt(String(authStore.user.id)) : 0
-    console.log('[viewAnnouncementDetail] 公告ID:', announcement.id, '用户ID:', userId)
-    await createAnnouncementReadRecord({
-      announcementId: announcement.id,
-      userId: userId,
-      userType: 'STUDENT'
-    })
-    // 替换数组项触发Vue响应式更新
-  const idx = announcementList.value.findIndex(a => a.id === announcement.id)
-  if (idx !== -1) {
-    announcementList.value[idx] = { ...announcementList.value[idx], isRead: true }
-  }
+    const response = await markAnnouncementRead(Number(announcement.id))
+    const readCount = response?.data?.readCount
+    currentAnnouncement.value = {
+      ...announcement,
+      isRead: true,
+      readCount: typeof readCount === 'number' ? readCount : (announcement.readCount || 0) + 1
+    }
+    const idx = announcementList.value.findIndex(a => a.id === announcement.id)
+    if (idx !== -1) {
+      announcementList.value[idx] = currentAnnouncement.value
+    }
   } catch (error) {
     console.error('记录阅读状态失败:', error)
   }
 
   showAnnouncementDetailDialog.value = true
-}
-
-// 格式化公告时间
-const formatAnnouncementTime = (time) => {
-  if (!time) return ''
-  const date = new Date(time)
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  const hours = String(date.getHours()).padStart(2, '0')
-  const minutes = String(date.getMinutes()).padStart(2, '0')
-  return `${year}-${month}-${day} ${hours}:${minutes}`
-}
-
-// 解析附件
-const parseAttachments = (attachments) => {
-  if (!attachments) return []
-  try {
-    if (typeof attachments === 'string') {
-      return JSON.parse(attachments)
-    }
-    return attachments
-  } catch (e) {
-    console.error('解析附件数据失败:', e)
-    return []
-  }
-}
-
-// 预览文件
-const previewAnnouncementFile = (attachment) => {
-  if (!attachment.url) {
-    ElMessage.error('附件地址不存在')
-    return
-  }
-  currentFileUrl.value = attachment.url
-  currentFileName.value = attachment.name
-  filePreviewVisible.value = true
-}
-
-// 获取预览文本
-const getPreviewText = (content) => {
-  if (!content) return ''
-  const text = content.replace(/<[^>]*>/g, '')
-  return text.length > 100 ? text.substring(0, 100) + '...' : text
-}
-
-// 获取发布人角色文本
-const getPublisherRoleText = (role) => {
-  const map = {
-    ADMIN: '管理员',
-    COLLEGE: '学院教师',
-    DEPARTMENT: '系室教师',
-    COUNSELOR: '辅导员',
-    COMPANY: '企业'
-  }
-  return map[role] || '-'
-}
-
-// 获取发布人角色标签类型
-const getPublisherRoleTagType = (role) => {
-  const map = {
-    ADMIN: 'danger',
-    COLLEGE: 'primary',
-    DEPARTMENT: 'success',
-    COUNSELOR: 'warning'
-  }
-  return map[role] || 'info'
-}
-
-// 获取目标群体文本
-const getTargetText = (targetType, targetValue) => {
-  if (!targetType) return '-'
-
-  const typeMap = {
-    ALL: '全体师生',
-    STUDENT: '全体学生',
-    TEACHER: '全体教师',
-    COMPANY: '全体企业',
-    TEACHER_TYPE: '特定教师类别',
-    MAJOR: '特定专业学生'
-  }
-
-  // 处理 JSON 数组格式，如 ["STUDENT","TEACHER"]
-  let types = []
-  try {
-    const parsed = JSON.parse(targetType)
-    types = Array.isArray(parsed) ? parsed : [targetType]
-  } catch {
-    types = [targetType]
-  }
-
-  const typeTexts = types.map(t => typeMap[t] || t)
-
-  if (types.includes('TEACHER_TYPE') && targetValue) {
-    const teacherTypeMap = {
-      COLLEGE: '学院教师',
-      DEPARTMENT: '系室教师',
-      COUNSELOR: '辅导员'
-    }
-    return `${typeTexts.join('、')}（${teacherTypeMap[targetValue] || targetValue}）`
-  }
-
-  if (types.includes('MAJOR') && targetValue) {
-    return `${typeTexts.join('、')}（${targetValue}）`
-  }
-
-  return typeTexts.join('、')
 }
 
 // 修改密码表单
@@ -1759,11 +1642,14 @@ const passwordRulesText = computed(() => {
   return rules.join('、')
 })
 
-// 绑定手机表单
+// 绑定手机/邮箱表单
 const bindPhoneForm = ref({
   phone: '',
-  code: ''
+  email: ''
 })
+
+// 邮箱格式校验（与后端保持一致，直接保存、无验证码）
+const EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/
 
 // 资源中心数据
 const resourceList = ref([])
@@ -1969,13 +1855,14 @@ const previewResource = (resource) => {
     ElMessage.error('资源信息不存在')
     return
   }
-  const fileUrl = resource.url || resource.fileUrl
-  if (!fileUrl) {
-    ElMessage.error('文件地址不存在')
+  const authorizedUrl = resourceDocumentByteUrl(resource.id)
+  if (!authorizedUrl) {
+    ElMessage.error('资源记录不存在')
     return
   }
-  currentFileUrl.value = fileUrl
+  currentFileUrl.value = resource.url || resource.fileUrl || ''
   currentFileName.value = resource.fileName || resource.title || '文件预览'
+  currentAuthorizedUrl.value = authorizedUrl
   filePreviewVisible.value = true
 }
 
@@ -2026,9 +1913,12 @@ const fetchUserInfo = async () => {
         supervisorTeacher: user.supervisorTeacher || '',
         supervisorPhone: user.supervisorPhone || ''
       }
-      if (user.avatar) {
-        avatarUrl.value = user.avatar
-        localStorage.setItem(AVATAR_CACHE_KEY, user.avatar)
+      // 设置头像（无头像时清空，避免显示他人缓存的头像）
+      avatarUrl.value = user.avatar || ''
+      // 同步全局状态中的手机和邮箱，避免改密门禁误判（登录返回可能缺失）
+      if (authStore.user) {
+        if (user.phone !== undefined) authStore.user.phone = user.phone || ''
+        if (user.email !== undefined) authStore.user.email = user.email || ''
       }
     }
   } catch (error) {
@@ -2044,20 +1934,21 @@ const fetchInternshipStatus = async () => {
     if (response.code === 200 && response.data) {
       internshipStatus.value.status = response.data.status
       internshipStatus.value.positionId = response.data.positionId || null
+      internshipStatus.value.jobSearchStatus = response.data.jobSearchStatus || null
+      internshipStatus.value.jobSearchStatusText = response.data.jobSearchStatusText || ''
       internshipStatus.value.companyName = response.data.companyName
       internshipStatus.value.positionName = response.data.positionName
       internshipStatus.value.internshipStartTime = response.data.internshipStartTime
       internshipStatus.value.internshipEndTime = response.data.internshipEndTime
     }
-    statusLoaded.value = true // 状态加载完成
   } catch (error) {
     console.error('获取实习状态失败:', error)
-    statusLoaded.value = true // 即使失败也标记为加载完成
   }
 }
 
-// 实习状态文本映射 - 与后端 InternshipStatusEnum 一致
-const getStatusText = (status) => {
+// 优先使用后端统一计算的求职进度，旧接口数据回退到数字状态
+const getStatusText = (status, jobSearchStatusText = '') => {
+  if (jobSearchStatusText) return jobSearchStatusText
   if (status === null) return '未申请'
   const statusMap = {
     0: '无offer',
@@ -2072,7 +1963,18 @@ const getStatusText = (status) => {
 }
 
 // 实习状态样式映射
-const getStatusClass = (status) => {
+const getStatusClass = (status, jobSearchStatus = '') => {
+  const jobSearchStatusClassMap = {
+    NOT_FOUND: 'default',
+    NO_OFFER: 'default',
+    PENDING_CONFIRMATION: 'offer',
+    CONFIRMED: 'offer',
+    IN_PROGRESS: 'interning',
+    ENDED: 'finished',
+    INTERRUPTED: 'interrupted',
+    DELAYED: 'delayed'
+  }
+  if (jobSearchStatus) return jobSearchStatusClassMap[jobSearchStatus] || 'default'
   if (status === null) return 'default'
   if (status === 1 || status === 2) return 'offer' // 待确认、已确定
   if (status === 3) return 'interning' // 实习中
@@ -2138,7 +2040,7 @@ const securityOptions = [
   },
   {
     id: 7,
-    label: '绑定手机',
+    label: '绑定手机/邮箱',
     icon: Iphone,
     iconClass: 'cyan',
     action: 'bindPhone'
@@ -2150,11 +2052,23 @@ const getOptionDesc = (id) => {
     2: '查看收藏的职位',
     4: '管理简历和证书',
     5: '查看系统消息',
-    6: '修改登录密码',
-    7: '绑定手机号码',
+    6: '修改登录密码（需先绑定邮箱）',
+    7: '绑定手机号和邮箱',
     10: '查看系统发布的资源文档'
   }
   return descs[id] || ''
+}
+
+// 未绑定邮箱时的统一提示，并引导去绑定
+const promptBindEmailFirst = () => {
+  ElMessage.warning('请先绑定邮箱后再修改密码')
+  isPhoneBound.value = !!authStore.user?.phone
+  isEmailBound.value = !!authStore.user?.email
+  bindPhoneForm.value = {
+    phone: '',
+    email: ''
+  }
+  showBindPhoneDialog.value = true
 }
 
 const openEditProfileDialog = () => {
@@ -2265,7 +2179,6 @@ const handleAvatarChange = async (event) => {
     })
     if (response.code === 200) {
       avatarUrl.value = response.data.url
-	      localStorage.setItem(AVATAR_CACHE_KEY, response.data.url)
       ElMessage.success('头像上传成功')
     } else {
       ElMessage.error(response.message || '头像上传失败')
@@ -2276,83 +2189,193 @@ const handleAvatarChange = async (event) => {
   }
 }
 
-// 处理简历上传
-const handleResumeChange = (uploadFile) => {
-  if (uploadFile.size > 10 * 1024 * 1024) {
-    ElMessage.error('文件大小不能超过 10MB')
-    return
+const MAX_MATERIAL_FILE_SIZE = 10 * 1024 * 1024
+const RESUME_FILE_EXTENSIONS = ['.pdf', '.doc', '.docx']
+const CERTIFICATE_FILE_EXTENSIONS = ['.pdf', '.jpg', '.jpeg', '.png', '.doc', '.docx']
+
+const createPendingFile = (file) => ({
+  name: file.name,
+  size: file.size,
+  raw: file,
+  uid: Date.now() + '-' + Math.random().toString(36).slice(2),
+  status: 'ready'
+})
+
+const validateMaterialFile = (file, allowedExtensions, materialName) => {
+  const extension = file.name.toLowerCase().slice(file.name.lastIndexOf('.'))
+  if (!allowedExtensions.includes(extension)) {
+    ElMessage.error(`${materialName}只支持 ${allowedExtensions.join('、')} 格式`)
+    return false
   }
-  resumeFileList.value = [uploadFile]
+  if (file.size > MAX_MATERIAL_FILE_SIZE) {
+    ElMessage.error('文件大小不能超过 10MB')
+    return false
+  }
+  return true
 }
 
-// 处理证书上传
-const handleCertificateChange = (uploadFile) => {
-  if (uploadFile.size > 10 * 1024 * 1024) {
-    ElMessage.error('文件大小不能超过 10MB')
-    return
-  }
-  certificateFileList.value.push(uploadFile)
+// 点击“上传简历”直接打开文件选择页面
+const openResumeFilePicker = () => {
+  resumeFileInput.value?.click()
 }
 
-// 在简历管理对话框中打开简历上传区域
-const openUploadResumeInDialog = () => {
-  showResumeUploadArea.value = true
-  showCertificateUploadArea.value = false
+// 点击“上传证书”直接打开文件选择页面
+const openCertificateFilePicker = () => {
+  certificateFileInput.value?.click()
+}
+
+const selectResumeFile = (file) => {
+  if (!file || !validateMaterialFile(file, RESUME_FILE_EXTENSIONS, '简历')) return
+  resumeFileList.value = [createPendingFile(file)]
+}
+
+const addCertificateFiles = (fileList) => {
+  const acceptedFiles = []
+  for (const file of Array.from(fileList || [])) {
+    if (!validateMaterialFile(file, CERTIFICATE_FILE_EXTENSIONS, '证书')) continue
+    const isDuplicate = certificateFileList.value.some(item =>
+      item.name === file.name &&
+      item.size === file.size &&
+      item.raw?.lastModified === file.lastModified
+    )
+    if (isDuplicate) {
+      ElMessage.warning(`证书文件“${file.name}”已选择`)
+      continue
+    }
+    acceptedFiles.push(createPendingFile(file))
+  }
+  certificateFileList.value = [...certificateFileList.value, ...acceptedFiles]
+}
+
+const handleResumeInputChange = (event) => {
+  selectResumeFile(event.target.files?.[0])
+  event.target.value = ''
+}
+
+const handleCertificateInputChange = (event) => {
+  addCertificateFiles(event.target.files)
+  event.target.value = ''
+}
+
+const handleResumeDrop = (event) => {
+  resumeDragActive.value = false
+  const files = Array.from(event.dataTransfer?.files || [])
+  if (files.length > 1) {
+    ElMessage.warning('简历一次只能选择一个文件')
+  }
+  selectResumeFile(files[0])
+}
+
+const handleCertificateDrop = (event) => {
+  certificateDragActive.value = false
+  addCertificateFiles(event.dataTransfer?.files)
+}
+
+const handleResumeDragLeave = (event) => {
+  if (!event.currentTarget.contains(event.relatedTarget)) {
+    resumeDragActive.value = false
+  }
+}
+
+const handleCertificateDragLeave = (event) => {
+  if (!event.currentTarget.contains(event.relatedTarget)) {
+    certificateDragActive.value = false
+  }
+}
+
+// 从待上传列表中移除简历
+const removePendingResume = () => {
   resumeFileList.value = []
 }
 
-// 在简历管理对话框中打开证书上传区域
-const openUploadCertificateInDialog = () => {
-  showCertificateUploadArea.value = true
-  showResumeUploadArea.value = false
-  certificateFileList.value = []
+// 从待上传列表中移除指定证书
+const removePendingCertificate = (index) => {
+  certificateFileList.value.splice(index, 1)
 }
 
-// 取消简历上传
-const cancelResumeUpload = () => {
-  showResumeUploadArea.value = false
-  resumeFileList.value = []
-}
-
-// 取消证书上传
-const cancelCertificateUpload = () => {
-  showCertificateUploadArea.value = false
-  certificateFileList.value = []
-}
-
-// 上传简历
-const uploadResume = async () => {
-  if (resumeFileList.value.length === 0) {
-    ElMessage.warning('请先选择简历文件')
-    return
-  }
-
-  const uploadFile = resumeFileList.value[0]
-  // 获取原始File对象（Element Plus将文件包装在raw属性中）
+const uploadMaterialFile = async (kind, uploadFile) => {
+  // 获取原始File对象
   const file = uploadFile.raw || uploadFile
   const formData = new FormData()
   formData.append('file', file)
-
-  try {
-    const response = await request.post('/student/profile/upload/resume', formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data'
-      }
-    })
-    if (response.code === 200) {
-      ElMessage.success('简历上传成功')
-      showResumeUploadArea.value = false
-      resumeFileList.value = []
-      // 刷新简历列表
-      await loadMyResumes()
-    } else {
-      ElMessage.error(response.message || '上传失败')
+  const endpoint = kind === 'resume'
+    ? '/student/profile/upload/resume'
+    : '/student/profile/upload/certificate'
+  const response = await request.post(endpoint, formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data'
     }
-  } catch (error) {
-    console.error('上传简历失败:', error)
-    ElMessage.error('上传失败，请重试')
+  })
+  return response.code === 200
+}
+
+// 弹窗右下角统一确认，正式保存当前选择的简历和证书
+const confirmMaterialUpload = async () => {
+  const pendingResumes = [...resumeFileList.value]
+  const pendingCertificates = [...certificateFileList.value]
+  const totalCount = pendingResumes.length + pendingCertificates.length
+  if (totalCount === 0) {
+    ElMessage.warning('请先选择简历或证书文件')
+    return
+  }
+
+  const failedResumes = []
+  const failedCertificates = []
+  let uploadedCount = 0
+
+  materialUploading.value = true
+  try {
+    for (const uploadFile of pendingResumes) {
+      try {
+        if (await uploadMaterialFile('resume', uploadFile)) {
+          uploadedCount += 1
+        } else {
+          failedResumes.push(uploadFile)
+        }
+      } catch (error) {
+        console.error('上传简历失败:', uploadFile.name, error)
+        failedResumes.push(uploadFile)
+      }
+    }
+
+    for (const uploadFile of pendingCertificates) {
+      try {
+        if (await uploadMaterialFile('certificate', uploadFile)) {
+          uploadedCount += 1
+        } else {
+          failedCertificates.push(uploadFile)
+        }
+      } catch (error) {
+        console.error('上传证书失败:', uploadFile.name, error)
+        failedCertificates.push(uploadFile)
+      }
+    }
+
+    resumeFileList.value = failedResumes
+    certificateFileList.value = failedCertificates
+    // 刷新已保存列表，供下次打开简历管理或投递岗位时使用
+    await Promise.all([
+      loadMyResumes(),
+      loadMyCertificates()
+    ])
+
+    const failedCount = failedResumes.length + failedCertificates.length
+    if (failedCount === 0) {
+      if (pendingResumes.length > 0 && pendingCertificates.length > 0) {
+        ElMessage.success('简历和证书上传成功')
+      } else if (pendingResumes.length > 0) {
+        ElMessage.success('简历上传成功')
+      } else {
+        ElMessage.success(pendingCertificates.length > 1 ? `${pendingCertificates.length} 个证书上传成功` : '证书上传成功')
+      }
+    } else {
+      ElMessage.error(`已上传 ${uploadedCount} 个，${failedCount} 个上传失败，请重试`)
+    }
+  } finally {
+    materialUploading.value = false
   }
 }
+
 
 // 加载我的简历列表
 const loadMyResumes = async () => {
@@ -2418,40 +2441,6 @@ const downloadResume = async (resume) => {
   }
 }
 
-// 上传证书
-const uploadCertificate = async () => {
-  if (certificateFileList.value.length === 0) {
-    ElMessage.warning('请先选择证书文件')
-    return
-  }
-
-  const uploadFile = certificateFileList.value[0]
-  // 获取原始File对象（Element Plus将文件包装在raw属性中）
-  const file = uploadFile.raw || uploadFile
-  const formData = new FormData()
-  formData.append('file', file)
-
-  try {
-    const response = await request.post('/student/profile/upload/certificate', formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data'
-      }
-    })
-    if (response.code === 200) {
-      ElMessage.success('证书上传成功')
-      showCertificateUploadArea.value = false
-      certificateFileList.value = []
-      // 刷新证书列表
-      await loadMyCertificates()
-    } else {
-      ElMessage.error(response.message || '上传失败')
-    }
-  } catch (error) {
-    console.error('上传证书失败:', error)
-    ElMessage.error('上传失败，请重试')
-  }
-}
-
 // 加载我的证书列表
 const loadMyCertificates = async () => {
   try {
@@ -2511,38 +2500,6 @@ const downloadCertificate = async (cert) => {
   }
 }
 
-// 下载或预览文件
-const downloadFile = (file) => {
-  const fileName = file.name.toLowerCase()
-  
-  if (fileName.endsWith('.pdf')) {
-    ElMessage.success(`正在打开：${file.name}`)
-    
-    if (file.url) {
-      window.open(file.url, '_blank')
-    } else {
-      ElMessage.info('文件URL未配置，请连接后端后配置文件路径')
-    }
-  } else {
-    ElMessage.success(`正在下载：${file.name}`)
-    
-    if (file.url) {
-      const link = document.createElement('a')
-      link.href = file.url
-      link.download = file.name
-      link.click()
-    } else {
-      ElMessage.info('文件URL未配置，请连接后端后配置文件路径')
-    }
-  }
-}
-
-// 下载模板
-const downloadTemplate = (template) => {
-  // 调用后端API下载模板文件
-  window.open(`/api/admin/templates/${template.id}/download`, '_blank')
-}
-
 const handleOptionClick = (option) => {
   switch (option.action) {
     case 'myFavorites':
@@ -2561,16 +2518,21 @@ const handleOptionClick = (option) => {
       fetchResources()
       break
     case 'changePassword':
+      if (!authStore.user?.email) {
+        promptBindEmailFirst()
+        break
+      }
       fetchPasswordRules()
       showChangePasswordDialog.value = true
       break
     case 'bindPhone':
-      // 判断是否已绑定手机
+      // 判断是否已绑定手机/邮箱
       isPhoneBound.value = !!authStore.user?.phone
+      isEmailBound.value = !!authStore.user?.email
       // 清空表单
       bindPhoneForm.value = {
         phone: '',
-        code: ''
+        email: ''
       }
       showBindPhoneDialog.value = true
       break
@@ -2622,7 +2584,7 @@ const toggleFavorite = (job) => {
   }
 }
 
-const applyJob = (job) => {
+const applyJob = async (job) => {
   // 初始化表单数据，从用户信息中获取默认值
   currentApplyingJob.value = job
   applicationForm.value = {
@@ -2631,13 +2593,22 @@ const applyJob = (job) => {
     major: authStore.user?.major || '',
     grade: authStore.user?.grade || '',
     phone: authStore.user?.phone || '',
+    industryName: job.industryName || job.industry || '',
     positionName: job.title || job.position,
     companyName: job.companyName,
     selfIntroduction: ''
   }
-  // 加载学生的简历和证书列表
-  loadStudentMaterials()
+  // 先加载已正式保存的简历和证书，再打开投递申请表
+  await loadStudentMaterials()
   showApplicationDialog.value = true
+}
+
+const goToMaterialManagement = async () => {
+  showApplicationDialog.value = false
+  await router.push({
+    path: '/student/profile',
+    query: { action: 'resumeManagement' }
+  })
 }
 
 // 加载学生简历和证书列表
@@ -2683,8 +2654,10 @@ const submitApplication = async () => {
       selfIntroduction: applicationForm.value.selfIntroduction
     }
 
+    const operation = formContext.beginFormOperation('profile:apply')
     const response = await studentJobApplicationService.create(applicationData)
     if (response.code === 200) {
+      operation.complete({ status: 'submitted', label: '岗位投递已提交', url: '/student/applications' })
       currentApplyingJob.value.isApplied = true
       showApplicationDialog.value = false
       ElMessage.success('申请提交成功！')
@@ -2716,18 +2689,6 @@ const cancelApply = (job) => {
   })
 }
 
-// 获取学生实习状态
-const fetchStudentStatus = async () => {
-  try {
-    const response = await request.get('/student/internship-status')
-    if (response.code === 200 && response.data) {
-      studentStatus.value = response.data.status || 0
-    }
-  } catch (error) {
-    console.error('获取学生实习状态失败:', error)
-  }
-}
-
 const viewWeeklyLogs = (archive) => {
   currentArchive.value = archive
   currentWeeklyLogs.value = archive.weeklyLogs || []
@@ -2742,6 +2703,10 @@ const closeWeeklyLogsDialog = () => {
 }
 
 const handleChangePassword = async () => {
+  if (!authStore.user?.email) {
+    promptBindEmailFirst()
+    return
+  }
   if (!changePasswordForm.value.oldPassword) {
     ElMessage.warning('请输入原密码')
     return
@@ -2783,41 +2748,46 @@ const handleChangePassword = async () => {
   }
 }
 
-const sendCode = () => {
-  if (!bindPhoneForm.value.phone) {
-    ElMessage.warning('请输入手机号码')
-    return
-  }
-  ElMessage.success('验证码已发送')
-}
-
 const handleBindPhone = async () => {
-  if (!bindPhoneForm.value.phone) {
-    ElMessage.warning('请输入手机号码')
+  const phone = (bindPhoneForm.value.phone || '').trim()
+  const email = (bindPhoneForm.value.email || '').trim()
+  if (!phone && !email) {
+    ElMessage.warning('请输入手机号码或邮箱')
     return
   }
-  if (!bindPhoneForm.value.code) {
-    ElMessage.warning('请输入验证码')
+  if (phone && !/^1[3-9]\d{9}$/.test(phone)) {
+    ElMessage.warning('请输入正确的手机号码')
     return
   }
-  
+  if (email && !EMAIL_REGEX.test(email)) {
+    ElMessage.warning('请输入正确的邮箱格式')
+    return
+  }
+
   try {
-    const response = await request.post(`/student/profile/bind-phone`, {
-      phone: bindPhoneForm.value.phone,
-      code: bindPhoneForm.value.code
-    })
+    const payload = {}
+    if (phone) payload.phone = phone
+    if (email) payload.email = email
+    const operation = formContext.beginFormOperation('profile:bind', Object.keys(payload))
+    const response = await request.post(`/student/profile/bind-phone`, payload)
     if (response.code === 200) {
-      ElMessage.success('手机绑定成功')
+      operation.complete({ status: 'saved', label: '联系方式已绑定', url: '/student/profile' })
+      // 更新全局状态中的手机号和邮箱
+      if (authStore.user) {
+        if (phone) authStore.user.phone = phone
+        if (email) authStore.user.email = email
+      }
+      ElMessage.success('绑定成功')
       showBindPhoneDialog.value = false
       bindPhoneForm.value = {
         phone: '',
-        code: ''
+        email: ''
       }
     } else {
-      ElMessage.error(response.data.message || '手机绑定失败，请稍后重试')
+      ElMessage.error(response.data.message || '绑定失败，请稍后重试')
     }
   } catch (error) {
-    console.error('绑定手机失败:', error)
+    console.error('绑定失败:', error)
     ElMessage.error('网络错误，请稍后重试')
   }
 }
@@ -2826,6 +2796,14 @@ const handleBindPhone = async () => {
 const maskPhone = (phone) => {
   if (!phone) return '未绑定'
   return phone.replace(/(\d{3})\d{4}(\d{4})/, '$1****$2')
+}
+
+// 脱敏邮箱：保留首尾字符，其余打码
+const maskEmail = (email) => {
+  if (!email || !email.includes('@')) return '未绑定'
+  const [username, domain] = email.split('@')
+  if (username.length <= 2) return `${username}***@${domain}`
+  return `${username.charAt(0)}***${username.charAt(username.length - 1)}@${domain}`
 }
 
 const handleLogout = async () => {
@@ -2929,7 +2907,6 @@ watch(showResumeManagementDialog, async (newVal) => {
 onMounted(() => {
   fetchUserInfo()
   fetchInternshipStatus()
-  fetchStudentStatus()
 
   // 检查路由query参数，处理修改密码等操作
   const action = route.query.action
@@ -2939,6 +2916,52 @@ onMounted(() => {
     router.replace({ query: {} })
   }
 })
+
+useAgentPageContext(() => ({
+  title: '个人中心',
+  view: showJobDetailDialog.value ? 'job-detail' : 'page',
+  object: (showJobDetailDialog.value && selectedJob.value && selectedJob.value.id) ? { type: 'job', id: String(selectedJob.value.id) } : null,
+  filters: {}
+}))
+
+// ===== 智能填表：岗位申请（自我简介）与绑定手机/邮箱注册到 AI 侧栏 =====
+// 只读字段（单位/类别/岗位名/已绑定展示）与文件上传（简历/证书）不声明，由用户手动操作；
+// 修改密码弹窗涉及口令安全，不接入语音填表
+const formContext = useFormContext()
+watch(showApplicationDialog, (open) => {
+  if (open) {
+    formContext.register({
+      formId: 'profile:apply',
+      title: '岗位投递',
+      fields: [{ prop: 'selfIntroduction', label: '自我简介', type: 'textarea' }],
+      getModel: () => applicationForm.value,
+      getObject: () => currentApplyingJob.value?.id ? { type: 'job', id: String(currentApplyingJob.value.id) } : null,
+      getFormEl: () => applicationFormRef.value
+    })
+  } else formContext.unregister('profile:apply')
+})
+watch(showBindPhoneDialog, (open) => {
+  if (open) {
+    formContext.register({
+      formId: 'profile:bind',
+      title: '绑定手机/邮箱',
+      fields: [
+        { prop: 'phone', label: '新手机号', type: 'input', patternHint: '11位手机号码' },
+        { prop: 'email', label: '新邮箱', type: 'input', patternHint: '邮箱地址' }
+      ],
+      getModel: () => bindPhoneForm.value,
+      getValidationSummary: () => {
+        const phone = bindPhoneForm.value.phone?.trim() || ''
+        const email = bindPhoneForm.value.email?.trim() || ''
+        return { missingFields: !phone && !email ? ['手机号码或邮箱'] : [], validationErrors: [
+          ...(phone && !/^1[3-9]\d{9}$/.test(phone) ? ['请输入正确的手机号码'] : []),
+          ...(email && !EMAIL_REGEX.test(email) ? ['请输入正确的邮箱格式'] : [])
+        ] }
+      }
+    })
+  } else formContext.unregister('profile:bind')
+})
+onUnmounted(() => { formContext.unregister('profile:apply'); formContext.unregister('profile:bind') })
 </script>
 
 <style scoped>
@@ -3071,31 +3094,10 @@ onMounted(() => {
   left: 0;
   right: 0;
   bottom: 0;
-  background: linear-gradient(135deg, 
-    rgba(64, 158, 255, 0.05) 0%, 
-    rgba(103, 194, 58, 0.05) 100%);
-  pointer-events: none;
-  z-index: 0;
-}
-
-.card-gradient-left {
-  position: absolute;
-  top: -50%;
-  left: -20%;
-  width: 60%;
-  height: 200%;
-  background: radial-gradient(circle, rgba(64, 158, 255, 0.15) 0%, transparent 70%);
-  pointer-events: none;
-  z-index: 0;
-}
-
-.card-gradient-right {
-  position: absolute;
-  top: -50%;
-  right: -20%;
-  width: 60%;
-  height: 200%;
-  background: radial-gradient(circle, rgba(103, 194, 58, 0.15) 0%, transparent 70%);
+  background:
+    radial-gradient(circle at 15% 50%, rgba(64, 158, 255, 0.15) 0%, transparent 55%),
+    radial-gradient(circle at 85% 50%, rgba(103, 194, 58, 0.15) 0%, transparent 55%),
+    linear-gradient(135deg, rgba(64, 158, 255, 0.08) 0%, rgba(103, 194, 58, 0.08) 100%);
   pointer-events: none;
   z-index: 0;
 }
@@ -3114,8 +3116,8 @@ onMounted(() => {
 
 .avatar-container {
   position: relative;
-  width: 100px;
-  height: 100px;
+  width: 112px;
+  height: 112px;
   cursor: pointer;
   transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
 }
@@ -3149,12 +3151,12 @@ onMounted(() => {
   background: linear-gradient(135deg, #e6f7ff 0%, #b3d9ff 100%);
   border: 4px solid white;
   box-shadow: 0 8px 24px rgba(64, 158, 255, 0.25);
-  width: 100px !important;
-  height: 100px !important;
+  width: 112px !important;
+  height: 112px !important;
 }
 
 .avatar-placeholder {
-  font-size: 48px;
+  font-size: 56px;
   color: #409eff;
 }
 
@@ -3383,19 +3385,23 @@ onMounted(() => {
     flex-direction: column;
     text-align: center;
   }
-  
+
   .info-header {
     flex-direction: column;
     gap: 12px;
   }
-  
+
   .name-group {
     flex-direction: column;
     gap: 8px;
   }
-  
+
   .info-tags {
     justify-content: center;
+  }
+
+  .options-grid {
+    grid-template-columns: 1fr;
   }
 }
 
@@ -3798,7 +3804,7 @@ onMounted(() => {
   }
 
   .page-header h2 {
-    font-size: 18px;
+    font-size: 24px;
   }
 
   .page-header p {
@@ -3811,18 +3817,18 @@ onMounted(() => {
     border-radius: 14px;
   }
 
-  .avatar-wrapper {
-    width: 64px;
-    height: 64px;
+  .avatar-container {
+    width: 96px;
+    height: 96px;
   }
 
   .user-avatar {
-    width: 64px !important;
-    height: 64px !important;
+    width: 96px !important;
+    height: 96px !important;
   }
 
   .avatar-placeholder {
-    font-size: 30px;
+    font-size: 44px;
   }
 
   .user-name {
@@ -5375,8 +5381,16 @@ onMounted(() => {
   background: linear-gradient(90deg, #409eff 0%, #67c23a 100%);
 }
 
-.section-title .upload-btn {
+.section-upload-actions {
   margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.resume-management-footer {
+  display: flex;
+  justify-content: flex-end;
 }
 
 .empty-tip {
@@ -5386,21 +5400,19 @@ onMounted(() => {
   font-size: 14px;
 }
 
-.upload-area {
-  margin-top: 24px;
-  padding-top: 24px;
-  border-top: 1px dashed #e2e8f0;
+.hidden-file-input {
+  display: none;
 }
 
-.upload-area .upload-demo {
-  margin-bottom: 16px;
+.material-drop-section {
+  border-radius: 12px;
+  transition: background-color 0.2s ease, outline-color 0.2s ease;
 }
 
-.upload-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 12px;
-  margin-top: 16px;
+.material-drop-section.is-drag-over {
+  background: #f0f9ff;
+  outline: 2px dashed #409eff;
+  outline-offset: 8px;
 }
 
 .resume-item,
@@ -5466,6 +5478,24 @@ onMounted(() => {
 .cert-actions {
   display: flex;
   gap: 12px;
+}
+
+.pending-material-item {
+  border-style: dashed;
+  border-color: #e6a23c;
+  background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
+}
+
+.pending-material-item:hover {
+  border-color: #e6a23c;
+  background: linear-gradient(135deg, #fff7df 0%, #fde68a 100%);
+}
+
+.pending-material-item .resume-name,
+.pending-material-item .cert-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .resume-actions .el-button,
@@ -5549,7 +5579,8 @@ onMounted(() => {
 }
 
 .message-center-container {
-  max-height: 500px;
+  min-height: 280px;
+  max-height: min(560px, calc(100vh - 180px));
   overflow-y: auto;
 }
 
@@ -5627,10 +5658,6 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 12px;
-}
-
-.priority-tag {
-  flex-shrink: 0;
 }
 
 .target-info {
@@ -5849,6 +5876,97 @@ onMounted(() => {
   padding: 8px;
 }
 
+/* 收藏/详情：企业头卡与宣传资料 */
+.internship-base-badges {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.company-card-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 16px 20px;
+  background: linear-gradient(135deg, #f8fafc 0%, #ffffff 100%);
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  margin-bottom: 12px;
+}
+
+.company-logo-large {
+  width: 64px;
+  height: 64px;
+  object-fit: contain;
+  border-radius: 10px;
+  border: 1px solid #e2e8f0;
+  background: white;
+  padding: 6px;
+  flex-shrink: 0;
+}
+
+.company-card-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.company-card-title {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.company-name-text {
+  font-size: 16px;
+  font-weight: 700;
+  color: #1e293b;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.company-intro-text {
+  font-size: 14px;
+  line-height: 1.8;
+  color: #475569;
+  margin: 8px 0 0 0;
+  white-space: pre-wrap;
+}
+
+.sub-section-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #64748b;
+  margin: 14px 0 10px 0;
+}
+
+.company-photo-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 12px;
+}
+
+.company-photo {
+  width: 100%;
+  height: 110px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+}
+
+.company-video-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.company-video {
+  width: 100%;
+  max-height: 300px;
+  border-radius: 8px;
+  background: #000;
+}
+
 .favorites-empty {
   text-align: center;
   padding: 60px 20px;
@@ -5935,11 +6053,21 @@ onMounted(() => {
 }
 
 .favorite-title {
+  flex: 1;
+  min-width: 0;
+}
+
+.favorite-position {
   font-size: 20px;
   font-weight: 600;
   color: #1e293b;
-  flex: 1;
   letter-spacing: 0.3px;
+}
+
+.favorite-badges {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
 }
 
 .favorite-body {
@@ -6275,6 +6403,11 @@ onMounted(() => {
   padding: 16px 0;
 }
 
+.application-dialog .material-upload-link {
+  vertical-align: baseline;
+  line-height: 24px;
+}
+
 .application-dialog .material-item {
   display: flex;
   align-items: center;
@@ -6516,29 +6649,6 @@ onMounted(() => {
 }
 
 .contact-value {
-  color: #303133;
-}
-
-.stats-info {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.stat-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  font-size: 14px;
-}
-
-.stat-label {
-  font-weight: 600;
-  color: #606266;
-  min-width: 80px;
-}
-
-.stat-value {
   color: #303133;
 }
 
@@ -7112,7 +7222,8 @@ onMounted(() => {
 
 /* 消息中心对话框样式 */
 .message-center-container {
-  max-height: 500px;
+  min-height: 280px;
+  max-height: min(560px, calc(100vh - 180px));
   overflow-y: auto;
 }
 
@@ -7190,10 +7301,6 @@ onMounted(() => {
   gap: 12px;
 }
 
-.priority-tag {
-  flex-shrink: 0;
-}
-
 .target-info {
   font-size: 13px;
   color: #94a9b8;
@@ -7202,16 +7309,6 @@ onMounted(() => {
 .read-count {
   font-size: 13px;
   color: #94a9b8;
-}
-
-/* 验证码输入组样式 */
-.code-input-group {
-  display: flex;
-  gap: 12px;
-}
-
-.code-input-group .el-input {
-  flex: 1;
 }
 
 /* 按钮样式统一 */

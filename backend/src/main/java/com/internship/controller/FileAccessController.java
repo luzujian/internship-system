@@ -2,6 +2,7 @@ package com.internship.controller;
 
 import com.internship.anno.Log;
 import com.internship.utils.AliyunOSSOperator;
+import com.internship.utils.OssObjectReadPolicy;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
@@ -17,7 +18,6 @@ import java.net.URL;
 @RestController
 @RequestMapping("/api/uploads")
 public class FileAccessController {
-
     @Autowired
     private AliyunOSSOperator aliyunOSSOperator;
 
@@ -27,23 +27,32 @@ public class FileAccessController {
         try {
             String requestURI = request.getRequestURI();
             String filePath = requestURI.replace("/api/uploads/", "");
-            log.info("访问文件: {}", filePath);
-            
+            if (!OssObjectReadPolicy.mayReadGeneric(filePath)) {
+                response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+                return;
+            }
             String ossUrl = aliyunOSSOperator.getFileUrl(filePath);
-            log.info("OSS URL: {}", ossUrl);
             
             URL url = new URL(ossUrl);
             try (InputStream inputStream = url.openStream()) {
                 String contentType = getContentType(filePath);
-                response.setContentType(contentType);
-                response.setHeader("Cache-Control", "public, max-age=31536000");
+                boolean activeContent = filePath.matches("(?i).*\\.(html?|svg|xml|js|mjs|css)$");
+                response.setContentType(activeContent ? "application/octet-stream" : contentType);
+                response.setHeader("X-Content-Type-Options", "nosniff");
+                response.setHeader("Cache-Control", "private, no-store");
+                if (activeContent) {
+                    response.setHeader("Content-Disposition", "attachment");
+                }
                 
                 byte[] buffer = new byte[8192];
                 int bytesRead;
+                long bytesSent = 0;
                 while ((bytesRead = inputStream.read(buffer)) != -1) {
                     response.getOutputStream().write(buffer, 0, bytesRead);
+                    bytesSent += bytesRead;
                 }
                 response.getOutputStream().flush();
+                log.info("上传文件访问完成: contentType={}, bytes={}", contentType, bytesSent);
             }
         } catch (Exception e) {
             log.error("访问文件失败", e);

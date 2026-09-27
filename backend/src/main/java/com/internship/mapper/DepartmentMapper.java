@@ -51,4 +51,12 @@ public interface DepartmentMapper {
     // 更新院系实习状态统计信息
     int updateDepartmentInternshipCount(@Param("id") Long id, @Param("confirmedCount") Integer confirmedCount, @Param("notFoundCount") Integer notFoundCount, @Param("hasOfferCount") Integer hasOfferCount);
 
+    // ========== 删除院系级联清理：按 department_id 删除所有引用该院系的业务表记录（每条在 Service 独立 try-catch，表不存在时跳过） ==========
+    // 1. 先清理教师用户 teacher_users.department_id 列（置空，若删院系时不想删老师），或者直接 DELETE；这里置 NULL 保留教师记录但解除绑定
+    @Update("UPDATE teacher_users SET department_id = NULL WHERE department_id = #{departmentId}")
+    int clearDepartmentIdOnTeachers(@Param("departmentId") Long departmentId);
+
+    // 2. 系 division.department_id → 删院系前必须先删/解绑 division；这里直接删该部门所有 division 物理记录（按链路 department→division→major→class→students 本来就会走 divisionService，但先清 department_id 反向绑定更安全）
+    @Delete("delete from division where department_id = #{departmentId}")
+    int deleteDivisionsByDepartmentId(@Param("departmentId") Long departmentId);
 }

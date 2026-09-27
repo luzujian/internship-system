@@ -1,0 +1,129 @@
+{
+  "code": 200,
+  "data": {
+    "items": [
+      {
+        "id": 1,
+        "eventType": "interview_passed",
+        "category": "recruitment",
+        "title": "面试已通过",
+        "description": "星河科技 · Java 实习生",
+        "status": "success",
+        "statusText": "获得 Offer",
+        "occurredAt": "2026-07-18T14:20:00+08:00",
+        "relatedId": 25,
+        "action": { "key": "START_CONFIRMATION", "targetId": 25, "params": {} }
+      },
+      {
+        "id": 2,
+        "eventType": "interview_invited",
+        "category": "recruitment",
+        "title": "面试邀请",
+        "description": "星河科技 · Java 实习生",
+        "status": "info",
+        "statusText": "待面试",
+        "occurredAt": "2026-07-18T10:00:00+08:00",
+        "relatedId": 30,
+        "action": { "key": "VIEW_INTERVIEW", "targetId": 30, "params": {} }
+      },
+      {
+        "id": 3,
+        "eventType": "job_applied",
+        "category": "recruitment",
+        "title": "已投递岗位",
+        "description": "星河科技 · Java 实习生",
+        "status": "pending",
+        "statusText": "待企业处理",
+        "occurredAt": "2026-07-18T09:30:00+08:00",
+        "relatedId": 10,
+        "action": { "key": "VIEW_APPLICATION", "targetId": 10, "params": {} }
+      },
+      {
+        "id": 4,
+        "eventType": "confirmation_submitted",
+        "category": "confirmation",
+        "title": "确认表已提交",
+        "description": "星河科技 · Java 实习生",
+        "status": "pending",
+        "statusText": "待企业确认",
+        "occurredAt": "2026-07-17T16:45:00+08:00",
+        "relatedId": 40,
+        "action": { "key": "VIEW_CONFIRMATION", "targetId": 40, "params": {} }
+      },
+      {
+        "id": 5,
+        "eventType": "confirmation_confirmed",
+        "category": "confirmation",
+        "title": "确认表已确认",
+        "description": "星河科技 · Java 实习生",
+        "status": "approved",
+        "statusText": "已确认",
+        "occurredAt": "2026-07-17T11:20:00+08:00",
+        "relatedId": 40,
+        "action": { "key": "VIEW_CONFIRMATION", "targetId": 40, "params": {} }
+      },
+      {
+        "id": 6,
+        "eventType": "reflection_submitted",
+        "category": "reflection",
+        "title": "实习心得已提交",
+        "description": "第 1 阶段实习心得",
+        "status": "submitted",
+        "statusText": "待评分",
+        "occurredAt": "2026-07-17T09:10:00+08:00",
+        "relatedId": 50,
+        "action": { "key": "VIEW_REFLECTION", "targetId": 50, "params": {} }
+      },
+      {
+        "id": 7,
+        "eventType": "reflection_scored",
+        "category": "reflection",
+        "title": "实习心得已评分",
+        "description": "第 1 阶段实习心得 · 90 分",
+        "status": "scored",
+        "statusText": "已评分",
+        "occurredAt": "2026-07-16T15:00:00+08:00",
+        "relatedId": 50,
+        "action": { "key": "VIEW_REFLECTION", "targetId": 50, "params": {} }
+      },
+      {
+        "id": 8,
+        "eventType": "internship_confirmed",
+        "category": "lifecycle",
+        "title": "新实习岗位已确认",
+        "description": "当前实习记录已更新",
+        "status": "success",
+        "statusText": "已生效",
+        "occurredAt": "2026-07-16T10:00:00+08:00",
+        "relatedId": 108,
+        "action": { "key": "VIEW_CONFIRMATION", "targetId": 108, "params": {} }
+      },
+      {
+        "id": 9,
+        "eventType": "internship_started",
+        "category": "internship",
+        "title": "实习已开始",
+        "description": "星河科技 · Java 实习生",
+        "status": "info",
+        "statusText": "实习中",
+        "occurredAt": "2026-07-15T08:00:00+08:00",
+        "relatedId": 60,
+        "action": { "key": "VIEW_INTERNSHIP", "targetId": 60, "params": {} }
+      },
+      {
+        "id": 10,
+        "eventType": "direct_offer",
+        "category": "recruitment",
+        "title": "直发 Offer",
+        "description": "星河科技 · Java 实习生",
+        "status": "success",
+        "statusText": "获得 Offer",
+        "occurredAt": "2026-07-14T17:30:00+08:00",
+        "relatedId": 26,
+        "action": { "key": "START_CONFIRMATION", "targetId": 26, "params": {} }
+      }
+    ],
+    "nextCursor": "cursor-page2",
+    "hasMore": true
+  }
+}

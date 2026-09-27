@@ -1,6 +1,7 @@
 package com.internship.controller;
 
 import com.internship.anno.Log;
+import com.internship.dto.TeacherCompanyDTO;
 import com.internship.entity.*;
 import com.internship.entity.Class;
 import com.internship.entity.*;
@@ -14,12 +15,14 @@ import com.internship.service.MajorService;
 import com.internship.service.CompanyUserService;
 import com.internship.service.TeacherUserService;
 import com.internship.utils.CurrentHolder;
+import com.internship.utils.MaterialMetadataRedactor;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.transaction.annotation.Transactional;
@@ -48,7 +51,7 @@ import java.util.stream.Collectors;
 @Slf4j
 @RestController
 @RequestMapping("/api/teacher")
-@PreAuthorize("hasAnyRole('TEACHER', 'TEACHER_COLLEGE', 'TEACHER_DEPARTMENT', 'TEACHER_COUNSELOR')")
+@PreAuthorize("hasAnyRole('TEACHER_COLLEGE', 'TEACHER_DEPARTMENT', 'TEACHER_COUNSELOR')")
 @Validated
 public class TeacherController {
 
@@ -63,6 +66,9 @@ public class TeacherController {
 
     @Autowired
     private CompanyUserService companyUserService;
+
+    @Autowired
+    private CompanyRelationsService companyRelationsService;
 
     @Autowired
     private StudentInternshipStatusService studentInternshipStatusService;
@@ -84,6 +90,12 @@ public class TeacherController {
 
     @Autowired
     private StudentUserService studentUserService;
+
+    @Autowired
+    private InternshipStageAssignmentService internshipStageAssignmentService;
+
+    @Autowired
+    private PositionService positionService;
 
     @Autowired
     private DivisionMapper divisionMapper;
@@ -133,7 +145,21 @@ public class TeacherController {
             }
             log.info("当前教师用户ID: {}", teacherId);
 
-            List<Announcement> allAnnouncements = announcementService.findAll(null, null);
+            // 获取教师类型，用于按 targetType 过滤公告
+            String teacherType = null;
+            try {
+                com.internship.entity.TeacherUser teacher = teacherUserService.findById(teacherId);
+                if (teacher != null && teacher.getTeacherType() != null) {
+                    teacherType = teacher.getTeacherType();
+                }
+            } catch (Exception e) {
+                log.warn("获取教师类型失败: {}", e.getMessage());
+            }
+            log.info("当前教师类型: {}", teacherType);
+
+            // 按目标群体过滤公告
+            List<Announcement> allAnnouncements = announcementService.getAnnouncementsForUser(
+                    "TEACHER", teacherType, String.valueOf(teacherId), "TEACHER");
 
             // 学院教师和系室教师不显示辅导员发布的公告
             String currentUserRole = com.internship.utils.CurrentHolder.getUserRole();
@@ -146,16 +172,11 @@ public class TeacherController {
                     .toList();
             }
 
-            // 分别获取未读和已读公告
-            List<Announcement> unreadAnnouncements = new java.util.ArrayList<>();
-            List<Announcement> readAnnouncements = new java.util.ArrayList<>();
-
-            // 优化：批量查询该教师的所有已读记录，避免N+1问题
+            // 首页公告栏固定展示最近通知，已读和未读均保留，点击只改变阅读状态
             java.util.Map<Long, Boolean> readStatusMap = new java.util.HashMap<>();
             try {
-                java.util.List<com.internship.entity.AnnouncementReadRecord> readRecords =
-                    announcementReadRecordService.findByUserId(String.valueOf(teacherId), "TEACHER");
-                for (com.internship.entity.AnnouncementReadRecord record : readRecords) {
+                for (com.internship.entity.AnnouncementReadRecord record :
+                        announcementReadRecordService.findByUserId(String.valueOf(teacherId), "TEACHER")) {
                     if (record.getAnnouncementId() != null) {
                         readStatusMap.put(record.getAnnouncementId(), true);
                     }
@@ -164,49 +185,32 @@ public class TeacherController {
                 log.warn("批量查询已读记录失败: {}", e.getMessage());
             }
 
-            for (Announcement announcement : allAnnouncements) {
-                // 从预查询的Map中获取已读状态
-                boolean isRead = readStatusMap.getOrDefault(announcement.getId(), false);
-                if (isRead) {
-                    readAnnouncements.add(announcement);
-                } else {
-                    unreadAnnouncements.add(announcement);
-                }
-            }
-
-            // 合并：未读优先，未读不足limit时用已读补充
-            List<Announcement> resultList = new java.util.ArrayList<>();
-            resultList.addAll(unreadAnnouncements);
-            int remaining = limit - unreadAnnouncements.size();
-            if (remaining > 0 && !readAnnouncements.isEmpty()) {
-                resultList.addAll(readAnnouncements.stream().limit(remaining).toList());
-            }
-
-            // 如果还是不足limit，补充更多未读（如果全部未读已显示）
-            if (resultList.size() < limit && unreadAnnouncements.size() > resultList.size()) {
-                // 已有全部未读，不需额外处理
-            }
-
-            log.info("查询到的通知数量：未读={}, 已读(补充)={}", unreadAnnouncements.size(), limit - unreadAnnouncements.size());
-
-            // 只返回未读公告
-            List<java.util.Map<String, Object>> result = unreadAnnouncements.stream()
+            int safeLimit = limit == null || limit < 1 ? 5 : limit;
+            List<java.util.Map<String, Object>> result = allAnnouncements.stream()
+                    .limit(safeLimit)
                     .map(announcement -> {
+                        boolean isRead = Boolean.TRUE.equals(announcement.getIsRead())
+                                || readStatusMap.getOrDefault(announcement.getId(), false);
+                        announcement.setIsRead(isRead);
                         java.util.Map<String, Object> item = new java.util.HashMap<>();
                         item.put("id", announcement.getId());
                         item.put("type", "system");
                         item.put("title", announcement.getTitle());
                         item.put("content", announcement.getContent());
                         item.put("time", formatTime(announcement.getPublishTime()));
-                        item.put("priority", announcement.getPriority() != null ? announcement.getPriority() : "info");
-                        item.put("isRead", false);
+                        item.put("publishTime", announcement.getPublishTime());
+                        item.put("publisher", announcement.getPublisher());
+                        item.put("publisherRole", announcement.getPublisherRole());
+                        item.put("readCount", announcement.getReadCount());
+                        item.put("isRead", isRead);
                         return item;
                     })
-                    .limit(limit.longValue())
                     .toList();
 
-            log.info("返回的通知数据：{}", result);
+            log.info("教师通知查询完成：count={}", result.size());
             return Result.success(result);
+        } catch (AccessDeniedException e) {
+            throw e;
         } catch (Exception e) {
             log.error("获取教师通知失败：{}", e.getMessage(), e);
             return Result.error("获取教师通知失败：" + e.getMessage());
@@ -270,10 +274,18 @@ public class TeacherController {
                                @RequestParam(required = false) String companyName,
                                @RequestParam(required = false) Integer status,
                                @RequestParam(required = false) Integer recallStatus,
-                               @RequestParam(required = false) String companyTag) {
-        log.info("教师端获取企业列表（用于下拉框），页码：{}, 每页条数：{}, 企业名称：{}", page, pageSize, companyName);
+                               @RequestParam(required = false) String companyTag,
+                               @RequestParam(required = false) String industry,
+                               @RequestParam(required = false) String keyword,
+                               @RequestParam(required = false) Integer visitedYear,
+                               @RequestParam(required = false) Integer visitState,
+                               @RequestParam(required = false) Long visitTeacherId,
+                               @RequestParam(required = false) Long liaisonTeacherId) {
+        log.info("教师端获取企业列表（用于下拉框），页码：{}, 每页条数：{}, 企业名称：{}, 行业：{}", page, pageSize, companyName, industry);
         try {
-            PageResult<com.internship.entity.CompanyUser> pageResult = companyUserService.findPage(page, pageSize, companyName, status, recallStatus, companyTag);
+            PageResult<TeacherCompanyDTO> pageResult = companyRelationsService.findTeacherCompanies(
+                    page, pageSize, companyName, status, recallStatus, companyTag, industry,
+                    keyword, visitedYear, visitState, visitTeacherId, liaisonTeacherId);
             return Result.success(pageResult);
         } catch (Exception e) {
             log.error("获取企业列表失败: {}", e.getMessage(), e);
@@ -299,16 +311,13 @@ public class TeacherController {
                               @RequestParam(required = false) Long classId) {
         log.info("教师端获取学生列表，页码：{}, 每页条数：{}, 搜索姓名：{}, 班级ID：{}", page, pageSize, searchName, classId);
         try {
-            PageResult<com.internship.entity.StudentUser> pageResult = studentUserService.findPage(
-                page, 
-                pageSize, 
-                null, 
-                searchName, 
-                null, 
-                null, 
-                classId != null ? classId.toString() : null
-            );
+            ScopeInfo scope = resolveTeacherScope();
+            PageResult<com.internship.entity.StudentUser> pageResult = studentUserService.findPageByTeacherScope(
+                    page, pageSize, searchName, classId,
+                    scope.departmentIds, scope.divisionIds, scope.classIds);
             return Result.success(pageResult);
+        } catch (AccessDeniedException e) {
+            throw e;
         } catch (Exception e) {
             log.error("获取学生列表失败：{}", e.getMessage(), e);
             return Result.error("获取学生列表失败");
@@ -319,7 +328,7 @@ public class TeacherController {
     public Result getCompanyById(@PathVariable Long id) {
         log.info("教师端根据 ID 获取企业信息：{}", id);
         try {
-            CompanyUser company = companyUserService.findById(id);
+            TeacherCompanyDTO company = companyRelationsService.findCompanyDetail(id);
             if (company == null) {
                 return Result.error("企业不存在");
             }
@@ -345,8 +354,10 @@ public class TeacherController {
         log.info("获取企业注册申请列表，页码: {}, 每页条数: {}, 企业名称: {}, 联系人: {}, 联系电话: {}, 状态: {}",
                 page, pageSize, companyName, contactPerson, contactPhone, status);
         try {
-            PageResult<CompanyUser> pageResult = companyUserService.findPendingAuditPage(page, pageSize, companyName, contactPerson, contactPhone, status);
-            return Result.success(pageResult);
+            // 未指定状态时默认只看待审核（该接口语义为“待审核企业列表”），传 null 会查询全部状态
+            Integer queryStatus = status != null ? status : 0;
+            PageResult<CompanyUser> pageResult = companyUserService.findPendingAuditPage(page, pageSize, companyName, contactPerson, contactPhone, queryStatus);
+            return Result.success(MaterialMetadataRedactor.companyPage(pageResult));
         } catch (Exception e) {
             log.error("获取企业注册申请列表失败: {}", e.getMessage(), e);
             return Result.error("获取企业注册申请列表失败");
@@ -374,7 +385,7 @@ public class TeacherController {
     @PreAuthorize("hasAuthority('user:company:audit')")
     @Log(operationType = "AUDIT", module = "COMPANY_MANAGEMENT", description = "审核企业注册申请")
     public Result auditCompany(@PathVariable Long id, @RequestBody Map<String, Object> params) {
-        log.info("审核企业注册，ID: {}, 审核参数: {}", id, params);
+        log.info("审核企业注册：id={}", id);
         try {
             Integer auditStatus = Integer.valueOf(params.get("auditStatus").toString());
             String auditRemark = params.get("auditRemark") != null ? params.get("auditRemark").toString() : "";
@@ -383,7 +394,12 @@ public class TeacherController {
             if (company == null) {
                 return Result.error("企业不存在");
             }
-            
+
+            // 只有待审核状态的申请才能被审核，防止重复审核
+            if (company.getAuditStatus() != null && company.getAuditStatus() != 0) {
+                return Result.error("该企业已审核，无法重复操作");
+            }
+
             company.setAuditStatus(auditStatus);
             company.setAuditRemark(auditRemark);
             company.setAuditTime(new Date());
@@ -394,9 +410,9 @@ public class TeacherController {
                 company.setReviewerId(getCurrentUserId());
                 
                 String username = company.getCompanyName();
-                String password = "123456";
                 company.setUsername(username);
-                company.setPassword(password);
+                // 保留注册时生成的随机密码，企业使用原登记邮箱验证后自行设置密码。
+                company.setPassword(null);
                 company.setRole("ROLE_COMPANY");
                 
                 companyUserService.update(company);
@@ -415,6 +431,8 @@ public class TeacherController {
         } catch (BusinessException e) {
             log.warn("审核企业注册失败: {}", e.getMessage());
             return Result.error(e.getMessage());
+        } catch (AccessDeniedException e) {
+            throw e;
         } catch (Exception e) {
             log.error("审核企业注册时发生异常: {}", e.getMessage(), e);
             return Result.error("审核失败: " + e.getMessage());
@@ -437,21 +455,18 @@ public class TeacherController {
         log.info("教师端分页获取实习状态列表，页码：{}, 每页条数：{}", page, pageSize);
         try {
             ScopeInfo scope = resolveTeacherScope();
-            PageResult<com.internship.entity.StudentInternshipStatus> pageResult;
-            if (scope.hasScope()) {
-                pageResult = studentInternshipStatusService.findPageByScope(
-                        page, pageSize, studentId, name, gender, status, companyId, companyName,
-                        grade, major, className, null, scope.divisionIds, scope.classIds);
-            } else {
-                pageResult = studentInternshipStatusService.findPage(
-                        page, pageSize, studentId, name, gender, status, companyId, companyName, grade, major, className);
-            }
+            PageResult<com.internship.entity.StudentInternshipStatus> pageResult =
+                    studentInternshipStatusService.findPageByScope(
+                            page, pageSize, studentId, name, gender, status, companyId, companyName,
+                            grade, major, className, null, scope.departmentIds, scope.divisionIds, scope.classIds);
             Map<String, Object> result = new HashMap<>();
             result.put("list", pageResult.getRows());
             result.put("total", pageResult.getTotal());
             result.put("scopeName", scope.name);
             result.put("scopeType", scope.type);
             return Result.success(result);
+        } catch (AccessDeniedException e) {
+            throw e;
         } catch (Exception e) {
             log.error("获取实习状态列表失败：{}", e.getMessage(), e);
             return Result.error("获取实习状态列表失败");
@@ -463,85 +478,270 @@ public class TeacherController {
         log.info("获取学生实习状态统计数据");
         try {
             ScopeInfo scope = resolveTeacherScope();
-            PageResult<com.internship.entity.StudentInternshipStatus> pageResult;
-            if (scope.hasScope()) {
-                pageResult = studentInternshipStatusService.findPageByScope(
-                        1, 1, null, null, null, null, null, null, null, null, null, null,
-                        scope.divisionIds, scope.classIds);
-            } else {
-                pageResult = studentInternshipStatusService.findPage(1, 1);
-            }
+            PageResult<com.internship.entity.StudentInternshipStatus> pageResult =
+                    studentInternshipStatusService.findPageByScope(
+                            1, 1, null, null, null, null, null, null, null, null, null, null,
+                            scope.departmentIds, scope.divisionIds, scope.classIds);
             Long total = pageResult.getTotal();
 
             Map<String, Object> statistics = new HashMap<>();
             statistics.put("studentCount", total);
             statistics.put("scopeName", scope.name);
             statistics.put("scopeType", scope.type);
-            // 各状态统计用全量数值近似（分状态精确统计需额外 SQL，暂用比例估算）
-            statistics.put("noOfferCount", studentInternshipStatusService.countByStatus(0));
-            statistics.put("pendingCount", studentInternshipStatusService.countByStatus(1));
-            statistics.put("confirmedCount", studentInternshipStatusService.countByStatus(2));
-            statistics.put("interningCount", studentInternshipStatusService.countByStatus(3));
-            statistics.put("finishedCount", studentInternshipStatusService.countByStatus(4));
-            statistics.put("interruptedCount", studentInternshipStatusService.countByStatus(5));
-            statistics.put("delayedCount", studentInternshipStatusService.countByStatus(6));
+            statistics.put("noOfferCount", countScopedStatus(scope, 0));
+            statistics.put("pendingCount", countScopedStatus(scope, 1));
+            statistics.put("confirmedCount", countScopedStatus(scope, 2));
+            statistics.put("interningCount", countScopedStatus(scope, 3));
+            statistics.put("finishedCount", countScopedStatus(scope, 4));
+            statistics.put("interruptedCount", countScopedStatus(scope, 5));
+            statistics.put("delayedCount", countScopedStatus(scope, 6));
 
             log.info("统计数据：总数={}", total);
             return Result.success(statistics);
+        } catch (AccessDeniedException e) {
+            throw e;
         } catch (Exception e) {
             log.error("获取统计数据失败：{}", e.getMessage(), e);
             return Result.error("获取统计数据失败");
         }
     }
 
+    @GetMapping("/internship-status/company-options")
+    public Result getInternshipCompanyOptions() {
+        try {
+            ScopeInfo scope = resolveTeacherScope();
+            List<String> companyNames = studentInternshipStatusMapper.findDistinctCompanyNamesByScope(
+                    scope.departmentIds, scope.divisionIds, scope.classIds);
+            return Result.success(companyNames);
+        } catch (AccessDeniedException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("获取实习单位筛选选项失败：{}", e.getMessage(), e);
+            return Result.error("获取实习单位筛选选项失败");
+        }
+    }
+
+    /**
+     * 获取学生状态监控详情。这里按学生主键重新查询完整数据，避免复用列表行的精简字段，
+     * 同时只返回页面需要的安全字段，防止学生密码等敏感信息被序列化到前端。
+     */
+    @GetMapping("/students/{studentId:\\d+}/internship-detail")
+    public Result getStudentInternshipDetail(@PathVariable Long studentId) {
+        try {
+            ScopeInfo scope = resolveTeacherScope();
+            StudentUser student = studentUserService.findById(studentId);
+            if (student == null) {
+                return Result.error("学生不存在");
+            }
+
+            Major major = student.getMajorId() == null ? null : majorService.findById(student.getMajorId());
+            if (!canViewStudentDetail(student, major, scope)) {
+                throw new AccessDeniedException("无权查看该学生详情");
+            }
+
+            Department department = null;
+            if (major != null && major.getDepartmentId() != null) {
+                department = departmentMapper.findById(major.getDepartmentId());
+            }
+
+            StudentInternshipStatus internshipStatus = studentInternshipStatusService.findByStudentId(studentId);
+            List<InternshipStageAssignment> assignments = internshipStageAssignmentService.findByStudentId(studentId);
+            if (assignments == null) assignments = Collections.emptyList();
+
+            Date now = new Date();
+            InternshipStageAssignment currentAssignment = selectCurrentAssignment(assignments, now);
+            boolean hasPendingConfirmation = assignments.stream().anyMatch(item ->
+                    "PENDING_CONFIRMATION".equals(item.getStatus()));
+
+            Object displayStatus = currentAssignment != null
+                    ? deriveInternshipStatus(currentAssignment)
+                    : internshipStatus != null && internshipStatus.getStatus() != null
+                        && !Integer.valueOf(7).equals(internshipStatus.getStatus())
+                        ? internshipStatus.getStatus()
+                        : 0;
+
+            String companyName = null;
+            String positionName = null;
+            Date startTime = null;
+            Date endTime = null;
+
+            if (currentAssignment != null) {
+                companyName = currentAssignment.getCompanyName();
+                positionName = currentAssignment.getPositionName();
+                startTime = currentAssignment.getInternshipStartTime();
+                endTime = currentAssignment.getInternshipEndTime();
+                if (!StringUtils.hasText(companyName) && currentAssignment.getCompanyId() != null) {
+                    CompanyUser company = companyUserService.findById(currentAssignment.getCompanyId());
+                    companyName = company == null ? null : company.getCompanyName();
+                }
+                if (!StringUtils.hasText(positionName) && currentAssignment.getPositionId() != null) {
+                    Position position = positionService.findById(currentAssignment.getPositionId());
+                    positionName = position == null ? null : position.getPositionName();
+                }
+            } else if (internshipStatus != null) {
+                companyName = StringUtils.hasText(internshipStatus.getCompanyName())
+                        ? internshipStatus.getCompanyName()
+                        : internshipStatus.getCompany() == null ? null : internshipStatus.getCompany().getCompanyName();
+                positionName = StringUtils.hasText(internshipStatus.getPositionName())
+                        ? internshipStatus.getPositionName()
+                        : internshipStatus.getPosition() == null ? null : internshipStatus.getPosition().getPositionName();
+                startTime = internshipStatus.getInternshipStartTime();
+                endTime = internshipStatus.getInternshipEndTime();
+            }
+
+            String departmentName = department == null ? null : department.getName();
+            if (!StringUtils.hasText(departmentName) && StringUtils.hasText(student.getDepartment())) {
+                try {
+                    Department storedDepartment = departmentMapper.findById(Long.valueOf(student.getDepartment()));
+                    departmentName = storedDepartment == null ? null : storedDepartment.getName();
+                } catch (NumberFormatException ignored) {
+                    departmentName = student.getDepartment();
+                }
+            }
+
+            Map<String, Object> detail = new LinkedHashMap<>();
+            detail.put("id", student.getId());
+            detail.put("studentId", student.getStudentId());
+            detail.put("name", student.getName());
+            detail.put("gender", student.getGender());
+            detail.put("grade", student.getGrade());
+            detail.put("department", departmentName);
+            detail.put("major", major != null ? major.getName() : student.getMajor());
+            detail.put("className", student.getClassName());
+            detail.put("phone", student.getPhone());
+            detail.put("email", student.getEmail());
+            detail.put("internshipStatus", displayStatus);
+            detail.put("company", companyName);
+            detail.put("positionName", positionName);
+            detail.put("hasPendingConfirmation", hasPendingConfirmation);
+            detail.put("internshipStartDate", startTime);
+            detail.put("internshipEndDate", endTime);
+            return Result.success(detail);
+        } catch (AccessDeniedException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("获取学生状态监控详情失败，studentId={}：{}", studentId, e.getMessage(), e);
+            return Result.error("获取学生详情失败");
+        }
+    }
+
+    private boolean canViewStudentDetail(StudentUser student, Major major, ScopeInfo scope) {
+        if (student == null) return false;
+        return (scope.classIds != null && scope.classIds.contains(student.getClassId()))
+                || (major != null && scope.departmentIds != null
+                    && scope.departmentIds.contains(major.getDepartmentId()))
+                || (major != null && scope.divisionIds != null
+                    && scope.divisionIds.contains(major.getDivisionId()));
+    }
+
+    private Object deriveInternshipStatus(InternshipStageAssignment assignment) {
+        if (assignment == null) return 0;
+        if ("PENDING_CONFIRMATION".equals(assignment.getStatus())) return 1;
+        if ("INTERRUPTED".equals(assignment.getStatus())) return 5;
+        if ("REPLACED".equals(assignment.getStatus()) || "ENDED".equals(assignment.getStatus())) return 4;
+        Date now = new Date();
+        if (assignment.getInternshipEndTime() != null && assignment.getInternshipEndTime().before(now)) return 4;
+        if (assignment.getInternshipStartTime() != null && !assignment.getInternshipStartTime().after(now)) return 3;
+        return 2;
+    }
+
+    private InternshipStageAssignment selectCurrentAssignment(List<InternshipStageAssignment> assignments, Date now) {
+        Comparator<InternshipStageAssignment> byStartThenId = Comparator
+                .comparing(InternshipStageAssignment::getInternshipStartTime,
+                        Comparator.nullsFirst(Comparator.naturalOrder()))
+                .thenComparing(InternshipStageAssignment::getId,
+                        Comparator.nullsFirst(Comparator.naturalOrder()));
+
+        InternshipStageAssignment active = assignments.stream()
+                .filter(item -> Integer.valueOf(1).equals(item.getCurrentFlag()))
+                .filter(item -> !"PENDING_CONFIRMATION".equals(item.getStatus()))
+                .filter(item -> !"REPLACED".equals(item.getStatus()))
+                .filter(item -> !"ENDED".equals(item.getStatus()))
+                .filter(item -> !"INTERRUPTED".equals(item.getStatus()))
+                .filter(item -> item.getInternshipStartTime() == null || !item.getInternshipStartTime().after(now))
+                .filter(item -> item.getInternshipEndTime() == null || item.getInternshipEndTime().after(now))
+                .max(byStartThenId)
+                .orElse(null);
+        if (active != null) return active;
+
+        return assignments.stream()
+                .filter(item -> Integer.valueOf(1).equals(item.getCurrentFlag()))
+                .filter(item -> "CONFIRMED".equals(item.getStatus()))
+                .filter(item -> item.getInternshipStartTime() != null && item.getInternshipStartTime().after(now))
+                .min(byStartThenId)
+                .orElse(null);
+    }
+
+    private Long countScopedStatus(ScopeInfo scope, Integer status) {
+        return studentInternshipStatusService.findPageByScope(
+                1, 1, null, null, null, status, null, null, null, null, null, null,
+                scope.departmentIds, scope.divisionIds, scope.classIds).getTotal();
+    }
+
     private ScopeInfo resolveTeacherScope() {
         ScopeInfo scope = new ScopeInfo();
-        Long userId = CurrentHolder.getUserId();
-        if (userId == null) return scope;
+        User user = CurrentHolder.getUser();
+        if (user == null || user.getId() == null || !StringUtils.hasText(user.getUsername())) {
+            throw new AccessDeniedException("教师身份不可用");
+        }
+        try {
+            TeacherUser teacher = teacherUserService.findById(user.getId());
+            if (teacher == null || !user.getUsername().equals(teacher.getTeacherUserId())) {
+                throw new AccessDeniedException("教师身份不匹配");
+            }
 
-        TeacherUser teacher = teacherUserService.findById(userId);
-        if (teacher == null) return scope;
-
-        String teacherType = teacher.getTeacherType();
-        if (teacherType == null) return scope;
-
-        if ("COUNSELOR".equals(teacherType)) {
-            List<ClassCounselorRelation> relations = classCounselorRelationMapper.findByCounselorId(userId);
-            if (relations != null && !relations.isEmpty()) {
-                scope.classIds = relations.stream().map(ClassCounselorRelation::getClassId).collect(Collectors.toList());
+            String teacherType = teacher.getTeacherType();
+            if ("COUNSELOR".equals(teacherType)) {
+                List<ClassCounselorRelation> relations = classCounselorRelationMapper.findByCounselorId(user.getId());
+                if (relations != null) {
+                    scope.classIds = relations.stream().filter(Objects::nonNull)
+                            .map(ClassCounselorRelation::getClassId)
+                            .filter(id -> id != null && id > 0).distinct().collect(Collectors.toList());
+                }
                 scope.name = "负责班级";
                 scope.type = "COUNSELOR";
-            }
-        } else if ("DEPARTMENT".equals(teacherType)) {
-            if (teacher.getDivisionId() != null) {
-                scope.divisionIds = Collections.singletonList(Long.valueOf(teacher.getDivisionId()));
-                Division division = divisionMapper.findById(scope.divisionIds.get(0));
-                scope.name = division != null ? division.getName() : "本系";
-                scope.type = "DEPARTMENT";
-            }
-        } else if ("COLLEGE".equals(teacherType)) {
-            if (teacher.getDepartmentId() != null) {
-                Long deptId = Long.valueOf(teacher.getDepartmentId());
-                List<Division> divisions = divisionMapper.findByDepartmentId(deptId);
-                if (divisions != null && !divisions.isEmpty()) {
-                    scope.divisionIds = divisions.stream().map(Division::getId).collect(Collectors.toList());
+            } else if ("DEPARTMENT".equals(teacherType)) {
+                if (StringUtils.hasText(teacher.getDivisionId())) {
+                    Long divisionId = Long.valueOf(teacher.getDivisionId());
+                    if (divisionId > 0) {
+                        scope.divisionIds = Collections.singletonList(divisionId);
+                        Division division = divisionMapper.findById(divisionId);
+                        scope.name = division != null ? division.getName() : "本系";
+                    }
                 }
-                Department dept = departmentMapper.findById(deptId);
-                scope.name = dept != null ? dept.getName() : "本院";
+                scope.type = "DEPARTMENT";
+            } else if ("COLLEGE".equals(teacherType)) {
+                if (StringUtils.hasText(teacher.getDepartmentId())) {
+                    Long deptId = Long.valueOf(teacher.getDepartmentId());
+                    if (deptId > 0) {
+                        scope.departmentIds = Collections.singletonList(deptId);
+                        Department dept = departmentMapper.findById(deptId);
+                        scope.name = dept != null ? dept.getName() : "本院";
+                    }
+                }
                 scope.type = "COLLEGE";
             }
+        } catch (AccessDeniedException e) {
+            throw e;
+        } catch (Exception e) {
+            log.warn("获取教师管辖范围失败: {}", e.getMessage());
+            throw new AccessDeniedException("教师管辖范围不可用", e);
+        }
+        if (!scope.hasScope()) {
+            throw new AccessDeniedException("教师管辖范围未配置");
         }
         return scope;
     }
 
     private static class ScopeInfo {
+        List<Long> departmentIds;
         List<Long> divisionIds;
         List<Long> classIds;
         String name = "";
         String type = "";
-
         boolean hasScope() {
-            return (divisionIds != null && !divisionIds.isEmpty())
+            return (departmentIds != null && !departmentIds.isEmpty())
+                    || (divisionIds != null && !divisionIds.isEmpty())
                     || (classIds != null && !classIds.isEmpty());
         }
     }
@@ -550,17 +750,27 @@ public class TeacherController {
     public Result getInternshipStatusById(@PathVariable Long id) {
         log.info("教师端获取实习状态详情，ID: {}", id);
         try {
+            ScopeInfo scope = resolveTeacherScope();
             com.internship.entity.StudentInternshipStatus status = studentInternshipStatusService.findById(id);
             if (status == null) {
                 return Result.error("实习状态不存在");
             }
+            StudentUser student = studentUserService.findById(status.getStudentId());
+            Major major = student == null || student.getMajorId() == null
+                    ? null : majorService.findById(student.getMajorId());
+            if (!canViewStudentDetail(student, major, scope)) {
+                throw new AccessDeniedException("无权查看该实习状态");
+            }
             return Result.success(status);
+        } catch (AccessDeniedException e) {
+            throw e;
         } catch (Exception e) {
             log.error("获取实习状态详情失败：{}", e.getMessage(), e);
             return Result.error("获取实习状态详情失败");
         }
     }
 
+    @Log(operationType = "EXPORT", module = "TEACHER_MANAGEMENT", description = "导出教师实习状态数据", riskLevel = "MEDIUM", critical = true)
     @GetMapping("/internship-status/export")
     public void exportInternshipStatus(
             @RequestParam(required = false) Long studentId,
@@ -575,8 +785,8 @@ public class TeacherController {
                 studentId, name, gender, status, companyId, companyName, studentIds);
 
         List<StudentInternshipStatus> statusList;
-        if (studentIds != null && !studentIds.isEmpty()) {
-            List<Long> ids = new ArrayList<>();
+        if (StringUtils.hasText(studentIds)) {
+            Set<Long> ids = new HashSet<>();
             for (String idStr : studentIds.split(",")) {
                 try {
                     ids.add(Long.parseLong(idStr.trim()));
@@ -584,10 +794,18 @@ public class TeacherController {
                     log.warn("无效的ID格式: {}", idStr);
                 }
             }
-            statusList = studentInternshipStatusService.findByIds(ids);
+            List<StudentInternshipStatus> scoped = getScopedStudentList(null, null, null,
+                    null, null, null, null, null, null);
+            Set<Long> scopedIds = scoped.stream().map(StudentInternshipStatus::getStudentId)
+                    .filter(Objects::nonNull).collect(Collectors.toSet());
+            if (ids.isEmpty() || !scopedIds.containsAll(ids)) {
+                throw new AccessDeniedException("导出包含管辖范围外的实习状态");
+            }
+            statusList = scoped.stream().filter(item -> ids.contains(item.getStudentId())).toList();
             log.info("根据选中ID导出，ID数量: {}", ids.size());
         } else {
-            statusList = studentInternshipStatusService.list(studentId, name, gender, status, companyId, companyName, null, null, null, null);
+            statusList = getScopedStudentList(studentId, name, gender, status, companyId,
+                    companyName, null, null, null);
             log.info("根据条件导出，记录数: {}", statusList.size());
         }
 
@@ -650,6 +868,7 @@ public class TeacherController {
         log.info("教师端实习状态数据导出成功，共 {} 条记录", statusList.size());
     }
 
+    @Log(operationType = "EXPORT", module = "TEACHER_MANAGEMENT", description = "批量导出教师实习状态数据", riskLevel = "MEDIUM", critical = true)
     @GetMapping("/internship-status/export/batch")
     public void exportBatchInternshipStatus(
             @RequestParam(required = false) String scope,
@@ -661,7 +880,8 @@ public class TeacherController {
                 scope, className, grade, status);
 
         // 按教师实际管辖范围获取数据
-        List<StudentInternshipStatus> statusList = getScopedStudentList(status, grade, className);
+        List<StudentInternshipStatus> statusList = getScopedStudentList(null, null, null,
+                status, null, null, grade, null, className);
 
         try (Workbook workbook = new XSSFWorkbook(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
             Sheet sheet = workbook.createSheet("学生实习状态汇总");
@@ -747,67 +967,19 @@ public class TeacherController {
     /**
      * 根据当前教师的管辖范围获取学生列表
      */
-    private List<StudentInternshipStatus> getScopedStudentList(Integer status, String grade, String className) {
-        Long userId = CurrentHolder.getUserId();
-        if (userId == null) {
-            return studentInternshipStatusService.list(null, null, null, status, null, null, grade, null, className, null);
-        }
-
-        User user = CurrentHolder.getUser();
-        if (user == null) {
-            return studentInternshipStatusService.list(null, null, null, status, null, null, grade, null, className, null);
-        }
-
-        try {
-            TeacherUser teacher = teacherUserService.findByTeacherUserId(user.getUsername());
-            if (teacher == null) {
-                return studentInternshipStatusService.list(null, null, null, status, null, null, grade, null, className, null);
-            }
-
-            String teacherType = teacher.getTeacherType();
-            List<Long> divisionIds = new ArrayList<>();
-            List<Long> classIds = new ArrayList<>();
-
-            if ("COUNSELOR".equals(teacherType)) {
-                // 辅导员：只导出负责班级的学生
-                List<ClassCounselorRelation> relations = classCounselorRelationMapper.findByCounselorId(teacher.getId());
-                if (relations != null) {
-                    classIds = relations.stream().map(ClassCounselorRelation::getClassId).collect(Collectors.toList());
-                }
-            } else if ("DEPARTMENT".equals(teacherType)) {
-                // 系室教师：只导出所属系室的学生
-                if (teacher.getDivisionId() != null && !teacher.getDivisionId().isEmpty()) {
-                    divisionIds.add(Long.parseLong(teacher.getDivisionId()));
-                }
-            } else if ("COLLEGE".equals(teacherType)) {
-                // 学院教师：导出所属学院下所有系室的学生
-                if (teacher.getDepartmentId() != null && !teacher.getDepartmentId().isEmpty()) {
-                    List<Division> divisions = divisionMapper.findByDepartmentId(Long.parseLong(teacher.getDepartmentId()));
-                    if (divisions != null) {
-                        divisionIds = divisions.stream().map(d -> d.getId().longValue()).collect(Collectors.toList());
-                    }
-                }
-            }
-
-            if (!divisionIds.isEmpty() || !classIds.isEmpty()) {
-                return studentInternshipStatusMapper.listByScope(
-                        null, null, null, status, null, null, grade, null, className, null,
-                        divisionIds.isEmpty() ? null : divisionIds,
-                        classIds.isEmpty() ? null : classIds
-                );
-            }
-        } catch (Exception e) {
-            log.warn("获取教师管辖范围失败，回退到全量导出: {}", e.getMessage());
-        }
-
-        return studentInternshipStatusService.list(null, null, null, status, null, null, grade, null, className, null);
+    private List<StudentInternshipStatus> getScopedStudentList(
+            Long studentId, String name, Integer gender, Integer status,
+            Long companyId, String companyName, String grade, String major, String className) {
+        ScopeInfo scope = resolveTeacherScope();
+        return studentInternshipStatusMapper.listByScope(studentId, name, gender, status,
+                companyId, companyName, grade, major, className, null,
+                scope.departmentIds, scope.divisionIds, scope.classIds);
     }
 
     private Long getCurrentUserId() {
         Long userId = CurrentHolder.getUserId();
-        if (userId == null) {
-            log.warn("未获取到当前登录用户 ID，返回默认值");
-            return 1L; // 默认值，仅用于兼容
+        if (userId == null || userId <= 0) {
+            throw new AccessDeniedException("教师身份不可用");
         }
         log.debug("获取到当前登录用户 ID: {}", userId);
         return userId;
@@ -841,6 +1013,13 @@ public class TeacherController {
         try {
             Long currentUserId = getCurrentUserId();
             List<com.internship.entity.LearningResource> myResources = resourceService.getResourcesByUploaderId(currentUserId);
+            if (myResources == null) {
+                throw new AccessDeniedException("教师资源列表不可用");
+            }
+            myResources = myResources.stream()
+                    .filter(item -> item != null && Objects.equals(item.getUploaderId(), currentUserId)
+                            && "TEACHER".equals(item.getUploaderRole()))
+                    .toList();
             
             // 构建分页结果
             int total = myResources.size();
@@ -854,6 +1033,8 @@ public class TeacherController {
             result.put("total", total);
             
             return Result.success(result);
+        } catch (AccessDeniedException e) {
+            throw e;
         } catch (Exception e) {
             log.error("获取自己上传的资源列表失败：{}", e.getMessage(), e);
             return Result.error("获取自己上传的资源列表失败");
@@ -876,9 +1057,10 @@ public class TeacherController {
             }
             
             // 检查是否是自己上传的资源
-            if (!existingResource.getUploaderId().equals(currentUserId)) {
+            if (!Objects.equals(existingResource.getUploaderId(), currentUserId)
+                    || !"TEACHER".equals(existingResource.getUploaderRole())) {
                 log.warn("用户 {} 尝试更新非自己上传的资源 {}", currentUserId, id);
-                return Result.error("只能编辑自己上传的资源");
+                throw new AccessDeniedException("只能编辑自己上传的资源");
             }
             
             // 更新资源信息
@@ -893,6 +1075,8 @@ public class TeacherController {
             
             log.info("资源更新成功，ID: {}", id);
             return Result.success("更新成功");
+        } catch (AccessDeniedException e) {
+            throw e;
         } catch (Exception e) {
             log.error("更新资源失败：{}", e.getMessage(), e);
             return Result.error("更新资源失败");
@@ -915,9 +1099,10 @@ public class TeacherController {
             }
             
             // 检查是否是自己上传的资源
-            if (!existingResource.getUploaderId().equals(currentUserId)) {
+            if (!Objects.equals(existingResource.getUploaderId(), currentUserId)
+                    || !"TEACHER".equals(existingResource.getUploaderRole())) {
                 log.warn("用户 {} 尝试删除非自己上传的资源 {}", currentUserId, id);
-                return Result.error("只能删除自己上传的资源");
+                throw new AccessDeniedException("只能删除自己上传的资源");
             }
             
             // 删除资源
@@ -925,6 +1110,8 @@ public class TeacherController {
             
             log.info("资源删除成功，ID: {}", id);
             return Result.success("删除成功");
+        } catch (AccessDeniedException e) {
+            throw e;
         } catch (Exception e) {
             log.error("删除资源失败：{}", e.getMessage(), e);
             return Result.error("删除资源失败");

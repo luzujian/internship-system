@@ -11,12 +11,14 @@ import com.internship.service.ClassService;
 import com.internship.service.DepartmentService;
 import com.internship.service.MajorService;
 import com.internship.service.StudentUserService;
+import com.internship.utils.UserCredentialDefaults;
 import com.internship.vo.StudentUserVO;
 import com.github.pagehelper.PageHelper;
 import com.github.pagehelper.PageInfo;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.access.AccessDeniedException;
 
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -64,9 +66,8 @@ public class StudentUserServiceImpl implements StudentUserService {
         }
         StudentUser studentUser = studentUserMapper.findByStudentId(studentId);
         if (studentUser != null) {
-            log.debug("找到学生用户，学号: {}, 姓名: {}, 角色: {}, 密码: {}",
-                    studentUser.getStudentId(), studentUser.getName(), studentUser.getRole(),
-                    studentUser.getPassword() != null ? "[已设置]" : "[空]");
+            log.debug("找到学生用户，学号: {}, 姓名: {}, 角色: {}",
+                    studentUser.getStudentId(), studentUser.getName(), studentUser.getRole());
         } else {
             log.debug("未找到学号为 {} 的学生用户", studentId);
         }
@@ -77,6 +78,7 @@ public class StudentUserServiceImpl implements StudentUserService {
     @Override
     public int register(StudentUser studentUser) {
         log.debug("注册学生用户: {}", studentUser.getStudentId());
+        studentUser.setPassword(UserCredentialDefaults.PASSWORD);
         // 参数校验
         validateStudentRegistration(studentUser);
 
@@ -96,26 +98,25 @@ public class StudentUserServiceImpl implements StudentUserService {
         studentUser.setUpdateTime(new Date());
 
         int result = studentUserMapper.insert(studentUser);
+        if (result != 1 || studentUser.getId() == null) {
+            throw new BusinessException("学生账号未能完整创建，请重试");
+        }
         log.info("学生用户注册成功，学号: {}", studentUser.getStudentId());
 
         // 自动为学生创建实习状态记录
-        try {
-            StudentInternshipStatus internshipStatus = new StudentInternshipStatus();
-            internshipStatus.setStudentId(studentUser.getId());
-            internshipStatus.setStatus(0); // 默认状态：无offer
-            internshipStatus.setCompanyConfirmStatus(0);
-            internshipStatus.setHasComplaint(false);
-            internshipStatus.setIsDelayed(false);
-            internshipStatus.setIsInterrupted(false);
-            internshipStatus.setCreateTime(new Date());
-            internshipStatus.setUpdateTime(new Date());
-
-            studentInternshipStatusMapper.insert(internshipStatus);
-            log.info("学生实习状态记录创建成功，学号: {}", studentUser.getStudentId());
-        } catch (Exception e) {
-            log.error("创建学生实习状态记录失败，学号: {}, 错误: {}", studentUser.getStudentId(), e.getMessage());
-            // 不影响学生注册成功，只记录错误日志
+        StudentInternshipStatus internshipStatus = new StudentInternshipStatus();
+        internshipStatus.setStudentId(studentUser.getId());
+        internshipStatus.setStatus(0); // 默认状态：无offer
+        internshipStatus.setCompanyConfirmStatus(0);
+        internshipStatus.setHasComplaint(false);
+        internshipStatus.setIsDelayed(false);
+        internshipStatus.setIsInterrupted(false);
+        internshipStatus.setCreateTime(new Date());
+        internshipStatus.setUpdateTime(new Date());
+        if (studentInternshipStatusMapper.insert(internshipStatus) != 1) {
+            throw new BusinessException("学生实习状态未能创建，账号已回滚，请重试");
         }
+        log.info("学生实习状态记录创建成功，学号: {}", studentUser.getStudentId());
 
         return result;
     }
@@ -160,6 +161,15 @@ public class StudentUserServiceImpl implements StudentUserService {
         StudentUser existingUser = studentUserMapper.findById(studentUser.getId());
         if (existingUser == null) {
             throw new BusinessException("用户不存在");
+        }
+
+        // 学号唯一性校验：仅在学号被修改时检查（且不能与其他用户学号重复）
+        if (StringUtils.isNotBlank(studentUser.getStudentId())
+                && !studentUser.getStudentId().equals(existingUser.getStudentId())) {
+            StudentUser duplicate = studentUserMapper.findByStudentId(studentUser.getStudentId());
+            if (duplicate != null) {
+                throw new BusinessException("学号已存在，请修改");
+            }
         }
 
         // 密码处理：null/空 表示不修改密码，完全保留原值
@@ -222,6 +232,23 @@ public class StudentUserServiceImpl implements StudentUserService {
         }
         // 构建分页结果
         PageInfo<StudentUser> pageInfo = new PageInfo<>(studentUsers);
+        return PageResult.build(pageInfo.getTotal(), pageInfo.getList(),
+                pageInfo.getPages(), pageInfo.getPageNum(), pageInfo.getPageSize());
+    }
+
+    @Override
+    public PageResult<StudentUser> findPageByTeacherScope(Integer page, Integer pageSize, String searchName, Long classId,
+                                                          List<Long> departmentIds, List<Long> divisionIds,
+                                                          List<Long> classIds) {
+        if ((departmentIds == null || departmentIds.isEmpty())
+                && (divisionIds == null || divisionIds.isEmpty())
+                && (classIds == null || classIds.isEmpty())) {
+            throw new AccessDeniedException("教师管辖范围未配置");
+        }
+        PageHelper.startPage(page, pageSize);
+        List<StudentUser> students = studentUserMapper.listByTeacherScope(
+                searchName, classId, departmentIds, divisionIds, classIds);
+        PageInfo<StudentUser> pageInfo = new PageInfo<>(students);
         return PageResult.build(pageInfo.getTotal(), pageInfo.getList(),
                 pageInfo.getPages(), pageInfo.getPageNum(), pageInfo.getPageSize());
     }
@@ -344,9 +371,10 @@ public class StudentUserServiceImpl implements StudentUserService {
                 throw new BusinessException("用户不存在");
             }
 
-            // 全面处理外键约束，确保学生能够被成功删除
+            // 级联清理学生关联的业务数据（每一条都独立 try-catch，确保任何一张表不存在都不会中断删除流程）
+            safeCleanupStudentRelations(id);
 
-            // 5. 最后删除学生用户记录
+            // 最后删除学生用户记录
             log.debug("执行删除学生用户操作");
             int result = studentUserMapper.deleteById(id);
 
@@ -384,6 +412,114 @@ public class StudentUserServiceImpl implements StudentUserService {
 
             throw new BusinessException(errorMsg);
         }
+    }
+
+    /**
+     * 安全级联清理学生关联的业务数据。
+     * 对每一张可能存在或不存在的关联表都采用独立 try-catch，
+     * 确保任何一张表不存在或外键报错都不会中断整体清理流程，最终能执行到 deleteById。
+     */
+    private void safeCleanupStudentRelations(Long id) {
+        // ---------- 小组 / 协作表（代码里存在但数据库可能未建） ----------
+        try {
+            studentUserMapper.updateGroupLeaderToNull(Collections.singletonList(id));
+        } catch (Exception e) { log.warn("跳过清理 group_table 组长外键: {}", firstCauseMsg(e)); }
+        try {
+            studentUserMapper.deleteGroupMemberByStudentUserId(id);
+        } catch (Exception e) { log.warn("跳过清理 group_member: {}", firstCauseMsg(e)); }
+
+        // ---------- 申请表 ----------
+        try {
+            studentUserMapper.deleteApplicationByStudentId(id);
+        } catch (Exception e) { log.warn("跳过清理 internship_application: {}", firstCauseMsg(e)); }
+        try {
+            studentUserMapper.deleteStudentApplicationByStudentId(id);
+        } catch (Exception e) { log.warn("跳过清理 student_application: {}", firstCauseMsg(e)); }
+
+        // ---------- 实习状态 / 岗位 ----------
+        try {
+            studentUserMapper.deleteInternshipStatusByStudentId(id);
+        } catch (Exception e) { log.warn("跳过清理 student_internship_status: {}", firstCauseMsg(e)); }
+        try {
+            studentUserMapper.deleteJobApplicationByStudentId(id);
+        } catch (Exception e) { log.warn("跳过清理 student_job_application: {}", firstCauseMsg(e)); }
+        try {
+            studentUserMapper.deleteConfirmationRecordByStudentId(id);
+        } catch (Exception e) { log.warn("跳过清理 internship_confirmation_record: {}", firstCauseMsg(e)); }
+        try {
+            studentUserMapper.deleteStageAssignmentByStudentId(id);
+        } catch (Exception e) { log.warn("跳过清理 internship_stage_assignment: {}", firstCauseMsg(e)); }
+        try {
+            studentUserMapper.deleteProgressRecordByStudentId(id);
+        } catch (Exception e) { log.warn("跳过清理 internship_progress_record: {}", firstCauseMsg(e)); }
+        try {
+            studentUserMapper.deleteInterviewInvitationByStudentId(id);
+        } catch (Exception e) { log.warn("跳过清理 interview_invitation: {}", firstCauseMsg(e)); }
+        try {
+            studentUserMapper.deletePositionFavoriteByStudentId(id);
+        } catch (Exception e) { log.warn("跳过清理 position_favorite: {}", firstCauseMsg(e)); }
+        try {
+            studentUserMapper.deletePositionViewRecordByStudentId(id);
+        } catch (Exception e) { log.warn("跳过清理 position_view_record: {}", firstCauseMsg(e)); }
+
+        // ---------- 档案 / 提醒 ----------
+        try {
+            studentUserMapper.deleteArchiveByStudentId(id);
+        } catch (Exception e) { log.warn("跳过清理 student_archive: {}", firstCauseMsg(e)); }
+        try {
+            studentUserMapper.deleteReminderByStudentId(id);
+        } catch (Exception e) { log.warn("跳过清理 student_reminder: {}", firstCauseMsg(e)); }
+
+        // ---------- 心得 / AI 分析 / 评价 ----------
+        try {
+            studentUserMapper.deleteInternshipReflectionByStudentId(id);
+        } catch (Exception e) { log.warn("跳过清理 internship_reflection: {}", firstCauseMsg(e)); }
+        try {
+            studentUserMapper.deleteInternshipAIAnalysisByStudentId(id);
+        } catch (Exception e) { log.warn("跳过清理 internship_ai_analysis: {}", firstCauseMsg(e)); }
+        try {
+            studentUserMapper.deleteReflectionAiAnalysisByStudentId(id);
+        } catch (Exception e) { log.warn("跳过清理 student_reflection_ai_analysis: {}", firstCauseMsg(e)); }
+        try {
+            studentUserMapper.deleteReflectionEvaluationByStudentId(id);
+        } catch (Exception e) { log.warn("跳过清理 student_reflection_evaluation: {}", firstCauseMsg(e)); }
+        try {
+            studentUserMapper.deleteEvaluationByStudentId(id);
+        } catch (Exception e) { log.warn("跳过清理 internship_evaluation: {}", firstCauseMsg(e)); }
+        try {
+            studentUserMapper.deleteEvaluationDetailByStudentId(id);
+        } catch (Exception e) { log.warn("跳过清理 internship_evaluation_detail: {}", firstCauseMsg(e)); }
+
+        // ---------- 实习鉴定：先删文件（外键依赖 submission），再删提交 ----------
+        try {
+            studentUserMapper.deleteAppraisalFileByStudentId(id);
+        } catch (Exception e) { log.warn("跳过清理 internship_appraisal_file: {}", firstCauseMsg(e)); }
+        try {
+            studentUserMapper.deleteAppraisalSubmissionByStudentId(id);
+        } catch (Exception e) { log.warn("跳过清理 internship_appraisal_submission: {}", firstCauseMsg(e)); }
+
+        // ---------- 贡献度 ----------
+        try {
+            studentUserMapper.deleteContributionByStudentId(id);
+        } catch (Exception e) { log.warn("跳过清理 contribution: {}", firstCauseMsg(e)); }
+
+        log.debug("学生关联业务数据级联清理完成（已跳过不存在的表），学生ID: {}", id);
+    }
+
+    /** 提取异常最底层的精简错误信息，避免日志里一长串 SQL 占位 */
+    private String firstCauseMsg(Throwable e) {
+        Throwable c = e;
+        String lastMsg = e.getMessage() == null ? "" : e.getMessage().split(";")[0].trim();
+        int depth = 0;
+        while (c.getCause() != null && depth < 5) {
+            c = c.getCause();
+            if (c.getMessage() != null) {
+                String msg = c.getMessage().split(";")[0].trim();
+                if (msg.length() < 160) lastMsg = msg;
+            }
+            depth++;
+        }
+        return lastMsg.length() > 160 ? lastMsg.substring(0, 160) : lastMsg;
     }
 
     /**
@@ -466,6 +602,8 @@ public class StudentUserServiceImpl implements StudentUserService {
 
         // 遍历Excel数据，转换为StudentUser对象并验证
         List<StudentUser> validStudentList = new ArrayList<>();
+        Map<String, String> pendingInitialPasswords = new HashMap<>();
+        List<Map<String, String>> initialCredentials = new ArrayList<>();
 
         for (int i = 0; i < studentDataList.size(); i++) {
             Map<String, Object> rowData = studentDataList.get(i);
@@ -474,6 +612,10 @@ public class StudentUserServiceImpl implements StudentUserService {
             failInfo.putAll(rowData);
 
             try {
+                // 跳过学号为空的空行（如模板自带的填写说明行）
+                if (StringUtils.isBlank(getStringValue(rowData, "学号"))) {
+                    continue;
+                }
                 // 转换为StudentUser对象
                 StudentUser studentUser = convertToStudentUser(rowData);
 
@@ -485,11 +627,15 @@ public class StudentUserServiceImpl implements StudentUserService {
                     continue;
                 }
 
+                String initialPassword = UserCredentialDefaults.PASSWORD;
+                studentUser.setPassword(initialPassword);
                 // 验证数据有效性
                 validateStudentRegistration(studentUser);
+                studentUser.setPassword(passwordEncoder.encode(initialPassword));
 
                 // 添加到有效列表
                 validStudentList.add(studentUser);
+                pendingInitialPasswords.put(studentUser.getStudentId(), initialPassword);
                 existingStudentMap.put(studentUser.getStudentId(), studentUser); // 防止同一文件内重复
 
             } catch (Exception e) {
@@ -513,7 +659,14 @@ public class StudentUserServiceImpl implements StudentUserService {
                 List<StudentUser> batchList = validStudentList.subList(start, end);
 
                 int batchResult = studentUserMapper.batchInsert(batchList);
+                if (batchResult != batchList.size()) {
+                    throw new BusinessException("学生导入未全部写入，请重试");
+                }
                 successCount += batchResult;
+                for (StudentUser insertedStudent : batchList) {
+                    initialCredentials.add(Map.of("username", insertedStudent.getUsername(),
+                            "password", pendingInitialPasswords.get(insertedStudent.getStudentId())));
+                }
 
                 log.info("导入批次 {} 成功，导入数量: {}", i + 1, batchResult);
 
@@ -557,6 +710,7 @@ public class StudentUserServiceImpl implements StudentUserService {
         result.put("successCount", successCount);
         result.put("failCount", failCount);
         result.put("failList", failList);
+        result.put("initialCredentials", initialCredentials);
 
         return result;
     }
@@ -575,7 +729,6 @@ public class StudentUserServiceImpl implements StudentUserService {
         studentUser.setUsername(studentId);
         studentUser.setStudentId(studentId);
         studentUser.setName(name);
-        studentUser.setPassword(passwordEncoder.encode("123456")); // 默认密码
 
         // 设置性别
         String genderStr = getStringValue(rowData, "性别");
@@ -731,6 +884,13 @@ public class StudentUserServiceImpl implements StudentUserService {
 
     @Transactional(rollbackFor = Exception.class)
     @Override
+    public int resetAllPasswords() {
+        String passwordHash = passwordEncoder.encode(UserCredentialDefaults.PASSWORD);
+        return studentUserMapper.resetAllPasswords(passwordHash);
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    @Override
     public int batchDeleteStudentUsers(List<Long> ids) {
         try {
             log.debug("批量删除学生用户，ID列表: {}", ids);
@@ -739,13 +899,24 @@ public class StudentUserServiceImpl implements StudentUserService {
                 throw new BusinessException("学生用户ID列表不能为空");
             }
 
+            // 先逐个级联清理关联数据（每条清理独立 try-catch，不存在的表直接跳过）
+            for (Long id : ids) {
+                try {
+                    safeCleanupStudentRelations(id);
+                } catch (Exception e) {
+                    log.warn("批量删除预清理学生ID={}的关联数据时出错（忽略，继续）: {}", id, firstCauseMsg(e));
+                }
+            }
+
             int result = studentUserMapper.batchDeleteByIds(ids);
             log.info("批量删除学生用户成功，删除数量: {}", result);
             return result;
 
+        } catch (BusinessException e) {
+            throw e;
         } catch (Exception e) {
             log.error("批量删除学生用户时发生异常，错误信息: {}", e.getMessage());
-            throw new BusinessException("批量删除学生用户失败: " + e.getMessage());
+            throw new BusinessException("批量删除学生用户失败: " + firstCauseMsg(e));
         }
     }
 
@@ -871,7 +1042,7 @@ public class StudentUserServiceImpl implements StudentUserService {
 
     @Override
     public List<StudentUserVO> queryStudentsByParams(Map<String, Object> params) {
-        log.debug("开始查询学生，参数: {}", params);
+        log.debug("开始查询学生：filterCount={}", params != null ? params.size() : 0);
 
         String studentId = (String) params.get("studentId");
         String name = (String) params.get("name");
@@ -1075,6 +1246,17 @@ public class StudentUserServiceImpl implements StudentUserService {
         
         log.info("成功删除班级 {} 下的 {} 名学生", classId, deletedCount);
         return deletedCount;
+    }
+
+    @Override
+    public void clearClassIdOnStudents(Long classId) {
+        if (classId == null || classId <= 0) return;
+        try {
+            int cnt = studentUserMapper.clearClassIdOnStudents(classId);
+            log.debug("已将班级 {} 下 {} 名学生的 class_id 置为 NULL（删除班级兜底）", classId, cnt);
+        } catch (Exception e) {
+            log.warn("clearClassIdOnStudents 执行失败: {}", firstCauseMsg(e));
+        }
     }
 
     /**

@@ -60,6 +60,12 @@ public interface StudentApplicationService {
      * @return 学生申请列表
      */
     List<StudentApplication> list(String applicationType, String status, String studentName, String studentUserId);
+
+    /**
+     * 动态条件查询学生申请(支持按班级过滤,辅导员用)
+     * @param classIds 班级ID列表,null/空表示不过滤
+     */
+    List<StudentApplication> list(String applicationType, String status, String studentName, String studentUserId, java.util.List<Long> classIds);
     
     /**
      * 根据ID列表查询学生申请
@@ -100,7 +106,17 @@ public interface StudentApplicationService {
      * @return 分页结果
      */
     PageResult<StudentApplication> findPage(Integer page, Integer pageSize, String applicationType, String status, String studentName, String studentUserId);
-    
+
+    /**
+     * 分页查询学生申请(支持按班级过滤,辅导员用)
+     * @param classIds 班级ID列表,null/空表示不过滤
+     */
+    PageResult<StudentApplication> findPage(Integer page, Integer pageSize, String applicationType, String status, String studentName, String studentUserId, java.util.List<Long> classIds);
+
+    /** Scope is mandatory: an empty set must produce no rows. */
+    PageResult<StudentApplication> findPageWithinStudentIds(Integer page, Integer pageSize, String applicationType,
+            String status, String studentName, String studentUserId, java.util.List<Long> studentIds);
+
     /**
      * 根据申请类型和状态查询申请数量
      * @param applicationType 申请类型
@@ -108,6 +124,12 @@ public interface StudentApplicationService {
      * @return 申请数量
      */
     int countByTypeAndStatus(String applicationType, String status);
+
+    /**
+     * 根据申请类型和状态查询申请数量(支持按班级过滤,辅导员用)
+     * @param classIds 班级ID列表,null/空表示不过滤
+     */
+    int countByTypeAndStatus(String applicationType, String status, java.util.List<Long> classIds);
     
     /**
      * 批准申请
@@ -125,6 +147,20 @@ public interface StudentApplicationService {
      * @return 更新的记录数
      */
     int reject(Long id, Long reviewerId, String rejectReason);
+
+    /**
+     * 学生撤回尚未经教师审核的考研延迟申请。
+     * @param id 申请ID
+     * @param studentId 当前学生ID
+     * @return 更新的记录数
+     */
+    int withdrawDelay(Long id, Long studentId);
+
+    /** 撤回尚未经教师审核的自主实习或考研延迟申请。 */
+    int withdrawApplication(Long id, Long studentId);
+
+    /** 学生修改被驳回或已撤回的申请并重新提交。 */
+    int resubmit(Long id, Long studentId, StudentApplication application);
 
     /**
      * 获取学生的最新单位变更申请

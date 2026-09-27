@@ -17,6 +17,7 @@
     <insert id="insert" parameterType="com.internship.entity.AnnouncementReadRecord">
         insert into announcement_read_records (announcement_id, user_id, user_type, read_time)
         values (#{announcementId}, #{userId}, #{userType}, NOW())
+        on duplicate key update read_time = read_time
     </insert>
     
     <!-- 根据ID查询公告阅读记录 -->

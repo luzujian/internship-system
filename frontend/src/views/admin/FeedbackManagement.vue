@@ -149,21 +149,23 @@
         <el-table-column label="操作" width="240" fixed="right" align="center">
           <template #default="scope">
             <div class="action-buttons">
-              <el-tooltip v-if="authStore.hasPermission('problem:view')" content="查看" placement="top">
-                <el-button type="success" size="small" @click="handleView(scope.row)" class="table-btn view">
-                  <el-icon><View /></el-icon>
-                </el-button>
-              </el-tooltip>
-              <el-tooltip v-if="authStore.hasPermission('problem:edit')" content="回复" placement="top">
-                <el-button size="small" type="primary" @click="handleReply(scope.row)" class="table-btn edit">
-                  <el-icon><ChatDotRound /></el-icon>
-                </el-button>
-              </el-tooltip>
-              <el-tooltip v-if="authStore.hasPermission('problem:delete')" content="删除" placement="top">
-                <el-button size="small" type="danger" @click="handleDelete(scope.row.id)" class="table-btn delete">
-                  <el-icon><Delete /></el-icon>
-                </el-button>
-              </el-tooltip>
+              <MobileMoreActions>
+                <el-tooltip v-if="authStore.hasPermission('problem:view')" content="查看" placement="top">
+                  <el-button type="success" size="small" @click="handleView(scope.row)" class="table-btn view">
+                    <el-icon><View /></el-icon>
+                  </el-button>
+                </el-tooltip>
+                <el-tooltip v-if="authStore.hasPermission('problem:edit')" content="回复" placement="top">
+                  <el-button size="small" type="primary" @click="handleReply(scope.row)" class="table-btn edit">
+                    <el-icon><ChatDotRound /></el-icon>
+                  </el-button>
+                </el-tooltip>
+                <el-tooltip v-if="authStore.hasPermission('problem:delete')" content="删除" placement="top">
+                  <el-button size="small" type="danger" @click="handleDelete(scope.row.id)" class="table-btn delete">
+                    <el-icon><Delete /></el-icon>
+                  </el-button>
+                </el-tooltip>
+              </MobileMoreActions>
             </div>
           </template>
         </el-table-column>
@@ -282,23 +284,49 @@
 
 <script setup lang="ts">
 import logger from '@/utils/logger'
-import { ref, reactive, onMounted } from 'vue'
-import type { Feedback, PaginationState } from '@/types/admin'
+import { ref, reactive, onMounted, onUnmounted, watch } from 'vue'
+import type { PaginationState } from '@/types/admin'
+import type { FormFieldDescriptor } from '@/agent/types'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Refresh, Delete, View, ChatDotRound, Download } from '@element-plus/icons-vue'
 import * as problemFeedbackApi from '../../api/problemFeedback'
 import { useAuthStore } from '../../store/auth'
 import { exportToExcel } from '../../utils/xlsx'
+import MobileMoreActions from '../../components/MobileMoreActions.vue'
+import { useFormContext } from '@/agent/formContext'
 
 const route = useRoute()
 const authStore = useAuthStore()
+
+interface FeedbackRow {
+  id?: number | string
+  userId?: number | string
+  userName?: string
+  userAccount?: string
+  userType?: number | string
+  type?: number | string
+  feedbackType?: string
+  title?: string
+  content?: string
+  images?: string
+  status?: number | string
+  priority?: string
+  reply?: string
+  adminReply?: string
+  adminName?: string
+  adminId?: number | string
+  replyTime?: string
+  createTime?: string
+  updateTime?: string
+  [key: string]: unknown
+}
 
 const currentPage = ref<number>(1)
 const pageSize = ref<number>(10)
 const total = ref<number>(0)
 const loading = ref(false)
-const tableData = ref<Feedback[]>([])
+const tableData = ref<FeedbackRow[]>([])
 
 const searchForm = reactive({
   userType: '',
@@ -310,7 +338,7 @@ const searchForm = reactive({
 })
 
 const viewDialogVisible = ref(false)
-const viewData = ref<Feedback | null>(null)
+const viewData = ref<FeedbackRow | null>(null)
 
 const replyDialogVisible = ref(false)
 const replyFormRef = ref()
@@ -327,6 +355,22 @@ const replyRules = {
   status: [{ required: true, message: '请选择处理状态', trigger: 'change' }]
 }
 
+// ===== 智能填表：回复弹窗（title/content 只读 disabled，不声明；只写响应式 model，不触发提交） =====
+const formContext = useFormContext()
+const feedbackReplyFillFields: FormFieldDescriptor[] = [
+  { prop: 'adminReply', label: '回复内容', type: 'textarea', required: true },
+  { prop: 'status', label: '处理状态', type: 'select', required: true,
+    options: [
+      { label: '处理中', value: 'processing' },
+      { label: '已解决', value: 'resolved' },
+      { label: '感谢您的反馈', value: 'closed' }
+    ] }
+]
+watch(replyDialogVisible, (open) => {
+  if (!open) formContext.unregister('admin:feedback')
+})
+onUnmounted(() => formContext.unregister('admin:feedback'))
+
 const selectedIds = ref<number[]>([])
 
 onMounted(() => {
@@ -338,16 +382,23 @@ onMounted(() => {
   }
 })
 
-const fetchFeedbackById = async (id: string): Promise<void> => {
+const fetchFeedbackById = async (id: string | string[]): Promise<void> => {
   loading.value = true
   try {
-    const response = await problemFeedbackApi.getFeedbackById(id)
+    const numericId = Array.isArray(id) ? Number(id[0]) : Number(id)
+    const response = await problemFeedbackApi.getFeedbackById(numericId) as unknown as {
+      code?: number
+      message?: string
+      msg?: string
+      data?: FeedbackRow
+    }
     if (response.code === 200 && response.data) {
       const feedback = response.data
       tableData.value = [feedback]
       total.value = 1
-      searchForm.title = feedback.title || ''
-      searchForm.userType = feedback.userType || ''
+      searchForm.title = typeof feedback.title === 'string' ? feedback.title : ''
+      const userTypeText = feedback.userType
+      searchForm.userType = typeof userTypeText === 'string' ? userTypeText : (userTypeText !== undefined ? String(userTypeText) : '')
       handleView(feedback)
     } else {
       ElMessage.error('获取问题反馈详情失败')
@@ -365,7 +416,9 @@ const fetchFeedbackById = async (id: string): Promise<void> => {
 const fetchData = async (): Promise<void> => {
   loading.value = true
   try {
-    const params = {
+    // 后端分页接口实际支持 userType/status/priority/feedbackType/userName/title 组合过滤，
+    // api 声明仅收敛常用字段；此处保持原查询键集合不变，用精确断言适配声明
+    const rawParams = {
       page: currentPage.value,
       pageSize: pageSize.value,
       userType: searchForm.userType || undefined,
@@ -375,11 +428,28 @@ const fetchData = async (): Promise<void> => {
       userName: searchForm.userName || undefined,
       title: searchForm.title || undefined
     }
-    const response = await problemFeedbackApi.getFeedbackByPage(params)
+    const params = rawParams as unknown as Parameters<typeof problemFeedbackApi.getFeedbackByPage>[0]
+    const response = await problemFeedbackApi.getFeedbackByPage(params) as unknown as {
+      code?: number
+      message?: string
+      msg?: string
+      data?: FeedbackRow[] | { rows?: FeedbackRow[]; total?: number }
+    }
     const result = response
     if (result && result.code === 200 && result.data) {
-      tableData.value = result.data.rows || []
-      total.value = result.data.total || 0
+      const pageData: unknown = result.data
+      if (Array.isArray(pageData)) {
+        tableData.value = pageData
+        total.value = pageData.length
+      } else if (pageData !== null && typeof pageData === 'object') {
+        const rows = (pageData as { rows?: FeedbackRow[] }).rows
+        const totalCount = (pageData as { total?: number }).total
+        tableData.value = Array.isArray(rows) ? rows : []
+        total.value = typeof totalCount === 'number' ? totalCount : tableData.value.length
+      } else {
+        tableData.value = []
+        total.value = 0
+      }
     } else {
       tableData.value = []
       total.value = 0
@@ -410,22 +480,30 @@ const resetForm = (): void => {
   fetchData()
 }
 
-const handleSelectionChange = (selection: Feedback[]): void => {
-  selectedIds.value = selection.map(item => item.id)
+const handleSelectionChange = (selection: FeedbackRow[]): void => {
+  selectedIds.value = selection.map(item => typeof item.id === 'number' ? item.id : Number(item.id)).filter(id => !Number.isNaN(id))
 }
 
-const handleView = (row: Feedback): void => {
+const handleView = (row: FeedbackRow): void => {
   viewData.value = row
   viewDialogVisible.value = true
 }
 
-const handleReply = (row: Feedback): void => {
-  replyForm.id = row.id
-  replyForm.title = row.title
-  replyForm.content = row.content
-  replyForm.adminReply = row.adminReply || ''
-  replyForm.status = row.status || 'resolved'
+const handleReply = (row: FeedbackRow): void => {
+  replyForm.id = typeof row.id === 'number' ? row.id : Number(row.id)
+  replyForm.title = typeof row.title === 'string' ? row.title : ''
+  replyForm.content = typeof row.content === 'string' ? row.content : ''
+  replyForm.adminReply = typeof row.adminReply === 'string' ? row.adminReply : (typeof row.reply === 'string' ? row.reply : '')
+  const statusText = row.status
+  replyForm.status = typeof statusText === 'string' ? statusText : (statusText !== undefined ? String(statusText) : 'resolved')
   replyDialogVisible.value = true
+  formContext.register({
+    formId: 'admin:feedback',
+    title: '回复问题反馈',
+    fields: feedbackReplyFillFields,
+    getModel: () => replyForm,
+    getFormEl: () => replyFormRef.value
+  })
 }
 
 const handleReplySubmit = async (): Promise<void> => {
@@ -435,14 +513,20 @@ const handleReplySubmit = async (): Promise<void> => {
     if (valid) {
       try {
         const adminUser = authStore.user
+        // 后端回复接口实际消费 adminReply/adminId/adminName/status，声明仅收敛 reply；
+        // 保持原请求体不变，用精确断言适配声明
         const data = {
           adminReply: replyForm.adminReply,
           adminId: adminUser.id,
           adminName: adminUser.username || adminUser.name,
           status: replyForm.status
-        }
-        await problemFeedbackApi.replyFeedback(replyForm.id, data)
-        ElMessage.success('回复成功')
+        } as unknown as Parameters<typeof problemFeedbackApi.replyFeedback>[1]
+        const replyId = replyForm.id as unknown as number
+        const operation = formContext.beginFormOperation('admin:feedback')
+    const savedResponse = await problemFeedbackApi.replyFeedback(replyId, data)
+        if (savedResponse?.code !== 200) throw new Error(savedResponse?.message || '回复失败')
+        operation.complete({ status: 'submitted', label: '反馈回复已提交', url: '/admin/problem-feedback' })
+      ElMessage.success('回复成功')
         replyDialogVisible.value = false
         fetchData()
       } catch (error) {
@@ -516,80 +600,80 @@ const formatDate = (date: string | number | Date): string => {
   return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`
 }
 
-const getUserTypeText = (type: string): string => {
-  const map = {
+const getUserTypeText = (type: string | number | undefined): string => {
+  const map: Record<string, string> = {
     student: '学生',
     teacher: '教师',
     company: '企业'
   }
-  return map[type] || '未知类型'
+  return map[String(type ?? '')] || '未知类型'
 }
 
-const getUserTypeTag = (type: string): string => {
-  const map = {
+const getUserTypeTag = (type: string | number | undefined): string => {
+  const map: Record<string, string> = {
     student: 'success',
     teacher: 'warning',
     company: 'info'
   }
-  return map[type] || 'info'
+  return map[String(type ?? '')] || 'info'
 }
 
-const getFeedbackTypeText = (type: string): string => {
-  const map = {
+const getFeedbackTypeText = (type: string | number | undefined): string => {
+  const map: Record<string, string> = {
     system: '系统问题',
     feature: '功能建议',
     bug: '程序错误',
     data: '数据问题',
     other: '其他'
   }
-  return map[type] || '未知类型'
+  return map[String(type ?? '')] || '未知类型'
 }
 
-const getFeedbackTypeTag = (type: string): string => {
-  const map = {
+const getFeedbackTypeTag = (type: string | number | undefined): string => {
+  const map: Record<string, string> = {
     system: 'danger',
     feature: 'success',
     bug: 'warning',
     data: 'info',
     other: 'info'
   }
-  return map[type] || 'info'
+  return map[String(type ?? '')] || 'info'
 }
 
-const getPriorityText = (priority: string): string => {
-  const map = {
+const getPriorityText = (priority: string | number | undefined): string => {
+  const map: Record<string, string> = {
     high: '高',
     normal: '中',
     low: '低'
   }
-  return map[priority] || '未知优先级'
+  return map[String(priority ?? '')] || '未知优先级'
 }
 
-const getPriorityTag = (priority: string): string => {
-  const map = {
+const getPriorityTag = (priority: string | number | undefined): string => {
+  const map: Record<string, string> = {
     high: 'danger',
     normal: 'warning',
     low: 'info'
   }
-  return map[priority] || 'info'
+  return map[String(priority ?? '')] || 'info'
 }
 
-const getStatusText = (status: string): string => {
-  const map = {
+const getStatusText = (status: string | number | undefined): string => {
+  const map: Record<string, string> = {
     processing: '处理中',
     resolved: '已解决',
     closed: '感谢您的反馈'
   }
-  return map[status] || '未知状态'
+  return map[String(status ?? '')] || '未知状态'
 }
 
-const getStatusTag = (status: string): string => {
-  const map = {
+const getStatusTag = (status: string | number | undefined): string => {
+  const map: Record<string, string> = {
     processing: 'warning',
     resolved: 'success',
     closed: 'info'
   }
-  return map[status] || 'warning'
+  return map[String(status ?? '')] || 'warning'
 }
 
 const handleExportToExcel = async (): Promise<void> => {
@@ -975,7 +1059,7 @@ const handleExportToExcel = async (): Promise<void> => {
   }
 }
 
-@media screen和 (max-width: 768px) {
+@media screen and (max-width: 768px) {
   .problem-feedback-container {
     padding: 15px;
   }

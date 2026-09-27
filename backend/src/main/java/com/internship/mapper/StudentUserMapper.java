@@ -5,6 +5,7 @@ import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Delete;
+import org.apache.ibatis.annotations.Update;
 
 import java.util.List;
 import java.util.Map;
@@ -15,6 +16,9 @@ public interface StudentUserMapper {
     int insert(StudentUser studentUser);
     StudentUser findById(Long id);
     int update(StudentUser studentUser);
+
+    @Update("update student_users set password = #{passwordHash}, update_time = CURRENT_TIMESTAMP")
+    int resetAllPasswords(@Param("passwordHash") String passwordHash);
     
     // 查询所有学生用户，配合PageHelper使用
     List<StudentUser> findAll();
@@ -25,6 +29,12 @@ public interface StudentUserMapper {
                           @Param("grade") Integer grade, 
                           @Param("majorId") Integer majorId, 
                           @Param("classId") String classId);
+
+    List<StudentUser> listByTeacherScope(@Param("searchName") String searchName,
+                                         @Param("classId") Long classId,
+                                         @Param("departmentIds") List<Long> departmentIds,
+                                         @Param("divisionIds") List<Long> divisionIds,
+                                         @Param("classIds") List<Long> classIds);
     
     // 动态条件查询（包含状态参数）
     List<StudentUser> listWithStatus(@Param("studentId") String studentId,
@@ -119,6 +129,77 @@ public interface StudentUserMapper {
      */
     @Delete("delete from contribution where student_user_id = #{studentId}")
     int deleteContributionByStudentId(Long studentId);
+
+    // ===== 级联清理学生关联业务数据（删除学生时调用，防止幽灵数据） =====
+    @Delete("delete from internship_application where student_id = #{studentId}")
+    int deleteApplicationByStudentId(Long studentId);
+
+    @Delete("delete from student_internship_status where student_id = #{studentId}")
+    int deleteInternshipStatusByStudentId(Long studentId);
+
+    @Delete("delete from student_job_application where student_id = #{studentId}")
+    int deleteJobApplicationByStudentId(Long studentId);
+
+    @Delete("delete from internship_confirmation_record where student_id = #{studentId}")
+    int deleteConfirmationRecordByStudentId(Long studentId);
+
+    @Delete("delete from internship_stage_assignment where student_id = #{studentId}")
+    int deleteStageAssignmentByStudentId(Long studentId);
+
+    @Delete("delete from internship_progress_record where student_id = #{studentId}")
+    int deleteProgressRecordByStudentId(Long studentId);
+
+    @Delete("delete from interview_invitation where student_id = #{studentId}")
+    int deleteInterviewInvitationByStudentId(Long studentId);
+
+    @Delete("delete from position_favorite where student_id = #{studentId}")
+    int deletePositionFavoriteByStudentId(Long studentId);
+
+    @Delete("delete from position_view_record where student_id = #{studentId}")
+    int deletePositionViewRecordByStudentId(Long studentId);
+
+    @Delete("delete from student_archive where student_id = #{studentId}")
+    int deleteArchiveByStudentId(Long studentId);
+
+    @Delete("delete from student_reminder where student_id = #{studentId}")
+    int deleteReminderByStudentId(Long studentId);
+
+    @Delete("delete from student_reflection_ai_analysis where student_id = #{studentId}")
+    int deleteReflectionAiAnalysisByStudentId(Long studentId);
+
+    @Delete("delete from student_reflection_evaluation where student_id = #{studentId}")
+    int deleteReflectionEvaluationByStudentId(Long studentId);
+
+    @Delete("delete from internship_evaluation where student_id = #{studentId}")
+    int deleteEvaluationByStudentId(Long studentId);
+
+    @Delete("delete from internship_evaluation_detail where student_id = #{studentId}")
+    int deleteEvaluationDetailByStudentId(Long studentId);
+
+    @Delete("delete from internship_appraisal_submission where student_id = #{studentId}")
+    int deleteAppraisalSubmissionByStudentId(Long studentId);
+
+    // ===== 补充：之前漏掉的关联表级联清理（删除学生时必须先清理，否则外键约束报错） =====
+    @Delete("delete from student_application where student_id = #{studentId}")
+    int deleteStudentApplicationByStudentId(Long studentId);
+
+    @Delete("delete from internship_reflection where student_id = #{studentId}")
+    int deleteInternshipReflectionByStudentId(Long studentId);
+
+    @Delete("delete from internship_ai_analysis where student_id = #{studentId}")
+    int deleteInternshipAIAnalysisByStudentId(Long studentId);
+
+    // ===== 实习鉴定相关：先删文件记录，再删提交记录 =====
+    @Delete("DELETE iaf FROM internship_appraisal_file iaf LEFT JOIN internship_appraisal_submission ias ON iaf.submission_id = ias.id WHERE ias.student_id = #{studentId}")
+    int deleteAppraisalFileByStudentId(Long studentId);
+
+    // ===== 小组成员表：真实存在，必须清理 student_user_id 外键 =====
+    @Delete("delete from group_member where student_user_id = #{studentId}")
+    int deleteGroupMemberByStudentUserId(Long studentId);
+
+    // ===== 班级删除兜底：删学生级联失败时，直接把该班级下所有学生的 class_id 置为 NULL，绕过外键直接删班级 =====
+    @Update("UPDATE student_users SET class_id = NULL WHERE class_id = #{classId}")
+    int clearClassIdOnStudents(@Param("classId") Long classId);
     
     /**
      * 直接更新特定小组的所有组长相关字段为null

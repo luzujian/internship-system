@@ -8,6 +8,7 @@ import com.internship.mapper.StudentInternshipStatusMapper;
 import com.internship.mapper.StudentUserMapper;
 import com.internship.mapper.TeacherUserMapper;
 import com.internship.service.ClassCounselorRelationService;
+import com.internship.service.JobSearchStatusService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -34,6 +35,9 @@ public class ClassCounselorRelationServiceImpl implements ClassCounselorRelation
 
     @Autowired
     private StudentInternshipStatusMapper studentInternshipStatusMapper;
+
+    @Autowired
+    private JobSearchStatusService jobSearchStatusService;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -121,7 +125,9 @@ public class ClassCounselorRelationServiceImpl implements ClassCounselorRelation
 
     @Override
     public List<Map<String, Object>> findStudentsByClassId(Long classId) {
-        return studentUserMapper.findByClassIdAsMap(classId);
+        List<Map<String, Object>> students = studentUserMapper.findByClassIdAsMap(classId);
+        jobSearchStatusService.enrichStudentMaps(students);
+        return students;
     }
 
     @Override
@@ -134,7 +140,9 @@ public class ClassCounselorRelationServiceImpl implements ClassCounselorRelation
             return new ArrayList<>();
         }
         
-        return studentUserMapper.findByClassIdAsMap(classId);
+        List<Map<String, Object>> students = studentUserMapper.findByClassIdAsMap(classId);
+        jobSearchStatusService.enrichStudentMaps(students);
+        return students;
     }
 
     @Override
@@ -157,7 +165,10 @@ public class ClassCounselorRelationServiceImpl implements ClassCounselorRelation
             return new ArrayList<>();
         }
 
-        return studentUserMapper.findByClassIdsAndSearch(classIds, searchName, major, grade, status, companyName);
+        List<Map<String, Object>> students = studentUserMapper.findByClassIdsAndSearch(
+                classIds, searchName, major, grade, status, companyName);
+        jobSearchStatusService.enrichStudentMaps(students);
+        return students;
     }
 
     @Override
@@ -165,9 +176,13 @@ public class ClassCounselorRelationServiceImpl implements ClassCounselorRelation
         Map<String, Object> statistics = new HashMap<>();
 
         List<ClassCounselorRelation> relations = classCounselorRelationMapper.findByCounselorId(counselorId);
-        statistics.put("classCount", relations.size());
+        // 过滤掉已被删除的班级（孤儿记录）
+        List<ClassCounselorRelation> validRelations = relations.stream()
+                .filter(r -> classMapper.findById(r.getClassId()) != null)
+                .collect(Collectors.toList());
+        statistics.put("classCount", validRelations.size());
 
-        if (relations.isEmpty()) {
+        if (validRelations.isEmpty()) {
             statistics.put("studentCount", 0);
             statistics.put("noOfferCount", 0);
             statistics.put("pendingCount", 0);
@@ -179,7 +194,7 @@ public class ClassCounselorRelationServiceImpl implements ClassCounselorRelation
             return statistics;
         }
 
-        List<Long> classIds = relations.stream()
+        List<Long> classIds = validRelations.stream()
                 .map(ClassCounselorRelation::getClassId)
                 .collect(Collectors.toList());
 
@@ -190,10 +205,8 @@ public class ClassCounselorRelationServiceImpl implements ClassCounselorRelation
                 ? ((Number) dashboardStats.get("totalStudents")).intValue() : 0;
         int confirmed = dashboardStats != null && dashboardStats.get("confirmed") != null
                 ? ((Number) dashboardStats.get("confirmed")).intValue() : 0;
-        int offer = dashboardStats != null && dashboardStats.get("offer") != null
-                ? ((Number) dashboardStats.get("offer")).intValue() : 0;
-        int noOffer = dashboardStats != null && dashboardStats.get("noOffer") != null
-                ? ((Number) dashboardStats.get("noOffer")).intValue() : 0;
+        int offer = Math.toIntExact(jobSearchStatusService.countByDisplayFilter(1, classIds));
+        int noOffer = Math.toIntExact(jobSearchStatusService.countByDisplayFilter(0, classIds));
         int interning = dashboardStats != null && dashboardStats.get("interning") != null
                 ? ((Number) dashboardStats.get("interning")).intValue() : 0;
         int finished = dashboardStats != null && dashboardStats.get("finished") != null

@@ -1,0 +1,236 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.internship.mapper.TeacherInternshipAppraisalMapper">
+
+    <resultMap id="InternalAppraisalFileMap" type="com.internship.entity.InternshipAppraisalFile">
+        <id property="id" column="id"/>
+        <result property="submissionId" column="submission_id"/>
+        <result property="stageAssignmentId" column="stage_assignment_id"/>
+        <result property="companyId" column="company_id"/>
+        <result property="companyName" column="company_name"/>
+        <result property="fileUploadId" column="file_upload_id"/>
+        <result property="fileName" column="file_name"/>
+        <result property="filePath" column="file_path"/>
+        <result property="fileSize" column="file_size"/>
+        <result property="fileType" column="file_type"/>
+        <result property="uploadTime" column="upload_time"/>
+    </resultMap>
+
+    <sql id="LatestSubmissionJoin">
+        LEFT JOIN internship_appraisal_submission ias
+          ON ias.id = (
+              SELECT MAX(latest_ias.id)
+              FROM internship_appraisal_submission latest_ias
+              WHERE latest_ias.student_id = su.id
+          )
+    </sql>
+
+    <sql id="TeacherScopePredicate">
+        <choose>
+            <when test='"COLLEGE".equals(scope.teacherType)'>
+                AND m.department_id = #{scope.departmentId}
+            </when>
+            <when test='"DEPARTMENT".equals(scope.teacherType)'>
+                AND m.division_id = #{scope.divisionId}
+            </when>
+            <when test='"COUNSELOR".equals(scope.teacherType)'>
+                AND EXISTS (
+                    SELECT 1
+                    FROM class_counselor_relation scope_ccr
+                    WHERE scope_ccr.class_id = su.class_id
+                      AND scope_ccr.counselor_id = #{scope.teacherId}
+                )
+            </when>
+            <otherwise>
+                AND 1 = 0
+            </otherwise>
+        </choose>
+    </sql>
+
+    <sql id="TeacherClassScopePredicate">
+        <choose>
+            <when test='"COLLEGE".equals(scope.teacherType)'>
+                AND m.department_id = #{scope.departmentId}
+            </when>
+            <when test='"DEPARTMENT".equals(scope.teacherType)'>
+                AND m.division_id = #{scope.divisionId}
+            </when>
+            <when test='"COUNSELOR".equals(scope.teacherType)'>
+                AND EXISTS (
+                    SELECT 1
+                    FROM class_counselor_relation scope_ccr
+                    WHERE scope_ccr.class_id = c.id
+                      AND scope_ccr.counselor_id = #{scope.teacherId}
+                )
+            </when>
+            <otherwise>
+                AND 1 = 0
+            </otherwise>
+        </choose>
+    </sql>
+
+    <sql id="ScopeFilters">
+        <if test="keyword != null and keyword != ''">
+            AND (
+                su.name LIKE CONCAT('%', #{keyword}, '%')
+                OR su.student_user_id LIKE CONCAT('%', #{keyword}, '%')
+            )
+        </if>
+        <if test="classId != null">
+            AND su.class_id = #{classId}
+        </if>
+    </sql>
+
+    <sql id="StudentFilters">
+        <include refid="ScopeFilters"/>
+        <if test="status == 'SUBMITTED'">
+            AND ias.status = 'SUBMITTED'
+        </if>
+        <if test="status == 'NOT_SUBMITTED'">
+            AND (ias.id IS NULL OR ias.status != 'SUBMITTED')
+        </if>
+    </sql>
+
+    <select id="countResponsibleStudents" resultType="long">
+        SELECT COUNT(*)
+        FROM student_users su
+        LEFT JOIN major m ON m.id = su.major_id
+        WHERE 1 = 1
+        <include refid="TeacherScopePredicate"/>
+        <include refid="ScopeFilters"/>
+    </select>
+
+    <select id="countSubmittedStudents" resultType="long">
+        SELECT COUNT(*)
+        FROM student_users su
+        LEFT JOIN major m ON m.id = su.major_id
+        <include refid="LatestSubmissionJoin"/>
+        WHERE ias.status = 'SUBMITTED'
+        <include refid="TeacherScopePredicate"/>
+        <include refid="ScopeFilters"/>
+    </select>
+
+    <select id="countStudents" resultType="long">
+        SELECT COUNT(*)
+        FROM student_users su
+        LEFT JOIN major m ON m.id = su.major_id
+        <include refid="LatestSubmissionJoin"/>
+        WHERE 1 = 1
+        <include refid="TeacherScopePredicate"/>
+        <include refid="StudentFilters"/>
+    </select>
+
+    <select id="findStudents" resultType="com.internship.entity.dto.TeacherAppraisalStudent">
+        SELECT
+            su.id AS student_id,
+            su.student_user_id AS student_number,
+            su.name AS student_name,
+            su.class_id,
+            c.name AS class_name,
+            m.name AS major_name,
+            CASE WHEN ias.status = 'SUBMITTED' THEN 'SUBMITTED' ELSE 'NOT_SUBMITTED' END AS submission_status,
+            CASE WHEN ias.status = 'SUBMITTED' THEN ias.submitted_at ELSE NULL END AS submitted_at,
+            CASE WHEN ias.status = 'SUBMITTED'
+                 THEN (SELECT COUNT(*) FROM internship_appraisal_file iaf WHERE iaf.submission_id = ias.id)
+                 ELSE 0 END AS file_count,
+            CASE WHEN ias.status = 'SUBMITTED' THEN ias.id ELSE NULL END AS submission_id
+        FROM student_users su
+        LEFT JOIN `class` c ON c.id = su.class_id
+        LEFT JOIN major m ON m.id = su.major_id
+        <include refid="LatestSubmissionJoin"/>
+        WHERE 1 = 1
+        <include refid="TeacherScopePredicate"/>
+        <include refid="StudentFilters"/>
+        ORDER BY
+            CASE WHEN ias.status = 'SUBMITTED' THEN 0 ELSE 1 END,
+            ias.submitted_at DESC,
+            su.student_user_id ASC,
+            su.id ASC
+        LIMIT #{offset}, #{pageSize}
+    </select>
+
+    <select id="findClasses" resultType="com.internship.entity.dto.TeacherAppraisalClassOption">
+        SELECT DISTINCT c.id, c.name, c.grade
+        FROM `class` c
+        LEFT JOIN major m ON m.id = c.major_id
+        WHERE 1 = 1
+        <include refid="TeacherClassScopePredicate"/>
+        ORDER BY c.grade DESC, c.name ASC, c.id ASC
+    </select>
+
+    <select id="findSubmittedStudent" resultType="com.internship.entity.dto.TeacherAppraisalStudent">
+        SELECT
+            su.id AS student_id,
+            su.student_user_id AS student_number,
+            su.name AS student_name,
+            su.class_id,
+            c.name AS class_name,
+            m.name AS major_name,
+            'SUBMITTED' AS submission_status,
+            ias.submitted_at,
+            (SELECT COUNT(*) FROM internship_appraisal_file iaf WHERE iaf.submission_id = ias.id) AS file_count,
+            ias.id AS submission_id
+        FROM student_users su
+        LEFT JOIN `class` c ON c.id = su.class_id
+        LEFT JOIN major m ON m.id = su.major_id
+        INNER JOIN internship_appraisal_submission ias
+          ON ias.id = (
+              SELECT MAX(latest_ias.id)
+              FROM internship_appraisal_submission latest_ias
+              WHERE latest_ias.student_id = su.id
+          )
+         AND ias.status = 'SUBMITTED'
+        WHERE su.id = #{studentId}
+        <include refid="TeacherScopePredicate"/>
+        LIMIT 1
+    </select>
+
+    <select id="findAuthorizedSubmittedFile" resultMap="InternalAppraisalFileMap">
+        SELECT iaf.*
+        FROM internship_appraisal_file iaf
+        INNER JOIN internship_appraisal_submission ias ON ias.id = iaf.submission_id
+        INNER JOIN student_users su ON su.id = ias.student_id
+        LEFT JOIN major m ON m.id = su.major_id
+        WHERE iaf.id = #{fileId}
+          AND ias.status = 'SUBMITTED'
+          AND ias.id = (
+              SELECT MAX(latest_ias.id)
+              FROM internship_appraisal_submission latest_ias
+              WHERE latest_ias.student_id = su.id
+          )
+        <include refid="TeacherScopePredicate"/>
+        LIMIT 1
+    </select>
+
+    <select id="findExportFiles" resultType="com.internship.entity.dto.TeacherAppraisalExportFile">
+        SELECT
+            iaf.id AS file_id,
+            COALESCE(c.name, '未分班') AS class_name,
+            su.student_user_id AS student_number,
+            su.name AS student_name,
+            iaf.file_name,
+            iaf.file_path
+        FROM student_users su
+        LEFT JOIN `class` c ON c.id = su.class_id
+        LEFT JOIN major m ON m.id = su.major_id
+        <include refid="LatestSubmissionJoin"/>
+        INNER JOIN internship_appraisal_file iaf ON iaf.submission_id = ias.id
+        WHERE ias.status = 'SUBMITTED'
+        <include refid="TeacherScopePredicate"/>
+        <if test="keyword != null and keyword != ''">
+            AND (
+                su.name LIKE CONCAT('%', #{keyword}, '%')
+                OR su.student_user_id LIKE CONCAT('%', #{keyword}, '%')
+            )
+        </if>
+        <if test="classId != null">
+            AND su.class_id = #{classId}
+        </if>
+        <if test="status == 'NOT_SUBMITTED'">
+            AND 1 = 0
+        </if>
+        ORDER BY c.name ASC, su.student_user_id ASC, iaf.id ASC
+    </select>
+</mapper>

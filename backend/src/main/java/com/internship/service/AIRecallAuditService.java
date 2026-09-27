@@ -4,11 +4,7 @@ import java.util.Map;
 
 public interface AIRecallAuditService {
 
-    Map<String, Object> autoAuditRecall(Long companyId, String recallReason);
-
     Map<String, Object> autoAuditStudentRecall(Long studentInternshipStatusId, String recallReason);
-
-    boolean isAIRecallAuditEnabled();
 
     boolean isAIStudentRecallAuditEnabled();
 

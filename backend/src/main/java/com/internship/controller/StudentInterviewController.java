@@ -3,6 +3,7 @@ package com.internship.controller;
 import com.internship.entity.Result;
 import com.internship.entity.InterviewInvitation;
 import com.internship.entity.User;
+import com.internship.service.DirectHireService;
 import com.internship.service.InterviewInvitationService;
 import com.internship.service.UserService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -22,6 +23,9 @@ public class StudentInterviewController {
     private InterviewInvitationService interviewInvitationService;
 
     @Autowired
+    private DirectHireService directHireService;
+
+    @Autowired
     private UserService userService;
 
     @RequestMapping(value = {"", "/list"}, method = RequestMethod.GET)
@@ -39,10 +43,21 @@ public class StudentInterviewController {
                 default -> null;
             };
             if (statusStr != null) {
-                return Result.success(interviewInvitationService.findByStudentIdAndStatus(studentId, statusStr));
+                List<InterviewInvitation> invitations = interviewInvitationService.findByStudentIdAndStatus(studentId, statusStr);
+                markDirectHire(invitations);
+                return Result.success(invitations);
             }
         }
-        return Result.success(interviewInvitationService.findByStudentId(studentId));
+        List<InterviewInvitation> invitations = interviewInvitationService.findByStudentId(studentId);
+        markDirectHire(invitations);
+        return Result.success(invitations);
+    }
+
+    private void markDirectHire(List<InterviewInvitation> invitations) {
+        for (InterviewInvitation invitation : invitations) {
+            invitation.setDirectHire(directHireService.isDirectHire(
+                    invitation.getStudentId(), invitation.getPositionId()));
+        }
     }
 
     private Long getCurrentStudentId() {

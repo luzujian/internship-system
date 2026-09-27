@@ -166,7 +166,7 @@ public class PositionCategoryController {
     /**
      * 导出岗位类别数据到 Excel
      */
-    @Log(operationType = "EXPORT", module = "POSITION_CATEGORY_MANAGEMENT", description = "导出岗位类别数据")
+    @Log(operationType = "EXPORT", module = "POSITION_CATEGORY_MANAGEMENT", description = "导出岗位类别数据", riskLevel = "MEDIUM", critical = true)
     @GetMapping("/export")
     @PreAuthorize("hasAuthority('position-category:view')")
     public void exportCategoryData(HttpServletResponse response) {

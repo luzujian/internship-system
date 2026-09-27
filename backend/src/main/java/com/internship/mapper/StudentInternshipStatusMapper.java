@@ -39,6 +39,11 @@ public interface StudentInternshipStatusMapper {
      * @return 更新的记录数
      */
     int update(StudentInternshipStatus status);
+
+    int updateCurrentPlacement(StudentInternshipStatus status);
+
+    int rollbackPendingConfirmationForFailedApplication(@Param("studentId") Long studentId,
+                                                        @Param("positionId") Long positionId);
     
     /**
      * 删除学生实习状态
@@ -90,8 +95,13 @@ public interface StudentInternshipStatusMapper {
                                               @Param("major") String major,
                                               @Param("className") String className,
                                               @Param("studentUserId") String studentUserId,
+                                              @Param("departmentIds") List<Long> departmentIds,
                                               @Param("divisionIds") List<Long> divisionIds,
                                               @Param("classIds") List<Long> classIds);
+
+    List<String> findDistinctCompanyNamesByScope(@Param("departmentIds") List<Long> departmentIds,
+                                                 @Param("divisionIds") List<Long> divisionIds,
+                                                 @Param("classIds") List<Long> classIds);
 
     /**
      * 动态条件查询学生实习状态（支持状态列表）
@@ -269,7 +279,11 @@ public interface StudentInternshipStatusMapper {
      * @param studentId 学生ID
      * @return 更新的记录数
      */
-    int updateStatusToInterrupted(@Param("studentId") Long studentId);
+    int updateStatusToInterrupted(@Param("statusId") Long statusId);
+
+    int transitionStatus(@Param("id") Long id,
+                         @Param("expectedStatus") Integer expectedStatus,
+                         @Param("targetStatus") Integer targetStatus);
 
     int updateStatusToDelayed(@Param("studentId") Long studentId);
 }

@@ -17,6 +17,8 @@ export interface AnnouncementWithReadStatus {
 
 export interface HomeStats {
   internshipRate: number
+  divisionName: string
+  departmentName: string
   unreadCount: number
   pendingApprovalCount: number
   companyCount: number
@@ -28,7 +30,7 @@ export interface HomeStats {
 export const homeApi = {
   getHomeStats: async (params?: { startDate?: string; endDate?: string }): Promise<HomeStats> => {
     try {
-      const response = await request.get<{ code: number; message: string; data: HomeStats }>('/home/stats', { params })
+      const response = await request.get<HomeStats>('/home/stats', { params })
       return response.data
     } catch (error) {
       throw new Error(`Failed to fetch home stats: ${error}`)

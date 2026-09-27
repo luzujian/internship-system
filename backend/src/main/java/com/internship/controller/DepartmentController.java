@@ -112,7 +112,7 @@ public class DepartmentController {
     /**
      * 导出院系专业数据到 Excel
      */
-    @Log(operationType = "EXPORT", module = "DEPARTMENT_MAJOR_MANAGEMENT", description = "导出院系专业数据")
+    @Log(operationType = "EXPORT", module = "DEPARTMENT_MAJOR_MANAGEMENT", description = "导出院系专业数据", riskLevel = "MEDIUM", critical = true)
     @GetMapping("/majors/export")
     @PreAuthorize("hasAuthority('department:view')")
     public void exportMajorData(HttpServletResponse response) {

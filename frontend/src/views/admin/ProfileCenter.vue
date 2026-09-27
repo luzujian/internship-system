@@ -1,6 +1,7 @@
 <script lang="ts" setup>
 import logger from '@/utils/logger'
-import { reactive, ref, computed, onMounted, nextTick } from 'vue'
+import { reactive, ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
+import { useFormContext } from '@/agent/formContext'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRouter } from 'vue-router'
 import {
@@ -88,6 +89,25 @@ const targetUserList = ref([])
 const targetUserListLoading = ref(false)
 
 const switchRoleFormRef = ref(null)
+
+// ===== 智能填表：编辑个人资料注册到 AI 侧栏 =====
+// 真实姓名只读、页面修改密码（口令）与角色切换（含管理员密码）不接入语音填表
+const formContext = useFormContext()
+watch(editDialogVisible, (open) => {
+  if (open) {
+    formContext.register({
+      formId: 'admin:center-profile',
+      title: '编辑个人资料',
+      fields: [
+        { prop: 'username', label: '用户名', type: 'input', required: true },
+        { prop: 'phone', label: '手机号', type: 'input', patternHint: '11位手机号码' }
+      ],
+      getModel: () => editingUser,
+      getValidationSummary: () => ({ missingFields: editingUser.username?.trim() ? [] : ['用户名'], validationErrors: [] })
+    })
+  } else formContext.unregister('admin:center-profile')
+})
+onUnmounted(() => formContext.unregister('admin:center-profile'))
 
 const roleOptions = [
   { value: 'teacher', label: '教师端' },
@@ -202,12 +222,17 @@ const loadUserInfo = async () => {
       return
     }
 
-    const response = await AdminUserService.getAdminById(currentUserId)
+    const response = await AdminUserService.getAdminById(currentUserId) as unknown as {
+      code?: number
+      message?: string
+      msg?: string
+      data?: { id?: number; username?: string; name?: string; phone?: string; createTime?: string; [key: string]: unknown }
+    }
 
     if (response && response.code === 200 && response.data) {
       const adminInfo = response.data
-      userInfo.id = adminInfo.id
-      userInfo.username = adminInfo.username
+      if (adminInfo.id !== undefined) userInfo.id = adminInfo.id as unknown as string
+      if (adminInfo.username !== undefined) userInfo.username = adminInfo.username
       userInfo.name = adminInfo.name || ''
       userInfo.phone = adminInfo.phone || ''
       userInfo.createTime = adminInfo.createTime || ''
@@ -234,12 +259,17 @@ const showEditProfile = async () => {
       return
     }
 
-    const response = await AdminUserService.getAdminById(currentUserId)
+    const response = await AdminUserService.getAdminById(currentUserId) as unknown as {
+      code?: number
+      message?: string
+      msg?: string
+      data?: { id?: number; username?: string; name?: string; phone?: string; [key: string]: unknown }
+    }
 
     if (response && response.code === 200 && response.data) {
       const adminInfo = response.data
-      editingUser.id = adminInfo.id
-      editingUser.username = adminInfo.username
+      if (adminInfo.id !== undefined) editingUser.id = adminInfo.id
+      if (adminInfo.username !== undefined) editingUser.username = adminInfo.username
       editingUser.name = adminInfo.name || ''
       editingUser.phone = adminInfo.phone || ''
     } else {
@@ -275,9 +305,11 @@ const saveProfile = async () => {
       phone: editingUser.phone
     }
 
+    const operation = formContext.beginFormOperation('admin:center-profile')
     const response = await AdminUserService.updateAdmin(updateData)
 
     if (response && response.code === 200) {
+      operation.complete({ status: 'saved', label: '管理员资料已保存', url: '/admin/profile' })
       ElMessage.success('资料更新成功')
       editDialogVisible.value = false
       await loadUserInfo()
@@ -320,9 +352,17 @@ const changePassword = async () => {
       newPassword: passwordForm.newPassword
     }
 
-    const response = await AdminUserService.changeAdminPassword(passwordData)
+    const response = await AdminUserService.changeAdminPassword(passwordData) as unknown as {
+      code?: number
+      message?: string
+      msg?: string
+      data?: { code?: number; message?: string; msg?: string; [key: string]: unknown }
+    }
 
-    const result = response || response.data
+    const rawData: unknown = response.data
+    const result = (rawData !== null && typeof rawData === 'object' && ('code' in (rawData as Record<string, unknown>) || 'message' in (rawData as Record<string, unknown>) || 'msg' in (rawData as Record<string, unknown>)))
+      ? (rawData as { code?: number; message?: string; msg?: string })
+      : response
     if (result && result.code === 200) {
       ElMessage.success('密码修改成功，请重新登录')
       passwordDialogVisible.value = false
@@ -548,24 +588,17 @@ const logout = async () => {
   }
 }
 
-const goBack = () => {
-  router.back()
-}
 </script>
 
 <template>
   <div class="profile-container">
     <div class="profile-header">
-      <el-page-header @back="goBack" title="返回">
-        <template #content>
-          <div class="page-title">
-            <el-icon class="title-icon">
-              <User />
-            </el-icon>
-            <span>个人中心</span>
-          </div>
-        </template>
-      </el-page-header>
+      <div class="page-title">
+        <el-icon class="title-icon">
+          <User />
+        </el-icon>
+        <span>个人中心</span>
+      </div>
     </div>
 
     <div class="profile-content">

@@ -129,15 +129,32 @@ const loadAiScoringSettings = async () => {
     const rolePrefix = currentRole === 'ROLE_TEACHER' ? 'teacher_' : ''
     const userId = localStorage.getItem(rolePrefix + 'userId_' + currentRole) || localStorage.getItem('teacherId')
     const { getCounselorAISettings } = await import('../../api/counselorAISettings')
-    const response = await getCounselorAISettings(parseInt(userId || '0'))
+    interface CounselorScoringRuleRow {
+      ruleName?: string
+      ruleCode?: string
+      weight?: number
+      minScore?: number
+      maxScore?: number
+      description?: string
+      [key: string]: unknown
+    }
+    interface CounselorAISettingsData {
+      settings?: { enableAiScoring?: number | boolean; aiModelCode?: string; [key: string]: unknown }
+      scoringRules?: CounselorScoringRuleRow[]
+      scoring_rules?: CounselorScoringRuleRow[]
+      [key: string]: unknown
+    }
+    const response = await getCounselorAISettings(parseInt(userId || '0')) as unknown as { code?: number; data?: CounselorAISettingsData }
     if (response && response.data) {
       const data = response.data
-      if (data.settings) {
-        aiScoringSettings.value.enableAiScoring = data.settings.enableAiScoring === 1
-        aiScoringSettings.value.aiModelCode = data.settings.aiModelCode || 'deepseek-chat'
+      const settingsData = data.settings
+      if (settingsData) {
+        aiScoringSettings.value.enableAiScoring = settingsData.enableAiScoring === 1 || settingsData.enableAiScoring === true
+        aiScoringSettings.value.aiModelCode = settingsData.aiModelCode || 'deepseek-chat'
       }
-      if (data.scoringRules && data.scoringRules.length > 0) {
-        aiScoringSettings.value.scoringRules = data.scoringRules.map((rule: any) => ({
+      const rulesData = data.scoringRules ?? data.scoring_rules
+      if (rulesData && rulesData.length > 0) {
+        aiScoringSettings.value.scoringRules = rulesData.map((rule: CounselorScoringRuleRow) => ({
           ruleName: rule.ruleName,
           ruleCode: rule.ruleCode,
           weight: rule.weight,

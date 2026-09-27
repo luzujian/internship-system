@@ -62,7 +62,7 @@ export interface PdfJsLib {
   GlobalWorkerOptions: {
     workerSrc: string
   }
-  getDocument: (url: string) => PdfDocumentTask
+  getDocument: (source: string | { data: ArrayBuffer }) => PdfDocumentTask
 }
 
 // PDF 文档任务

@@ -1,6 +1,7 @@
 package com.internship.entity;
 
 import com.fasterxml.jackson.annotation.JsonFormat;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
@@ -32,17 +33,18 @@ public class Announcement {
     @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", timezone = "UTC")
     private Date validFrom;
 
-    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", timezone = "UTC")
-    private Date validTo;
+    @JsonIgnore
+    private Date validTo; // 历史字段，新公告不再设置或展示过期日期
 
     private String targetType; // 目标类型：JSON 数组，如 ["TEACHER","TEACHER_TYPE"]。支持：STUDENT-全体学生，TEACHER-全体教师，TEACHER_TYPE-特定教师类别，MAJOR-特定专业学生，COMPANY-企业用户
     private String targetValue; // 目标值：JSON 对象，如 {"teacherTypes":["COLLEGE","DEPARTMENT"],"majorIds":["1","2"]}。当 targetType 为 TEACHER_TYPE 时存教师类型（COLLEGE/DEPARTMENT/COUNSELOR），为 MAJOR 时存专业 ID
 
-    private String priority; // 优先级：normal-普通，important-重要（重要公告置顶显示）
+    @JsonIgnore
+    private String priority; // 历史字段，新公告不再设置或展示重要程度
 
     private String attachments; // 附件列表，JSON 格式
 
-    private String status; // 公告状态：DRAFT-草稿，PUBLISHED-已发布，EXPIRED-已过期
+    private String status; // 公告状态：DRAFT-草稿，PUBLISHED-已发布
 
     private Date createTime;
 
@@ -62,11 +64,12 @@ public class Announcement {
         this.publishTime = publishDate;
     }
 
-    // 为前端提供 expireDate 字段，映射到 validTo
+    @JsonIgnore
     public Date getExpireDate() {
         return this.validTo;
     }
 
+    @JsonIgnore
     public void setExpireDate(Date expireDate) {
         this.validTo = expireDate;
     }

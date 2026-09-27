@@ -1,10 +1,12 @@
 package com.internship.controller;
 
+import com.internship.anno.Log;
 import com.internship.entity.Result;
 import com.internship.entity.TeacherRole;
 import com.internship.service.TeacherRoleService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -45,6 +47,8 @@ public class TeacherRoleController {
     }
     
     @PostMapping
+    @PreAuthorize("hasRole('ADMIN')")
+    @Log(operationType = "CREATE", module = "PERMISSION_MANAGEMENT", description = "新增角色", riskLevel = "HIGH", critical = true)
     public Result createRole(@RequestBody TeacherRole teacherRole) {
         log.info("创建教师角色: {}", teacherRole.getRoleName());
         try {
@@ -57,6 +61,8 @@ public class TeacherRoleController {
     }
     
     @PutMapping("/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Log(operationType = "UPDATE", module = "PERMISSION_MANAGEMENT", description = "更新角色", riskLevel = "HIGH", critical = true)
     public Result updateRole(@PathVariable Long id, @RequestBody TeacherRole teacherRole) {
         log.info("更新教师角色: {}", id);
         try {
@@ -70,6 +76,8 @@ public class TeacherRoleController {
     }
     
     @DeleteMapping("/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Log(operationType = "DELETE", module = "PERMISSION_MANAGEMENT", description = "删除角色", riskLevel = "HIGH", critical = true)
     public Result deleteRole(@PathVariable Long id) {
         log.info("删除教师角色: {}", id);
         try {

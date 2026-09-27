@@ -1,159 +1,119 @@
 package com.internship.scheduler;
 
-import com.internship.entity.InternshipTimeSettings;
 import com.internship.entity.StudentInternshipStatus;
+import com.internship.mapper.PositionMapper;
 import com.internship.mapper.StudentInternshipStatusMapper;
-// 移除不存在的 InternshipStatusService 导入
-import com.internship.service.InternshipTimeSettingsService;
-import com.internship.service.StudentInternshipStatusService;
+import com.internship.service.InternshipLifecycleService;
+import com.internship.service.PositionCacheService;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+import org.springframework.context.annotation.Profile;
 
-import java.time.LocalDate;
-import java.time.format.DateTimeFormatter;
 import java.util.Date;
 import java.util.List;
 
-/**
- * 实习状态自动更新调度器
- * 1. 当实习开始时间到达时，自动将学生的实习状态从"已确定"(2)变更为"实习中"(3)
- * 2. 当应聘时间开始时，自动将学生的实习状态从"已结束"(4)变更为"无offer"(0)
- */
+/** Advances an accepted placement through its own lifecycle without resetting it for another stage. */
 @Slf4j
 @Component
+@Profile("!local")
 public class InternshipStatusScheduler implements ApplicationRunner {
+    private final StudentInternshipStatusMapper statusMapper;
+    private final InternshipLifecycleService lifecycleService;
+    private final PositionMapper positionMapper;
+    private final PositionCacheService positionCacheService;
 
-    @Autowired
-    private StudentInternshipStatusMapper statusMapper;
-
-    @Autowired
-    private StudentInternshipStatusService statusService;
-
-    @Autowired
-    private InternshipTimeSettingsService timeSettingsService;
-
-    @Autowired
-    private com.internship.validator.StateTransitionValidator stateTransitionValidator;
-
-    /**
-     * 应用启动时执行一次检查
-     * 检查是否有学生的实习开始时间已到但状态还是"已确定"的
-     */
-    @Override
-    public void run(ApplicationArguments args) {
-        log.info("应用启动，开始检查实习状态是否需要自动更新...");
-        checkAndUpdateInternshipStatus();
-        checkAndResetFinishedStudents();
+    public InternshipStatusScheduler(StudentInternshipStatusMapper statusMapper,
+                                     InternshipLifecycleService lifecycleService,
+                                     PositionMapper positionMapper,
+                                     PositionCacheService positionCacheService) {
+        this.statusMapper = statusMapper;
+        this.lifecycleService = lifecycleService;
+        this.positionMapper = positionMapper;
+        this.positionCacheService = positionCacheService;
     }
 
-    /**
-     * 每天凌晨1点执行一次检查
-     * 将所有实习开始时间已到且状态为"已确定"(2)的学生状态变更为"实习中"(3)
-     */
-    @Scheduled(cron = "0 0 1 * * ?")
-    public void checkAndUpdateInternshipStatus() {
-        log.info("开始执行实习状态自动更新任务...");
-
+    // 到期安全阀:每 5 分钟把实习期已过的在招岗位自动暂停,避免过期岗位继续收投递
+    @Scheduled(cron = "0 10/5 * * * ?")
+    public void pauseExpiredActivePositions() {
         try {
-            // 查询所有状态为"已确定"(2)的学生实习状态记录
-            List<StudentInternshipStatus> confirmedStatuses = statusMapper.list(null, null, null, 2, null, null, null, null, null, null);
-
-            if (confirmedStatuses == null || confirmedStatuses.isEmpty()) {
-                log.info("没有状态为已确定的学生，无需更新");
-                return;
+            int paused = positionMapper.pauseExpiredActivePositions();
+            if (paused > 0) {
+                log.info("到期安全阀:自动暂停 {} 个已过实习期的在招岗位", paused);
+                positionCacheService.clearPositionsCache();
             }
-
-            Date now = new Date();
-            int updateCount = 0;
-
-            for (StudentInternshipStatus status : confirmedStatuses) {
-                try {
-                    // 检查是否有实习开始时间，并且实习开始时间已到
-                    if (status.getInternshipStartTime() != null && !status.getInternshipStartTime().after(now)) {
-                        // 实习开始时间已到，自动将状态从"已确定"(2)变更为"实习中"(3)
-                        status.setStatus(3);
-                        status.setUpdateTime(now);
-                        statusMapper.update(status);
-                        updateCount++;
-
-                        log.info("学生ID: {} 的实习状态已从已确定变更为实习中，实习开始时间: {}",
-                                status.getStudentId(), status.getInternshipStartTime());
-                    }
-                } catch (Exception e) {
-                    log.error("更新学生ID: {} 的实习状态时发生错误: {}", status.getStudentId(), e.getMessage(), e);
-                }
-            }
-
-            log.info("实习状态自动更新任务执行完成，共更新了 {} 个学生的状态", updateCount);
-
         } catch (Exception e) {
-            log.error("执行实习状态自动更新任务时发生异常: {}", e.getMessage(), e);
+            log.error("自动暂停过期岗位失败: {}", e.getMessage(), e);
         }
     }
 
-    /**
-     * 每天凌晨1点30分执行一次检查
-     * 当应聘时间开始时，自动将状态为"已结束"(4)的学生状态变更为"无offer"(0)
-     */
-    @Scheduled(cron = "0 30 1 * * ?")
-    public void checkAndResetFinishedStudents() {
-        log.info("开始执行已结束学生状态重置任务...");
+    @Override
+    public void run(ApplicationArguments args) {
+        checkAndUpdateInternshipStatus();
+        checkAndFinishInternships();
+    }
 
+    /** 审批等事件触发的即时检查：对单条状态做一次起止判定，避免等定时任务。 */
+    public void checkOne(StudentInternshipStatus status) {
+        if (status == null || status.getId() == null) return;
+        Date now = new Date();
         try {
-            // 获取应聘时间设置
-            InternshipTimeSettings settings = timeSettingsService.findLatest();
-            if (settings == null || settings.getApplicationStartDate() == null) {
-                log.info("未设置应聘开始时间，跳过重置任务");
-                return;
+            if (Integer.valueOf(2).equals(status.getStatus())
+                    && status.getInternshipStartTime() != null
+                    && !status.getInternshipStartTime().after(now)) {
+                lifecycleService.startConfirmedInternship(status.getId(), status.getInternshipStartTime());
             }
-
-            LocalDate today = LocalDate.now();
-            LocalDate applicationStartDate = LocalDate.parse(settings.getApplicationStartDate(), DateTimeFormatter.ISO_LOCAL_DATE);
-
-            // 检查今天是否在应聘开始时间或之后
-            if (today.isBefore(applicationStartDate)) {
-                log.info("当前日期 {} 早于应聘开始时间 {}，跳过重置任务", today, applicationStartDate);
-                return;
+            if (Integer.valueOf(3).equals(status.getStatus())
+                    && status.getInternshipEndTime() != null
+                    && !status.getInternshipEndTime().after(now)) {
+                lifecycleService.finishActiveInternship(status.getId(), status.getInternshipEndTime());
             }
-
-            log.info("应聘时间已开始，当前日期: {}，应聘开始时间: {}，开始重置已结束状态的学生...",
-                    today, applicationStartDate);
-
-            // 查询所有状态为"已结束"(4)的学生实习状态记录
-            List<StudentInternshipStatus> finishedStatuses = statusMapper.list(null, null, null, 4, null, null, null, null, null, null);
-
-            if (finishedStatuses == null || finishedStatuses.isEmpty()) {
-                log.info("没有状态为已结束的学生，无需重置");
-                return;
-            }
-
-            Date now = new Date();
-            int resetCount = 0;
-
-            for (StudentInternshipStatus status : finishedStatuses) {
-                try {
-                    // 使用状态机校验状态流转合法性
-                    stateTransitionValidator.validate(status.getStatus(), 0);
-                    // 将状态从"已结束"(4)变更为"无offer"(0)
-                    status.setStatus(0);
-                    status.setUpdateTime(now);
-                    statusMapper.update(status);
-                    resetCount++;
-
-                    log.info("学生ID: {} 的实习状态已从已结束重置为无offer", status.getStudentId());
-                } catch (Exception e) {
-                    log.error("重置学生ID: {} 的实习状态时发生错误: {}", status.getStudentId(), e.getMessage(), e);
-                }
-            }
-
-            log.info("已结束学生状态重置任务执行完成，共重置了 {} 个学生的状态", resetCount);
-
         } catch (Exception e) {
-            log.error("执行已结束学生状态重置任务时发生异常: {}", e.getMessage(), e);
+            log.error("即时检查学生 {} 实习状态失败: {}", status.getStudentId(), e.getMessage(), e);
+        }
+    }
+
+    // 每 5 分钟兜底扫描，保证时间边界到达后尽快流转
+    @Scheduled(cron = "0 */5 * * * ?")
+    public void checkAndUpdateInternshipStatus() {
+        List<StudentInternshipStatus> confirmed = statusMapper.list(
+                null, null, null, 2, null, null, null, null, null, null);
+        if (confirmed == null || confirmed.isEmpty()) return;
+        Date now = new Date();
+        for (StudentInternshipStatus status : confirmed) {
+            try {
+                if (status.getInternshipStartTime() != null
+                        && !status.getInternshipStartTime().after(now)) {
+                    lifecycleService.startConfirmedInternship(
+                            status.getId(), status.getInternshipStartTime());
+                }
+            } catch (Exception e) {
+                log.error("启动学生 {} 的实习状态失败: {}",
+                        status.getStudentId(), e.getMessage(), e);
+            }
+        }
+    }
+
+    // 每 5 分钟兜底扫描，与 checkAndUpdateInternshipStatus 错开 30 秒
+    @Scheduled(cron = "30 */5 * * * ?")
+    public void checkAndFinishInternships() {
+        List<StudentInternshipStatus> active = statusMapper.list(
+                null, null, null, 3, null, null, null, null, null, null);
+        if (active == null || active.isEmpty()) return;
+        Date now = new Date();
+        for (StudentInternshipStatus status : active) {
+            try {
+                if (status.getInternshipEndTime() != null
+                        && !status.getInternshipEndTime().after(now)) {
+                    lifecycleService.finishActiveInternship(
+                            status.getId(), status.getInternshipEndTime());
+                }
+            } catch (Exception e) {
+                log.error("结束学生 {} 的实习状态失败: {}",
+                        status.getStudentId(), e.getMessage(), e);
+            }
         }
     }
 }
