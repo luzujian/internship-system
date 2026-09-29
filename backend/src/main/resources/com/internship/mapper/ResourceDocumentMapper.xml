@@ -166,10 +166,10 @@
             </if>
             <choose>
                 <when test="filterType == 'all'">
-                    and (status = 'PUBLISHED' or publisher_id = #{publisherId})
+                    and (status = 'PUBLISHED' or (publisher_id = #{publisherId} and publisher_role in ('TEACHER','COLLEGE','DEPARTMENT','COUNSELOR')))
                 </when>
                 <when test="filterType == 'mine'">
-                    and publisher_id = #{publisherId}
+                    and publisher_id = #{publisherId} and publisher_role in ('TEACHER','COLLEGE','DEPARTMENT','COUNSELOR')
                 </when>
                 <otherwise>
                     and status = 'PUBLISHED'
@@ -194,10 +194,10 @@
             </if>
             <choose>
                 <when test="filterType == 'all'">
-                    and (status = 'PUBLISHED' or publisher_id = #{publisherId})
+                    and (status = 'PUBLISHED' or (publisher_id = #{publisherId} and publisher_role in ('TEACHER','COLLEGE','DEPARTMENT','COUNSELOR')))
                 </when>
                 <when test="filterType == 'mine'">
-                    and publisher_id = #{publisherId}
+                    and publisher_id = #{publisherId} and publisher_role in ('TEACHER','COLLEGE','DEPARTMENT','COUNSELOR')
                 </when>
                 <otherwise>
                     and status = 'PUBLISHED'

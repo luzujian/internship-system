@@ -16,7 +16,7 @@ public class StudentInternshipStatus {
     private Long studentId;
     
     @Min(value = 0, message = "实习状态值无效")
-    private Integer status; // 实习状态（0未找到，1已有offer，2已确定，3已结束）
+    private Integer status; // 实习状态(0未找到,1已有offer,2已确定待开始,3实习进行中,4已结束;结束后名额释放,撤回见 recall_status)
     
     private Long companyId;
     
@@ -64,6 +64,11 @@ public class StudentInternshipStatus {
     private String graduateSchool;
     private String graduateMajor;
     private String otherReason;
+
+    // 兼容接口字段及由求职过程记录派生的只读展示字段，不对应数据库列
+    private Integer internshipStatus;
+    private String jobSearchStatus;
+    private String jobSearchStatusText;
 
     private StudentUser student;
     private Major major;

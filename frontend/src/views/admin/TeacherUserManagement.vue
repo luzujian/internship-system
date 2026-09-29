@@ -1,7 +1,11 @@
 <script setup lang="ts">
 import logger from '@/utils/logger'
+import request from '@/utils/request'
 import { createRequiredValidator, createPhoneValidator, createEmailValidator } from '@/utils/validation'
-import { onMounted, ref, nextTick, computed } from 'vue'
+import { readInitialCredentials } from '@/utils/initialCredentialPayload'
+import { showInitialCredentials } from '@/utils/initialCredentialDialog'
+import { useFormContext } from '@/agent/formContext'
+import { onMounted, onUnmounted, ref, nextTick, computed, watch } from 'vue'
 import DepartmentService from '../../api/department'
 import DivisionService from '../../api/division'
 import MajorService from '../../api/major'
@@ -10,11 +14,95 @@ import { useSystemSettingsStore } from '../../store/systemSettings'
 import { useAuthStore } from '../../store/auth'
 
 import cacheService from '../../api/cacheService'
-import { Search, Refresh, Plus, Delete, Upload, Download, Document, School, View, ArrowDown } from '@element-plus/icons-vue'
+import { Search, Refresh, Key, Plus, Delete, Upload, Download, Document, School, View, ArrowDown } from '@element-plus/icons-vue'
 import type { TeacherUser, PageParams, PaginationState, DialogState, Department, Major } from '@/types/admin'
+import type { FormFieldDescriptor } from '@/agent/types'
+// 教师行精确局部接口：覆盖后端驼峰/snake两种形态与模板实际使用的全部字段（均可选，避免改 api 文件）
+interface TeacherRow {
+  id?: string | number
+  teacherUserId?: string | number
+  teacherId?: string | number
+  username?: string
+  name?: string
+  gender?: number | string
+  departmentId?: string | number | null
+  department_id?: string | number
+  department?: string | number | null
+  departmentName?: string
+  divisionId?: string | number | null
+  division_id?: string | number
+  divisionName?: string
+  teacherType?: string | number
+  title?: string
+  phone?: string
+  email?: string
+  status?: number | string | null
+  createTime?: string
+  createdTime?: string
+  create_time?: string
+  updateTime?: string
+  updatedTime?: string
+  update_time?: string
+}
+// 搜索表单：含工号/学院别名 department/身份 teacherType（字符串枚举）
+interface TeacherSearch {
+  teacherUserId?: string | number
+  // 历史遗留别名字段：clear() 会写 teacherId（实际查询用 teacherUserId），保留以保持运行时一致
+  teacherId?: string | number
+  name?: string
+  department?: string | number | null
+  departmentId?: string | number | null
+  status?: number | null
+  teacherType?: string | number
+}
+// 院系/专业下拉选项：含模板使用的 value 字段
+interface DeptOption {
+  id?: string | number
+  value?: string | number
+  name: string
+  departmentId?: string | number
+  departmentName?: string
+  createTime?: string
+  updateTime?: string
+}
+interface MajorOption {
+  id?: string | number
+  value?: string | number
+  name: string
+  majorId?: string | number
+  majorName?: string
+  departmentId?: string | number
+  departmentName?: string
+  divisionId?: string | number
+  divisionName?: string
+  createTime?: string
+  updateTime?: string
+}
+// 课程行（formatCourseMajorNames 入参收窄目标）
+interface CourseRow {
+  majorNames?: unknown
+  majors?: unknown
+  majorName?: unknown
+  majorId?: unknown
+}
+// 表格实例最小接口（仅使用 toggleRowSelection）
+interface TeacherTableInstance {
+  toggleRowSelection: (row: TeacherRow, selected: boolean) => void
+}
+// 导入结果（importTeacherDataApi data 形态）
+interface TeacherImportData {
+  successCount?: unknown
+  failCount?: unknown
+  failList?: unknown
+}
+interface TeacherImportFailItem {
+  rowNum?: unknown
+  errorMsg?: unknown
+}
 import { ElMessage, ElMessageBox, ElForm, ElTable } from 'element-plus'
-import { queryPageApi, addApi, queryInfoApi, updateApi, deleteApi, resetPasswordApi, exportTeacherDataApi, importTeacherDataApi, updateStatusApi } from '../../api/TeacherUserService'
+import { queryPageApi, addApi, queryInfoApi, updateApi, deleteApi, resetPasswordApi, resetAllPasswordsApi, exportTeacherDataApi, importTeacherDataApi, updateStatusApi } from '../../api/TeacherUserService'
 import { exportToExcel } from '../../utils/xlsx'
+import MobileMoreActions from '../../components/MobileMoreActions.vue'
 
 const systemSettingsStore = useSystemSettingsStore()
 const authStore = useAuthStore()
@@ -67,42 +155,51 @@ const formatDepartmentName = (row: unknown, column: unknown, cellValue: string):
 
 // 专业名称格式化方法 - 用于格式化课程的专业显示
 const formatCourseMajorNames = (course: unknown): string => {
+  // 用精确局部接口收窄 unknown（不改运行时分支语义）
+  const c = course as CourseRow
+  const majorNames: unknown = c.majorNames
+  const courseMajors: unknown = c.majors
+  const majorName: unknown = c.majorName
+  const majorId: unknown = c.majorId
   // 尝试多种可能的数据结构
-  if (course.majorNames && Array.isArray(course.majorNames) && course.majorNames.length > 0) {
+  if (Array.isArray(majorNames) && majorNames.length > 0) {
     // 已有的专业名称数组
-    return course.majorNames.join('、')
-  } else if (course.majors && Array.isArray(course.majors) && course.majors.length > 0) {
+    return majorNames.map((n: unknown) => (typeof n === 'string' ? n : String(n))).join('、')
+  } else if (Array.isArray(courseMajors) && courseMajors.length > 0) {
     // 专业对象数组，提取名称
-    return course.majors.map(m => m.name || m.majorName || '未知').join('、')
-  } else if (course.majorName) {
+    return courseMajors.map((m: unknown) => {
+      const o = m as { name?: unknown; majorName?: unknown }
+      const n: unknown = o.name ? o.name : o.majorName
+      return typeof n === 'string' && n !== '' ? n : '未知'
+    }).join('、')
+  } else if (typeof majorName === 'string' && majorName !== '') {
     // 单个专业名称
-    return course.majorName
-  } else if (course.majorId) {
+    return majorName
+  } else if (majorId !== undefined && majorId !== null && majorId !== '') {
     // 只有专业ID，尝试从专业列表匹配
-    const major = majors.value.find(m => m.value === course.majorId)
+    const major = majors.value.find(m => String(m.value) === String(majorId))
     return major ? major.name : '未知专业'
   }
   return '未分配专业'
 }
 
 //搜索表单对象
-let searchForm = ref<Partial<TeacherUser>>({
+let searchForm = ref<TeacherSearch>({
   teacherUserId: '',
   name: '',
-  gender: '',
   department: null,
   status: null,
   teacherType: ''
 })
 
 //列表展示数据
-let tableData = ref<TeacherUser[]>([])
+let tableData = ref<TeacherRow[]>([])
 //院系列表数据
-let departments = ref<Department[]>([])
+let departments = ref<DeptOption[]>([])
 //系列表数据
-let divisions = ref<any[]>([])
+let divisions = ref<DeptOption[]>([])
 //专业列表数据
-let majors = ref<Major[]>([])
+let majors = ref<MajorOption[]>([])
 //加载状态
 let loading = ref(false)
 
@@ -117,7 +214,7 @@ let pagination = ref<PaginationState>({
 const applyLocalTeacherStatus = (): void => {
   try {
     const teacherStatusMap = JSON.parse(localStorage.getItem('teacherStatusMap') || '{}')
-    
+
     if (tableData.value) {
       tableData.value = tableData.value.map(teacher => {
         const localStatus = teacherStatusMap[teacher.id]
@@ -145,8 +242,8 @@ const applyLocalTeacherStatus = (): void => {
   }
 }
 
-// 表格引用
-let teacherTable = ref<InstanceType<typeof ElTable> | null>(null)
+// 表格引用（仅使用 toggleRowSelection，用最小接口避免 InstanceType 约束错误）
+let teacherTable = ref<TeacherTableInstance | null>(null)
 
 // 为新增和编辑操作创建独立的表单数据和引用，避免数据相互干扰
 // 新增教师表单引用
@@ -155,27 +252,27 @@ let addTeacherFormRef = ref<InstanceType<typeof ElForm> | null>(null)
 let editTeacherFormRef = ref<InstanceType<typeof ElForm> | null>(null)
 
 // 新增教师表单数据
-let addTeacher = ref<Partial<TeacherUser>>({
+let addTeacher = ref<TeacherRow>({
   id: '',
   teacherUserId: '',
   name: '',
-  gender: 1,
   departmentId: null,
   divisionId: null,
   teacherType: 'DEPARTMENT',
-  phone: ''
+  phone: '',
+  email: ''
 })
 
 // 编辑教师表单数据
-let editTeacher = ref<Partial<TeacherUser>>({
+let editTeacher = ref<TeacherRow>({
   id: '',
   teacherUserId: '',
   name: '',
-  gender: 1,
   departmentId: null,
   divisionId: null,
   teacherType: 'DEPARTMENT',
-  phone: ''
+  phone: '',
+  email: ''
 })
 
 //对话框控制
@@ -190,11 +287,11 @@ let resetPasswordUserId = ref<string | null>(null)
 //导入 Excel相关控制
 let importDialogVisible = ref(false)
 let selectedFile = ref<File | null>(null)
-let excelFileInput = ref<HTMLElement | null>(null)
+let excelFileInput = ref<HTMLInputElement | null>(null)
 let importLoading = ref(false)
 
-//复选框选中数据
-let selectIds = ref<string[]>([])
+//复选框选中数据（行 id 为 string|number，后端批量删除要 number，调用处 Number 转换）
+let selectIds = ref<(string | number)[]>([])
 
 //查看课程对话框相关
 let viewCoursesDialogVisible = ref(false)
@@ -207,7 +304,12 @@ const rules = {
   teacherUserId: [createRequiredValidator('请输入工号')],
   name: [createRequiredValidator('请输入姓名')],
   departmentId: [createRequiredValidator('请选择院系')],
-  email: createEmailValidator('请输入有效的邮箱地址，如 example@email.com')
+  phone: [{ validator: (_rule: any, value: string, callback: (error?: Error) => void) => {
+    if (!value) return callback()
+    if (!/^1[3-9]\d{9}$/.test(value)) return callback(new Error('请输入正确的手机号码'))
+    callback()
+  }, trigger: 'blur' }],
+  email: createEmailValidator('请输入有效的邮箱地址，如 example@email.com', false)
 }
 
 // 移除动态计算表单，现在使用两个独立的表单
@@ -330,8 +432,49 @@ const getDivisionList = async () => {
 const getFilteredDivisions = computed(() => {
   const deptId = formTitle.value.includes('编辑') ? editTeacher.value.departmentId : addTeacher.value.departmentId
   if (!deptId) return divisions.value
-  return divisions.value.filter((d: any) => Number(d.departmentId) === Number(deptId))
+  return divisions.value.filter((d: DeptOption) => Number(d.departmentId) === Number(deptId))
 })
+
+// ===== 智能填表：教师新增/编辑弹窗（共用 formId，后注册覆盖，单例语义；只写响应式 model，不触发提交） =====
+const formContext = useFormContext()
+const teacherTypeOptions = [
+  { label: '学院教师', value: 'COLLEGE' },
+  { label: '系室教师', value: 'DEPARTMENT' },
+  { label: '辅导员', value: 'COUNSELOR' }
+]
+const teacherFillFields = (): FormFieldDescriptor[] => {
+  const editing = formTitle.value === '编辑教师'
+  const current = editing ? editTeacher.value : addTeacher.value
+  const divisionOptions = (current.departmentId
+    ? divisions.value.filter((d: DeptOption) => Number(d.departmentId) === Number(current.departmentId))
+    : divisions.value
+  ).map((d: DeptOption) => ({ label: String(d.name ?? ''), value: String(d.id ?? '') }))
+  return [
+    { prop: 'teacherUserId', label: '工号', type: 'input', required: true },
+    { prop: 'name', label: '姓名', type: 'input', required: true },
+    { prop: 'teacherType', label: '身份', type: 'select', required: true, options: teacherTypeOptions },
+    { prop: 'departmentId', label: '学院', type: 'select', required: true,
+      options: departments.value.map(d => ({ label: d.name, value: d.value ?? '' })) },
+    { prop: 'divisionId', label: '系', type: 'select', options: divisionOptions,
+      patternHint: '仅身份为系室教师（DEPARTMENT）时显示' },
+    { prop: 'phone', label: '手机号', type: 'input' },
+    { prop: 'email', label: '邮箱', type: 'input' }
+  ]
+}
+const registerTeacherForm = (title: string) => {
+  formContext.register({
+    formId: 'admin:teacher',
+    title,
+    fields: teacherFillFields(),
+    getFields: teacherFillFields,
+    getModel: () => (formTitle.value === '编辑教师' ? editTeacher.value : addTeacher.value),
+    getFormEl: () => (formTitle.value === '编辑教师' ? editTeacherFormRef.value : addTeacherFormRef.value)
+  })
+}
+watch(dialogFormVisible, (open) => {
+  if (!open) formContext.unregister('admin:teacher')
+})
+onUnmounted(() => formContext.unregister('admin:teacher'))
 
 //分页处理函数
 const handleSizeChange = (newSize) => {
@@ -349,12 +492,20 @@ const queryPage = async () => {
   loading.value = true
   try {
     logger.log('开始查询教师列表...')
-    //构建查询参数，确保字段名称正确映射
-    const params = {
+    //构建查询参数，确保字段名称正确映射（可选字段预先声明，避免动态加属性的类型错误）
+    const params: {
+      pageNum: number
+      pageSize: number
+      teacherUserId?: string | number
+      name?: string
+      departmentId?: string | number
+      status?: number
+      teacherType?: string | number
+    } = {
       pageNum: pagination.value.currentPage,
       pageSize: pagination.value.pageSize
     }
-    
+
     // 只有当字段有值时才添加到参数中，特别处理status字段（值为0也需要传递）
     if (searchForm.value.teacherUserId) {
       params.teacherUserId = searchForm.value.teacherUserId
@@ -369,17 +520,14 @@ const queryPage = async () => {
     if (searchForm.value.status !== null && searchForm.value.status !== undefined) {
       params.status = searchForm.value.status
     }
-    // 添加性别参数
-    if (searchForm.value.gender !== null && searchForm.value.gender !== undefined && searchForm.value.gender !== '') {
-      params.gender = searchForm.value.gender
-    }
     // 添加教师类型参数
     if (searchForm.value.teacherType !== null && searchForm.value.teacherType !== undefined && searchForm.value.teacherType !== '') {
       params.teacherType = searchForm.value.teacherType
     }
 
     logger.log('查询参数:', params)
-    const response = await queryPageApi(params)
+    // queryPageApi 的 teacherType 声明为 number，但后端与模板实际使用字符串枚举（COLLEGE/DEPARTMENT/COUNSELOR），断言保持运行时原样透传
+    const response = await queryPageApi(params as unknown as Parameters<typeof queryPageApi>[0])
     logger.log('查询结果响应:', response)
 
     //使用标准的响应格式
@@ -388,25 +536,28 @@ const queryPage = async () => {
       const dataList = response.data.rows || []
       const totalCount = response.data.total || 0
 
-      //添加院系和系名称到数据中
-      const enhancedData = dataList.map(teacher => {
+      //添加院系和系名称到数据中（api 行转本地 TeacherRow，兼容 createdTime/createTime 两种后端形态）
+      const enhancedData: TeacherRow[] = dataList.map(teacher => {
+        const t = teacher as unknown as TeacherRow
         //找到对应的院系，使用value而不是id进行匹配
-        const department = departments.value.find(d => String(d.value) === String(teacher.departmentId))
-        const division = divisions.value.find((d: any) => String(d.id) === String(teacher.divisionId))
+        const department = departments.value.find(d => String(d.value) === String(t.departmentId))
+        const division = divisions.value.find((d: DeptOption) => String(d.id) === String(t.divisionId))
+        const createdTime = t.createdTime ? t.createdTime : t.createTime
+        const updatedTime = t.updatedTime ? t.updatedTime : t.updateTime
         return {
-          ...teacher,
+          ...t,
           departmentName: department ? department.name : '未知学院',
           divisionName: division ? division.name : '-',
           // 确保日期字段名称与表格中使用的一致
-          createdTime: teacher.createdTime || teacher.createTime,
-          updatedTime: teacher.updatedTime || teacher.updateTime
+          createdTime: createdTime,
+          updatedTime: updatedTime
         }
       })
 
       tableData.value = enhancedData
       pagination.value.total = totalCount
       logger.log('处理后的数据列表:', tableData.value)
-      
+
       // 在下一个tick中，根据selectIds恢复选中状态
       nextTick(() => {
         if (tableData.value && tableData.value.length > 0) {
@@ -422,7 +573,7 @@ const queryPage = async () => {
       pagination.value.total = 0
       logger.log('无数据或响应格式不正确')
     }
-    
+
     // 直接使用后端返回的真实状态数据，不再应用本地存储的模拟状态
   } catch (error) {
     logger.error('查询教师列表失败:', error)
@@ -464,10 +615,10 @@ const clearAddTeacherForm = () => {
     id: '',
     teacherId: '',
     name: '',
-    gender: 1,
     departmentId: null,
     teacherType: 'DEPARTMENT',
-    phone: ''
+    phone: '',
+    email: ''
   }
 }
 
@@ -477,10 +628,10 @@ const clearEditTeacherForm = () => {
     id: '',
     teacherId: '',
     name: '',
-    gender: 1,
     departmentId: null,
     teacherType: 'DEPARTMENT',
-    phone: ''
+    phone: '',
+    email: ''
   }
 }
 
@@ -488,13 +639,13 @@ const clearEditTeacherForm = () => {
 const handleCancel = () => {
   // 重要：先关闭对话框
   dialogFormVisible.value = false
-  
+
   // 使用nextTick确保DOM已经更新，然后再执行清空操作
   nextTick(() => {
     // 1. 完全清空所有表单数据对象
     clearAddTeacherForm()
     clearEditTeacherForm()
-    
+
     // 2. 额外的保险措施：手动重置每个字段
     // 针对新增表单数据的额外清空
     if (addTeacher.value) {
@@ -504,6 +655,7 @@ const handleCancel = () => {
       addTeacher.value.departmentId = null
       addTeacher.value.teacherType = 'DEPARTMENT'
       addTeacher.value.phone = ''
+      addTeacher.value.email = ''
     }
 
     // 针对编辑表单数据的额外清空
@@ -514,8 +666,9 @@ const handleCancel = () => {
       editTeacher.value.departmentId = null
       editTeacher.value.teacherType = 'DEPARTMENT'
       editTeacher.value.phone = ''
+      editTeacher.value.email = ''
     }
-    
+
     // 3. 重置表单状态和校验
     if (addTeacherFormRef && addTeacherFormRef.value) {
       try {
@@ -524,7 +677,7 @@ const handleCancel = () => {
         logger.warn('重置新增表单失败:', error)
       }
     }
-    
+
     if (editTeacherFormRef && editTeacherFormRef.value) {
       try {
         editTeacherFormRef.value.resetFields()
@@ -532,7 +685,7 @@ const handleCancel = () => {
         logger.warn('重置编辑表单失败:', error)
       }
     }
-    
+
     logger.log('编辑框已关闭并完全清空数据')
   })
 }
@@ -545,6 +698,7 @@ const handleAddTeacher = () => {
   nextTick(() => {
     resetForm(addTeacherFormRef)
     dialogFormVisible.value = true
+    registerTeacherForm('新增教师')
   })
 }
 
@@ -552,11 +706,11 @@ const handleAddTeacher = () => {
 const handleUpdateTeacher = async (id) => {
   try {
     logger.log('开始获取教师详情，ID:', id)
-    
+
     // 1. 第一步：完全重置所有相关状态
     // 立即关闭对话框
     dialogFormVisible.value = false
-    
+
     // 强制清空表单数据对象，创建一个全新的对象
     editTeacher.value = {
       id: '',
@@ -565,9 +719,10 @@ const handleUpdateTeacher = async (id) => {
       departmentId: null,
       divisionId: null,
       teacherType: 'DEPARTMENT',
-      phone: ''
+      phone: '',
+      email: ''
     }
-    
+
     // 重置表单引用状态
     if (editTeacherFormRef.value) {
       try {
@@ -576,45 +731,49 @@ const handleUpdateTeacher = async (id) => {
         logger.warn('重置表单失败，但继续操作:', error)
       }
     }
-    
+
     // 2. 等待DOM更新完成
     await nextTick()
-    
+
     // 3. 获取新的教师数据
     const response = await queryInfoApi(id)
     logger.log('教师详情响应:', response)
 
     if (response && response.code === 200 && response.data) {
-      const teacherData = response.data
+      const teacherData = response.data as TeacherRow
       formTitle.value = '编辑教师'
-      
+
       logger.log('准备设置新的教师数据:', teacherData)
-      
+
       // 4. 使用强制更新的方式设置数据
-      // 强制替换整个对象，确保Vue能检测到变化
+      // 强制替换整个对象，确保Vue能检测到变化（保持原 `||` 回退与 toString 语义）
+      const deptRaw: unknown = teacherData.departmentId
+      const divRaw: unknown = teacherData.divisionId
       Object.assign(editTeacher.value, {
-        id: teacherData.id || '',
-        teacherUserId: teacherData.teacherUserId || '',
-        name: teacherData.name || '',
-        gender: teacherData.gender || 1,
-        departmentId: departments.value.length > 0 && teacherData.departmentId !== undefined ?
-          (typeof departments.value[0].value === 'number' ? Number(teacherData.departmentId) : teacherData.departmentId.toString()) :
+        id: teacherData.id ? teacherData.id : '',
+        teacherUserId: teacherData.teacherUserId ? teacherData.teacherUserId : '',
+        name: teacherData.name ? teacherData.name : '',
+        gender: teacherData.gender ? teacherData.gender : 1,
+        departmentId: departments.value.length > 0 && deptRaw !== undefined ?
+          (typeof departments.value[0].value === 'number' ? Number(deptRaw) : String(deptRaw)) :
           null,
-        divisionId: teacherData.divisionId != null ? String(teacherData.divisionId) : null,
-        teacherType: teacherData.teacherType || 'DEPARTMENT',
-        phone: teacherData.phone || ''
+        divisionId: divRaw != null ? String(divRaw) : null,
+        teacherType: teacherData.teacherType ? teacherData.teacherType : 'DEPARTMENT',
+        phone: teacherData.phone ? teacherData.phone : '',
+        email: teacherData.email ? teacherData.email : ''
       })
-      
+
       logger.log('设置后的departmentId类型:', typeof editTeacher.value.departmentId)
-      
+
       // 5. 再次等待DOM更新
       await nextTick()
-      
+
       logger.log('设置后的editTeacher数据:', editTeacher.value)
-      
+
       // 6. 最后显示对话框
       dialogFormVisible.value = true
-      
+      registerTeacherForm('编辑教师')
+
       // 7. 对话框显示后再次确保数据正确绑定
       nextTick(() => {
         logger.log('对话框已显示，最终绑定的数据:', editTeacher.value)
@@ -634,48 +793,55 @@ const handleUpdateTeacher = async (id) => {
 const saveTeacher = async () => {
   try {
     let formData, formRef, api
-    
+
     // 根据表单标题判断是新增还是编辑操作
     if (formTitle.value === '新增教师') {
       formData = addTeacher.value
       formRef = addTeacherFormRef
-      //新增操作 - 添加默认密码
-      api = addApi({ ...formData, password: '123456' })
+      // 初始密码由服务端生成，不能由前端指定。
+      api = () => addApi({ ...formData })
     } else {
       formData = editTeacher.value
       formRef = editTeacherFormRef
       // 更新操作
-      api = updateApi(formData)
+      api = () => updateApi(formData)
     }
-    
+
     // 增加更健壮的表单引用检查和处理
     if (!formRef) {
       logger.error('表单引用未定义', { formRef });
       ElMessage.error('表单引用不存在')
       return
     }
-    
+
     // 使用nextTick确保DOM已经更新
     await nextTick();
-    
+
     // 检查表单实例是否存在
     if (!formRef.value) {
       logger.error('表单组件未挂载', { formRef });
       ElMessage.error('表单组件尚未加载完成，请稍候重试')
       return
     }
-    
+
     // 执行表单验证
     await formRef.value.validate();
 
     logger.log('提交的教师数据:', formData)
-    const response = await api
+    const operation = formContext.beginFormOperation('admin:teacher')
+    const response = await api()
 
     // 增强数据结构兼容性处理
     if (response && response.code === 200) {
-      ElMessage.success(formTitle.value === '编辑教师' ? '更新成功' : '新增成功')
+      operation.complete({ status: 'saved', label: '教师信息已保存', url: '/admin/teacher-users' })
+
       dialogFormVisible.value = false
       queryPage() // 重新加载列表
+      if (formTitle.value === '编辑教师') {
+        ElMessage.success('更新成功')
+      } else {
+        ElMessage.success('新增成功')
+      }
     } else {
       ElMessage.error((formTitle.value === '编辑教师' ? '更新' : '新增') + '失败: ' + (response?.msg || '未知错误'))
     }
@@ -736,7 +902,8 @@ const delByIds = async () => {
       }
     )
 
-    const response = await batchDeleteApi(selectIds.value)
+    // 后端批量删除要 number[]，行 id 为 string|number，Number 转换后透传（后端 Long 兼容数字字符串）
+    const response = await batchDeleteApi(selectIds.value.map(id => Number(id)))
 
     if (response && response.code === 200) {
       ElMessage.success('删除成功')
@@ -771,14 +938,18 @@ const deleteAllTeachers = async () => {
       return
     }
 
-    const allTeachers = allTeachersResponse.data.rows || allTeachersResponse.data
+    const rawTeacherData: unknown = allTeachersResponse.data
+    // data 恒为 { rows, total }（getAllTeachers 经 getTeachers），兼容数组形态；可达路径下与原 `rows || data` 等价
+    const allTeachers: TeacherRow[] = Array.isArray(rawTeacherData)
+      ? (rawTeacherData as unknown as TeacherRow[])
+      : ((rawTeacherData as { rows?: TeacherRow[] } | null)?.rows ?? [])
     if (!allTeachers || allTeachers.length === 0) {
       ElMessage.success('当前没有教师用户数据')
       return
     }
 
-    // 提取所有教师的ID
-    const allTeacherIds = allTeachers.map(teacher => teacher.id)
+    // 提取所有教师的ID（后端要 number[]，Number 转换与后端 Long 兼容）
+    const allTeacherIds = allTeachers.map(teacher => Number(teacher.id))
 
     // 执行批量删除
     const deleteResponse = await batchDeleteApi(allTeacherIds)
@@ -799,7 +970,30 @@ const deleteAllTeachers = async () => {
   }
 }
 
-//显示重置密码对话框
+// 一键重置全部教师用户密码
+const resetAllTeacherPasswords = async (): Promise<void> => {
+  try {
+    await ElMessageBox.confirm(
+      '将把全部教师用户的登录密码统一重置为 123456，确定继续吗？',
+      '一键重置全部教师密码',
+      { type: 'warning', confirmButtonText: '确认重置', cancelButtonText: '取消' }
+    )
+    const response = await resetAllPasswordsApi()
+    if (response.code === 200) {
+      ElMessage.success('全部教师用户密码已重置为 123456')
+      queryPage()
+    } else {
+      ElMessage.error(response.msg || '一键重置全部教师用户密码失败')
+    }
+  } catch (error) {
+    if (error !== 'cancel') {
+      logger.error('一键重置全部教师用户密码失败:', error)
+      ElMessage.error('一键重置全部教师用户密码失败')
+    }
+  }
+}
+
+//显示单个教师重置密码对话框
 const showResetPasswordDialog = (row) => {
   resetPasswordUserId.value = row.id
   resetPasswordDialogVisible.value = true
@@ -808,12 +1002,16 @@ const showResetPasswordDialog = (row) => {
 //重置密码
 const resetUserPassword = async () => {
   try {
-    const response = await resetPasswordApi(resetPasswordUserId.value)
+    if (resetPasswordUserId.value === null || resetPasswordUserId.value === undefined) {
+      ElMessage.error('重置密码失败: 无效的用户ID')
+      return
+    }
+    const response = await resetPasswordApi(Number(resetPasswordUserId.value))
 
     // 增强数据结构兼容性处理
     if (response && response.code === 200) {
-      ElMessage.success('密码重置成功')
       resetPasswordDialogVisible.value = false
+      ElMessage.success('教师密码已重置为 123456')
     } else {
       ElMessage.error('密码重置失败: ' + (response?.msg || '未知错误'))
     }
@@ -827,24 +1025,24 @@ const resetUserPassword = async () => {
 const showImportDialog = () => {
   selectedFile.value = null
   importDialogVisible.value = true
-  
+
   // 不要在对话框刚显示时自动触发文件选择，让用户手动点击按钮
 }
 
 // 处理原生input文件选择
 const handleNativeFileChange = (e) => {
   logger.log('handleNativeFileChange called with:', e)
-  
+
   if (e.target && e.target.files && e.target.files.length > 0) {
     const file = e.target.files[0]
     const fileName = file.name.toLowerCase()
-    
+
     if (!fileName.endsWith('.xlsx') && !fileName.endsWith('.xls')) {
       ElMessage.error('请选择Excel文件(.xlsx或.xls格式)')
       e.target.value = ''
       return
     }
-    
+
     logger.log('Native selected file:', file)
     selectedFile.value = file
     logger.log('selectedFile after native selection:', selectedFile.value)
@@ -874,39 +1072,51 @@ const importExcel = async () => {
   try {
     // 直接传递文件对象给API，API内部会处理FormData
     const response = await importTeacherDataApi(selectedFile.value)
-    
+
     if (response && response.code === 200) {
-      // 获取导入结果数据
-      const importResult = response.data || {}
-      const successCount = importResult.successCount || 0
-      const failCount = importResult.failCount || 0
-      const failList = importResult.failList || []
-      
+      // 获取导入结果数据（data 为 unknown，用精确接口收窄；保持原 `||` 回退语义）
+      const rawImport: unknown = response.data
+      const importResult = (rawImport ? (rawImport as TeacherImportData) : {}) as TeacherImportData
+      const successRaw: unknown = importResult.successCount
+      const failRaw: unknown = importResult.failCount
+      const listRaw: unknown = importResult.failList
+      const successCount = successRaw ? Number(successRaw) : 0
+      const failCount = failRaw ? Number(failRaw) : 0
+      const failList: TeacherImportFailItem[] = Array.isArray(listRaw)
+        ? (listRaw as unknown as TeacherImportFailItem[])
+        : []
+
+      importDialogVisible.value = false
+      queryPage()
+      const credentials = readInitialCredentials(response.data)
+      if (credentials.length > 0) {
+        await showInitialCredentials(credentials)
+      }
+      if (successCount > credentials.length) {
+        ElMessage.warning('部分成功账号未返回初始凭据，请通过重置密码流程处理')
+      }
+
       // 构建导入结果消息
       let message = `导入完成，成功: ${successCount} 条，失败: ${failCount} 条`
-      
+
       // 如果有失败记录，显示失败详情
       if (failList.length > 0) {
         let errorDetails = '\n失败详情:\n'
         failList.forEach((fail, index) => {
-          errorDetails += `${index + 1}. 第${fail.rowNum}行: ${fail.errorMsg || '未知错误'}\n`
+          const rowNum: unknown = fail.rowNum
+          const errMsg: unknown = fail.errorMsg
+          errorDetails += `${index + 1}. 第${rowNum}行: ${errMsg ? String(errMsg) : '未知错误'}\n`
         })
-        
+
         // 显示包含详细信息的消息框
-        ElMessageBox.alert(message + errorDetails, '导入结果', {
+        await ElMessageBox.alert(message + errorDetails, '导入结果', {
           type: failCount > 0 ? 'warning' : 'success',
           confirmButtonText: '确定',
-          dangerouslyUseHTMLString: false,
-          callback: () => {
-            importDialogVisible.value = false
-            queryPage() // 重新加载列表
-          }
-        })
+          dangerouslyUseHTMLString: false
+        }).catch(() => undefined)
       } else {
         // 如果全部成功，显示成功消息
         ElMessage.success(message)
-        importDialogVisible.value = false
-        queryPage() // 重新加载列表
       }
     } else {
       ElMessage.error('导入失败: ' + (response?.msg || '未知错误'))
@@ -923,9 +1133,9 @@ const importExcel = async () => {
 const closeImportDialog = () => {
   selectedFile.value = null
   importDialogVisible.value = false
-  // 重置文件输入框
+  // 重置文件输入框（narrowing：仅 HTMLInputElement 有 value）
   const fileInput = document.querySelector('#excel-file')
-  if (fileInput) {
+  if (fileInput instanceof HTMLInputElement) {
     fileInput.value = ''
   }
 }
@@ -934,10 +1144,10 @@ const closeImportDialog = () => {
 // 下载导入模板
 const downloadTemplate = async (): Promise<void> => {
   try {
-    // 响应拦截器已返回 Blob
-    const blob = await request.get('/admin/teachers/import-template', {
+    // 响应拦截器已返回 Blob（类型声明为 ApiResult，运行时即 Blob，用断言保持运行时一致）
+    const blob = await request.get<Blob>('/admin/teachers/import-template', {
       responseType: 'blob'
-    })
+    }) as unknown as Blob
 
     // 创建下载链接
     const url = window.URL.createObjectURL(blob)
@@ -962,20 +1172,20 @@ const handleToggleStatus = async (id, currentStatus) => {
   const actualStatus = currentStatus ?? 1
   const newStatus = actualStatus === 1 ? 0 : 1
   const statusText = newStatus === 1 ? '启用' : '禁用'
-  
+
   try {
     await ElMessageBox.confirm(`确定要${statusText}该教师账户吗？`, '确认操作', {
       confirmButtonText: '确定',
       cancelButtonText: '取消',
       type: 'warning'
     })
-    
+
     // 调用后端API更新状态
     const response = await updateStatusApi(id, newStatus)
-    
+
     if (response && response.code === 200) {
       ElMessage.success(`${statusText}成功`)
-      
+
       // 在前端直接更新状态
       const teacherIndex = tableData.value.findIndex(item => item.id === id)
       // 状态更新成功后，重新加载列表以获取最新的真实数据
@@ -998,8 +1208,8 @@ const handleExportToExcel = async () => {
   try {
     ElMessage({ message: '正在准备导出数据...', type: 'info' })
 
-    // 响应拦截器已返回 Blob
-    const blob = await exportTeacherDataApi()
+    // 响应拦截器已返回 Blob（类型声明为 ApiResult，运行时即 Blob，用断言保持运行时一致）
+    const blob = await exportTeacherDataApi() as unknown as Blob
 
     const url = window.URL.createObjectURL(blob)
     const link = document.createElement('a')
@@ -1023,10 +1233,10 @@ const viewTeacherCourses = async (row) => {
     currentTeacherName.value = row.name
     currentTeacherId.value = row.id
     loading.value = true
-    
+
     // 移除课程相关代码
     teacherCourses.value = []
-    
+
     viewCoursesDialogVisible.value = true
   } catch (error) {
     logger.error('获取教师课程失败:', error)
@@ -1093,12 +1303,6 @@ onMounted(async () => {
               @keyup.enter="queryPage"
             ></el-input>
           </el-form-item>
-          <el-form-item label="性别">
-            <el-select v-model="searchForm.gender" placeholder="请选择性别" clearable>
-              <el-option label="男" :value="1"></el-option>
-              <el-option label="女" :value="2"></el-option>
-            </el-select>
-          </el-form-item>
           <el-form-item label="学院">
             <el-select v-model="searchForm.department" placeholder="请选择学院" clearable style="width: 150px;" filterable>
               <el-option v-for="department in departments" :key="department.value" :label="department.name" :value="department.value" />
@@ -1135,11 +1339,14 @@ onMounted(async () => {
     <el-card class="actions-card" shadow="never">
       <div class="actions-container">
         <div class="primary-actions">
-          <el-button v-if="authStore.hasPermission('user:teacher:add')" type="primary" @click="handleAddTeacher" class="action-btn primary">
+          <el-button v-if="authStore.hasPermission('user:teacher:add')" type="primary" data-agent-open @click="handleAddTeacher" class="action-btn primary">
             <el-icon><Plus /></el-icon>&nbsp;新增教师
           </el-button>
           <el-button v-if="authStore.hasPermission('user:teacher:delete')" type="danger" @click="delByIds" class="action-btn danger">
             <el-icon><Delete /></el-icon>&nbsp;批量删除
+          </el-button>
+          <el-button v-if="authStore.hasPermission('user:teacher:reset')" type="warning" @click="resetAllTeacherPasswords" class="action-btn warning">
+            <el-icon><Key /></el-icon>&nbsp;一键重置全部密码
           </el-button>
         </div>
         <div class="secondary-actions">
@@ -1178,11 +1385,6 @@ onMounted(async () => {
         <el-table-column type="index" label="序号" width="55" align="center" :index="(index) => (pagination.currentPage - 1) * pagination.pageSize + index + 1" />
         <el-table-column prop="teacherUserId" label="工号" align="center" width="150" />
         <el-table-column prop="name" label="姓名" align="center" width="120" />
-        <el-table-column prop="gender" label="性别" align="center" width="80">
-          <template #default="scope">
-            <span>{{ scope.row.gender === 1 ? '男' : scope.row.gender === 2 ? '女' : '-' }}</span>
-          </template>
-        </el-table-column>
         <el-table-column prop="departmentName" label="学院" align="center" width="150"/>
         <el-table-column prop="divisionName" label="系" align="center" width="150"/>
         <el-table-column prop="teacherType" label="身份" align="center" width="120">
@@ -1193,6 +1395,7 @@ onMounted(async () => {
           </template>
         </el-table-column>
         <el-table-column prop="phone" label="手机号" align="center" width="130" />
+        <el-table-column prop="email" label="邮箱" align="center" width="200" show-overflow-tooltip />
         <el-table-column prop="status" label="状态" width="100" align="center">
           <template #default="scope">
             <el-tag :type="scope.row.status === 1 ? 'success' : 'danger'" size="small" class="status-tag">
@@ -1204,13 +1407,13 @@ onMounted(async () => {
         <el-table-column prop="createTime" label="创建时间" width="210" align="center" :formatter="formatDate" />    
         <el-table-column label="操作" align="center" width="270" fixed="right">
           <template #default="scope">
-            <div class="action-buttons">
+            <MobileMoreActions>
               <el-tooltip v-if="authStore.hasPermission('user:teacher:edit')" content="编辑" placement="top">
                 <el-button type="primary" size="small" @click="handleUpdateTeacher(scope.row.id)" class="table-btn edit">
                   <el-icon><Edit /></el-icon>
                 </el-button>
               </el-tooltip>
-              <el-tooltip v-if="authStore.hasPermission('user:teacher:reset')" content="重置密码" placement="top">
+              <el-tooltip v-if="authStore.hasPermission('user:teacher:reset')" content="重置该教师密码" placement="top">
                 <el-button type="warning" size="small" @click="showResetPasswordDialog(scope.row)" class="table-btn reset">
                   <el-icon><Refresh /></el-icon>
                 </el-button>
@@ -1230,7 +1433,7 @@ onMounted(async () => {
                   <el-icon><Switch /></el-icon>
                 </el-button>
               </el-tooltip>
-            </div>
+            </MobileMoreActions>
           </template>
         </el-table-column>
       </el-table>
@@ -1267,12 +1470,6 @@ onMounted(async () => {
           <el-form-item label="姓名" prop="name">
             <el-input v-model="addTeacher.name" placeholder="请输入姓名" />
           </el-form-item>
-          <el-form-item label="性别" prop="gender">
-            <el-radio-group v-model="addTeacher.gender">
-              <el-radio :label="1">男</el-radio>
-              <el-radio :label="2">女</el-radio>
-            </el-radio-group>
-          </el-form-item>
           <el-form-item label="身份" prop="teacherType">
             <el-select v-model="addTeacher.teacherType" placeholder="请选择身份">
               <el-option label="学院教师" value="COLLEGE" />
@@ -1294,8 +1491,11 @@ onMounted(async () => {
           <el-form-item label="手机号" prop="phone">
             <el-input v-model="addTeacher.phone" placeholder="请输入手机号（非必填）" />
           </el-form-item>
+          <el-form-item label="邮箱" prop="email">
+            <el-input v-model="addTeacher.email" placeholder="请输入邮箱（非必填）" />
+          </el-form-item>
           <div class="form-tip">
-            提示：密码将自动设置为123456，无需手动输入
+            提示：初始密码默认为 123456
           </div>
         </el-form>
       </template>
@@ -1314,12 +1514,6 @@ onMounted(async () => {
           </el-form-item>
           <el-form-item label="姓名" prop="name">
             <el-input v-model="editTeacher.name" placeholder="请输入姓名" />
-          </el-form-item>
-          <el-form-item label="性别" prop="gender">
-            <el-radio-group v-model="editTeacher.gender">
-              <el-radio :label="1">男</el-radio>
-              <el-radio :label="2">女</el-radio>
-            </el-radio-group>
           </el-form-item>
           <el-form-item label="学院" prop="departmentId">
             <el-select v-model="editTeacher.departmentId" placeholder="请选择学院" filterable>
@@ -1342,8 +1536,11 @@ onMounted(async () => {
           <el-form-item label="手机号" prop="phone">
             <el-input v-model="editTeacher.phone" placeholder="请输入手机号（非必填）" />
           </el-form-item>
+          <el-form-item label="邮箱" prop="email">
+            <el-input v-model="editTeacher.email" placeholder="请输入邮箱（非必填）" />
+          </el-form-item>
           <div class="form-tip">
-            提示：密码将自动设置为123456，无需手动输入
+            提示：编辑资料不会修改登录密码
           </div>
         </el-form>
       </template>
@@ -1359,8 +1556,8 @@ onMounted(async () => {
     <!-- 重置密码对话框 -->
     <el-dialog v-model="resetPasswordDialogVisible" title="重置密码" width="400px" class="reset-dialog">
       <div class="reset-content">
-        <p>密码将被重置为: <span class="password-text">123456</span></p>
-        <p class="reset-tip">请确认是否继续重置密码</p>
+        <p>密码将统一重置为 123456。</p>
+        <p class="reset-tip">确认后教师登录密码将重置为 123456</p>
       </div>
       <template #footer>
         <el-button @click="resetPasswordDialogVisible = false" class="cancel-btn">取消</el-button>
@@ -1396,7 +1593,7 @@ onMounted(async () => {
         <el-button type="primary" @click="importExcel" :loading="importLoading" class="confirm-btn">导入</el-button>
       </template>
     </el-dialog>
-    
+
     <!-- 查看教师课程对话框 -->
     <el-dialog 
       v-model="viewCoursesDialogVisible" 
@@ -1807,7 +2004,7 @@ onMounted(async () => {
   .search-row {
     flex-wrap: wrap;
   }
-  
+
   .search-actions {
     margin-left: 0;
     width: 100%;
@@ -1819,51 +2016,51 @@ onMounted(async () => {
   .teacher-management-container {
     padding: 15px;
   }
-  
+
   .page-header {
     flex-direction: column;
     text-align: center;
     padding: 20px;
   }
-  
+
   .header-illustration {
     margin-top: 15px;
   }
-  
+
   .actions-container {
     flex-direction: column;
     gap: 12px;
     align-items: stretch;
   }
-  
+
   .primary-actions,
   .secondary-actions {
     justify-content: center;
   }
-  
+
   .action-buttons {
     flex-wrap: wrap;
     justify-content: center;
   }
-  
+
   .search-row {
     flex-direction: column;
     gap: 12px;
   }
-  
+
   .search-actions {
     width: 100%;
     justify-content: center;
   }
-  
+
   .data-table {
     font-size: 12px;
   }
-  
+
   .action-buttons {
     gap: 4px;
   }
-  
+
   .table-btn {
     padding: 4px 6px;
   }

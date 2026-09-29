@@ -111,6 +111,7 @@ export interface CompanyUser {
   address: string
   introduction?: string
   companyTag?: string
+  industry?: string
   status: number
   auditStatus?: number
   auditTime?: string

@@ -9,6 +9,8 @@ export interface CoreMetrics {
   approvalCountChange: number
   resourceDownloads: number
   resourceDownloadsChange: number
+  remainingPositionCount: number
+  unplacedStudentCount: number
 }
 
 export interface CompanyTrend {

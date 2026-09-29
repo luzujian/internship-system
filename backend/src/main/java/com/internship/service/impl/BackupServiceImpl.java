@@ -20,24 +20,31 @@ import org.springframework.transaction.annotation.Transactional;
 
 import javax.sql.DataSource;
 import java.sql.Connection;
+import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.BufferedReader;
+import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.text.SimpleDateFormat;
+import java.security.MessageDigest;
 import java.util.*;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 import java.util.regex.Matcher;
+import java.util.zip.GZIPInputStream;
 
 import jakarta.annotation.PostConstruct;
 
 @Slf4j
 @Service
 public class BackupServiceImpl implements BackupService {
+    @Autowired
+    private com.internship.config.LocalRuntimeGuard localRuntimeGuard;
 
     private final ReentrantLock backupLock = new ReentrantLock();
     private volatile boolean autoBackupExecutedToday = false;
@@ -83,12 +90,8 @@ public class BackupServiceImpl implements BackupService {
 
     @Value("${backup.storage.type:OSS}")
     private String storageType;
-
-    /**
-     * 是否为 MariaDB 版 mysqldump（影响 SSL 参数选择）
-     * null 表示尚未检测
-     */
-    private Boolean isMariaDB = null;
+    @Value("${backup.tls.ca:}")
+    private String backupTlsCa;
 
     @Value("${backup.storage.oss.enabled:true}")
     private Boolean ossEnabled;
@@ -98,6 +101,10 @@ public class BackupServiceImpl implements BackupService {
 
     @PostConstruct
     public void init() {
+        if (localRuntimeGuard != null && localRuntimeGuard.isLocal()) {
+            log.info("本地验收环境跳过备份同步，不访问外部对象存储");
+            return;
+        }
         log.info("备份存储类型: {}, OSS启用: {}", storageType, ossEnabled);
         if ("OSS".equalsIgnoreCase(storageType) && ossEnabled) {
             log.info("备份文件将存储在阿里云OSS上");
@@ -162,7 +169,7 @@ public class BackupServiceImpl implements BackupService {
             log.info("开始上传备份文件到OSS");
             byte[] fileContent = Files.readAllBytes(Paths.get(finalBackupPath));
             String ossObjectName = "backups/" + backupName;
-            String ossUrl = aliyunOSSOperator.uploadWithObjectName(fileContent, ossObjectName);
+            String ossUrl = storeBackup(fileContent, ossObjectName);
             log.info("备份文件上传到OSS成功: {}", ossUrl);
 
             BackupRecord record = new BackupRecord();
@@ -224,9 +231,20 @@ public class BackupServiceImpl implements BackupService {
             }
 
             log.info("从OSS下载备份文件: {}", record.getBackupPath());
-            byte[] backupContent = aliyunOSSOperator.downloadFile(record.getBackupPath());
+            byte[] backupContent = readBackup(record.getBackupPath());
+            if (record.getChecksum() == null || record.getChecksum().isBlank()
+                    || backupContent == null || backupContent.length == 0
+                    || (record.getBackupSize() != null && record.getBackupSize() != backupContent.length)
+                    || !record.getChecksum().equals(checksumOfBackup(backupContent, Boolean.TRUE.equals(record.getIsCompressed())))) {
+                throw new IllegalStateException("备份完整性校验失败，已拒绝恢复");
+            }
+            if (Boolean.TRUE.equals(record.getIsCompressed())) {
+                try (InputStream input = new GZIPInputStream(new ByteArrayInputStream(backupContent))) {
+                    backupContent = input.readAllBytes();
+                }
+            }
             
-            String localBackupPath = System.getProperty("java.io.tmpdir") + File.separator + record.getBackupName();
+            String localBackupPath = Files.createTempFile("verified-restore-", ".sql").toString();
             Files.write(Paths.get(localBackupPath), backupContent);
             localBackupFile = new File(localBackupPath);
             
@@ -350,7 +368,7 @@ public class BackupServiceImpl implements BackupService {
             if (record != null) {
                 try {
                     log.info("从OSS删除备份文件: {}", record.getBackupPath());
-                    aliyunOSSOperator.deleteFile(record.getBackupPath());
+                    deleteStoredBackup(record.getBackupPath());
                     log.info("OSS备份文件删除成功");
                 } catch (Exception e) {
                     log.warn("从OSS删除备份文件失败: {}", e.getMessage());
@@ -368,8 +386,9 @@ public class BackupServiceImpl implements BackupService {
     public void updateBackupSchedule(Map<String, Object> schedule) {
         try {
             BackupSchedule existingSchedule = backupScheduleMapper.getSchedule();
-            
-            if (existingSchedule == null) {
+            boolean isNew = (existingSchedule == null);
+
+            if (isNew) {
                 existingSchedule = new BackupSchedule();
             }
             
@@ -421,8 +440,13 @@ public class BackupServiceImpl implements BackupService {
                 existingSchedule.setRemark((String) schedule.get("remark"));
             }
             
-            backupScheduleMapper.updateSchedule(existingSchedule);
-            log.info("自动备份策略更新成功: {}", schedule);
+            if (isNew) {
+                backupScheduleMapper.insertSchedule(existingSchedule);
+                log.info("自动备份策略创建成功: {}", schedule);
+            } else {
+                backupScheduleMapper.updateSchedule(existingSchedule);
+                log.info("自动备份策略更新成功: {}", schedule);
+            }
         } catch (Exception e) {
             log.error("更新自动备份策略失败: {}", e.getMessage(), e);
             throw new RuntimeException("更新自动备份策略失败: " + e.getMessage(), e);
@@ -470,11 +494,16 @@ public class BackupServiceImpl implements BackupService {
 
     @Override
     @Scheduled(cron = "0 0/5 * * * ?")
-    @Transactional
     public void autoBackup() {
+        // JVM 内互斥：已有备份在跑则直接跳过，防止窗口内重入导致一天多份
+        if (!backupLock.tryLock()) {
+            log.debug("已有备份任务正在执行，跳过本次自动备份检查");
+            return;
+        }
         BackupAuditLog auditLog = null;
         long startTime = System.currentTimeMillis();
-        
+        boolean claimed = false;
+
         try {
             BackupSchedule schedule = backupScheduleMapper.getSchedule();
             if (schedule == null || !schedule.getEnabled()) {
@@ -528,6 +557,16 @@ public class BackupServiceImpl implements BackupService {
                 return;
             }
 
+            // 原子占位：先标记今天已执行，防止 5 分钟窗口内下一次 tick 重复进入。
+            // 此处无方法级事务，UPDATE 立即提交，多实例也可见。
+            int updated = backupScheduleMapper.claimTodayExecution();
+            if (updated == 0) {
+                log.debug("今日已执行过自动备份，跳过执行");
+                return;
+            }
+            claimed = true;
+            autoBackupExecutedToday = true;
+
             log.info("开始执行自动备份，频率: {}, 备份时间: {}", frequency, backupTime);
             auditLog = backupAuditService.startAuditLog("AUTO_BACKUP", "自动备份 - " + frequency, "system", "127.0.0.1");
             
@@ -576,7 +615,7 @@ public class BackupServiceImpl implements BackupService {
             log.info("开始上传自动备份文件到OSS");
             byte[] fileContent = Files.readAllBytes(Paths.get(finalBackupPath));
             String ossObjectName = "backups/" + backupName;
-            String ossUrl = aliyunOSSOperator.uploadWithObjectName(fileContent, ossObjectName);
+            String ossUrl = storeBackup(fileContent, ossObjectName);
             log.info("自动备份文件上传到OSS成功: {}", ossUrl);
 
             BackupRecord record = new BackupRecord();
@@ -596,12 +635,8 @@ public class BackupServiceImpl implements BackupService {
             
             backupRecordMapper.insert(record);
             log.info("自动备份记录保存成功，ID: {}", record.getId());
-            
-            autoBackupExecutedToday = true;
-            
-            schedule.setLastExecutionDate(new Date());
-            backupScheduleMapper.updateSchedule(schedule);
-            log.info("更新自动备份最后执行日期: {}", new SimpleDateFormat("yyyy-MM-dd").format(new Date()));
+
+            log.info("自动备份占位已在开始前标记，日期: {}", new SimpleDateFormat("yyyy-MM-dd").format(new Date()));
             
             long duration = System.currentTimeMillis() - startTime;
             backupAuditService.completeAuditLog(auditLog.getId(), 1, null, duration);
@@ -621,6 +656,18 @@ public class BackupServiceImpl implements BackupService {
             if (auditLog != null) {
                 backupAuditService.completeAuditLog(auditLog.getId(), 2, errorMsg, duration);
             }
+            // 失败回滚占位，允许窗口内下一次 tick 重试
+            if (claimed) {
+                try {
+                    backupScheduleMapper.clearTodayExecution();
+                    autoBackupExecutedToday = false;
+                    log.info("已回滚自动备份占位，允许重试");
+                } catch (Exception ex) {
+                    log.warn("回滚自动备份占位失败: {}", ex.getMessage());
+                }
+            }
+        } finally {
+            backupLock.unlock();
         }
     }
 
@@ -682,15 +729,7 @@ public class BackupServiceImpl implements BackupService {
             
             for (BackupRecord record : expiredRecords) {
                 try {
-                    File backupFile = new File(record.getBackupPath());
-                    if (backupFile.exists()) {
-                        boolean deleted = backupFile.delete();
-                        if (!deleted) {
-                            log.warn("备份文件删除失败: {}", record.getBackupPath());
-                            failCount++;
-                            continue;
-                        }
-                    }
+                    deleteStoredBackup(record.getBackupPath());
                     deletedIds.add(record.getId());
                     successCount++;
                     log.info("过期备份删除成功: {}", record.getBackupName());
@@ -706,8 +745,8 @@ public class BackupServiceImpl implements BackupService {
             }
             
             long duration = System.currentTimeMillis() - startTime;
-            String operationDetail = String.format("清理过期备份完成，成功: %d, 失败: %d", successCount, failCount);
-            backupAuditService.completeAuditLog(auditLog.getId(), 1, null, duration);
+            String error = failCount > 0 ? String.format("%d 个过期备份删除失败", failCount) : null;
+            backupAuditService.completeAuditLog(auditLog.getId(), failCount > 0 ? 2 : 1, error, duration);
             log.info("过期备份清理完成，成功: {}, 失败: {}, 耗时: {}ms", successCount, failCount, duration);
             
         } catch (Exception e) {
@@ -873,26 +912,51 @@ public class BackupServiceImpl implements BackupService {
     }
 
     /**
-     * 检测 mysqldump 是否为 MariaDB 版本，用于选择兼容的 SSL 参数
-     * MySQL: --ssl-mode=DISABLED
-     * MariaDB: --ssl=0
+     * 分别检测 dump 和 restore 客户端，选择验证服务器身份的 TLS 参数。
      */
-    private boolean isMariaDBMysqldump() {
-        if (isMariaDB != null) {
-            return isMariaDB;
+    private boolean isMariaDBClient(String executable) throws Exception {
+        Process process = new ProcessBuilder(executable, "--version").redirectErrorStream(true).start();
+        if (!process.waitFor(10, TimeUnit.SECONDS)) {
+            process.destroyForcibly();
+            throw new IllegalStateException("无法确认数据库客户端类型");
         }
-        try {
-            Process process = Runtime.getRuntime().exec(new String[]{"mysqldump", "--version"});
-            BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
-            String line = reader.readLine();
-            process.waitFor();
-            isMariaDB = line != null && line.toLowerCase().contains("mariadb");
-            log.info("mysqldump 类型检测: {}", isMariaDB ? "MariaDB" : "MySQL");
-        } catch (Exception e) {
-            log.warn("无法检测 mysqldump 类型，默认按 MySQL 处理: {}", e.getMessage());
-            isMariaDB = false;
+        String version = new String(process.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+        if (process.exitValue() != 0) throw new IllegalStateException("数据库客户端检测失败");
+        return version.toLowerCase(java.util.Locale.ROOT).contains("mariadb");
+    }
+
+    private String storeBackup(byte[] content, String objectName) throws Exception {
+        if ("OSS".equalsIgnoreCase(storageType)) return aliyunOSSOperator.uploadWithObjectName(content, objectName);
+        if (!"LOCAL".equalsIgnoreCase(storageType)) throw new IllegalStateException("未知备份存储类型");
+        java.nio.file.Path root = localBackupRoot();
+        Files.createDirectories(root);
+        java.nio.file.Path stored = Files.createTempFile(root, "backup-", ".bin");
+        Files.write(stored, content);
+        return stored.toUri().toString();
+    }
+
+    private java.nio.file.Path localBackupRoot() {
+        if (backupPath == null || backupPath.isBlank() || "OSS".equalsIgnoreCase(backupPath)) {
+            throw new IllegalStateException("LOCAL 备份必须配置有效的 backup.path");
         }
-        return isMariaDB;
+        return Paths.get(backupPath).toAbsolutePath().normalize();
+    }
+
+    private java.nio.file.Path checkedLocalBackup(String location) throws Exception {
+        java.nio.file.Path path = Paths.get(java.net.URI.create(location)).toRealPath();
+        java.nio.file.Path root = localBackupRoot().toRealPath();
+        if (!path.startsWith(root) || !Files.isRegularFile(path)) throw new SecurityException("备份文件不在配置目录内");
+        return path;
+    }
+
+    @Override
+    public byte[] readBackup(String location) throws Exception {
+        return location.startsWith("file:") ? Files.readAllBytes(checkedLocalBackup(location)) : aliyunOSSOperator.downloadFile(location);
+    }
+
+    private void deleteStoredBackup(String location) throws Exception {
+        if (location.startsWith("file:")) Files.delete(checkedLocalBackup(location));
+        else aliyunOSSOperator.deleteFile(location);
     }
 
     private File createTempConfigFile() throws Exception {
@@ -910,6 +974,14 @@ public class BackupServiceImpl implements BackupService {
             writer.write("password=" + datasourcePassword + "\n");
             writer.write("host=" + host + "\n");
             writer.write("port=" + port + "\n");
+            if (backupTlsCa != null && !backupTlsCa.isBlank()) {
+                String ca = Paths.get(backupTlsCa).toAbsolutePath().toString().replace('\\', '/');
+                if (ca.contains("\n") || ca.contains("\r") || ca.contains("\"")) throw new IllegalArgumentException("无效的备份 TLS CA 路径");
+                writer.write("ssl-ca=\"" + ca + "\"\n");
+            }
+        } catch (Exception e) {
+            if (!tempFile.delete()) log.warn("未能清理创建失败的备份凭据临时文件");
+            throw e;
         }
         
         tempFile.setReadable(true, true);
@@ -935,7 +1007,7 @@ public class BackupServiceImpl implements BackupService {
     private void executeMysqlDump(String dbName, String outputPath) throws Exception {
         log.info("准备执行mysqldump命令，数据库: {}, 输出文件: {}", dbName, outputPath);
 
-        String sslFlag = isMariaDBMysqldump() ? "--ssl=0" : "--ssl-mode=DISABLED";
+        String sslFlag = isMariaDBClient("mysqldump") ? "--ssl-verify-server-cert" : "--ssl-mode=VERIFY_IDENTITY";
         // 使用临时配置文件传递密码，避免密码暴露在进程命令行
         File configFile = createTempConfigFile();
         try {
@@ -948,9 +1020,11 @@ public class BackupServiceImpl implements BackupService {
                 "--quick",
                 "--lock-tables=false",
                 "--routines",
-                "--triggers",
-                "--events",
-                "--add-drop-table",
+            "--triggers",
+            // 去掉 --events：该选项需要 PROCESS 权限(dump tablespaces) + SHOW EVENTS 权限，
+            // 业务账号 user 仅有 CRUD 权限会导致 mysqldump 退出码 2 备份失败。
+            // 本系统定时任务均在 Java @Scheduled 层，数据库无 MySQL events，去掉无损。
+            "--add-drop-table",
                 "--complete-insert",
                 "--extended-insert",
                 "--set-charset",
@@ -1001,44 +1075,47 @@ public class BackupServiceImpl implements BackupService {
     private void executeMysqlRestore(String dbName, String inputPath) throws Exception {
         log.info("准备执行mysql恢复命令，数据库: {}, 备份文件: {}", dbName, inputPath);
 
-        String sslFlag = isMariaDBMysqldump() ? "--ssl=0" : "--ssl-mode=DISABLED";
+        String sslFlag = isMariaDBClient("mysql") ? "--ssl-verify-server-cert" : "--ssl-mode=VERIFY_IDENTITY";
         File configFile = createTempConfigFile();
+        try {
+            String[] command = {
+                "mysql",
+                "--defaults-file=" + configFile.getAbsolutePath(),
+                sslFlag,
+                dbName
+            };
 
-        String[] command = {
-            "mysql",
-            "--defaults-file=" + configFile.getAbsolutePath(),
-            sslFlag,
-            dbName,
-            "--force",
-            "--verbose"
-        };
+            log.info("执行mysql命令: mysql --defaults-file=*** {} < {}",
+                dbName, inputPath);
 
-        log.info("执行mysql命令: mysql --defaults-file=*** {} --force --verbose < {}", 
-            dbName, inputPath);
+            ProcessBuilder processBuilder = new ProcessBuilder(command);
+            processBuilder.redirectInput(new File(inputPath));
+            processBuilder.redirectErrorStream(true);
+            Process process = processBuilder.start();
 
-        ProcessBuilder processBuilder = new ProcessBuilder(command);
-        processBuilder.redirectInput(new File(inputPath));
-        processBuilder.redirectErrorStream(true);
-        Process process = processBuilder.start();
+            BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
+            String line;
+            StringBuilder output = new StringBuilder();
+            while ((line = reader.readLine()) != null) {
+                output.append(line).append("\n");
+                log.debug("mysql恢复输出: {}", line);
+            }
 
-        BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
-        String line;
-        StringBuilder output = new StringBuilder();
-        while ((line = reader.readLine()) != null) {
-            output.append(line).append("\n");
-            log.debug("mysql恢复输出: {}", line);
+            int exitCode = process.waitFor();
+            log.info("mysql恢复命令执行完成，退出码: {}", exitCode);
+
+            if (exitCode != 0) {
+                String error = output.toString();
+                log.error("mysql恢复失败，退出码: {}, 输出: {}", exitCode, error);
+                throw new RuntimeException("mysql恢复失败，退出码: " + exitCode + ", 错误信息: " + error);
+            }
+
+            log.info("数据恢复成功");
+        } finally {
+            if (configFile.exists() && !configFile.delete()) {
+                log.warn("未能立即清理恢复凭据临时文件");
+            }
         }
-
-        int exitCode = process.waitFor();
-        log.info("mysql恢复命令执行完成，退出码: {}", exitCode);
-
-        if (exitCode != 0) {
-            String error = output.toString();
-            log.error("mysql恢复失败，退出码: {}, 输出: {}", exitCode, error);
-            throw new RuntimeException("mysql恢复失败，退出码: " + exitCode + ", 错误信息: " + error);
-        }
-
-        log.info("数据恢复成功");
     }
 
     @Override
@@ -1104,7 +1181,7 @@ public class BackupServiceImpl implements BackupService {
             log.info("开始上传增量备份文件到OSS");
             byte[] fileContent = Files.readAllBytes(Paths.get(finalBackupPath));
             String ossObjectName = "backups/" + backupName;
-            String ossUrl = aliyunOSSOperator.uploadWithObjectName(fileContent, ossObjectName);
+            String ossUrl = storeBackup(fileContent, ossObjectName);
             log.info("增量备份文件上传到OSS成功: {}", ossUrl);
 
             BackupRecord record = new BackupRecord();
@@ -1156,33 +1233,47 @@ public class BackupServiceImpl implements BackupService {
                 return false;
             }
 
-            String backupPath = record.getBackupPath();
-            File backupFile = new File(backupPath);
-            
-            if (!backupFile.exists()) {
-                log.error("备份文件不存在: {}", backupPath);
+            if (record.getChecksum() == null || record.getChecksum().isBlank()) {
+                log.error("备份缺少校验和，ID: {}", id);
                 return false;
             }
 
-            if (backupFile.length() == 0) {
-                log.error("备份文件为空: {}", backupPath);
+            byte[] backupContent = readBackup(record.getBackupPath());
+            if (backupContent == null || backupContent.length == 0) {
+                log.error("备份文件为空，ID: {}", id);
                 return false;
             }
 
-            if (record.getChecksum() != null && !record.getChecksum().isEmpty()) {
-                boolean isValid = BackupUtils.verifyChecksum(backupPath, record.getChecksum());
-                if (!isValid) {
-                    log.error("备份文件校验失败，校验和不匹配");
-                    return false;
-                }
+            if (record.getBackupSize() != null && backupContent.length != record.getBackupSize()) {
+                log.error("备份文件大小不匹配，ID: {}", id);
+                return false;
             }
 
-            log.info("备份文件验证成功，ID: {}, 路径: {}", id, backupPath);
-            return true;
+            // Existing compressed records store the checksum of the SQL before compression.
+            String checksum = checksumOfBackup(backupContent, Boolean.TRUE.equals(record.getIsCompressed()));
+            boolean valid = checksum.equals(record.getChecksum());
+            if (!valid) {
+                log.error("备份文件校验失败，校验和不匹配，ID: {}", id);
+            }
+            return valid;
         } catch (Exception e) {
             log.error("验证备份失败: {}", e.getMessage(), e);
             return false;
         }
+    }
+
+    private String checksumOfBackup(byte[] content, boolean compressed) throws Exception {
+        MessageDigest digest = MessageDigest.getInstance("SHA-256");
+        try (InputStream input = compressed
+                ? new GZIPInputStream(new ByteArrayInputStream(content))
+                : new ByteArrayInputStream(content)) {
+            byte[] buffer = new byte[8192];
+            int count;
+            while ((count = input.read(buffer)) != -1) {
+                digest.update(buffer, 0, count);
+            }
+        }
+        return HexFormat.of().formatHex(digest.digest());
     }
 
     private String extractTableListFromBackup(String backupFilePath) throws Exception {

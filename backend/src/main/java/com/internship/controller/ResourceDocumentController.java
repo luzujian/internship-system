@@ -10,6 +10,7 @@ import com.internship.mapper.ResourceViewRecordMapper;
 import com.internship.service.ResourceDocumentService;
 import com.internship.service.UserService;
 import com.internship.utils.AliyunOSSOperator;
+import com.internship.utils.CurrentHolder;
 import com.internship.utils.JwtUtils;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
@@ -19,6 +20,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -35,6 +37,10 @@ import java.util.*;
 @RestController
 @RequestMapping("/api/resource-documents")
 public class ResourceDocumentController {
+
+    private static final Set<String> RESOURCE_READ_ROLES = Set.of(
+            "ROLE_ADMIN", "ROLE_TEACHER", "ROLE_TEACHER_COLLEGE",
+            "ROLE_TEACHER_DEPARTMENT", "ROLE_TEACHER_COUNSELOR", "ROLE_STUDENT");
 
     @Autowired
     private ResourceDocumentService resourceDocumentService;
@@ -75,9 +81,11 @@ public class ResourceDocumentController {
     @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_TEACHER', 'ROLE_TEACHER_COLLEGE', 'ROLE_TEACHER_DEPARTMENT', 'ROLE_TEACHER_COUNSELOR', 'ROLE_STUDENT')")
     public Result getAllResourceDocuments() {
         log.info("获取所有资源文档列表");
+        boolean student = "ROLE_STUDENT".equals(requireReaderRole());
         try {
-            List<ResourceDocument> resourceDocuments = resourceDocumentService.findAll();
-            return Result.success(resourceDocuments);
+            List<ResourceDocument> resourceDocuments = student
+                    ? resourceDocumentService.findPublished() : resourceDocumentService.findAll();
+            return Result.success(readerVisibleDocuments(resourceDocuments));
         } catch (Exception e) {
             log.error("获取资源文档列表失败：{}", e.getMessage(), e);
             return Result.error("获取资源文档列表失败：" + e.getMessage());
@@ -91,9 +99,10 @@ public class ResourceDocumentController {
     @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_TEACHER', 'ROLE_TEACHER_COLLEGE', 'ROLE_TEACHER_DEPARTMENT', 'ROLE_TEACHER_COUNSELOR', 'ROLE_STUDENT')")
     public Result getPublishedResourceDocuments() {
         log.info("获取已发布的资源文档列表");
+        boolean student = "ROLE_STUDENT".equals(requireReaderRole());
         try {
             List<ResourceDocument> resourceDocuments = resourceDocumentService.findPublished();
-            return Result.success(resourceDocuments);
+            return Result.success(readerVisibleDocuments(resourceDocuments));
         } catch (Exception e) {
             log.error("获取已发布资源文档列表失败：{}", e.getMessage(), e);
             return Result.error("获取已发布资源文档列表失败：" + e.getMessage());
@@ -104,10 +113,14 @@ public class ResourceDocumentController {
     @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_TEACHER', 'ROLE_TEACHER_COLLEGE', 'ROLE_TEACHER_DEPARTMENT', 'ROLE_TEACHER_COUNSELOR', 'ROLE_STUDENT')")
     public Result getResourceDocumentById(@PathVariable Long id) {
         log.info("根据 ID 获取资源文档：{}", id);
+        boolean student = "ROLE_STUDENT".equals(requireReaderRole());
         try {
             ResourceDocument resourceDocument = resourceDocumentService.findById(id);
             if (resourceDocument == null) {
                 return Result.error("资源文档不存在");
+            }
+            if (!isVisibleToReader(resourceDocument)) {
+                throw new AccessDeniedException("无权访问该资源文档");
             }
             // 同一用户只计一次查看
             if (!hasResourceActionRecord(id, "view")) {
@@ -115,6 +128,8 @@ public class ResourceDocumentController {
                 saveResourceActionRecord(id, "view");
             }
             return Result.success(resourceDocument);
+        } catch (AccessDeniedException e) {
+            throw e;
         } catch (Exception e) {
             log.error("获取资源文档详情失败：{}", e.getMessage(), e);
             return Result.error("获取资源文档详情失败：" + e.getMessage());
@@ -122,7 +137,7 @@ public class ResourceDocumentController {
     }
 
     @GetMapping("/page")
-    @PreAuthorize("hasAuthority('resource:view')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'TEACHER', 'TEACHER_COLLEGE', 'TEACHER_DEPARTMENT', 'TEACHER_COUNSELOR') and hasAuthority('resource:view')")
     public Result getResourceDocumentsByPage(
             @RequestParam(defaultValue = "1") Integer page,
             @RequestParam(defaultValue = "10") Integer pageSize,
@@ -132,7 +147,9 @@ public class ResourceDocumentController {
         log.info("分页查询资源文档，页码：{}, 每页大小：{}, 标题：{}, 状态：{}, 发布人身份：{}",
                 page, pageSize, title, status, publisherRole);
         try {
-            return Result.success(resourceDocumentService.findPage(page, pageSize, title, status, publisherRole));
+            return Result.success("ROLE_ADMIN".equals(requireReaderRole())
+                    ? resourceDocumentService.findPage(page, pageSize, title, status, publisherRole)
+                    : resourceDocumentService.findTeacherPage(page, pageSize, title, status, publisherRole, CurrentHolder.getUserId(), "all"));
         } catch (Exception e) {
             log.error("分页查询资源文档失败：{}", e.getMessage(), e);
             return Result.error("分页查询资源文档失败：" + e.getMessage());
@@ -141,7 +158,7 @@ public class ResourceDocumentController {
 
     @PostMapping
     @Log(operationType = "ADD", module = "RESOURCE_DOCUMENT_MANAGEMENT", description = "新增资源文档")
-    @PreAuthorize("hasAuthority('resource:add')")
+    @PreAuthorize("hasRole('ADMIN') and hasAuthority('resource:add')")
     public Result addResourceDocument(@RequestBody ResourceDocument resourceDocument) {
         log.info("新增资源文档：{}", resourceDocument.getTitle());
         try {
@@ -155,7 +172,7 @@ public class ResourceDocumentController {
 
     @PutMapping("/{id}")
     @Log(operationType = "UPDATE", module = "RESOURCE_DOCUMENT_MANAGEMENT", description = "更新资源文档")
-    @PreAuthorize("hasAuthority('resource:edit')")
+    @PreAuthorize("hasRole('ADMIN') and hasAuthority('resource:edit')")
     public Result updateResourceDocument(@PathVariable Long id, @RequestBody ResourceDocument resourceDocument) {
         log.info("更新资源文档：ID={}", id);
         try {
@@ -170,7 +187,7 @@ public class ResourceDocumentController {
 
     @DeleteMapping("/{id}")
     @Log(operationType = "DELETE", module = "RESOURCE_DOCUMENT_MANAGEMENT", description = "删除资源文档")
-    @PreAuthorize("hasAuthority('resource:delete')")
+    @PreAuthorize("hasRole('ADMIN') and hasAuthority('resource:delete')")
     public Result deleteResourceDocument(@PathVariable Long id) {
         log.info("删除资源文档：ID={}", id);
         try {
@@ -194,8 +211,8 @@ public class ResourceDocumentController {
     }
 
     @DeleteMapping("/batch")
-    @Log(operationType = "DELETE", module = "RESOURCE_DOCUMENT_MANAGEMENT", description = "批量删除资源文档")
-    @PreAuthorize("hasAuthority('resource:delete')")
+    @Log(operationType = "DELETE", module = "RESOURCE_DOCUMENT_MANAGEMENT", description = "批量删除资源文档", riskLevel = "HIGH", critical = true)
+    @PreAuthorize("hasRole('ADMIN') and hasAuthority('resource:delete')")
     public Result batchDeleteResourceDocument(@RequestBody Map<String, List<Long>> request) {
         List<Long> ids = request.get("ids");
         log.info("批量删除资源文档，IDs: {}", ids);
@@ -226,7 +243,7 @@ public class ResourceDocumentController {
 
     @PostMapping("/upload")
     @Log(operationType = "ADD", module = "RESOURCE_DOCUMENT_MANAGEMENT", description = "上传资源文档")
-    @PreAuthorize("hasAuthority('resource:add')")
+    @PreAuthorize("hasRole('ADMIN') and hasAuthority('resource:add')")
     public Result uploadResourceDocument(
             @RequestParam("file") MultipartFile file,
             @RequestParam("title") String title,
@@ -264,7 +281,7 @@ public class ResourceDocumentController {
             resourceDocument.setFileType(contentType);
             resourceDocument.setFileSize(file.getSize());
             resourceDocument.setPublisher(publisher);
-            resourceDocument.setPublisherRole(publisherRole);
+            resourceDocument.setPublisherRole(CurrentHolder.getUserRole().replace("ROLE_TEACHER_", "").replace("ROLE_", ""));
             resourceDocument.setTargetType(targetType);
             resourceDocument.setStatus(status);
 
@@ -278,14 +295,19 @@ public class ResourceDocumentController {
         }
     }
 
+    @Log(operationType = "DOWNLOAD", module = "RESOURCE_DOCUMENT_MANAGEMENT", description = "下载资源文档", riskLevel = "MEDIUM")
     @GetMapping("/download/{id}")
     @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_TEACHER', 'ROLE_TEACHER_COLLEGE', 'ROLE_TEACHER_DEPARTMENT', 'ROLE_TEACHER_COUNSELOR', 'ROLE_STUDENT')")
     public ResponseEntity<InputStreamResource> downloadResourceDocument(@PathVariable Long id) {
         log.info("下载资源文档：ID={}", id);
+        boolean student = "ROLE_STUDENT".equals(requireReaderRole());
         try {
             ResourceDocument resourceDocument = resourceDocumentService.findById(id);
             if (resourceDocument == null) {
                 return ResponseEntity.notFound().build();
+            }
+            if (!isVisibleToReader(resourceDocument)) {
+                throw new AccessDeniedException("无权访问该资源文档");
             }
 
             if (resourceDocument.getFileUrl() == null || resourceDocument.getFileUrl().isEmpty()) {
@@ -293,7 +315,7 @@ public class ResourceDocumentController {
             }
 
             // 从 OSS 下载文件
-            byte[] fileContent = aliyunOSSOperator.downloadFile(resourceDocument.getFileUrl());
+            byte[] fileContent = aliyunOSSOperator.downloadResourceDocumentFile(resourceDocument.getFileUrl());
 
             // 同一用户只计一次下载
             if (!hasResourceActionRecord(id, "download")) {
@@ -312,6 +334,8 @@ public class ResourceDocumentController {
             return ResponseEntity.ok()
                     .headers(headers)
                     .body(new InputStreamResource(new ByteArrayInputStream(fileContent)));
+        } catch (AccessDeniedException e) {
+            throw e;
         } catch (Exception e) {
             log.error("下载资源文档失败：{}", e.getMessage(), e);
             return ResponseEntity.internalServerError().build();
@@ -325,13 +349,52 @@ public class ResourceDocumentController {
             @RequestParam(required = false) String status,
             @RequestParam(required = false) String publisherRole) {
         log.info("搜索资源文档，标题：{}, 状态：{}, 发布人身份：{}", title, status, publisherRole);
+        boolean student = "ROLE_STUDENT".equals(requireReaderRole());
         try {
-            List<ResourceDocument> resourceDocuments = resourceDocumentService.list(title, status, publisherRole);
-            return Result.success(resourceDocuments);
+            List<ResourceDocument> resourceDocuments = resourceDocumentService.list(
+                    title, student ? "PUBLISHED" : status, publisherRole);
+            return Result.success(readerVisibleDocuments(resourceDocuments));
         } catch (Exception e) {
             log.error("搜索资源文档失败：{}", e.getMessage(), e);
             return Result.error("搜索资源文档失败：" + e.getMessage());
         }
+    }
+
+    private String requireReaderRole() {
+        String role = CurrentHolder.getUserRole();
+        if (role == null || !RESOURCE_READ_ROLES.contains(role)) {
+            throw new AccessDeniedException("无权访问资源文档");
+        }
+        return role;
+    }
+
+    private List<ResourceDocument> readerVisibleDocuments(List<ResourceDocument> documents) {
+        if (documents == null) {
+            return List.of();
+        }
+        return documents.stream().filter(this::isVisibleToReader).toList();
+    }
+
+    private boolean isVisibleToReader(ResourceDocument document) {
+        if (document == null) return false;
+        String role = requireReaderRole();
+        if ("ROLE_ADMIN".equals(role)) return true;
+        if ("ROLE_STUDENT".equals(role)) return isVisibleToStudent(document);
+        return "PUBLISHED".equals(document.getStatus())
+                  || isTeacherOwner(document);
+    }
+
+    private boolean isTeacherOwner(ResourceDocument document) {
+        return CurrentHolder.getUserId() != null && CurrentHolder.getUserId().equals(document.getPublisherId())
+                && java.util.Set.of("TEACHER", "COLLEGE", "DEPARTMENT", "COUNSELOR").contains(
+                        java.util.Objects.toString(document.getPublisherRole(), ""));
+    }
+
+    private boolean isVisibleToStudent(ResourceDocument document) {
+        return document != null
+                && "PUBLISHED".equals(document.getStatus())
+                && ("ALL".equals(document.getTargetType()) || "STUDENT".equals(document.getTargetType()))
+                && (document.getTargetValue() == null || document.getTargetValue().isBlank());
     }
 
     private String getFileExtension(String filename) {
@@ -414,7 +477,7 @@ public class ResourceDocumentController {
             resourceDocument.setFileSize(file.getSize());
             resourceDocument.setPublisherId(publisherId);
             resourceDocument.setPublisher(publisher);
-            resourceDocument.setPublisherRole(publisherRole);
+            resourceDocument.setPublisherRole(CurrentHolder.getUserRole().replace("ROLE_TEACHER_", "").replace("ROLE_", ""));
             resourceDocument.setTargetType(targetType);
             resourceDocument.setStatus(status);
 
@@ -441,7 +504,7 @@ public class ResourceDocumentController {
                 return Result.error("资源文档不存在");
             }
             
-            if (!existingDocument.getPublisherId().equals(currentUserId)) {
+            if (!isTeacherOwner(existingDocument)) {
                 return Result.error("您只能编辑自己上传的资源文档");
             }
             
@@ -468,7 +531,7 @@ public class ResourceDocumentController {
                 return Result.error("资源文档不存在");
             }
             
-            if (!resourceDocument.getPublisherId().equals(currentUserId)) {
+            if (!isTeacherOwner(resourceDocument)) {
                 return Result.error("您只能删除自己上传的资源文档");
             }
             
@@ -490,7 +553,7 @@ public class ResourceDocumentController {
     }
     
     @DeleteMapping("/teacher/batch")
-    @Log(operationType = "DELETE", module = "RESOURCE_DOCUMENT_MANAGEMENT", description = "教师批量删除资源文档")
+    @Log(operationType = "DELETE", module = "RESOURCE_DOCUMENT_MANAGEMENT", description = "教师批量删除资源文档", riskLevel = "HIGH", critical = true)
     @PreAuthorize("hasAnyRole('ROLE_TEACHER', 'ROLE_TEACHER_COLLEGE', 'ROLE_TEACHER_DEPARTMENT', 'ROLE_TEACHER_COUNSELOR')")
     public Result teacherBatchDeleteResourceDocument(@RequestBody Map<String, List<Long>> request, HttpServletRequest httpRequest) {
         List<Long> ids = request.get("ids");
@@ -508,7 +571,7 @@ public class ResourceDocumentController {
                     continue;
                 }
                 
-                if (!resourceDocument.getPublisherId().equals(currentUserId)) {
+                if (!isTeacherOwner(resourceDocument)) {
                     return Result.error("您只能删除自己上传的资源文档，ID: " + id + " 不是您上传的");
                 }
                 
@@ -560,7 +623,7 @@ public class ResourceDocumentController {
             if (token != null && token.startsWith("Bearer ")) {
                 token = token.substring(7);
                 Map<String, Object> claims = jwtUtils.parseToken(token);
-                log.debug("JWT claims: {}", claims);
+                log.debug("JWT Token 解析成功");
                 Object idObj = claims.get("userId");
                 if (idObj == null) {
                     idObj = claims.get("id");

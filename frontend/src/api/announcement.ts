@@ -1,22 +1,36 @@
 import request from '../utils/request'
+import type { ApiResult } from '../utils/request'
 
-interface Announcement {
+export interface AnnouncementAttachment {
+  name: string
+  url?: string
+  [key: string]: unknown
+}
+
+export interface Announcement {
   id: number
   title: string
   content: string
+  publisher?: string
   publisherId?: number
   publisherName?: string
   publisherRole?: string
+  publisherUserId?: string | number
+  publisherUserType?: string
   publishTime?: string
   createTime?: string
   updateTime?: string
-  status?: number
-  attachments?: string[]
+  status?: number | string
+  targetType?: string | string[] | Record<string, unknown>
+  targetValue?: string | number | string[] | Record<string, unknown>
+  priority?: string
+  attachments?: string | AnnouncementAttachment[]
   isRead?: boolean
   readCount?: number
 }
 
 interface PageParams {
+  mine?: boolean
   page?: number
   pageSize?: number
   title?: string
@@ -52,8 +66,11 @@ interface ReadRecord {
   userRole: string
   readTime: string
 }
-
 // 获取所有公告
+export const getAnnouncementCapabilities = () => request<{ add: boolean; edit: boolean; delete: boolean }>({
+  url: '/announcements/capabilities', method: 'get'
+})
+
 export const getAllAnnouncements = () => {
   return request<ApiResponse<Announcement[]>>({
     url: '/announcements',
@@ -148,6 +165,14 @@ export const createAnnouncementReadRecord = (data: { announcementId: number; use
   })
 }
 
+// 标记公告已读，服务端按当前登录身份写入持久化阅读记录
+export const markAnnouncementRead = (id: number) => {
+  return request<ApiResponse<{ isRead: boolean; readCount: number }>>({
+    url: `/announcements/${id}/read`,
+    method: 'post'
+  })
+}
+
 // 检查公告阅读状态
 export const checkAnnouncementReadStatus = (announcementId: number) => {
   return request<ApiResponse<{ isRead: boolean }>>({
@@ -195,7 +220,7 @@ export const importAnnouncements = async (formData: FormData): Promise<ImportRes
         'Content-Type': 'multipart/form-data'
       }
     })
-    const result = response.data || response
+    const result = (response.data || response) as ApiResult<unknown>
 
     if (result.code === 200) {
       return {

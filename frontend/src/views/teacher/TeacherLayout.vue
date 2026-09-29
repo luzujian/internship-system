@@ -1,5 +1,5 @@
 <template>
-  <div class="teacher-layout">
+  <div class="teacher-layout agent-host">
     <div v-if="isReadOnlyMode" class="read-only-banner">
       <el-alert type="warning" :closable="false" show-icon>
         <template #title>
@@ -33,9 +33,27 @@
           <div class="logo-subtitle">教师端</div>
         </div>
         </div>
+        <div class="header-metrics" aria-label="教师宏观数据">
+          <span class="header-metrics-title">宏观数据</span>
+          <span class="header-metrics-divider"></span>
+          <div class="header-metric header-metric--students" title="当前教师所属学院内，未投递与无 Offer 学生人数之和">
+            <span class="header-metric-dot"></span>
+            <span class="header-metric-label">本院尚无 Offer</span>
+            <strong>{{ withoutOfferStudentCount ?? '--' }}</strong>
+            <small>人</small>
+          </div>
+          <span class="header-metrics-divider"></span>
+          <div class="header-metric header-metric--quota" title="全平台所有有效招聘岗位的剩余名额之和">
+            <span class="header-metric-dot"></span>
+            <span class="header-metric-label">全平台剩余名额</span>
+            <strong>{{ totalRemainingQuota ?? '--' }}</strong>
+            <small>个</small>
+          </div>
+        </div>
         <div class="header-right">
+          <AgentEntry />
           <div class="teacher-type-badge">{{ getTeacherTypeText() }}</div>
-          <el-dropdown @command="handleCommand">
+          <el-dropdown :popper-style="{ zIndex: 2500 }" @command="handleCommand">
             <div class="user-info">
               <el-icon><User /></el-icon>
               <span>{{ getTeacherName() }}</span>
@@ -44,17 +62,20 @@
             <template #dropdown>
               <el-dropdown-menu>
                 <el-dropdown-item command="password">修改密码</el-dropdown-item>
+                <el-dropdown-item command="feedback">问题反馈</el-dropdown-item>
                 <el-dropdown-item command="logout" divided>退出登录</el-dropdown-item>
               </el-dropdown-menu>
             </template>
           </el-dropdown>
+          <FeedbackSubmitDialog v-model="feedbackVisible" user-type="teacher" />
         </div>
       </el-header>
 
       <el-container style="flex: 1; display: flex; overflow: hidden;">
-        <aside :class="['aside', { 'aside-collapsed': sidebarCollapsed }]" v-show="!sidebarCollapsed">
+        <aside :class="['aside', { 'aside-collapsed': sidebarCollapsed }]" v-show="!sidebarCollapsed" aria-label="主导航">
           <el-scrollbar>
             <el-menu
+              v-if="!menuLoading"
               :default-active="activeMenu"
               router
               class="el-menu-vertical-demo"
@@ -64,13 +85,14 @@
                 :key="menu.path"
                 :index="menu.path"
                 @click="handleMenuClick(menu.path)"
-              >
+               :data-agent-route="menu.path">
                 <el-icon><component :is="getMenuIcon(menu.icon)" /></el-icon>
                 <template #title>{{ menu.name }}</template>
               </el-menu-item>
             </el-menu>
           </el-scrollbar>
         </aside>
+        <div v-if="isMobile && !sidebarCollapsed" class="sidebar-overlay" @click="closeSidebar"></div>
 
         <el-main class="main">
           <el-scrollbar style="height: 100%;">
@@ -79,7 +101,7 @@
         </el-main>
       </el-container>
     </el-container>
-    <FloatingAIBall role="teacher" />
+    <AgentWorkspace />
   </div>
 </template>
 
@@ -96,6 +118,7 @@ import {
   HomeFilled,
   School,
   Document,
+  DocumentChecked,
   Bell,
   DataLine,
   Upload,
@@ -111,9 +134,13 @@ import {
 import { useAuthStore } from '@/store/auth'
 import { useSystemSettingsStore } from '@/store/systemSettings'
 import { useUserStatusCheck } from '@/composables/useUserStatusCheck'
+import { getTeacherMacroStatistics } from '@/api/teacherMacroStatistics'
 import request from '@/utils/request'
 import { initAnnouncementWebSocket, disconnectAnnouncementWebSocket } from '@/utils/websocket'
-import FloatingAIBall from '@/components/FloatingAIBall.vue'
+import AgentWorkspace from '@/components/agent/AgentWorkspace.vue'
+import AgentEntry from '@/components/agent/AgentEntry.vue'
+import FeedbackSubmitDialog from '@/components/FeedbackSubmitDialog.vue'
+import { useResponsiveSidebar } from '@/composables/useResponsiveSidebar'
 
 defineOptions({
   components: {
@@ -132,11 +159,26 @@ interface MenuItem {
 const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
+
+// 问题反馈弹窗
+const feedbackVisible = ref(false)
 const systemSettingsStore = useSystemSettingsStore()
 
 const isReadOnlyMode = computed(() => authStore.user?.isReadOnly || false)
 const dynamicMenus = ref<MenuItem[]>([])
-const menuLoading = ref(false)
+const menuLoading = ref(true)
+const withoutOfferStudentCount = ref<number | null>(null)
+const totalRemainingQuota = ref<number | null>(null)
+
+const loadMacroStatistics = async () => {
+  try {
+    const statistics = await getTeacherMacroStatistics()
+    withoutOfferStudentCount.value = statistics.withoutOfferStudentCount ?? 0
+    totalRemainingQuota.value = statistics.totalRemainingQuota ?? 0
+  } catch (error) {
+    console.error('[TeacherLayout] 加载宏观统计失败:', error)
+  }
+}
 
 const handleMenuClick = (path: string) => {
   console.log('菜单点击:', path)
@@ -206,6 +248,7 @@ const iconMap: Record<string, any> = {
   'Monitor': Monitor,
   'Edit': Edit,
   'Document': Document,
+  'DocumentChecked': DocumentChecked,
   'Bell': Bell,
   'OfficeBuilding': OfficeBuilding,
   'Upload': Upload,
@@ -220,30 +263,45 @@ const getMenuIcon = (iconName: string) => {
 }
 
 const fetchTeacherMenus = async () => {
+  menuLoading.value = true
+  dynamicMenus.value = []
+
   const role = authStore.role
   if (!role || !role.startsWith('ROLE_TEACHER')) {
     console.log('[TeacherLayout] 非教师角色，跳过获取菜单')
+    menuLoading.value = false
     return
   }
 
-  const teacherType = localStorage.getItem('teacherType') || authStore.user?.teacherType
+  const teacherType = authStore.user?.teacherType || authStore.role?.replace('ROLE_TEACHER_', '')
   if (!teacherType) {
-    console.log('[TeacherLayout] 未找到教师类型，使用默认菜单')
-    dynamicMenus.value = getDefaultMenus()
+    console.log('[TeacherLayout] 未找到教师类型，仅显示基础菜单')
+    dynamicMenus.value = getSafeMenus()
+    menuLoading.value = false
     return
   }
 
   console.log('[TeacherLayout] 教师类型:', teacherType)
   
-  menuLoading.value = true
   try {
-    const response = await request.get('/teacher/permissions/tree')
+    interface TeacherMenuPermission {
+      id?: number
+      permissionCode?: string
+      permission_code?: string
+      permissionName?: string
+      permission_name?: string
+      path?: string
+      icon?: string
+      sortOrder?: number
+      sort_order?: number
+    }
+    const response = await request.get<TeacherMenuPermission[]>('/teacher/permissions/tree')
     if (response.code === 200) {
-      const allMenus = response.data || []
-      const permissionsResponse = await request.get(`/teacher/permissions/role-code/${teacherType}/permissions`)
+      const allMenus = Array.isArray(response.data) ? response.data : []
+      const permissionsResponse = await request.get<TeacherMenuPermission[]>(`/teacher/permissions/role-code/${teacherType}/permissions`)
       
       if (permissionsResponse.code === 200) {
-        const permissions = permissionsResponse.data || []
+        const permissions = Array.isArray(permissionsResponse.data) ? permissionsResponse.data : []
         console.log('[TeacherLayout] 用户权限列表:', permissions)
         
         dynamicMenus.value = permissions.map((perm: any) => {
@@ -260,69 +318,34 @@ const fetchTeacherMenus = async () => {
         console.log('[TeacherLayout] 动态菜单:', dynamicMenus.value)
         
         if (dynamicMenus.value.length === 0) {
-          console.log('[TeacherLayout] 动态菜单为空，使用默认菜单')
-          dynamicMenus.value = getDefaultMenus()
+          console.log('[TeacherLayout] 动态菜单为空（管理员未分配权限），仅显示首页')
+          dynamicMenus.value = [{
+            id: 1,
+            name: '首页',
+            path: '/teacher/home',
+            icon: 'HomeFilled',
+            sortOrder: 1
+          }]
         }
       } else {
-        console.log('[TeacherLayout] 获取权限列表失败，使用默认菜单')
-        dynamicMenus.value = getDefaultMenus()
+        console.log('[TeacherLayout] 获取权限列表失败，仅显示基础菜单')
+        dynamicMenus.value = getSafeMenus()
       }
     } else {
-      console.log('[TeacherLayout] 获取权限树失败，使用默认菜单')
-      dynamicMenus.value = getDefaultMenus()
+      console.log('[TeacherLayout] 获取权限树失败，仅显示基础菜单')
+      dynamicMenus.value = getSafeMenus()
     }
   } catch (error) {
     console.error('[TeacherLayout] 获取菜单失败:', error)
-    dynamicMenus.value = getDefaultMenus()
+    dynamicMenus.value = getSafeMenus()
   } finally {
     menuLoading.value = false
   }
 }
 
-const getDefaultMenus = (): MenuItem[] => {
-  const teacherType = localStorage.getItem('teacherType') || authStore.user?.teacherType
-  if (teacherType === 'COLLEGE') {
-    return [
-      { id: 1, name: '首页', path: '/teacher/home', icon: 'HomeFilled', sortOrder: 1 },
-      { id: 2, name: '公告管理', path: '/teacher/announcements', icon: 'Bell', sortOrder: 2 },
-      { id: 3, name: '实习状态看板', path: '/teacher/dashboard', icon: 'DataLine', sortOrder: 3 },
-      { id: 4, name: '学生状态监控', path: '/teacher/student-tracking', icon: 'Monitor', sortOrder: 4 },
-      { id: 5, name: '资源管理', path: '/teacher/resources', icon: 'Upload', sortOrder: 5 },
-      { id: 6, name: '统计报表', path: '/teacher/reports', icon: 'DataLine', sortOrder: 6 },
-      { id: 7, name: '账号设置', path: '/teacher/account-settings', icon: 'User', sortOrder: 7 },
-      { id: 11, name: '企业列表', path: '/teacher/company-list', icon: 'OfficeBuilding', sortOrder: 11 },
-      { id: 10, name: '系统设置', path: '/teacher/settings', icon: 'Setting', sortOrder: 10 }
-    ]
-  } else if (teacherType === 'DEPARTMENT') {
-    return [
-      { id: 1, name: '首页', path: '/teacher/home', icon: 'HomeFilled', sortOrder: 1 },
-      { id: 2, name: '公告管理', path: '/teacher/announcements', icon: 'Bell', sortOrder: 2 },
-      { id: 3, name: '实习状态看板', path: '/teacher/dashboard', icon: 'DataLine', sortOrder: 3 },
-      { id: 4, name: '学生状态监控', path: '/teacher/student-tracking', icon: 'Monitor', sortOrder: 4 },
-      { id: 8, name: '审核管理', path: '/teacher/approval', icon: 'Edit', sortOrder: 8 },
-      { id: 5, name: '资源管理', path: '/teacher/resources', icon: 'Upload', sortOrder: 5 },
-      { id: 6, name: '统计报表', path: '/teacher/reports', icon: 'DataLine', sortOrder: 6 },
-      { id: 7, name: '账号设置', path: '/teacher/account-settings', icon: 'User', sortOrder: 7 },
-      { id: 11, name: '企业列表', path: '/teacher/company-list', icon: 'OfficeBuilding', sortOrder: 11 }
-    ]
-  } else if (teacherType === 'COUNSELOR') {
-    return [
-      { id: 1, name: '首页', path: '/teacher/home', icon: 'HomeFilled', sortOrder: 1 },
-      { id: 2, name: '公告管理', path: '/teacher/announcements', icon: 'Bell', sortOrder: 2 },
-      { id: 3, name: '实习状态看板', path: '/teacher/dashboard', icon: 'DataLine', sortOrder: 3 },
-      { id: 4, name: '学生状态监控', path: '/teacher/student-tracking', icon: 'Monitor', sortOrder: 4 },
-      { id: 12, name: '班级管理', path: '/teacher/classes', icon: 'School', sortOrder: 5 },
-      { id: 13, name: '学生管理', path: '/teacher/students', icon: 'User', sortOrder: 6 },
-      { id: 9, name: '智慧评分', path: '/teacher/evaluation', icon: 'Document', sortOrder: 7 },
-      { id: 14, name: 'AI评分配置', path: '/teacher/ai-scoring-config', icon: 'Key', sortOrder: 8 },
-      { id: 5, name: '资源管理', path: '/teacher/resources', icon: 'Upload', sortOrder: 9 },
-      { id: 6, name: '统计报表', path: '/teacher/reports', icon: 'DataLine', sortOrder: 10 },
-      { id: 7, name: '账号设置', path: '/teacher/account-settings', icon: 'Setting', sortOrder: 11 },
-      { id: 11, name: '企业列表', path: '/teacher/company-list', icon: 'OfficeBuilding', sortOrder: 12 }
-    ]
-  }
-  return []
-}
+const getSafeMenus = (): MenuItem[] => ([
+  { id: 1, name: '首页', path: '/teacher/home', icon: 'HomeFilled', sortOrder: 1 }
+])
 
 onMounted(() => {
   console.log('[TeacherLayout] 组件已挂载')
@@ -330,6 +353,7 @@ onMounted(() => {
     systemSettingsStore.loadSettings()
   }
   fetchTeacherMenus()
+  loadMacroStatistics()
   initWebSocket()
 })
 
@@ -368,6 +392,13 @@ const initWebSocket = () => {
 watch(() => authStore.role, (newRole) => {
   if (newRole && newRole.startsWith('ROLE_TEACHER')) {
     fetchTeacherMenus()
+    loadMacroStatistics()
+  }
+})
+
+watch(() => route.path, (newPath, oldPath) => {
+  if (oldPath && newPath !== oldPath) {
+      loadMacroStatistics()
   }
 })
 
@@ -378,7 +409,7 @@ watch(() => authStore.user?.teacherType, (newType) => {
   }
 })
 
-const sidebarCollapsed = ref(false)
+const { isMobile, sidebarCollapsed, toggleSidebar, closeSidebar } = useResponsiveSidebar()
 
 const activeMenu = computed(() => route.path)
 
@@ -389,7 +420,7 @@ const getTeacherName = () => {
 }
 
 const getTeacherTypeText = () => {
-  const teacherType = localStorage.getItem('teacherType') || authStore.user?.teacherType
+  const teacherType = authStore.user?.teacherType || authStore.role?.replace('ROLE_TEACHER_', '')
   if (teacherType === 'COLLEGE') return '学院教师'
   if (teacherType === 'DEPARTMENT') return '系室教师'
   if (teacherType === 'COUNSELOR') return '辅导员'
@@ -408,14 +439,13 @@ const getTeacherTypeText = () => {
   return '教师'
 }
 
-const toggleSidebar = () => {
-  sidebarCollapsed.value = !sidebarCollapsed.value
-}
-
 const handleCommand = async (command) => {
   switch (command) {
     case 'password':
       router.push('/teacher/account-settings')
+      break
+    case 'feedback':
+      feedbackVisible.value = true
       break
     case 'logout':
       await logout()
@@ -493,6 +523,13 @@ const logout = async () => {
   gap: 16px;
 }
 
+.header-left,
+.header-metrics,
+.header-right {
+  position: relative;
+  z-index: 1;
+}
+
 .sidebar-toggle-btn {
   color: white !important;
   padding: 8px !important;
@@ -537,6 +574,78 @@ const logout = async () => {
     0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
+.header-metrics {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 7px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.94);
+  color: #334155;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.12);
+}
+
+.header-metric {
+  display: flex;
+  align-items: center;
+  white-space: nowrap;
+}
+
+.header-metrics-title {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.header-metrics-divider {
+  width: 1px;
+  height: 24px;
+  background: #dbe4ef;
+}
+
+.header-metric {
+  gap: 6px;
+  font-size: 13px;
+}
+
+.header-metric-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.header-metric strong {
+  margin-left: 2px;
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.header-metric small {
+  color: #64748b;
+  font-size: 11px;
+}
+
+.header-metric--students .header-metric-dot {
+  background: #f97316;
+}
+
+.header-metric--students strong {
+  color: #c2410c;
+}
+
+.header-metric--quota .header-metric-dot {
+  background: #3b82f6;
+}
+
+.header-metric--quota strong {
+  color: #1d4ed8;
+}
+
 .header-right {
   display: flex;
   align-items: center;
@@ -550,6 +659,11 @@ const logout = async () => {
   font-size: 14px;
   font-weight: 500;
   box-shadow: 0 2px 8px rgba(255, 255, 255, 0.2);
+}
+
+/* All header controls use the same header-right gap. */
+.header-right :deep(.agent-entry) {
+  margin-inline: 0;
 }
 
 .user-info {
@@ -673,6 +787,11 @@ const logout = async () => {
   overflow-x: hidden;
 }
 
+/* 表格内部滚动容器恢复横向滚动（上方规则仅约束页面级滚动容器） */
+.main :deep(.el-table .el-scrollbar__wrap) {
+  overflow-x: auto;
+}
+
 .read-only-banner {
   margin: 0;
   border-radius: 0;
@@ -697,5 +816,108 @@ const logout = async () => {
   display: flex;
   align-items: center;
   gap: 4px;
+}
+
+@media (max-width: 1180px) {
+  .header-metrics-title,
+  .header-metrics-divider:first-of-type {
+    display: none;
+  }
+
+  .teacher-type-badge {
+    display: none;
+  }
+}
+
+@media (max-width: 860px) {
+  .header {
+    padding: 0 12px;
+  }
+
+  .header-metrics {
+    gap: 8px;
+    padding: 7px 10px;
+  }
+
+  .header-metric-label,
+  .header-metric small {
+    display: none;
+  }
+
+}
+
+@media (max-width: 768px) {
+  .header-right {
+    gap: 10px;
+  }
+}
+
+@media (max-width: 620px) {
+  .logo-subtitle,
+  .user-info span {
+    display: none;
+  }
+
+  .logo-text {
+    font-size: 20px;
+    letter-spacing: 1px;
+  }
+
+  .header-left {
+    gap: 6px;
+  }
+
+  /* 窄屏统计丸：只留两个数字，去圆点/分隔线/紧凑字号，避免被挤压裁掉 */
+  .header-metrics {
+    flex-shrink: 0;
+    padding: 5px 8px;
+    gap: 6px;
+  }
+
+  .header-metric {
+    gap: 4px;
+    white-space: nowrap;
+  }
+
+  .header-metric strong {
+    font-size: 15px;
+  }
+
+  .header-metric-dot,
+  .header-metrics-divider {
+    display: none;
+  }
+}
+
+/* 手机端侧边栏为遮罩抽屉 */
+@media (max-width: 768px) {
+  .aside {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: min(82vw, 280px);
+    min-width: 0;
+    max-width: none;
+    height: auto;
+    z-index: 1999;
+    transform: translateX(-100%);
+    transition: transform 0.3s ease;
+    box-shadow: 4px 0 16px rgba(0, 0, 0, 0.18);
+  }
+
+  .aside:not(.aside-collapsed) {
+    transform: translateX(0);
+  }
+
+  /* 手机端收起仅位移隐藏，保持抽屉宽度 */
+  .aside.aside-collapsed {
+    width: min(82vw, 280px);
+    opacity: 1;
+  }
+
+  .main {
+    padding: 8px;
+  }
 }
 </style>

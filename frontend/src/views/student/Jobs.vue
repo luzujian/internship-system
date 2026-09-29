@@ -1,5 +1,5 @@
 <template>
-  <div class="jobs-container">
+    <div class="jobs-container">
     <!-- 柔和背景装饰 -->
     <div class="jobs-bg-pattern" aria-hidden="true">
       <span class="bg-dot"></span>
@@ -31,11 +31,19 @@
               <el-icon><Search /></el-icon>
               搜索
             </el-button>
+            <el-button @click="showFilter = !showFilter" class="filter-toggle-button" :class="{ active: showFilter }">
+              <el-icon><Filter /></el-icon>
+              筛选
+              <el-badge v-if="hasActiveFilters" :value="activeFilterCount" :max="99" class="filter-badge" />
+            </el-button>
+            <el-button v-if="!agentWorkspace.capabilities?.enabled && agentComparedJobs.length" type="success" plain @click="showLocalCompareDialog = true">
+              查看对比（{{ agentComparedJobs.length }}）
+            </el-button>
           </div>
           <div class="filter-center">
             <div class="quick-filters">
-              <span 
-                v-for="item in quickFilters" 
+              <span
+                v-for="item in quickFilters"
                 :key="item.value"
                 :class="['quick-filter-item', { active: activeQuickFilter === item.value }]"
                 @click="handleQuickFilter(item.value)"
@@ -43,13 +51,6 @@
                 {{ item.label }}
               </span>
             </div>
-          </div>
-          <div class="filter-right">
-            <el-button @click="showFilter = !showFilter" class="filter-toggle-button" :class="{ active: showFilter }">
-              <el-icon><Filter /></el-icon>
-              筛选
-              <el-badge v-if="hasActiveFilters" :value="activeFilterCount" :max="99" class="filter-badge" />
-            </el-button>
           </div>
         </div>
 
@@ -79,16 +80,23 @@
                     <el-icon class="label-icon"><OfficeBuilding /></el-icon>
                     <span>公司</span>
                   </div>
-                  <div class="filter-options">
-                    <div
+                  <el-select
+                    v-model="selectedCompany"
+                    multiple
+                    filterable
+                    collapse-tags
+                    collapse-tags-tooltip
+                    placeholder="请选择公司"
+                    clearable
+                    style="width: 100%"
+                  >
+                    <el-option
                       v-for="option in companyOptions"
                       :key="option.value"
-                      :class="['filter-option', { active: selectedCompany.includes(option.value) }]"
-                      @click="toggleFilter('company', option.value)"
-                    >
-                      {{ option.label }}
-                    </div>
-                  </div>
+                      :label="option.label"
+                      :value="option.value"
+                    />
+                  </el-select>
                 </div>
               </div>
 
@@ -163,131 +171,125 @@
         </el-collapse-transition>
       </div>
 
-      <div class="jobs-list">
-        <div
-          v-for="job in paginatedJobs"
-          :key="job.id"
-          :data-job-id="job.id"
-          class="job-card"
-          @click="viewJobDetail(job)"
-        >
-              <div class="job-right">
-                <div class="job-header">
-                  <div class="job-title-container">
-                    <h3 class="job-title">{{ job.title }}</h3>
-                    <div class="internship-base-badges">
-                      <el-tag v-if="job.internshipBase === 'national'" size="small" type="danger" class="base-badge national">
-                        国家级实习基地
-                      </el-tag>
-                      <el-tag v-else-if="job.internshipBase === 'provincial'" size="small" type="warning" class="base-badge provincial">
-                        省级实习基地
-                      </el-tag>
-                    </div>
-                  </div>
-                  <el-icon
-                    class="favorite-icon"
-                    :class="{ active: job.isFavorite }"
-                    @click.stop="toggleFavorite(job)"
-                  >
-                    <StarFilled v-if="job.isFavorite" />
-                    <Star v-else />
-                  </el-icon>
-                </div>
-                <div class="job-info">
-                  <div class="info-item">
-                    <el-icon class="info-icon"><OfficeBuilding /></el-icon>
-                    <span>{{ job.company }}</span>
-                  </div>
-                  <div class="info-item">
-                    <el-icon class="info-icon"><Location /></el-icon>
-                    <span>{{ job.location }}</span>
-                  </div>
-                  <div class="info-item">
-                    <el-icon class="info-icon"><Money /></el-icon>
-                    <span>{{ job.salary }}</span>
-                  </div>
-                  <div class="info-item">
-                    <el-icon class="info-icon"><User /></el-icon>
-                    <span>剩余 {{ job.remainingQuota }} 个名额</span>
-                  </div>
-                </div>
-                <div class="job-tags-footer">
-                  <div class="job-tags">
-                    <el-tag v-for="tag in job.tags" :key="tag" size="small" class="job-tag">
-                      {{ tag }}
-                    </el-tag>
-                  </div>
-                  <div class="job-footer">
-                    <el-button
-                      type="primary"
-                      plain
-                      @click.stop="viewJobDetail(job)"
-                      class="view-detail-button"
-                    >
-                      查看详情
-                    </el-button>
-                    <!-- 学生已确认实习岗位后，不显示任何申请按钮 -->
-                    <template v-if="statusLoaded && studentStatus < 2">
-                      <el-button
-                        v-if="!job.isApplied && job.remainingQuota > 0"
-                        type="primary"
-                        @click.stop="applyJob(job)"
-                        class="apply-button"
-                      >
-                        立即申请
-                      </el-button>
-                      <el-tag v-else-if="job.remainingQuota === 0" type="info">
-                        已招满
-                      </el-tag>
-                      <!-- 待审核状态 -->
-                      <el-tag v-else-if="job.applicationStatus === 'pending'" type="warning">
-                        待审核
-                      </el-tag>
-                      <!-- 面试通过：显示状态，不显示取消 -->
-                      <el-tag v-else-if="job.applicationStatus === 'interview_passed'" type="success">
-                        面试通过
-                      </el-tag>
-                      <!-- 面试未通过：显示状态 -->
-                      <el-tag v-else-if="job.applicationStatus === 'interview_failed'" type="danger">
-                        面试未通过
-                      </el-tag>
-                      <!-- 已通过：显示状态，不显示取消 -->
-                      <el-tag v-else-if="job.applicationStatus === 'approved'" type="success">
-                        已通过
-                      </el-tag>
-                      <!-- 已拒绝：显示状态 -->
-                      <el-tag v-else-if="job.applicationStatus === 'rejected'" type="danger">
-                        已拒绝
-                      </el-tag>
-                      <!-- 已撤回：显示状态 -->
-                      <el-tag v-else-if="job.applicationStatus === 'withdrawn'" type="info">
-                        已撤回
-                      </el-tag>
-                    </template>
-                    <!-- 仅对学生已确认的职位显示此标签 -->
-                    <el-tag v-else-if="job.id === confirmedPositionId" type="success">
-                      已确认实习
-                    </el-tag>
-                  </div>
-                </div>
+      <div class="table-card">
+      <el-table
+        :data="paginatedJobs"
+        class="data-table"
+        row-key="id"
+        :row-class-name="tableRowClassName"
+        style="width: 100%"
+      >
+        <el-table-column label="职位名称" min-width="220" show-overflow-tooltip>
+          <template #default="{ row }">
+            <span class="job-title-text">{{ row.industryName ? row.industryName + ' - ' + row.title : row.title }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="company" label="企业" min-width="150" show-overflow-tooltip />
+        <el-table-column label="剩余名额" width="120" align="center">
+          <template #default="{ row }">
+            <span class="quota-num">{{ row.remainingQuota }}</span> 个
+            <div v-if="row.remainingQuota === 0" class="quota-warn">仍可申请</div>
+          </template>
+        </el-table-column>
+        <el-table-column label="企业评分" width="150" align="center">
+          <template #default="{ row }">
+            <span v-if="Number(row.companyRatingCount) > 0 && row.companyRatingAverage != null">{{ Number(row.companyRatingAverage).toFixed(1) }} ★（{{ row.companyRatingCount }}人）</span>
+            <span v-else class="unrated-company">暂无评分</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="location" label="地点" width="120" show-overflow-tooltip />
+        <el-table-column prop="salary" label="薪资" width="120" align="center" show-overflow-tooltip />
+        <el-table-column label="标签" min-width="180">
+          <template #default="{ row }">
+            <div class="tags-cell">
+              <el-tag v-if="row.internshipBase && row.internshipBase !== 'none'" size="small" type="success">实习基地</el-tag>
+              <el-tag v-if="row.isAlumniUnit === 1" size="small" type="warning">校友单位</el-tag>
+              <el-tag v-for="tag in filterJobTags(row.tags)" :key="tag" size="small" class="job-tag">{{ tag }}</el-tag>
             </div>
-          </div>
-        </div>
-      </div>
+          </template>
+        </el-table-column>
+        <el-table-column label="申请状态" width="100" align="center">
+          <template #default="{ row }">
+            <el-tag v-if="row.id === confirmedPositionId" type="success">当前实习</el-tag>
+            <el-tag v-else-if="!row.isApplied" type="info">未申请</el-tag>
+            <el-tag v-else-if="row.applicationStatus === 'pending'" type="warning">待审核</el-tag>
+            <el-tag v-else-if="row.applicationStatus === 'pending_interview'" type="warning">待面试</el-tag>
+            <el-tag v-else-if="row.applicationStatus === 'interview'" type="warning">面试中</el-tag>
+            <el-tag v-else-if="row.applicationStatus === 'interview_passed'" type="success">面试通过</el-tag>
+            <el-tag v-else-if="row.applicationStatus === 'interview_failed'" type="danger">面试未通过</el-tag>
+            <el-tag v-else-if="row.applicationStatus === 'approved'" type="success">已通过</el-tag>
+            <el-tag v-else-if="row.applicationStatus === 'rejected'" type="danger">已拒绝</el-tag>
+            <el-tag v-else-if="row.applicationStatus === 'withdrawn'" type="info">已撤回</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="300" align="center" fixed="right">
+          <template #default="{ row }">
+            <div class="action-cell">
+              <el-icon class="favorite-icon" :class="{ active: row.isFavorite }" @click.stop="toggleFavorite(row)">
+                <StarFilled v-if="row.isFavorite" />
+                <Star v-else />
+              </el-icon>
+              <el-button v-if="agentWorkspace.capabilities?.enabled" size="small" plain :type="agentComparedJobs.includes(String(row.id)) ? 'success' : 'default'" :aria-pressed="agentComparedJobs.includes(String(row.id))" @click.stop="toggleAgentCompare(row)">
+                {{ agentComparedJobs.includes(String(row.id)) ? '已加入 AI 比较' : 'AI 比较' }}
+              </el-button>
+              <el-button v-else size="small" plain :type="agentComparedJobs.includes(String(row.id)) ? 'success' : 'default'" :aria-pressed="agentComparedJobs.includes(String(row.id))" @click.stop="toggleLocalCompare(row)">
+                {{ agentComparedJobs.includes(String(row.id)) ? '已加入对比' : '加入对比' }}
+              </el-button>
+              <el-button type="primary" plain size="small" @click.stop="viewJobDetail(row)">查看详情</el-button>
+              <el-button v-if="row.id !== confirmedPositionId && !row.isApplied" type="primary" size="small" @click.stop="applyJob(row)">立即投递</el-button>
+            </div>
+          </template>
+        </el-table-column>
+        <template #empty>
+          <el-empty description="暂无符合条件的职位" />
+        </template>
+      </el-table>
 
       <div class="pagination-section">
         <el-pagination
           v-model:current-page="currentPage"
           v-model:page-size="pageSize"
           :total="totalJobs"
-          :page-sizes="[6, 9, 12, 18]"
+          :page-sizes="[10, 20, 50, 100]"
           layout="total, sizes, prev, pager, next, jumper"
           class="pagination"
         />
       </div>
+      </div>
 
-      <el-empty v-if="totalJobs === 0" description="暂无符合条件的职位"></el-empty>
+      <el-dialog
+        v-model="showLocalCompareDialog"
+        title="岗位对比"
+        width="900px"
+        :append-to-body="true"
+        :lock-scroll="true"
+      >
 
+        <el-table :data="localCompareRows" border style="width: 100%">
+          <el-table-column label="岗位">
+            <template #default="{ row }">{{ row.positionName || row.title }}</template>
+          </el-table-column>
+          <el-table-column label="企业">
+            <template #default="{ row }">{{ row.company }}</template>
+          </el-table-column>
+          <el-table-column label="地点">
+            <template #default="{ row }">{{ row.location }}</template>
+          </el-table-column>
+          <el-table-column label="薪资">
+            <template #default="{ row }">{{ row.salary || '面议' }}</template>
+          </el-table-column>
+          <el-table-column label="剩余名额" width="90">
+            <template #default="{ row }">{{ row.remainingQuota == null ? '—' : row.remainingQuota }}</template>
+          </el-table-column>
+          <el-table-column label="企业推荐" width="90">
+            <template #default="{ row }">{{ row.companyRatingAverage == null ? '—' : Number(row.companyRatingAverage).toFixed(1) }}</template>
+          </el-table-column>
+        </el-table>
+        <template #footer>
+          <el-button @click="agentComparedJobs = []; showLocalCompareDialog = false">清空选择</el-button>
+          <el-button type="primary" @click="showLocalCompareDialog = false">关闭</el-button>
+        </template>
+      </el-dialog>
       <el-dialog
         v-model="showJobDetailDialog"
         title="职位详情"
@@ -301,17 +303,18 @@
         <div v-if="selectedJob" class="job-detail-content">
           <div class="detail-header">
             <div class="detail-title">
-              <h3>{{ selectedJob.title }}</h3>
+              <h3>{{ selectedJob.industryName ? selectedJob.industryName + ' - ' + selectedJob.title : selectedJob.title }}</h3>
               <div class="internship-base-badges">
-                <el-tag v-if="selectedJob.internshipBase === 'national'" size="small" type="danger" class="base-badge national">
-                  国家级实习基地
+                <el-tag v-if="selectedJob.internshipBase && selectedJob.internshipBase !== 'none'" size="small" type="success" class="base-badge">
+                  实习基地
                 </el-tag>
-                <el-tag v-else-if="selectedJob.internshipBase === 'provincial'" size="small" type="warning" class="base-badge provincial">
-                  省级实习基地
+                <el-tag v-if="selectedJob.isAlumniUnit === 1" size="small" type="warning" class="base-badge">
+                  校友单位
                 </el-tag>
               </div>
             </div>
             <div class="detail-actions">
+              <AgentContextAction prompt="这个岗位适合我吗？" />
               <el-icon
                 class="favorite-icon"
                 :class="{ active: selectedJob.isFavorite }"
@@ -332,6 +335,11 @@
                 <span class="info-value">{{ selectedJob.company }}</span>
               </div>
               <div class="info-item">
+                <el-icon><OfficeBuilding /></el-icon>
+                <span class="info-label">合作模式：</span>
+                <span class="info-value">{{ formatCooperationMode(selectedJob.cooperationMode) }}</span>
+              </div>
+              <div class="info-item">
                 <el-icon><Location /></el-icon>
                 <span class="info-label">地点：</span>
                 <span class="info-value">{{ selectedJob.location }}</span>
@@ -343,25 +351,67 @@
               </div>
               <div class="info-item">
                 <el-icon><OfficeBuilding /></el-icon>
-                <span class="info-label">公司行业：</span>
+                <span class="info-label">岗位类别：</span>
                 <span class="info-value">{{ selectedJob.industryName }}</span>
               </div>
             </div>
           </div>
 
+          <el-collapse
+            v-if="selectedJob.logo || selectedJob.companyIntroduction || companyPhotos.length || companyVideos.length"
+            v-model="companyInfoActive"
+            class="detail-section job-company-collapse"
+          >
+            <el-collapse-item name="companyInfo">
+              <template #title>
+                <h4 class="section-title">企业信息</h4>
+              </template>
+            <div v-if="selectedJob.logo || selectedJob.companyIntroduction" class="company-card-header">
+              <img v-if="selectedJob.logo" :src="selectedJob.logo" class="company-logo-large" alt="企业Logo" />
+              <div class="company-card-body">
+                <div class="company-card-title">
+                  <span class="company-name-text">{{ selectedJob.company }}</span>
+                </div>
+                <p v-if="selectedJob.companyIntroduction" class="company-intro-text">{{ selectedJob.companyIntroduction }}</p>
+              </div>
+            </div>
+            <template v-if="companyPhotos.length">
+              <h5 class="sub-section-title">企业照片</h5>
+              <div class="company-photo-grid">
+                <el-image
+                  v-for="(url, i) in companyPhotos"
+                  :key="i"
+                  :src="url"
+                  class="company-photo"
+                  fit="cover"
+                  :preview-src-list="companyPhotos"
+                  :initial-index="i"
+                  preview-teleported
+                />
+              </div>
+            </template>
+            <template v-if="companyVideos.length">
+              <h5 class="sub-section-title">企业视频</h5>
+              <div class="company-video-list">
+                <video v-for="(url, i) in companyVideos" :key="i" :src="url" controls class="company-video" />
+              </div>
+            </template>
+            </el-collapse-item>
+          </el-collapse>
+
           <div class="detail-section">
             <h4 class="section-title">职位描述</h4>
-            <p class="detail-description">{{ selectedJob.description }}</p>
+            <p v-if="selectedJob.description" class="detail-description">{{ selectedJob.description }}</p>
           </div>
 
           <div class="detail-section">
             <h4 class="section-title">任职要求</h4>
-            <p class="detail-description">{{ formatArrayOrString(selectedJob.requirements) }}</p>
+            <p v-if="formatArrayOrString(selectedJob.requirements)" class="detail-description">{{ formatArrayOrString(selectedJob.requirements) }}</p>
           </div>
 
           <div class="detail-section">
             <h4 class="section-title">联系方式</h4>
-            <div class="contact-info">
+            <div v-if="selectedJob.contactPerson || selectedJob.contactPhone || selectedJob.contactEmail" class="contact-info">
               <div class="contact-item">
                 <span class="contact-label">联系人：</span>
                 <span class="contact-value">{{ selectedJob.contactPerson }}</span>
@@ -377,42 +427,33 @@
             </div>
           </div>
 
-          <div class="detail-section">
-            <h4 class="section-title">职位统计</h4>
-            <div class="stats-info">
-              <div class="stat-item">
-                <span class="stat-label">发布时间：</span>
-                <span class="stat-value">{{ selectedJob.publishTime || '2024-01-01' }}</span>
-              </div>
-              <div class="stat-item">
-                <span class="stat-label">浏览次数：</span>
-                <span class="stat-value">{{ selectedJob.viewCount || 0 }}</span>
-              </div>
-              <div class="stat-item">
-                <span class="stat-label">申请人数：</span>
-                <span class="stat-value">{{ selectedJob.applyCount || 0 }}</span>
-              </div>
-            </div>
-          </div>
-
-          <div class="detail-footer">
-            <!-- 学生已确认实习岗位后，不显示任何申请按钮 -->
-            <template v-if="statusLoaded && studentStatus < 2">
+          <div
+            v-if="selectedJob.id === confirmedPositionId || !selectedJob.isApplied || !!selectedJob.applicationStatus"
+            class="detail-footer"
+          >
+              <el-tag v-if="selectedJob.id === confirmedPositionId" type="success">
+                当前实习
+              </el-tag>
               <el-button
-                v-if="!selectedJob.isApplied && selectedJob.remainingQuota > 0"
+                v-else-if="!selectedJob.isApplied"
                 type="primary"
                 size="large"
                 @click="applyJob(selectedJob)"
                 class="detail-apply-button"
               >
-                立即申请
+                立即投递
               </el-button>
-              <el-tag v-else-if="selectedJob.remainingQuota === 0" type="info">
-                已招满
-              </el-tag>
               <!-- 待审核状态 -->
               <el-tag v-else-if="selectedJob.applicationStatus === 'pending'" type="warning">
                 待审核
+              </el-tag>
+              <!-- 待面试 -->
+              <el-tag v-else-if="selectedJob.applicationStatus === 'pending_interview'" type="warning">
+                待面试
+              </el-tag>
+              <!-- 面试中 -->
+              <el-tag v-else-if="selectedJob.applicationStatus === 'interview'" type="warning">
+                面试中
               </el-tag>
               <!-- 面试通过：显示状态，不显示取消 -->
               <el-tag v-else-if="selectedJob.applicationStatus === 'interview_passed'" type="success">
@@ -434,11 +475,6 @@
               <el-tag v-else-if="selectedJob.applicationStatus === 'withdrawn'" type="info">
                 已撤回
               </el-tag>
-            </template>
-            <!-- 仅对学生已确认的职位显示此标签 -->
-            <el-tag v-else-if="selectedJob.id === confirmedPositionId" type="success">
-              已确认实习
-            </el-tag>
           </div>
         </div>
       </el-dialog>
@@ -458,34 +494,8 @@
             <h1 class="header-title">申请职位</h1>
           </div>
 
-          <el-form :model="applicationForm" :rules="applicationRules" ref="applicationFormRef" label-width="100px">
+          <el-form :model="applicationForm" ref="applicationFormRef" label-width="100px">
             <div class="form-content">
-              <div class="form-module">
-                <div class="module-header">
-                  <div class="module-icon-container">
-                    <el-icon class="module-icon"><User /></el-icon>
-                  </div>
-                  <h2 class="module-title">基本信息</h2>
-                </div>
-                <div class="form-grid">
-                  <el-form-item label="学生姓名" prop="studentName">
-                    <el-input v-model="applicationForm.studentName" placeholder="请输入姓名" clearable />
-                  </el-form-item>
-                  <el-form-item label="学号" prop="studentNo">
-                    <el-input v-model="applicationForm.studentNo" placeholder="请输入学号" clearable />
-                  </el-form-item>
-                  <el-form-item label="专业" prop="major">
-                    <el-input v-model="applicationForm.major" placeholder="请输入专业" clearable />
-                  </el-form-item>
-                  <el-form-item label="年级" prop="grade">
-                    <el-input v-model="applicationForm.grade" placeholder="请输入年级，如：2024级" clearable />
-                  </el-form-item>
-                  <el-form-item label="联系电话" prop="phone">
-                    <el-input v-model="applicationForm.phone" placeholder="请输入联系电话" clearable />
-                  </el-form-item>
-                </div>
-              </div>
-
               <div class="form-module">
                 <div class="module-header">
                   <div class="module-icon-container">
@@ -494,11 +504,14 @@
                   <h2 class="module-title">申请信息</h2>
                 </div>
                 <div class="form-grid">
-                  <el-form-item label="应聘岗位">
-                    <el-input :model-value="applicationForm.positionName" disabled />
-                  </el-form-item>
                   <el-form-item label="应聘单位">
                     <el-input :model-value="applicationForm.companyName" disabled />
+                  </el-form-item>
+                  <el-form-item label="岗位类别">
+                    <el-input :model-value="applicationForm.industryName" disabled />
+                  </el-form-item>
+                  <el-form-item label="岗位名称">
+                    <el-input :model-value="applicationForm.positionName" disabled />
                   </el-form-item>
                 </div>
               </div>
@@ -521,17 +534,20 @@
                 </el-form-item>
               </div>
 
-              <!-- 我的申请材料模块 -->
+              <!-- 上传简历和证书模块 -->
               <div class="form-module">
                 <div class="module-header">
                   <div class="module-icon-container">
                     <el-icon class="module-icon"><Upload /></el-icon>
                   </div>
-                  <h2 class="module-title">我的申请材料</h2>
+                  <h2 class="module-title">上传简历和证书</h2>
                 </div>
                 <div class="material-list">
                   <div v-if="resumeList.length === 0 && certificateList.length === 0" class="no-material-tip">
-                    暂无可用的申请材料，请在个人中心上传简历和证书
+                    <span>暂无可用的申请材料，请在个人中心上传简历和证书</span>
+                    <el-link type="primary" :underline="false" class="material-upload-link" @click="goToMaterialManagement">
+                      去个人中心上传
+                    </el-link>
                   </div>
                   <div v-for="resume in resumeList" :key="resume.id" class="material-item">
                     <el-icon class="material-icon"><Document /></el-icon>
@@ -554,11 +570,16 @@
           </el-form>
         </div>
       </el-dialog>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import AgentContextAction from '@/components/agent/AgentContextAction.vue'
+import { useAgentPageContext } from "@/agent/useAgentPageContext"
+import { useAgentStore } from "@/agent/store"
+
+import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import {
   Location,
@@ -582,8 +603,21 @@ import studentJobApplicationService from '@/api/StudentJobApplicationService'
 import positionService from '@/api/PositionService'
 import { onPositionUpdate, onPositionDelete, offPositionUpdate, offPositionDelete } from '@/utils/websocket'
 import { getTokenKey } from '@/store/auth/storage'
-import type { PositionUpdateData } from '@/utils/websocket'
+// websocket 内的 PositionUpdateData 未导出，此处按其真实形态本地声明（不改运行时）
+interface PositionUpdateData {
+  positionId: number
+  positionName?: string
+  remainingQuota?: number
+  plannedRecruit?: number
+  recruitedCount?: number
+  status?: string
+  companyId?: number
+}
 import eventBus from '@/utils/eventBus'
+import { checkStudentProfileReadiness, profileIncompleteMessage } from '@/utils/studentProfileReadiness.js'
+import { getMonthlySalaryRangeK } from '@/utils/salaryRange.js'
+import { useFormContext } from '@/agent/formContext'
+import type { FormFieldDescriptor } from '@/agent/types'
 
 const authStore = useAuthStore()
 
@@ -592,21 +626,22 @@ const handlePositionUpdate = (data: PositionUpdateData) => {
   console.log('收到岗位更新:', data)
   // 更新本地职位列表
   const index = jobs.value.findIndex(j => j.id === data.positionId)
-  if (index !== -1) {
-    if (data.remainingQuota === 0) {
-      // 岗位已满，从列表移除
+  if (data.status === 'paused') {
+    if (index !== -1) {
       jobs.value.splice(index, 1)
-    } else {
-      // 更新岗位数据
-      jobs.value[index] = {
-        ...jobs.value[index],
-        remainingQuota: data.remainingQuota,
-        recruitedCount: data.recruitedCount,
-        plannedRecruit: data.plannedRecruit
-      }
+    }
+    return
+  }
+  if (index !== -1) {
+    // 名额仅在企业确认入职时占用；名额为 0 的岗位仍允许学生提交申请。
+    jobs.value[index] = {
+      ...jobs.value[index],
+      remainingQuota: data.remainingQuota,
+      recruitedCount: data.recruitedCount,
+      plannedRecruit: data.plannedRecruit
     }
   } else {
-    // 新职位：调用接口获取完整列表以包含所有信息
+    // 新职位或恢复招聘：调用接口获取完整列表以包含所有信息
     loadPositions()
   }
 }
@@ -657,8 +692,10 @@ const selectedSalary = ref('')
 const selectedDuration = ref('')
 const selectedInternshipBase = ref('')
 const currentPage = ref(1)
-const pageSize = ref(6)
+const pageSize = ref(10)
 const showJobDetailDialog = ref(false)
+// 职位详情 - 企业信息板块折叠状态（默认展开）
+const companyInfoActive = ref(['companyInfo'])
 const selectedJob = ref(null)
 const showApplicationDialog = ref(false)
 const submitting = ref(false)
@@ -673,23 +710,26 @@ const applicationForm = ref({
   major: '',
   grade: '',
   phone: '',
+  industryName: '',
   positionName: '',
   companyName: '',
   selfIntroduction: ''
 })
 
-const applicationRules = {
-  studentName: [{ required: true, message: '请输入姓名', trigger: 'blur' }],
-  studentNo: [{ required: true, message: '请输入学号', trigger: 'blur' }],
-  major: [{ required: true, message: '请输入专业', trigger: 'blur' }],
-  grade: [{ required: true, message: '请输入年级', trigger: 'blur' }],
-  phone: [{ required: true, message: '请输入联系电话', trigger: 'blur' }]
-}
+// ===== 智能填表：岗位申请弹窗注册到 AI 侧栏（只写响应式 model，不触发提交） =====
+// 未覆盖字段说明：companyName/industryName/positionName 为 disabled 展示、简历与证书为个人中心已上传材料展示——均无需 AI 填写
+const formContext = useFormContext()
+const applicationFillFields = (): FormFieldDescriptor[] => [
+  { prop: 'selfIntroduction', label: '自我简介', type: 'textarea' }
+]
+watch(showApplicationDialog, (open) => { if (!open) formContext.unregister('jobs:apply') })
+onUnmounted(() => { formContext.unregister('jobs:apply') })
 
 const quickFilters = [
   { value: 'all', label: '全部' },
   { value: 'latest', label: '最新' },
-  { value: 'hot', label: '热门' }
+  { value: 'hot', label: '热门' },
+  { value: 'recommended', label: '推荐' }
 ]
 
 const industryOptions = ref([])
@@ -699,11 +739,11 @@ const companyOptions = ref([])
 const regionOptions = ref([])
 
 const salaryOptions = [
-  { value: '0-3000', label: '3000元以下' },
-  { value: '3000-5000', label: '3000-5000元' },
-  { value: '5000-8000', label: '5000-8000元' },
-  { value: '8000-12000', label: '8000-12000元' },
-  { value: '12000+', label: '12000元以上' }
+  { value: '0-3', label: '3K以下' },
+  { value: '3-5', label: '3-5K' },
+  { value: '5-8', label: '5-8K' },
+  { value: '8-12', label: '8-12K' },
+  { value: '12+', label: '12K以上' }
 ]
 
 const durationOptions = [
@@ -715,8 +755,8 @@ const durationOptions = [
 
 const internshipBaseOptions = [
   { value: 'all', label: '全部' },
-  { value: 'national', label: '国家级实习基地' },
-  { value: 'provincial', label: '省级实习基地' }
+  { value: 'yes', label: '是' },
+  { value: 'no', label: '否' }
 ]
 
 const cascaderProps = {
@@ -725,11 +765,58 @@ const cascaderProps = {
   emitPath: true
 }
 
-const jobs = ref([])
-const originalJobs = ref([])
-const studentStatus = ref(0) // 学生实习状态：0=无offer, 1=待确认, 2=已确定, 3=实习中, 4=已结束
-const statusLoaded = ref(false) // 状态是否已加载，默认false防止初始状态显示申请按钮
+const jobs = ref<Array<{
+  id?: number | string
+  title?: string
+  positionName?: string
+  company?: string
+  companyId?: number | string
+  location?: string
+  salary?: string
+  duration?: string
+  internshipBase?: string
+  industryName?: string
+  industry?: string
+  companyRatingCount?: number | string
+  companyRatingAverage?: number | string
+  remainingQuota?: number
+  recruitedCount?: number
+  plannedRecruit?: number
+  isApplied?: boolean
+  applicationStatus?: string | null
+  isFavorite?: boolean
+  [key: string]: unknown
+}>>([])
+const originalJobs = ref<Array<{
+  id?: number | string
+  isApplied?: boolean
+  applicationStatus?: string | null
+  [key: string]: unknown
+}>>([])
 const confirmedPositionId = ref(null) // 学生已确认的职位ID
+const highlightedJobId = ref<number | string | null>(null)
+let highlightTimer = 0
+
+const tableRowClassName = ({ row }: { row: { id?: number | string } }) => {
+  return row.id === highlightedJobId.value ? 'highlight-row' : ''
+}
+
+const highlightTableRow = (jobId: number) => {
+  highlightedJobId.value = jobId
+  clearTimeout(highlightTimer)
+  highlightTimer = window.setTimeout(() => { highlightedJobId.value = null }, 5000)
+  nextTick(() => {
+    const row = document.querySelector('.el-table__row.highlight-row')
+    if (row) row.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  })
+}
+const ACTIVE_APPLICATION_STATUSES = new Set([
+  'pending',
+  'approved',
+  'interview',
+  'pending_interview',
+  'interview_passed'
+])
 
 const filteredJobs = computed(() => {
   let result = [...jobs.value]
@@ -761,15 +848,15 @@ const filteredJobs = computed(() => {
   
   if (selectedSalary.value) {
     result = result.filter(job => {
-      const jobRange = parseSalaryToK(job.salary)
+      const jobRange = getMonthlySalaryRangeK(job)
       if (!jobRange) return false
       const filterValue = selectedSalary.value
-      if (filterValue === '12000+') {
+      if (filterValue === '12+') {
         return jobRange.min >= 12
       }
       const parts = filterValue.split('-')
-      const filterMin = parseInt(parts[0]) / 1000
-      const filterMax = parseInt(parts[1]) / 1000
+      const filterMin = parseInt(parts[0])
+      const filterMax = parseInt(parts[1])
       return jobRange.min <= filterMax && jobRange.max >= filterMin
     })
   }
@@ -784,23 +871,14 @@ const filteredJobs = computed(() => {
   }
   
   if (selectedInternshipBase.value && selectedInternshipBase.value !== 'all') {
-    result = result.filter(job => job.internshipBase === selectedInternshipBase.value)
+    result = result.filter(job => {
+      const hasBase = job.internshipBase && job.internshipBase !== 'none'
+      return selectedInternshipBase.value === 'yes' ? hasBase : !hasBase
+    })
   }
   
   return result
 })
-
-// 解析薪资字符串为K单位数值范围，如 "3-5K/月" → {min:3, max:5}，"面议" → null
-const parseSalaryToK = (salaryStr) => {
-  if (!salaryStr || salaryStr === '面议') return null
-  const rangeMatch = salaryStr.match(/(\d+)-(\d+)K/)
-  if (rangeMatch) return { min: parseInt(rangeMatch[1]), max: parseInt(rangeMatch[2]) }
-  const minMatch = salaryStr.match(/(\d+)K\/月起/)
-  if (minMatch) return { min: parseInt(minMatch[1]), max: Infinity }
-  const maxMatch = salaryStr.match(/最高(\d+)K/)
-  if (maxMatch) return { min: 0, max: parseInt(maxMatch[1]) }
-  return null
-}
 
 const totalJobs = computed(() => filteredJobs.value.length)
 
@@ -909,6 +987,8 @@ const handleQuickFilter = async (value) => {
       response = await request.get(`/positions/latest`)
     } else if (value === 'hot') {
       response = await request.get(`/positions/hot`)
+    } else if (value === 'recommended') {
+      response = await request.get(`/positions/recommended`)
     }
 
     if (response.code === 200) {
@@ -929,15 +1009,17 @@ const handleQuickFilter = async (value) => {
 const viewJobDetail = async (job) => {
   try {
     // 调用详情接口，会触发浏览次数+1
-    const response = await request.get(`/positions/detail/${job.id}`)
+    const response: any = await request.get(`/positions/detail/${job.id}`)
     if (response.code === 200) {
       selectedJob.value = response.data
     } else {
-      selectedJob.value = job
+      ElMessage.warning(response.msg || response.message || '该岗位已不可查看')
+      return
     }
   } catch (error) {
     console.error('获取职位详情失败:', error)
-    selectedJob.value = job
+    ElMessage.warning('岗位详情加载失败，请稍后重试')
+    return
   }
   showJobDetailDialog.value = true
 }
@@ -954,15 +1036,60 @@ const handleShowJobDetailFromAI = (data) => {
   }
 }
 
+// 申请岗位前置校验：姓名、学号、电话、邮箱需全部完善（后端提交接口同样强制校验）
+const ensureProfileReady = async (actionLabel: string): Promise<boolean> => {
+  const readiness = await checkStudentProfileReadiness()
+  // 资料读取失败时不在前端拦截，由后端提交接口兜底校验
+  if (!readiness.verified || readiness.missing.length === 0) return true
+  try {
+    await ElMessageBox.confirm(profileIncompleteMessage(readiness.missing, actionLabel), '个人资料未完善', {
+      confirmButtonText: '去完善',
+      cancelButtonText: '取消',
+      type: 'warning'
+    })
+    await router.push({ path: '/student/profile', query: { returnTo: '/student/jobs' } })
+  } catch {
+    // 学生取消时停留在当前页，不进入申请流程
+  }
+  return false
+}
+
 const applyJob = async (job) => {
-  // 初始化表单数据，从用户信息中获取默认值
+  if (!(await ensureProfileReady('申请该岗位'))) return
+  // 考研延迟中的学生投递岗位前提示确认：改主意去实习属合法操作，仅提示不阻断；
+  // 延期状态在企业确认新实习时由后端自动切换（isDelayed 置 false）
+  try {
+    interface InternshipStatusRow {
+      status?: number | string
+      isDelayed?: boolean
+      is_delayed?: boolean
+      [key: string]: unknown
+    }
+    const statusResponse = await request.get<InternshipStatusRow>('/student/home/internship-status')
+    const statusData = statusResponse.data as InternshipStatusRow | undefined
+    const delayed = statusResponse.code === 200 && statusData
+      && (statusData.status === 6 || statusData.status === '6' || statusData.isDelayed === true || statusData.is_delayed === true)
+    if (delayed) {
+      await ElMessageBox.confirm(
+        '你已获批考研延迟。确认要放弃延迟并申请实习岗位吗？企业确认实习后，延迟状态将自动结束。',
+        '考研延迟确认',
+        { confirmButtonText: '继续申请', cancelButtonText: '再想想', type: 'warning' }
+      )
+    }
+  } catch (error) {
+    // 学生取消申请（点"再想想"或关闭确认框）时直接返回；状态查询失败不阻断正常投递
+    if (error === 'cancel' || error === 'close' || error?.message === 'cancel') return
+  }
+
+  // 初始化表单数据，从用户信息中获取默认值（保持原取值链不变，仅收敛类型）
   currentApplyingJob.value = job
   applicationForm.value = {
-    studentName: authStore.user?.name || '',
-    studentNo: authStore.user?.studentId || authStore.user?.username || '',
-    major: authStore.user?.major || '',
-    grade: authStore.user?.grade || '',
-    phone: authStore.user?.phone || '',
+    studentName: (authStore.user?.name || '') as unknown as string,
+    studentNo: (authStore.user?.studentId || authStore.user?.username || '') as unknown as string,
+    major: (authStore.user?.major || '') as unknown as string,
+    grade: (authStore.user?.grade || '') as unknown as string,
+    phone: (authStore.user?.phone || '') as unknown as string,
+    industryName: job.industryName || job.industry || '',
     positionName: job.title || job.positionName,
     companyName: job.company,
     selfIntroduction: ''
@@ -970,6 +1097,23 @@ const applyJob = async (job) => {
   // 加载学生的简历和证书列表
   await loadStudentMaterials()
   showApplicationDialog.value = true
+  // 智能填表：弹窗打开后把表单结构注册到 AI 侧栏（只注册结构，赋值由助手写入上方响应式对象）
+  formContext.register({
+    formId: 'jobs:apply',
+    title: '岗位投递',
+    fields: applicationFillFields(),
+    getFields: applicationFillFields,
+    getModel: () => applicationForm.value,
+    getFormEl: () => applicationFormRef.value
+  })
+}
+
+const goToMaterialManagement = async () => {
+  showApplicationDialog.value = false
+  await router.push({
+    path: '/student/profile',
+    query: { action: 'resumeManagement' }
+  })
 }
 
 const submitApplication = async () => {
@@ -996,8 +1140,10 @@ const submitApplication = async () => {
       selfIntroduction: applicationForm.value.selfIntroduction
     }
 
+    const operation = formContext.beginFormOperation('jobs:apply')
     const response = await studentJobApplicationService.create(applicationData)
     if (response.code === 200) {
+      operation.complete({ status: 'submitted', label: '岗位投递已提交', url: '/student/applications' })
       // 同时更新 jobs 数组中的原始对象和 selectedJob（两者可能不是同一引用）
       const jobId = currentApplyingJob.value.id
       const jobInList = jobs.value.find(j => j.id === jobId)
@@ -1043,36 +1189,41 @@ const cancelApply = (job) => {
   })
 }
 
-// 获取学生实习状态
-const fetchStudentStatus = async () => {
+// 当前实习仅用于标记正在实习的岗位，不参与申请资格判断。
+const fetchCurrentPlacement = async () => {
   try {
-    const response = await request.get('/student/internship-status')
-    console.log('【DEBUG】学生实习状态响应:', response)
-    if (response.code === 200 && response.data) {
-      studentStatus.value = response.data.status || 0
-      confirmedPositionId.value = response.data.positionId || null
-      console.log('【DEBUG】studentStatus 已设置为:', studentStatus.value)
-      console.log('【DEBUG】confirmedPositionId 已设置为:', confirmedPositionId.value)
+    interface PlacementRow {
+      positionId?: number | string
+      position_id?: number | string
+      [key: string]: unknown
     }
-    statusLoaded.value = true // 状态加载完成
+    const response = await request.get<PlacementRow>('/student/internship-record')
+    if (response.code === 200 && response.data) {
+      const placement = response.data as PlacementRow
+      confirmedPositionId.value = (placement.positionId ?? placement.position_id ?? null) as number | null
+    }
   } catch (error) {
-    console.error('获取学生实习状态失败:', error)
-    statusLoaded.value = true // 即使失败也标记为加载完成，避免一直不显示
+    console.error('获取当前实习失败:', error)
   }
 }
 
-// 加载学生简历和证书列表
 const loadStudentMaterials = async () => {
   try {
+    interface MaterialRow {
+      id?: number | string
+      name?: string
+      url?: string
+      [key: string]: unknown
+    }
     // 加载简历列表
-    const resumeResponse = await request.get('/student/profile/resumes')
+    const resumeResponse = await request.get<MaterialRow[]>('/student/profile/resumes')
     if (resumeResponse.code === 200) {
-      resumeList.value = resumeResponse.data || []
+      resumeList.value = Array.isArray(resumeResponse.data) ? resumeResponse.data : []
     }
     // 加载证书列表
-    const certResponse = await request.get('/student/profile/certificates')
+    const certResponse = await request.get<MaterialRow[]>('/student/profile/certificates')
     if (certResponse.code === 200) {
-      certificateList.value = certResponse.data || []
+      certificateList.value = Array.isArray(certResponse.data) ? certResponse.data : []
     }
   } catch (error) {
     console.error('加载学生材料失败:', error)
@@ -1087,20 +1238,67 @@ const formatArrayOrString = (value) => {
   return value || ''
 }
 
+// 卡片底部企业标签：排除与标题旁徽章重复的（实习基地/校友单位）及不宜展示的（接受兜底）
+const filterJobTags = (tags) => (tags || []).filter(t => !['接受兜底', '实习基地', '校友单位'].includes(t))
+
+// 企业宣传资料：photos/videos 为 JSON 数组字符串，容错解析
+const companyPhotos = computed(() => {
+  try {
+    const arr = JSON.parse(selectedJob.value?.photos || '[]')
+    return Array.isArray(arr) ? arr.filter(u => !u.startsWith('blob:')) : []
+  } catch { return [] }
+})
+const companyVideos = computed(() => {
+  try {
+    const arr = JSON.parse(selectedJob.value?.videos || '[]')
+    return Array.isArray(arr) ? arr.filter(u => !u.startsWith('blob:')) : []
+  } catch { return [] }
+})
+
+// 合作模式：兼容新格式(mutual_choice/student_contact)与老格式(双向,兜底,自主)
+const formatCooperationMode = (mode) => {
+  if (!mode) return '-'
+  const map = {
+    '双向': '校企双向选择',
+    '自主': '学生自主联系',
+    '兜底': '接受兜底',
+    mutual_choice: '校企双向选择',
+    student_contact: '学生自主联系'
+  }
+  return mode.split(',').map(m => map[m.trim()] || m.trim()).join('、')
+}
+
 // 标记已申请的职位及其状态
 const markAppliedJobs = async () => {
   try {
     // 使用与 StudentJobApplicationService.list() 相同的 API
-    const response = await studentJobApplicationService.list()
+    interface AppliedJobRow {
+      positionId?: number | string
+      status?: string | number
+      [key: string]: unknown
+    }
+    const response = await studentJobApplicationService.list() as unknown as {
+      code?: number
+      data?: AppliedJobRow[]
+    }
     if (response.code === 200) {
-      // 创建一个 Map 用于快速查找职位对应的申请状态
+      // 仅进行中的招聘流程阻止同一岗位重复提交；已拒绝、未通过或已撤回后可重新申请。
+      // 注意：必须存入小写化的 status，模板里用 === 严格比较，原值若是大写会匹配不上任何分支。
       const applicationStatusMap = new Map()
-      response.data.forEach((app) => {
-        applicationStatusMap.set(String(app.positionId), app.status)
+      console.log('[markAppliedJobs] 申请列表原始数据:', response.data)
+      const appliedRows = Array.isArray(response.data) ? response.data : []
+      appliedRows.forEach((app) => {
+        const status = String(app.status || '').toLowerCase()
+        console.log('[markAppliedJobs] 申请记录 positionId=', app.positionId, '原始status=', app.status, '小写=', status, '是否活跃=', ACTIVE_APPLICATION_STATUSES.has(status))
+        if (ACTIVE_APPLICATION_STATUSES.has(status)) {
+          applicationStatusMap.set(String(app.positionId), status)
+        }
       })
 
       jobs.value.forEach(job => {
         const positionIdStr = String(job.id)
+        job.isApplied = false
+        job.applicationStatus = null
         if (applicationStatusMap.has(positionIdStr)) {
           job.isApplied = true
           job.applicationStatus = applicationStatusMap.get(positionIdStr)
@@ -1108,6 +1306,8 @@ const markAppliedJobs = async () => {
       })
       originalJobs.value.forEach(job => {
         const positionIdStr = String(job.id)
+        job.isApplied = false
+        job.applicationStatus = null
         if (applicationStatusMap.has(positionIdStr)) {
           job.isApplied = true
           job.applicationStatus = applicationStatusMap.get(positionIdStr)
@@ -1137,9 +1337,9 @@ const toggleFavorite = async (job) => {
 // 加载岗位类别选项
 const loadIndustryOptions = async () => {
   try {
-    const response = await request.get(`/positions/options/industries`)
+    const response = await request.get<string[]>(`/positions/options/industries`)
     if (response.code === 200) {
-      industryOptions.value = response.data || []
+      industryOptions.value = Array.isArray(response.data) ? response.data : []
     }
   } catch (error) {
     console.error('获取岗位类别选项失败:', error)
@@ -1149,9 +1349,9 @@ const loadIndustryOptions = async () => {
 // 加载公司选项
 const loadCompanyOptions = async () => {
   try {
-    const response = await request.get(`/positions/options/companies`)
+    const response = await request.get<string[]>(`/positions/options/companies`)
     if (response.code === 200) {
-      companyOptions.value = response.data || []
+      companyOptions.value = Array.isArray(response.data) ? response.data : []
     }
   } catch (error) {
     console.error('获取公司选项失败:', error)
@@ -1161,10 +1361,17 @@ const loadCompanyOptions = async () => {
 // 加载地区选项
 const loadRegionOptions = async () => {
   try {
-    const response = await request.get(`/positions/options/regions`)
+    interface RegionOptionRow {
+      value?: string
+      label?: string
+      children?: RegionOptionRow[]
+      [key: string]: unknown
+    }
+    const response = await request.get<RegionOptionRow[]>(`/positions/options/regions`)
     if (response.code === 200) {
       // 将省份列表转换为级联选择器格式
-      regionOptions.value = (response.data || []).map(item => ({
+      const regionRows = Array.isArray(response.data) ? response.data : []
+      regionOptions.value = regionRows.map(item => ({
         value: item.value,
         label: item.label,
         children: []
@@ -1178,9 +1385,14 @@ const loadRegionOptions = async () => {
 // 加载职位列表
 const loadPositions = async () => {
   try {
-    const response = await request.get(`/positions/all`)
+    interface JobListRow {
+      id?: number | string
+      [key: string]: unknown
+    }
+    const response = await request.get<JobListRow[]>(`/positions/all`)
     if (response.code === 200) {
-      jobs.value = response.data || []
+      const positionRows = Array.isArray(response.data) ? response.data : []
+      jobs.value = positionRows as typeof jobs.value
       originalJobs.value = [...jobs.value]
     }
   } catch (error) {
@@ -1191,24 +1403,27 @@ const loadPositions = async () => {
 onMounted(async () => {
   console.log('Jobs component mounted')
 
-  // 并行加载所有初始化数据（职位列表、申请状态、筛选选项、学生状态）
+  // 先加载岗位，再标记进行中的申请，避免两个并行请求产生竞态。
   await Promise.all([
     loadPositions(),
-    markAppliedJobs(),
     loadIndustryOptions(),
     loadCompanyOptions(),
     loadRegionOptions(),
-    fetchStudentStatus()
+    fetchCurrentPlacement()
   ])
-  console.log('【DEBUG】studentStatus after fetch:', studentStatus.value)
+  await markAppliedJobs()
+
+  // Result links resolve details independently of the current list filters.
+  const linkedPositionId = route.query.positionId
+  if (typeof linkedPositionId === 'string' && /^[1-9][0-9]*$/.test(linkedPositionId)) {
+    await viewJobDetail({ id: linkedPositionId })
+  }
 
   // 检查是否有jobId或positionId参数（从AI推荐跳转过来）
   const targetJobId = route.query.jobId || route.query.positionId
   if (targetJobId) {
     const jobId = Number(targetJobId)
-    // 滚动到对应职位卡片
     const scrollToJobCard = () => {
-      // 先重置筛选条件
       activeQuickFilter.value = 'all'
       selectedIndustry.value = []
       selectedCompany.value = []
@@ -1217,36 +1432,18 @@ onMounted(async () => {
       selectedDuration.value = ''
       selectedInternshipBase.value = ''
 
-      // 使用搜索功能找到目标职位
       const targetJob = jobs.value.find(j => j.id === jobId)
       if (targetJob) {
         searchKeyword.value = targetJob.title
         currentPage.value = 1
-
-        // 等待搜索结果渲染后滚动并高亮
-        setTimeout(() => {
-          const cards = document.querySelectorAll('.job-card')
-          for (const card of cards) {
-            const cardJobId = Number(card.getAttribute('data-job-id'))
-            if (cardJobId === jobId) {
-              card.scrollIntoView({ behavior: 'smooth', block: 'center' })
-              card.classList.add('highlight-card')
-              setTimeout(() => {
-                card.classList.remove('highlight-card')
-              }, 5000)
-              break
-            }
-          }
-        }, 100)
+        setTimeout(() => highlightTableRow(jobId), 100)
       } else {
         console.warn('未找到目标职位:', jobId)
       }
     }
-    // 如果职位列表已加载则立即查找，否则等待
     if (jobs.value.length > 0) {
       scrollToJobCard()
     } else {
-      // 监听职位列表加载完成
       watch(jobs, () => {
         scrollToJobCard()
       }, { once: true })
@@ -1286,22 +1483,7 @@ const handleScrollToJob = ({ positionId }) => {
   if (targetJob) {
     searchKeyword.value = targetJob.title
     currentPage.value = 1
-
-    // 等待搜索结果渲染后滚动并高亮
-    setTimeout(() => {
-      const cards = document.querySelectorAll('.job-card')
-      for (const card of cards) {
-        const cardJobId = Number(card.getAttribute('data-job-id'))
-        if (cardJobId === jobId) {
-          card.scrollIntoView({ behavior: 'smooth', block: 'center' })
-          card.classList.add('highlight-card')
-          setTimeout(() => {
-            card.classList.remove('highlight-card')
-          }, 5000)
-          break
-        }
-      }
-    }, 100)
+    setTimeout(() => highlightTableRow(jobId), 100)
   }
 }
 
@@ -1309,6 +1491,7 @@ const handleScrollToJob = ({ positionId }) => {
 watch(() => route.query.positionId, (newPositionId) => {
   if (newPositionId) {
     handleScrollToJob({ positionId: newPositionId })
+    void viewJobDetail({ id: newPositionId })
   }
 })
 
@@ -1324,6 +1507,40 @@ onUnmounted(() => {
   // 移除AI悬浮球的跳转职位监听
   eventBus.off('scrollToJob', handleScrollToJob)
 })
+
+const agentComparedJobs = ref<string[]>([])
+const agentWorkspace = useAgentStore()
+function toggleAgentCompare(job: any) {
+  const id = String(job.id)
+  if (agentComparedJobs.value.includes(id)) agentComparedJobs.value = agentComparedJobs.value.filter(value => value !== id)
+  else if (agentComparedJobs.value.length < 3) agentComparedJobs.value.push(id)
+  else { ElMessage.info('每次最多比较 3 个岗位'); return }
+  if (!agentWorkspace.draft || ['结合我的专业比较我选中的这些岗位', '结合我的专业分析我选中的这个岗位', '比较我选中的这些岗位', '分析我选中的这个岗位'].includes(agentWorkspace.draft)) {
+    agentWorkspace.draft = agentComparedJobs.value.length > 1 ? '结合我的专业比较我选中的这些岗位' : agentComparedJobs.value.length ? '结合我的专业分析我选中的这个岗位' : ''
+  }
+  void agentWorkspace.openWithPrompt()
+}
+const showLocalCompareDialog = ref(false)
+function toggleLocalCompare(job: any) {
+  const id = String(job.id)
+  if (agentComparedJobs.value.includes(id)) agentComparedJobs.value = agentComparedJobs.value.filter(value => value !== id)
+  else if (agentComparedJobs.value.length < 3) agentComparedJobs.value.push(id)
+  else { ElMessage.info('每次最多比较 3 个岗位'); return }
+  if (agentComparedJobs.value.length >= 2) showLocalCompareDialog.value = true
+}
+const localCompareRows = computed((): any[] => agentComparedJobs.value
+  .map(id => jobs.value.find((job: any) => String(job.id) === id))
+  .filter((job: any) => Boolean(job)))
+useAgentPageContext(() => ({
+  title: '岗位浏览',
+  view: showJobDetailDialog.value ? 'job-detail' : showApplicationDialog.value ? 'application-dialog' : 'page',
+  object: (showJobDetailDialog.value && selectedJob.value?.id) ? { type: 'job', id: String(selectedJob.value.id) }
+    : (showApplicationDialog.value && currentApplyingJob.value?.id) ? { type: 'job', id: String(currentApplyingJob.value.id) } : null,
+  selectedObjects: agentComparedJobs.value.map(id => ({ type: 'job', id })),
+  filters: { keyword: searchKeyword.value, region: selectedRegion.value, industry: selectedIndustry.value,
+    company: selectedCompany.value, salary: selectedSalary.value, visibleIds: paginatedJobs.value.map((job: any) => String(job.id)) }
+}))
+
 </script>
 
 <style>
@@ -1357,7 +1574,7 @@ onUnmounted(() => {
 .bg-dot:nth-child(5) { top: 50%; right: 10%; }
 
 /* 页面标题区域 - 统一为蓝绿色渐变背景 */
-.page-header {
+.jobs-container .page-header {
   margin-bottom: 24px;
   background: linear-gradient(135deg, #409eff 0%, #67c23a 100%);
   border-radius: 12px;
@@ -1368,7 +1585,7 @@ onUnmounted(() => {
   z-index: 1;
 }
 
-.page-header::before {
+.jobs-container .page-header::before {
   content: "";
   position: absolute;
   top: -50%;
@@ -1383,7 +1600,7 @@ onUnmounted(() => {
   border-radius: 50%;
 }
 
-.page-header h2 {
+.jobs-container .page-header h2 {
   font-size: 28px;
   font-weight: 700;
   color: white;
@@ -1391,18 +1608,23 @@ onUnmounted(() => {
   letter-spacing: 0.3px;
 }
 
-.page-header p {
+.jobs-container .page-header p {
   color: rgba(255, 255, 255, 0.9);
   font-size: 14px;
   line-height: 1.5;
   margin: 0;
 }
 
-/* 搜索区域 */
+/* 搜索区域：搜索 + 筛选合并为一张卡片 */
 .search-section {
-  margin-bottom: 20px;
+  margin-bottom: 16px;
   position: relative;
   z-index: 1;
+  background: #ffffff;
+  border: 1px solid #ebeef5;
+  border-radius: 10px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  padding: 16px 20px;
 }
 
 .search-filter-container {
@@ -1410,16 +1632,6 @@ onUnmounted(() => {
   justify-content: space-between;
   align-items: center;
   gap: 12px;
-  background: #f8fafc;
-  padding: 16px 20px;
-  border-radius: 12px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
-  transition: all 0.3s ease;
-  border: 1px solid #e2e8f0;
-}
-
-.search-filter-container:hover {
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
 }
 
 .filter-right {
@@ -1475,9 +1687,9 @@ onUnmounted(() => {
 }
 
 .search-input {
-  width: 100%;
+  flex: 1 1 auto;
+  min-width: 0;
   max-width: 450px;
-  flex: none;
   height: 40px;
   border-radius: 8px;
   border: 1px solid #d1d5db;
@@ -1545,41 +1757,17 @@ onUnmounted(() => {
   background-color: #409EFF;
 }
 
-/* 筛选面板 */
+/* 筛选面板：与搜索区同属一张卡片，仅用分隔线衔接 */
 .filter-panel {
-  background: #ffffff;
-  border-radius: 12px;
-  padding: 20px;
-  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.08);
   margin-top: 16px;
-  transition: all 0.3s ease;
-  border: 1px solid #f0f2f5;
-  position: relative;
-  overflow: hidden;
-}
-
-.filter-panel::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 3px;
-  background: linear-gradient(90deg, #409EFF, #67C23A);
-  border-radius: 12px 12px 0 0;
-}
-
-.filter-panel:hover {
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.12);
-  transform: translateY(-2px);
+  padding-top: 16px;
+  border-top: 1px solid #ebeef5;
 }
 
 .filter-panel-content {
   display: flex;
   flex-direction: column;
   gap: 20px;
-  position: relative;
-  z-index: 1;
 }
 
 .filter-row {
@@ -1667,7 +1855,7 @@ onUnmounted(() => {
   align-items: center;
   margin-top: 16px;
   padding-top: 16px;
-  border-top: 1px solid #e4e7ed;
+  border-top: 1px solid #ebeef5;
 }
 
 .filter-summary {
@@ -1698,255 +1886,131 @@ onUnmounted(() => {
   color: #409EFF;
 }
 
-/* 职位列表 - 网格布局 */
-.jobs-list {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: 16px;
-  max-height: calc(100vh - 420px);
-  overflow-y: auto;
-  padding-right: 4px;
-}
-
-/* 职位卡片 */
-.job-card {
-  background: #ffffff;
-  border-radius: 16px;
-  padding: 20px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
-  transition: all 0.3s ease;
-  display: flex;
-  gap: 12px;
-  cursor: pointer;
+/* 职位表格：表格 + 分页合并为一张卡片 */
+.table-card {
   position: relative;
-  overflow: hidden;
-  border: 1px solid transparent;
+  z-index: 1;
   background: #ffffff;
-  height: 100%;
-  flex-direction: column;
-}
-
-.job-card::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 3px;
-  background: linear-gradient(90deg, #409EFF, #67C23A);
-  border-radius: 16px 16px 0 0;
-}
-
-.job-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 8px 32px rgba(64, 158, 255, 0.2);
-  border-color: #409EFF;
-  background: linear-gradient(135deg, #ffffff 0%, #f0f9ff 100%);
-}
-
-.job-card.highlight-card {
-  animation: highlightFlash 1s ease-in-out infinite;
-  border-color: #409EFF;
-  box-shadow: 0 0 20px rgba(64, 158, 255, 0.6);
-}
-
-@keyframes highlightFlash {
-  0%, 100% {
-    box-shadow: 0 0 5px rgba(64, 158, 255, 0.4);
-    border-color: #409EFF;
-  }
-  50% {
-    box-shadow: 0 0 25px rgba(64, 158, 255, 0.8);
-    border-color: #67C23A;
-  }
-}
-
-.job-card:hover .job-title {
-  color: #409EFF;
-}
-
-.job-card:hover .favorite-icon {
-  transform: scale(1.1);
-}
-
-.job-right {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.job-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 12px;
-  flex-wrap: wrap;
-  width: 100%;
-  margin-bottom: 8px;
-}
-
-.job-title-container {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-  min-width: 0;
-}
-
-.job-title {
-  font-size: 16px;
-  font-weight: 600;
-  color: #303133;
-  transition: all 0.3s ease;
-  margin: 0;
-  flex: 1;
-  min-width: 0;
-  white-space: nowrap;
+  border: 1px solid #ebeef5;
+  border-radius: 10px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
   overflow: hidden;
-  text-overflow: ellipsis;
 }
 
-.internship-base-badges {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  flex-shrink: 0;
+.data-table {
+  --el-table-border-color: #ebeef5;
+  --el-table-header-bg-color: #fafbfc;
+  --el-table-row-hover-bg-color: #f5f9ff;
 }
 
-.base-badge {
-  font-size: 12px;
-  padding: 6px 16px;
-  border-radius: 16px;
+.data-table :deep(.el-table__header th.el-table__cell) {
+  background: #fafbfc;
+  color: #606266;
   font-weight: 600;
-  transition: all 0.3s ease;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+  font-size: 13px;
+  padding: 12px 0;
+  border-bottom: 1px solid #ebeef5;
 }
 
-.base-badge.national {
-  background: linear-gradient(135deg, #ff4d4f, #ff7875);
-  border-color: #ff4d4f;
-  color: white;
-  box-shadow: 0 4px 12px rgba(255, 77, 79, 0.3);
+.data-table :deep(.el-table__row td.el-table__cell) {
+  padding: 12px 0;
+  font-size: 13px;
+  color: #303133;
+  border-bottom: 1px solid #f2f3f5;
 }
 
-.base-badge.provincial {
-  background: linear-gradient(135deg, #faad14, #ffc53d);
-  border-color: #faad14;
-  color: white;
-  box-shadow: 0 4px 12px rgba(250, 173, 20, 0.3);
+.data-table :deep(.el-table__row:hover td.el-table__cell) {
+  background: #f5f9ff;
 }
 
-.base-badge:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
+.job-title-text {
+  font-weight: 500;
+  color: #303133;
+}
+
+.tags-cell {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+
+.action-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex-wrap: nowrap;
+}
+
+.action-cell .el-button + .el-button {
+  margin-left: 0;
+}
+
+.action-cell .el-button.is-link,
+.action-cell .el-button--small {
+  padding: 5px 12px;
+  font-size: 12px;
+  border-radius: 6px;
+}
+
+.quota-warn {
+  font-size: 11px;
+  color: #e6a23c;
+  margin-top: 2px;
+}
+
+.unrated-company {
+  color: #b0b8c4;
+  font-weight: 400;
+  font-size: 12px;
 }
 
 .favorite-icon {
-  font-size: 20px;
+  font-size: 18px;
   cursor: pointer;
-  transition: all 0.3s ease;
+  transition: all 0.25s ease;
   color: #c0c4cc;
+  flex-shrink: 0;
 }
 
 .favorite-icon:hover {
   color: #f7ba2a;
+  transform: scale(1.15);
 }
 
 .favorite-icon.active {
   color: #f7ba2a;
 }
 
-.job-info {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-  font-size: 12px;
-  color: #606266;
-  padding: 0;
-  background: none;
-  border-radius: 0;
-  border: none;
-  margin-bottom: 8px;
-}
-
-.info-item {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 0;
-  transition: all 0.2s ease;
-}
-
-.info-item:hover {
-  color: #409EFF;
-  transform: translateX(4px);
-}
-
-.info-icon {
-  font-size: 16px;
-  color: #1890ff;
-  width: 24px;
-  text-align: center;
-  flex-shrink: 0;
-  filter: drop-shadow(0 2px 4px rgba(24, 144, 255, 0.4));
-  background: linear-gradient(135deg, #e6f7ff 0%, #bae7ff 100%);
-  padding: 4px;
-  border-radius: 6px;
-  box-shadow: 0 2px 8px rgba(24, 144, 255, 0.2);
-}
-
-.job-tags {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-  margin-bottom: 0;
-  flex: 1;
-  align-items: center;
-}
-
-.job-tags-footer {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-top: 8px;
+.quota-num {
+  color: #409eff;
+  font-weight: 700;
+  font-size: 14px;
 }
 
 .job-tag {
-  background: linear-gradient(135deg, #ecf5ff 0%, #d9ecff 100%);
-  color: #409EFF;
-  border: 1px solid #b3d8ff;
-  border-radius: 16px;
-  padding: 2px 8px;
-  font-size: 10px;
+  background: #f0f7ff;
+  color: #409eff;
+  border: 1px solid #d6e8ff;
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: 11px;
   font-weight: 500;
-  transition: all 0.3s ease;
-  box-shadow: 0 2px 8px rgba(64, 158, 255, 0.1);
+  line-height: 18px;
 }
 
-.job-tag:hover {
-  background: linear-gradient(135deg, #409EFF 0%, #66b1ff 100%);
-  color: white;
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(64, 158, 255, 0.4);
-  border-color: #409EFF;
+.data-table :deep(.el-table__row.highlight-row td.el-table__cell) {
+  animation: highlightFlash 1s ease-in-out infinite;
 }
 
-.job-footer {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  margin-top: auto;
-  padding: 0;
-  background: none;
-  border-radius: 0;
-  border: none;
-  box-shadow: none;
-  justify-content: flex-end;
-  flex-shrink: 0;
+@keyframes highlightFlash {
+  0%, 100% {
+    background-color: rgba(64, 158, 255, 0.06);
+  }
+  50% {
+    background-color: rgba(64, 158, 255, 0.16);
+  }
 }
 
 .view-detail-button {
@@ -2060,21 +2124,18 @@ onUnmounted(() => {
   background: linear-gradient(135deg, #ffc53d, #ffd666);
 }
 
-/* 分页区域 */
+/* 分页区域：并入表格卡片底部 */
 .pagination-section {
-  margin-top: 32px;
   display: flex;
   justify-content: center;
-  position: relative;
-  z-index: 1;
+  padding: 8px 16px;
+  border-top: 1px solid #ebeef5;
+  background: #fafbfc;
 }
 
 .pagination {
-  background: #ffffff;
-  padding: 16px;
-  border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
-  border: 1px solid #e2e8f0;
+  background: transparent;
+  padding: 0;
 }
 
 /* 职位详情弹窗 */
@@ -2214,6 +2275,28 @@ onUnmounted(() => {
   padding: 0 28px;
 }
 
+/* 企业信息折叠面板：去掉默认边框，保留标题装饰线 */
+.job-company-collapse {
+  border: none;
+  background: transparent;
+}
+
+.job-company-collapse :deep(.el-collapse-item__header) {
+  height: auto;
+  padding: 0;
+  border-bottom: none;
+  background: transparent;
+  line-height: 1.5;
+}
+
+.job-company-collapse :deep(.el-collapse-item__wrap) {
+  border-bottom: none;
+}
+
+.job-company-collapse .section-title {
+  margin: 0 0 16px 0;
+}
+
 .section-title {
   font-size: 15px;
   font-weight: 700;
@@ -2297,6 +2380,98 @@ onUnmounted(() => {
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
 }
 
+.company-card-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 16px 20px;
+  background: linear-gradient(135deg, #f8fafc 0%, #ffffff 100%);
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  margin-bottom: 12px;
+}
+
+.company-card-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.company-logo-large {
+  width: 64px;
+  height: 64px;
+  object-fit: contain;
+  border-radius: 10px;
+  border: 1px solid #e2e8f0;
+  background: white;
+  padding: 6px;
+  flex-shrink: 0;
+}
+
+.company-card-title {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.company-name-text {
+  font-size: 16px;
+  font-weight: 700;
+  color: #1e293b;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.company-intro-text {
+  font-size: 14px;
+  line-height: 1.8;
+  color: #475569;
+  margin: 8px 0 0 0;
+  white-space: pre-wrap;
+}
+
+.sub-section-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #64748b;
+  margin: 14px 0 10px 0;
+}
+
+.company-photo-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 12px;
+}
+
+.company-photo {
+  width: 100%;
+  height: 110px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  cursor: zoom-in;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.company-photo:hover {
+  transform: scale(1.03);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.company-video-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.company-video {
+  width: 100%;
+  max-height: 300px;
+  border-radius: 8px;
+  background: #000;
+}
+
 .contact-info {
   display: flex;
   flex-direction: column;
@@ -2337,46 +2512,6 @@ onUnmounted(() => {
   color: #1e293b;
   flex: 1;
   font-size: 14px;
-}
-
-.stats-info {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 16px 20px;
-  background: white;
-  border-radius: 10px;
-  border: 1px solid #e2e8f0;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
-}
-
-.stat-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 14px;
-  background: #f8fafc;
-  border-radius: 8px;
-  border: 1px solid #e2e8f0;
-  transition: all 0.3s ease;
-}
-
-.stat-item:hover {
-  background: #f0f9ff;
-  border-color: #409eff;
-  transform: translateX(4px);
-}
-
-.stat-label {
-  font-weight: 600;
-  color: #64748b;
-  font-size: 14px;
-}
-
-.stat-value {
-  font-weight: 500;
-  color: #1e293b;
-  font-size: 15px;
 }
 
 .detail-footer {
@@ -2442,32 +2577,6 @@ onUnmounted(() => {
   flex: 1;
 }
 
-.stats-info {
-  display: flex;
-  gap: 24px;
-  flex-wrap: wrap;
-  padding: 12px 16px;
-  background: #f8fafc;
-  border-radius: 8px;
-  border: 1px solid #e2e8f0;
-}
-
-.stat-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.stat-label {
-  font-weight: 500;
-  color: #606266;
-}
-
-.stat-value {
-  font-weight: 400;
-  color: #303133;
-}
-
 .detail-footer {
   display: flex;
   justify-content: flex-end;
@@ -2488,111 +2597,61 @@ onUnmounted(() => {
 }
 
 /* 响应式布局 */
-@media (min-width: 1400px) {
-  .jobs-list {
-    grid-template-columns: repeat(3, 1fr);
-    gap: 16px;
-  }
-}
-
-@media (min-width: 1200px) and (max-width: 1399px) {
-  .jobs-list {
-    grid-template-columns: repeat(3, 1fr);
-    gap: 16px;
-  }
-}
-
 @media (min-width: 992px) and (max-width: 1199px) {
-  .jobs-list {
-    grid-template-columns: repeat(3, 1fr);
-    gap: 14px;
+  .search-filter-container {
+    flex-wrap: wrap;
+  }
+
+  .filter-center {
+    flex-wrap: wrap;
+  }
+
+  .quick-filters {
+    flex-wrap: wrap;
   }
 }
 
 @media (min-width: 768px) and (max-width: 991px) {
-  .jobs-list {
-    grid-template-columns: repeat(2, 1fr);
-    gap: 14px;
+  .search-filter-container {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .search-left {
+    flex: 1 1 auto;
+    min-width: 280px;
+  }
+
+  .filter-center {
+    flex: 1 1 100%;
+  }
+
+  .quick-filters {
+    flex-wrap: wrap;
+    gap: 6px;
   }
 }
 
 @media (max-width: 767px) {
-  .jobs-list {
-    grid-template-columns: 1fr;
-    gap: 14px;
+  .filter-group {
+    min-width: 100%;
   }
-  
-  .job-card {
-    padding: 14px;
-  }
-  
-  .job-title {
-    font-size: 16px;
-  }
-  
-  .job-info {
-    gap: 16px;
-    font-size: 13px;
-  }
-  
-  .job-tags-footer {
+
+  .filter-row.two-cols {
     flex-direction: column;
-    align-items: stretch;
+    gap: 16px;
   }
-  
-  .job-footer {
+
+  .action-cell {
     flex-wrap: wrap;
-    justify-content: stretch;
-  }
-  
-  .job-footer .el-button {
-    flex: 1;
-    min-width: auto;
   }
 }
 
 @media (max-width: 480px) {
-  .jobs-list {
-    gap: 12px;
-  }
-  
-  .job-card {
-    padding: 12px;
-  }
-  
-  .job-left {
-    padding-right: 12px;
-  }
-  
-  .company-logo {
-    width: 60px;
-    height: 60px;
-    font-size: 24px;
-  }
-  
-  .job-title {
-    font-size: 15px;
-  }
-  
-  .job-info {
-    gap: 12px;
-    font-size: 12px;
-  }
-  
-  .job-tags {
-    gap: 8px;
-  }
-  
-  .job-tag {
-    font-size: 11px;
-    padding: 3px 10px;
-  }
-  
   .search-filter-container {
     flex-direction: column;
     align-items: stretch;
     gap: 12px;
-    padding: 14px 16px;
   }
   
   .search-left {
@@ -2819,6 +2878,11 @@ onUnmounted(() => {
   font-size: 13px;
   text-align: center;
   padding: 16px 0;
+}
+
+.application-dialog .material-upload-link {
+  vertical-align: baseline;
+  line-height: 24px;
 }
 
 .application-dialog .material-item {

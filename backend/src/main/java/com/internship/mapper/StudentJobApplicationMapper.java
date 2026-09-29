@@ -9,9 +9,19 @@ import java.util.Map;
 @Mapper
 public interface StudentJobApplicationMapper {
     List<StudentJobApplication> findByStudentId(Long studentId);
+    StudentJobApplication findLatestByStudentAndPositionForUpdate(@Param("studentId") Long studentId,
+                                                                  @Param("positionId") Long positionId);
     StudentJobApplication findById(Long id);
     int insert(StudentJobApplication application);
     int update(StudentJobApplication application);
+    int updateStatusIfActive(@Param("id") Long id,
+                             @Param("status") String status,
+                             @Param("rejectReason") String rejectReason);
+    int updateLatestStatusIfActive(@Param("studentId") Long studentId,
+                                   @Param("positionId") Long positionId,
+                                   @Param("status") String status,
+                                   @Param("rejectReason") String rejectReason);
+    int claimPendingForDirectHire(@Param("id") Long id, @Param("companyId") Long companyId);
     int deleteById(Long id);
     List<StudentJobApplication> findByCompanyId(Long companyId);
 
@@ -29,11 +39,4 @@ public interface StudentJobApplicationMapper {
      */
     List<Map<String, Object>> countByPositionIds(@Param("positionIds") List<Long> positionIds);
 
-    /**
-     * 统计学生对同一岗位的申请次数（防重复申请）
-     * @param studentId 学生ID
-     * @param positionId 岗位ID
-     * @return 申请次数
-     */
-    int countByStudentAndPosition(@Param("studentId") Long studentId, @Param("positionId") Long positionId);
 }

@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.internship.mapper.CompanySchoolLiaisonMapper">
+    <resultMap id="LiaisonResultMap" type="com.internship.entity.CompanySchoolLiaison">
+        <id property="id" column="id"/>
+        <result property="companyId" column="company_id"/>
+        <result property="teacherId" column="teacher_id"/>
+        <result property="creatorTeacherId" column="creator_teacher_id"/>
+        <result property="creatorTeacherName" column="creator_teacher_name"/>
+        <result property="teacherAccount" column="teacher_account"/>
+        <result property="teacherName" column="teacher_name"/>
+        <result property="teacherPhone" column="teacher_phone"/>
+        <result property="createTime" column="create_time"/>
+    </resultMap>
+
+    <sql id="LiaisonColumns">
+        csl.id, csl.company_id, csl.teacher_id, csl.creator_teacher_id,
+        tu.teacher_user_id AS teacher_account,
+        tu.name AS teacher_name,
+        tu.phone AS teacher_phone,
+        creator.name AS creator_teacher_name,
+        csl.create_time
+    </sql>
+
+    <select id="findByCompanyId" resultMap="LiaisonResultMap">
+        SELECT <include refid="LiaisonColumns"/>
+        FROM company_school_liaison csl
+        JOIN teacher_users tu ON tu.id = csl.teacher_id
+        LEFT JOIN teacher_users creator ON creator.id = csl.creator_teacher_id
+        WHERE csl.company_id = #{companyId}
+        ORDER BY tu.name ASC, csl.id ASC
+    </select>
+
+    <select id="findByCompanyIds" resultMap="LiaisonResultMap">
+        SELECT <include refid="LiaisonColumns"/>
+        FROM company_school_liaison csl
+        JOIN teacher_users tu ON tu.id = csl.teacher_id
+        LEFT JOIN teacher_users creator ON creator.id = csl.creator_teacher_id
+        WHERE csl.company_id IN
+        <foreach collection="companyIds" item="companyId" open="(" separator="," close=")">
+            #{companyId}
+        </foreach>
+        ORDER BY csl.company_id ASC, tu.name ASC, csl.id ASC
+    </select>
+
+    <select id="exists" resultType="int">
+        SELECT COUNT(1)
+        FROM company_school_liaison
+        WHERE company_id = #{companyId} AND teacher_id = #{teacherId}
+    </select>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO company_school_liaison (company_id, teacher_id, creator_teacher_id, create_time)
+        VALUES (#{companyId}, #{teacherId}, #{creatorTeacherId}, #{createTime})
+    </insert>
+
+    <insert id="batchInsert">
+        INSERT INTO company_school_liaison (company_id, teacher_id, creator_teacher_id, create_time)
+        VALUES
+        <foreach collection="liaisons" item="liaison" separator=",">
+            (#{liaison.companyId}, #{liaison.teacherId}, #{liaison.creatorTeacherId}, #{liaison.createTime})
+        </foreach>
+    </insert>
+
+    <select id="findById" resultMap="LiaisonResultMap">
+        SELECT <include refid="LiaisonColumns"/>
+        FROM company_school_liaison csl
+        JOIN teacher_users tu ON tu.id = csl.teacher_id
+        LEFT JOIN teacher_users creator ON creator.id = csl.creator_teacher_id
+        WHERE csl.id = #{id}
+    </select>
+
+    <delete id="delete">
+        DELETE FROM company_school_liaison
+        WHERE company_id = #{companyId} AND teacher_id = #{teacherId}
+    </delete>
+
+    <delete id="deleteById">
+        DELETE FROM company_school_liaison WHERE id = #{id}
+    </delete>
+
+    <delete id="deleteByCompanyId">
+        DELETE FROM company_school_liaison WHERE company_id = #{companyId}
+    </delete>
+</mapper>

@@ -14,7 +14,7 @@ import java.util.concurrent.TimeUnit;
 /**
  * 登录尝试管理服务
  * 使用 Redis 实现分布式锁 + 原子计数器，解决并发登录时计数器竞态问题
- * Redis 不可用时降级为 JVM 锁 + 原子整数
+ * 未配置 Redis 时使用 JVM 锁；已配置 Redis 的故障不能绕过共享状态。
  */
 @Slf4j
 @Service
@@ -127,8 +127,8 @@ public class LoginAttemptService {
             }
             return result;
         } catch (Exception e) {
-            log.warn("Redis 获取登录锁异常，降级到 JVM 锁: {}", e.getMessage());
-            return true; // 降级：允许继续
+            log.warn("Redis 获取登录锁异常，拒绝登录尝试: {}", e.getMessage());
+            return false; // 已配置 Redis 时不能绕过其他节点的锁。
         }
     }
 
@@ -148,7 +148,7 @@ public class LoginAttemptService {
             return Boolean.TRUE.equals(exists);
         } catch (Exception e) {
             log.warn("Redis 检查锁定状态异常: {}", e.getMessage());
-            return false;
+            return true;
         }
     }
 
@@ -204,14 +204,12 @@ public class LoginAttemptService {
         try {
             DefaultRedisScript<Long> script = new DefaultRedisScript<>(luaScript, Long.class);
             Long result = stringRedisTemplate.execute(script,
-                    Collections.singletonList(attemptsKey),
-                    Collections.singletonList(lockedKey),
+                    java.util.List.of(attemptsKey, lockedKey),
                     String.valueOf(maxAttempts),
                     String.valueOf(lockTimeMinutes * 60));
 
             if (result == null) {
-                log.warn("Redis Lua 脚本执行返回 null，降级到 JVM");
-                return recordFailureJvm(username, maxAttempts, lockTimeMinutes);
+                throw new IllegalStateException("Login failure counter unavailable");
             }
 
             int count = result.intValue();
@@ -226,8 +224,7 @@ public class LoginAttemptService {
                 return count;
             }
         } catch (Exception e) {
-            log.warn("Redis 记录登录失败异常，降级到 JVM: {}", e.getMessage());
-            return recordFailureJvm(username, maxAttempts, lockTimeMinutes);
+            throw new IllegalStateException("Login failure counter unavailable", e);
         }
     }
 

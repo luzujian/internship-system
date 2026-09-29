@@ -51,8 +51,8 @@ export default {
     const cachedData = cacheService.get<Department>(cacheKey)
 
     if (cachedData) {
-      // 返回缓存数据的 Promise
-      return Promise.resolve({ data: cachedData })
+      // 返回与请求一致的业务包形态
+      return Promise.resolve({ code: 200, message: 'cached', data: cachedData })
     }
 
     // 缓存未命中，请求数据

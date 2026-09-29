@@ -30,14 +30,6 @@ interface SystemSettings {
   [key: string]: unknown
 }
 
-interface LogParams {
-  operatorName?: string
-  operation?: string
-  status?: number
-  startTime?: string
-  endTime?: string
-}
-
 // 管理员服务
 const AdminService = {
   // 获取用户统计信息
@@ -83,20 +75,6 @@ const AdminService = {
   // 获取系统统计信息
   getSystemStats: () => {
     return request.get<ApiResponse<Record<string, number>>>('/admin/stats/system')
-  },
-
-  // 获取操作日志
-  getOperationLogs: (page = 1, pageSize = 10, params: LogParams = {}) => {
-    return request.get<ApiResponse<PageResponse<unknown>>>('/admin/logs/operation', {
-      params: { page, pageSize, ...params }
-    })
-  },
-
-  // 获取登录日志
-  getLoginLogs: (page = 1, pageSize = 10, params: LogParams = {}) => {
-    return request.get<ApiResponse<PageResponse<unknown>>>('/admin/logs/login', {
-      params: { page, pageSize, ...params }
-    })
   },
 
   // 更新系统设置

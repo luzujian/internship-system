@@ -26,6 +26,9 @@ public class StudentJobApplication {
     private String major;
     private String grade;
     private String selfIntroduction;
+    private Integer stageNo;
+    private Long stageAssignmentId;
+    private String sourceType;
     private String status; // pending, approved, rejected, withdrawn
     private String rejectReason;
     private Date applyDate;
@@ -49,4 +52,5 @@ public class StudentJobApplication {
 
     // 申请人数（聚合查询）
     private Integer applyCount; // 该职位的申请人数
+    private Boolean directHire;
 }

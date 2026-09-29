@@ -2,7 +2,7 @@
   <div class="registration-container">
     <div class="page-header">
       <h2>实习去向登记</h2>
-      <p>登记您的实习去向信息，帮助我们更好地了解您的需求并提供针对性支持</p>
+      <p>本页仅整理实习去向草稿，尚未接入提交；刷新或离开后不会保留，请从实习申请入口办理。</p>
     </div>
 
     <el-card class="form-card" shadow="never" :body-style="{ padding: '24px' }">
@@ -11,7 +11,7 @@
           <el-radio-group v-model="form.status" class="status-radio-group">
             <el-radio-button label="found">已找到实习</el-radio-button>
             <el-radio-button label="searching">正在寻找实习</el-radio-button>
-            <el-radio-button label="not-found">暂未找到实习</el-radio-button>
+            <el-radio-button label="not-found">未投递</el-radio-button>
             <el-radio-button label="postgraduate">准备考研</el-radio-button>
             <el-radio-button label="not-intern">暂不实习</el-radio-button>
           </el-radio-group>
@@ -83,7 +83,7 @@
 
         <el-form-item>
           <el-button type="primary" @click="submitForm" :loading="submitting" class="submit-btn">
-            提交登记
+            记录到本页
           </el-button>
           <el-button @click="resetForm" class="reset-btn">重置</el-button>
         </el-form-item>
@@ -93,7 +93,7 @@
     <el-card class="history-card" shadow="never" v-if="registrationHistory.length > 0" :body-style="{ padding: '24px' }">
       <template #header>
         <div class="card-header">
-          <span>登记历史</span>
+          <span>本页记录（未提交）</span>
           <el-tag type="info" size="small">共 {{ registrationHistory.length }} 条记录</el-tag>
         </div>
       </template>
@@ -122,8 +122,9 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, onUnmounted } from 'vue'
 import { useAuthStore } from '@/store/auth'
+import { useFormContext } from '@/agent/formContext'
 import { ElMessage } from 'element-plus'
 
 const authStore = useAuthStore()
@@ -149,6 +150,36 @@ const form = reactive({
   contactPhone: '',
   remark: ''
 })
+
+// ===== 智能填表：页面级表单注册（字段结构与 el-form 实例；赋值写 reactive form 并参与原有校验） =====
+const formContext = useFormContext()
+const registrationFields = [
+  { prop: 'status', label: '当前状态', type: 'radio', required: true, options: [
+    { value: 'found', label: '已找到实习' },
+    { value: 'searching', label: '正在寻找实习' },
+    { value: 'not-found', label: '未投递' },
+    { value: 'postgraduate', label: '准备考研' },
+    { value: 'not-intern', label: '暂不实习' }
+  ] },
+  { prop: 'company', label: '实习单位', type: 'input', required: true, patternHint: '仅当状态为已找到实习时显示' },
+  { prop: 'position', label: '实习岗位', type: 'input', required: true },
+  { prop: 'location', label: '实习地点', type: 'input', required: true },
+  { prop: 'startDate', label: '开始时间', type: 'date', required: true, valueType: 'date' },
+  { prop: 'endDate', label: '结束时间', type: 'date', required: true, valueType: 'date' },
+  { prop: 'graduateSchool', label: '考研院校', type: 'input', required: true },
+  { prop: 'graduateMajor', label: '考研专业', type: 'input', required: true },
+  { prop: 'otherReason', label: '其他说明', type: 'textarea', required: true },
+  { prop: 'contactPhone', label: '联系方式', type: 'input', required: true, patternHint: '手机号码' },
+  { prop: 'remark', label: '备注信息', type: 'textarea' }
+]
+formContext.register({
+  formId: 'registration:internship',
+  title: '实习去向草稿（仅本页，未提交）',
+  fields: registrationFields,
+  getModel: () => form,
+  getFormEl: () => formRef.value
+})
+onUnmounted(() => formContext.unregister('registration:internship'))
 
 const rules = {
   status: [
@@ -212,7 +243,7 @@ const submitForm = () => {
           })
         }
         registrationHistory.value.unshift(newRecord)
-        ElMessage.success('登记提交成功')
+        ElMessage.info('已记录在本页，尚未提交到系统；离开或刷新页面后不会保留')
         resetForm()
         submitting.value = false
       }, 1000)
@@ -224,7 +255,7 @@ const getStatusText = (status) => {
   const statusMap = {
     found: '已找到实习',
     searching: '正在寻找实习',
-    notFound: '暂未找到实习',
+    notFound: '未投递',
     postgraduate: '准备考研',
     notIntern: '暂不实习'
   }

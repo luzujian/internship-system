@@ -1,0 +1,138 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.internship.mapper.InternshipProgressRecordMapper">
+
+    <resultMap id="RecentActivityRowMap" type="com.internship.entity.dto.RecentActivityRecordRow">
+        <id column="id" property="id"/>
+        <result column="student_id" property="studentId"/>
+        <result column="event_type" property="eventType"/>
+        <result column="event_title" property="eventTitle"/>
+        <result column="description" property="description"/>
+        <result column="status" property="status"/>
+        <result column="related_id" property="relatedId"/>
+        <result column="occurred_at" property="occurredAt"/>
+        <result column="stage_no" property="stageNo"/>
+        <result column="target_exists" property="targetExists"/>
+    </resultMap>
+
+    <select id="selectRecentPage" resultMap="RecentActivityRowMap">
+        SELECT activity.id,
+               activity.student_id,
+               activity.event_type,
+               activity.event_title,
+               activity.description,
+               activity.status,
+               activity.related_id,
+               activity.occurred_at,
+               activity.stage_no,
+               activity.target_exists
+        FROM (
+            SELECT r.id,
+                   r.student_id,
+                   r.event_type,
+                   r.event_title,
+                   r.description,
+                   r.status,
+                   r.related_id,
+                   COALESCE(r.event_time, r.create_time, TIMESTAMP('1970-01-01 00:00:00')) AS occurred_at,
+                   CASE
+                       WHEN r.description LIKE '%第2阶段%'
+                         OR r.description LIKE '%第 2 阶段%' THEN 2
+                       WHEN r.description LIKE '%第1阶段%'
+                         OR r.description LIKE '%第 1 阶段%' THEN 1
+                       WHEN r.event_type IN ('job_application', 'job_applied', 'job_withdrawn', 'job_rejected') THEN
+                           (SELECT sja.stage_no
+                            FROM student_job_application sja
+                            WHERE sja.id = r.related_id AND sja.student_id = r.student_id
+                            LIMIT 1)
+                       WHEN r.event_type IN ('interview', 'interview_invited', 'interview_passed',
+                                             'interview_failed', 'direct_hire', 'direct_offer') THEN
+                           (SELECT sja.stage_no
+                            FROM interview_invitation ii
+                            LEFT JOIN student_job_application sja
+                                   ON sja.student_id = ii.student_id
+                                  AND sja.position_id = ii.position_id
+                            WHERE ii.id = r.related_id AND ii.student_id = r.student_id
+                              AND (sja.apply_date IS NULL
+                                   OR sja.apply_date &lt;= COALESCE(r.event_time, r.create_time))
+                            ORDER BY COALESCE(sja.apply_date, sja.create_time) DESC, sja.id DESC
+                            LIMIT 1)
+                       WHEN r.event_type IN ('internship_confirmation', 'confirmation_submitted',
+                                             'confirmation_confirmed', 'confirmation_rejected',
+                                             'confirmation_withdrawn') THEN
+                           (SELECT isa.stage_no
+                            FROM internship_stage_assignment isa
+                            WHERE isa.confirmation_record_id = r.related_id
+                              AND isa.student_id = r.student_id
+                            ORDER BY isa.id DESC
+                            LIMIT 1)
+                       WHEN r.event_type IN ('reflection_submit', 'reflection_submitted',
+                                             'reflection_resubmitted', 'reflection_withdrawn',
+                                             'reflection_scored') THEN
+                           (SELECT isa.stage_no
+                            FROM internship_reflection ir
+                            LEFT JOIN internship_stage_assignment isa ON isa.id = ir.stage_assignment_id
+                            WHERE ir.id = r.related_id AND ir.student_id = r.student_id
+                            LIMIT 1)
+                       WHEN r.event_type IN ('stage_continued', 'stage_auto_continued',
+                                             'stage_change_selected', 'internship_started',
+                                             'internship_ended', 'internship_interrupted') THEN
+                           (SELECT isa.stage_no
+                            FROM internship_stage_assignment isa
+                            WHERE isa.id = r.related_id AND isa.student_id = r.student_id
+                            LIMIT 1)
+                       ELSE NULL
+                   END AS stage_no,
+                   CASE
+                       WHEN r.event_type IN ('job_application', 'job_applied', 'job_withdrawn', 'job_rejected') THEN
+                           EXISTS (SELECT 1 FROM student_job_application sja
+                                   WHERE sja.id = r.related_id AND sja.student_id = r.student_id)
+                       WHEN r.event_type IN ('interview', 'interview_invited', 'interview_passed',
+                                             'interview_failed', 'direct_hire', 'direct_offer') THEN
+                           EXISTS (SELECT 1 FROM interview_invitation ii
+                                   WHERE ii.id = r.related_id AND ii.student_id = r.student_id)
+                       WHEN r.event_type IN ('internship_confirmation', 'confirmation_submitted',
+                                             'confirmation_confirmed', 'confirmation_rejected',
+                                             'confirmation_withdrawn') THEN
+                           EXISTS (SELECT 1 FROM internship_confirmation_record icr
+                                   WHERE icr.id = r.related_id AND icr.student_id = r.student_id)
+                       WHEN r.event_type IN ('selfPractice', 'self_practice_submitted',
+                                             'self_practice_approved', 'self_practice_rejected',
+                                             'delay', 'delay_submitted', 'delay_approved', 'delay_rejected',
+                                             'unit_change_application', 'unit_change_submitted',
+                                             'unit_change_resubmitted', 'unit_change_approved',
+                                             'unit_change_rejected') THEN
+                           EXISTS (SELECT 1 FROM student_application sa
+                                   WHERE sa.id = r.related_id AND sa.student_id = r.student_id)
+                       WHEN r.event_type IN ('reflection_submit', 'reflection_submitted',
+                                             'reflection_resubmitted', 'reflection_withdrawn',
+                                             'reflection_scored') THEN
+                           EXISTS (SELECT 1 FROM internship_reflection ir
+                                   WHERE ir.id = r.related_id AND ir.student_id = r.student_id
+                                     AND COALESCE(ir.deleted, 0) = 0)
+                       WHEN r.event_type IN ('stage_continued', 'stage_auto_continued',
+                                             'stage_change_selected', 'internship_started',
+                                             'internship_ended', 'internship_interrupted') THEN
+                           EXISTS (SELECT 1 FROM internship_stage_assignment isa
+                                   WHERE isa.id = r.related_id AND isa.student_id = r.student_id)
+                       ELSE 1
+                   END AS target_exists
+            FROM internship_progress_record r
+            INNER JOIN student_users su ON su.id = r.student_id
+            WHERE r.student_id = #{studentId}
+        ) activity
+        WHERE (activity.target_exists = 1
+               OR activity.event_type IN (
+                   'job_withdrawn', 'job_rejected', 'reflection_withdrawn',
+                   'internship_started', 'internship_ended', 'internship_interrupted'
+               ))
+        <if test="cursorTime != null and cursorId != null">
+            AND (activity.occurred_at &lt; #{cursorTime}
+                 OR (activity.occurred_at = #{cursorTime} AND activity.id &lt; #{cursorId}))
+        </if>
+        ORDER BY activity.occurred_at DESC, activity.id DESC
+        LIMIT #{limit}
+    </select>
+
+</mapper>

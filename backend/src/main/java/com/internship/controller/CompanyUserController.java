@@ -10,6 +10,11 @@ import com.internship.utils.CurrentHolder;
 import com.internship.utils.ExcelUtils;
 import com.internship.utils.JwtUtils;
 import com.internship.utils.PasswordValidator;
+import com.internship.utils.UserCredentialDefaults;
+import com.internship.utils.AliyunOSSOperator;
+import com.internship.utils.CompanyQualificationMaterial;
+import com.internship.utils.RecordAttachmentResponse;
+import com.internship.utils.MaterialMetadataRedactor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
@@ -18,6 +23,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.multipart.MultipartFile;
 
 import jakarta.servlet.http.HttpServletResponse;
@@ -31,7 +37,6 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 
 @Slf4j
 @RestController
@@ -42,13 +47,48 @@ public class CompanyUserController {
     private CompanyUserService companyUserService;
 
     @Autowired
+    private AliyunOSSOperator aliyunOSSOperator;
+
+    @GetMapping("/{id}/materials/{kind}/{index}")
+    @PreAuthorize("hasRole('ADMIN') and hasAuthority('user:company:audit')")
+    @Log(operationType = "DOWNLOAD", module = "COMPANY_MANAGEMENT", description = "下载企业资质材料", riskLevel = "MEDIUM")
+    public ResponseEntity<byte[]> downloadCompanyQualificationMaterial(@PathVariable Long id,
+                                                                         @PathVariable String kind,
+                                                                         @PathVariable int index) {
+        CompanyUser company = companyUserService.findById(id);
+        if (company == null) return ResponseEntity.notFound().build();
+        String storedUrl = CompanyQualificationMaterial.storedUrl(company, kind, index);
+        if (storedUrl == null || storedUrl.isBlank()) return ResponseEntity.notFound().build();
+        try {
+            return RecordAttachmentResponse.ok(aliyunOSSOperator.downloadRecordAttachment(storedUrl, null));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(403).build();
+        } catch (Exception e) {
+            log.error("读取企业资质材料失败: companyId={}", id, e);
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    @Autowired
     private PasswordEncoder passwordEncoder;
 
     @Autowired
     private com.internship.service.CompanyTagService companyTagService;
 
     @Autowired
+    private com.internship.service.PositionCacheService positionCacheService;
+
+    @Autowired
+    private com.internship.service.CompanyRelationsService companyRelationsService;
+
+    @Autowired
+    private com.fasterxml.jackson.databind.ObjectMapper objectMapper;
+
+    @Autowired
     private JwtUtils jwtUtils;
+
+    @Autowired(required = false)
+    private com.internship.service.UserCacheService userCacheService;
 
     @GetMapping
     @PreAuthorize("hasAuthority('user:company:view')")
@@ -61,7 +101,7 @@ public class CompanyUserController {
         log.info("分页获取企业列表，页码：{}, 每页条数：{}, 企业名称：{}, 状态：{}, 撤回状态：{}, 企业标签：{}",
                 page, pageSize, companyName, status, recallStatus, companyTag);
         PageResult<CompanyUser> pageResult = companyUserService.findPage(page, pageSize, companyName, status, recallStatus, companyTag);
-        return Result.success(pageResult);
+        return Result.success(MaterialMetadataRedactor.companyPage(pageResult));
     }
 
     @GetMapping("/tags")
@@ -76,6 +116,7 @@ public class CompanyUserController {
         }
     }
 
+    @Log(operationType = "EXPORT", module = "COMPANY_MANAGEMENT", description = "导出企业数据", riskLevel = "MEDIUM", critical = true)
     @GetMapping("/export")
     @PreAuthorize("hasAuthority('user:company:view')")
     public void exportCompanyData(HttpServletResponse response,
@@ -85,13 +126,12 @@ public class CompanyUserController {
 
         try {
             List<CompanyUser> companies = companyUserService.list(companyName, status);
-            SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
 
             Workbook workbook = new XSSFWorkbook();
             Sheet sheet = workbook.createSheet("企业数据");
 
             Row headerRow = sheet.createRow(0);
-            String[] headers = {"企业名称", "联系人", "联系电话", "联系邮箱", "企业地址", "企业简介", "标签", "状态", "创建时间", "更新时间"};
+            String[] headers = {"企业名称", "联系人", "联系电话", "联系邮箱", "个人邮箱", "企业地址", "标签"};
             CellStyle headerStyle = workbook.createCellStyle();
             headerStyle.setFillForegroundColor(IndexedColors.GREEN.getIndex());
             headerStyle.setFillPattern(FillPatternType.SOLID_FOREGROUND);
@@ -127,14 +167,11 @@ public class CompanyUserController {
                 dataRow.createCell(1).setCellValue(company.getContactPerson() != null ? company.getContactPerson() : "");
                 dataRow.createCell(2).setCellValue(company.getContactPhone() != null ? company.getContactPhone() : "");
                 dataRow.createCell(3).setCellValue(company.getContactEmail() != null ? company.getContactEmail() : "");
-                dataRow.createCell(4).setCellValue(company.getAddress() != null ? company.getAddress() : "");
-                dataRow.createCell(5).setCellValue(company.getIntroduction() != null ? company.getIntroduction() : "");
+                dataRow.createCell(4).setCellValue(company.getEmail() != null ? company.getEmail() : "");
+                dataRow.createCell(5).setCellValue(company.getAddress() != null ? company.getAddress() : "");
                 dataRow.createCell(6).setCellValue(company.getCompanyTag() != null ? company.getCompanyTag() : "");
-                dataRow.createCell(7).setCellValue(company.getStatus() != null ? getStatusText(company.getStatus()) : "");
-                dataRow.createCell(8).setCellValue(company.getCreateTime() != null ? dateFormat.format(company.getCreateTime()) : "");
-                dataRow.createCell(9).setCellValue(company.getUpdateTime() != null ? dateFormat.format(company.getUpdateTime()) : "");
 
-                for (int j = 0; j < 10; j++) {
+                for (int j = 0; j < headers.length; j++) {
                     dataRow.getCell(j).setCellStyle(dataStyle);
                     sheet.autoSizeColumn(j);
                 }
@@ -168,17 +205,6 @@ public class CompanyUserController {
         }
     }
 
-    private String getStatusText(Integer status) {
-        if (status == null) return "未知";
-        switch (status) {
-            case 0: return "待审核";
-            case 1: return "审核通过";
-            case 2: return "审核拒绝";
-            case 3: return "已撤销";
-            default: return "未知";
-        }
-    }
-
     @GetMapping("/{id:\\d+}")
     @PreAuthorize("hasAuthority('user:company:view')")
     public Result getCompanyById(@PathVariable Long id) {
@@ -187,25 +213,43 @@ public class CompanyUserController {
         if (company == null) {
             return Result.error("企业不存在");
         }
-        return Result.success(company);
+        // 与教师端详情一致：补充校友信息、校内对接人、走访情况
+        com.internship.dto.TeacherCompanyDTO decorated = companyRelationsService.findCompanyDetail(id);
+        Map<String, Object> data = objectMapper
+                .convertValue(MaterialMetadataRedactor.company(company), new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
+        if (decorated != null) {
+            data.put("alumniMembers", decorated.getAlumniMembers());
+            data.put("schoolLiaisons", decorated.getSchoolLiaisons());
+            data.put("visitSummary", decorated.getVisitSummary());
+        }
+        return Result.success(data);
     }
 
     @Log(operationType = "ADD", module = "COMPANY_MANAGEMENT", description = "添加企业信息")
     @PostMapping
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAuthority('user:company:add')")
     public Result addCompany(@RequestBody @Validated CompanyUser company) {
         log.info("添加企业信息：{}", company.getCompanyName());
         try {
+            // 登录账号自动等于企业名称（与导入、审核逻辑保持一致）
             String username = company.getCompanyName();
-            String password = "123456";
+            if (companyUserService.findByUsername(username) != null) {
+                return Result.error("企业名称已存在");
+            }
+            String initialPassword = UserCredentialDefaults.PASSWORD;
+            company.setPassword(initialPassword);
 
             company.setUsername(username);
-            company.setPassword(password);
             company.setRole("ROLE_COMPANY");
+            // 管理员直接新增的企业默认正常可用，无需再审核
+            company.setStatus(1);
+            company.setAuditStatus(1);
+            company.setAuditTime(new Date());
 
             companyUserService.insert(company);
 
-            return Result.success("添加成功");
+            return Result.success("添加成功", Map.of("initialCredentials",
+                    List.of(Map.of("username", company.getUsername(), "password", initialPassword))));
         } catch (BusinessException e) {
             log.warn("添加企业信息失败：{}", e.getMessage());
             return Result.error(e.getMessage());
@@ -219,6 +263,10 @@ public class CompanyUserController {
         log.info("更新企业信息，ID: {}", company.getId());
         try {
             companyUserService.update(company);
+            // 管理员更新企业信息后同步重建自动标签（挂牌实习基地/接受兜底/合作方式），保留手动标签
+            companyTagService.updateCompanyTag(company.getId());
+            // 企业信息影响岗位展示（实习基地标签等），清除岗位列表缓存
+            positionCacheService.clearPositionsCache();
             return Result.success("更新成功");
         } catch (BusinessException e) {
             log.warn("更新企业信息失败：{}", e.getMessage());
@@ -240,7 +288,7 @@ public class CompanyUserController {
         }
     }
 
-    @Log(operationType = "DELETE", module = "COMPANY_MANAGEMENT", description = "批量删除企业信息")
+    @Log(operationType = "DELETE", module = "COMPANY_MANAGEMENT", description = "批量删除企业信息", riskLevel = "HIGH", critical = true)
     @DeleteMapping("/batch")
     @PreAuthorize("hasRole('ADMIN')")
     public Result batchDeleteCompanies(@RequestBody List<Long> ids) {
@@ -258,7 +306,7 @@ public class CompanyUserController {
     @PutMapping("/{id}/audit")
     @PreAuthorize("hasRole('ADMIN')")
     public Result auditCompany(@PathVariable Long id, @RequestBody Map<String, Object> params) {
-        log.info("审核企业注册，ID: {}, 审核参数：{}", id, params);
+        log.info("审核企业注册：id={}", id);
         try {
             Integer auditStatus = Integer.valueOf(params.get("auditStatus").toString());
             String auditRemark = params.get("auditRemark") != null ? params.get("auditRemark").toString() : "";
@@ -278,13 +326,13 @@ public class CompanyUserController {
                 company.setReviewerId(getCurrentUserId());
 
                 String username = company.getCompanyName();
-                String password = "123456";
                 company.setUsername(username);
-                company.setPassword(password);
+                // 注册时已经保存不可预测的密码；企业通过原登记邮箱验证后自行设置密码。
+                company.setPassword(null);
                 company.setRole("ROLE_COMPANY");
 
                 companyUserService.update(company);
-
+                companyTagService.updateCompanyTag(id);
                 return Result.success("审核通过");
             } else if (auditStatus == 2) {
                 company.setStatus(3);
@@ -315,8 +363,8 @@ public class CompanyUserController {
         log.info("获取待审核企业列表，页码：{}, 每页条数：{}, 企业名称：{}, 联系人：{}, 联系电话：{}",
                 page, pageSize, companyName, contactPerson, contactPhone);
         try {
-            PageResult<CompanyUser> pageResult = companyUserService.findPendingAuditPage(page, pageSize, companyName, contactPerson, contactPhone, null);
-            return Result.success(pageResult);
+            PageResult<CompanyUser> pageResult = companyUserService.findPendingAuditPage(page, pageSize, companyName, contactPerson, contactPhone, 0);
+            return Result.success(MaterialMetadataRedactor.companyPage(pageResult));
         } catch (Exception e) {
             log.error("获取待审核企业列表失败：{}", e.getMessage(), e);
             return Result.error("获取待审核企业列表失败");
@@ -389,7 +437,7 @@ public class CompanyUserController {
 
             // 创建表头行（第 1 行）
             Row headerRow = sheet.createRow(0);
-            String[] headers = {"企业名称", "联系人", "联系电话", "联系邮箱", "企业地址", "企业简介", "手机号"};
+            String[] headers = {"企业名称", "联系人", "联系电话", "企业地址"};
 
             // 创建表头样式
             CellStyle headerStyle = workbook.createCellStyle();
@@ -404,6 +452,7 @@ public class CompanyUserController {
 
             Font headerFont = workbook.createFont();
             headerFont.setBold(true);
+            headerFont.setColor(IndexedColors.WHITE.getIndex());
             headerFont.setFontHeightInPoints((short) 11);
             headerStyle.setFont(headerFont);
 
@@ -424,7 +473,7 @@ public class CompanyUserController {
             dataStyle.setBorderRight(BorderStyle.THIN);
 
             // 设置列宽
-            int[] columnWidths = {30, 15, 15, 25, 50, 60, 15};
+            int[] columnWidths = {30, 15, 15, 50};
             for (int i = 0; i < headers.length; i++) {
                 sheet.setColumnWidth(i, columnWidths[i] * 256);
             }
@@ -447,11 +496,10 @@ public class CompanyUserController {
 
             // 填写说明内容
             String[] explanations = {
-                "1. 企业名称为必填项，且不能与现有企业重名",
-                "2. 联系电话和手机号请填写 11 位手机号码",
-                "3. 联系邮箱请填写有效的邮箱地址",
-                "4. 默认密码为 123456",
-                "5. 手机号为选填项"
+                "1. 企业名称、联系人、联系电话、企业地址为必填项",
+                "2. 企业名称不能与现有企业重名",
+                "3. 联系电话请填写 11 位手机号码",
+                "4. 导入后请安全交付仅在导入结果中显示一次的随机初始密码"
             };
             for (int i = 0; i < explanations.length; i++) {
                 Row row = sheet.createRow(i + 1);
@@ -501,46 +549,10 @@ public class CompanyUserController {
             } else {
                 pageResult = companyUserService.findPendingRecallAuditPage(page, pageSize, companyName, contactPerson, contactPhone);
             }
-            return Result.success(pageResult);
+            return Result.success(MaterialMetadataRedactor.companyPage(pageResult));
         } catch (Exception e) {
             log.error("获取待审核撤回申请列表失败：{}", e.getMessage(), e);
             return Result.error("获取待审核撤回申请列表失败");
-        }
-    }
-
-    @Log(operationType = "UPDATE", module = "COMPANY_MANAGEMENT", description = "审核企业撤回申请")
-    @PutMapping("/{id}/recall-audit")
-    @PreAuthorize("hasAuthority('company:recall:audit')")
-    public Result auditRecallApplication(@PathVariable Long id, @RequestBody Map<String, Object> params) {
-        log.info("审核企业撤回申请，ID: {}, 审核参数：{}", id, params);
-        try {
-            Integer recallStatus = Integer.valueOf(params.get("recallStatus").toString());
-            String recallAuditRemark = params.get("recallAuditRemark") != null ? params.get("recallAuditRemark").toString() : "";
-
-            CompanyUser company = companyUserService.findById(id);
-            if (company == null) {
-                return Result.error("企业不存在");
-            }
-
-            int result = companyUserService.auditRecallApplication(id, recallStatus, recallAuditRemark, getCurrentUserId());
-
-            if (result > 0) {
-                if (recallStatus == 2) {
-                    return Result.success("撤回申请已批准");
-                } else if (recallStatus == 3) {
-                    return Result.success("撤回申请已拒绝");
-                } else {
-                    return Result.error("无效的撤回审核状态");
-                }
-            } else {
-                return Result.error("审核失败");
-            }
-        } catch (BusinessException e) {
-            log.warn("审核企业撤回申请失败：{}", e.getMessage());
-            return Result.error(e.getMessage());
-        } catch (Exception e) {
-            log.error("审核企业撤回申请时发生异常：{}", e.getMessage(), e);
-            return Result.error("审核失败：" + e.getMessage());
         }
     }
 
@@ -616,7 +628,7 @@ public class CompanyUserController {
                 page, pageSize, companyName, contactPerson, startTime, endTime);
         try {
             PageResult<CompanyUser> pageResult = companyUserService.findRecallRecordsPage(page, pageSize, companyName, contactPerson, startTime, endTime);
-            return Result.success(pageResult);
+            return Result.success(MaterialMetadataRedactor.companyPage(pageResult));
         } catch (Exception e) {
             log.error("查询企业撤回记录失败：{}", e.getMessage(), e);
             return Result.error("查询企业撤回记录失败");
@@ -626,6 +638,7 @@ public class CompanyUserController {
     /**
      * 导出企业撤回记录到 Excel
      */
+    @Log(operationType = "EXPORT", module = "COMPANY_MANAGEMENT", description = "导出企业撤回记录", riskLevel = "MEDIUM", critical = true)
     @GetMapping("/recall-records/export")
     @PreAuthorize("hasAuthority('application:withdrawal:view')")
     public void exportRecallRecords(HttpServletResponse response,
@@ -729,7 +742,7 @@ public class CompanyUserController {
 
     @DeleteMapping("/recall-records/batch")
     @PreAuthorize("hasAuthority('application:withdrawal:delete')")
-    @Log(operationType = "DELETE", module = "WITHDRAWAL_RECORD_MANAGEMENT", description = "批量删除企业撤回记录")
+    @Log(operationType = "DELETE", module = "WITHDRAWAL_RECORD_MANAGEMENT", description = "批量删除企业撤回记录", riskLevel = "HIGH", critical = true)
     public Result batchDeleteRecallRecords(@RequestBody Map<String, List<Long>> request) {
         List<Long> ids = request.get("ids");
         log.info("批量删除企业撤回记录，IDs: {}", ids);
@@ -742,6 +755,25 @@ public class CompanyUserController {
         } catch (Exception e) {
             log.error("批量删除企业撤回记录失败：{}", e.getMessage(), e);
             return Result.error("批量删除失败");
+        }
+    }
+
+    @Log(operationType = "RESET_PASSWORD", module = "COMPANY_MANAGEMENT", description = "一键重置全部企业用户密码",
+            riskLevel = "HIGH", targetType = "COMPANY", critical = true)
+    @PostMapping("/reset-password/all")
+    @PreAuthorize("hasAuthority('user:company:reset')")
+    public Result resetAllCompanyUserPasswords() {
+        log.info("一键重置全部企业用户密码");
+        try {
+            List<CompanyUser> companies = companyUserService.findAll();
+            int resetCount = companyUserService.resetAllPasswords();
+            for (CompanyUser company : companies) {
+                invalidateUserCredentials(company.getUsername(), company.getCompanyName());
+            }
+            return Result.success("全部企业用户密码已重置为 123456", Map.of("resetCount", resetCount));
+        } catch (Exception e) {
+            log.error("一键重置全部企业用户密码失败", e);
+            return Result.error("一键重置全部企业用户密码失败：" + e.getMessage());
         }
     }
 
@@ -762,20 +794,15 @@ public class CompanyUserController {
             if (companyUser == null) {
                 return Result.error("企业不存在");
             }
-
-            String newPassword = passwordDTO.get("password");
-            if (StringUtils.isBlank(newPassword)) {
-                newPassword = UUID.randomUUID().toString().substring(0, 8);
-            }
-
-            PasswordValidator.ValidationResult validationResult = PasswordValidator.validatePassword(newPassword);
-            if (!validationResult.isValid()) {
-                log.warn("重置企业用户密码失败：新密码不符合复杂度要求 - {}", validationResult.getMessage());
-                return Result.error(validationResult.getMessage());
-            }
+            // 管理员端统一重置口令，服务端固定生效，不信任前端传值。
+            String newPassword = UserCredentialDefaults.PASSWORD;
 
             companyUser.setPassword(newPassword);
             companyUserService.update(companyUser);
+            // 清除 Redis 用户缓存，避免被重置用户登录时命中旧密码哈希
+            if (userCacheService != null) {
+                userCacheService.evictUserCache(companyUser.getUsername());
+            }
 
             jwtUtils.incrementUserTokenVersion(companyUser.getUsername());
 
@@ -784,6 +811,17 @@ public class CompanyUserController {
         } catch (Exception e) {
             log.error("重置企业用户密码失败：{}", e.getMessage());
             return Result.error("重置密码失败：" + e.getMessage());
+        }
+    }
+
+    private void invalidateUserCredentials(String... usernames) {
+        for (String username : usernames) {
+            if (StringUtils.isNotBlank(username)) {
+                if (userCacheService != null) {
+                    userCacheService.evictUserCache(username);
+                }
+                jwtUtils.incrementUserTokenVersion(username);
+            }
         }
     }
 

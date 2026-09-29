@@ -6,7 +6,7 @@ import com.internship.config.DynamicChatClientFactory;
 import com.internship.entity.AIModel;
 import com.internship.entity.CategoryWeight;
 import com.internship.entity.InternshipReflection;
-import com.internship.entity.InternshipTimeSettings;
+import com.internship.entity.dto.InternshipCalendar;
 import com.internship.entity.KeywordLibrary;
 import com.internship.entity.ScoringRule;
 import com.internship.entity.SystemSettings;
@@ -52,7 +52,7 @@ public class InternshipReflectionServiceImpl implements InternshipReflectionServ
     private com.internship.service.SystemSettingsService systemSettingsService;
 
     @Autowired
-    private com.internship.service.InternshipTimeSettingsService internshipTimeSettingsService;
+    private com.internship.service.InternshipCalendarService internshipCalendarService;
 
     @Autowired
     private AIModelService aiModelService;
@@ -173,7 +173,9 @@ public class InternshipReflectionServiceImpl implements InternshipReflectionServ
                     .call()
                     .content();
 
-            log.info("AI分析响应（模型: {}）: {}", modelCode != null ? modelCode : "deepseek-chat", aiResponse);
+            log.debug("AI 心得分析响应已返回：model={}, length={}",
+                    modelCode != null ? modelCode : "deepseek-chat",
+                    aiResponse != null ? aiResponse.length() : 0);
 
             Map<String, Object> analysisResult = parseAIResponse(aiResponse);
             
@@ -230,7 +232,8 @@ public class InternshipReflectionServiceImpl implements InternshipReflectionServ
                     .call()
                     .content();
 
-            log.info("AI内容验证响应: {}", aiResponse);
+            log.debug("AI 内容验证响应已返回：length={}",
+                    aiResponse != null ? aiResponse.length() : 0);
 
             Map<String, Object> validationData = parseAIResponse(aiResponse);
             
@@ -265,20 +268,21 @@ public class InternshipReflectionServiceImpl implements InternshipReflectionServ
                     actualModelCode = defaultModel.getModelCode();
                     log.info("使用管理员默认模型: {}", actualModelCode);
                 } else {
-                    actualModelCode = "deepseek-chat";
+                    actualModelCode = "deepseek-flash";
                 }
             } catch (Exception e) {
-                log.warn("获取默认模型失败，使用deepseek-chat: {}", e.getMessage());
-                actualModelCode = "deepseek-chat";
+                log.warn("获取默认模型失败，使用deepseek-flash: {}", e.getMessage());
+                actualModelCode = "deepseek-flash";
             }
         } else if (modelCode.equals("deepseek-reasoner")) {
             actualModelCode = "deepseek-reasoner";
-        } else if (modelCode.equals("deepseek-v4-flash")) {
-            actualModelCode = "deepseek-v4-flash";
+        } else if (modelCode.equals("deepseek-v4-flash") || modelCode.equals("deepseek-flash")) {
+            // deepseek-v4-flash 已下线，统一使用 v4.1 (deepseek-flash)，旧配置值作为别名兼容
+            actualModelCode = "deepseek-flash";
         } else if (modelCode.equals("deepseek-v4-pro")) {
             actualModelCode = "deepseek-v4-pro";
         } else {
-            actualModelCode = "deepseek-chat";
+            actualModelCode = "deepseek-flash";
         }
         return chatClientFactory.createChatClient(actualModelCode, SYSTEM_PROMPT);
     }
@@ -730,49 +734,54 @@ public class InternshipReflectionServiceImpl implements InternshipReflectionServ
         }
 
         try {
-            // 优先使用系室设置的实习时间（internship_time_settings）
-            InternshipTimeSettings timeSettings = internshipTimeSettingsService.findLatest();
-            if (timeSettings == null) {
-                log.warn("系室实习时间设置未配置，无法计算阶段");
+            InternshipCalendar calendar = internshipCalendarService.getCalendar();
+            if (calendar == null || isBlank(calendar.getStartDate())
+                    || isBlank(calendar.getEndDate())
+                    || calendar.getReportCycle() == null || calendar.getReportCycle() <= 0) {
                 return null;
             }
 
-            String startDateStr = timeSettings.getStartDate();
-            String endDateStr = timeSettings.getEndDate();
-            if (startDateStr == null || endDateStr == null || startDateStr.isEmpty() || endDateStr.isEmpty()) {
-                log.warn("系室实习起止日期未设置，无法计算阶段");
-                return null;
-            }
-
-            // 解析日期字符串
-            java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("yyyy-MM-dd");
-            Date startDate = sdf.parse(startDateStr);
-            Date endDate = sdf.parse(endDateStr);
-
-            // 如果提交时间不在实习期间内
+            Date startDate = parseDate(calendar.getStartDate(), false);
+            Date endDate = parseDate(calendar.getEndDate(), true);
             if (submitTime.before(startDate) || submitTime.after(endDate)) {
-                log.warn("提交时间{}不在实习期间{}~{}内", submitTime, startDateStr, endDateStr);
                 return null;
             }
-
-            // 获取提交周期
-            Integer cycle = timeSettings.getReportCycle();
-            if (cycle == null || cycle <= 0) {
-                cycle = 7; // 默认7天
-            }
-
-            long diff = submitTime.getTime() - startDate.getTime();
-            long diffDays = diff / (1000 * 60 * 60 * 24);
-            int periodNumber = (int) (diffDays / cycle) + 1;
-
-            log.info("计算阶段: 提交时间={}, 实习开始={}, 周期={}天, 计算得阶段={}",
-                      submitTime, startDateStr, cycle, periodNumber);
-
-            return periodNumber;
+            return calculatePeriodFromStart(submitTime, startDate, calendar.getReportCycle(), "全局实习日历");
         } catch (Exception e) {
-            log.error("计算阶段失败: {}", e.getMessage(), e);
+            log.error("计算全局实习心得期数失败: {}", e.getMessage(), e);
             return null;
         }
+    }
+
+    @Override
+    public int withdrawSubmitted(Long id, Long studentId, java.util.Date updateTime) {
+        return internshipReflectionMapper.withdrawSubmitted(id, studentId, updateTime);
+    }
+
+    private Date parseDate(String value, boolean endOfDay) throws java.text.ParseException {
+        Date date = new java.text.SimpleDateFormat("yyyy-MM-dd").parse(value);
+        if (endOfDay) {
+            Calendar calendar = Calendar.getInstance();
+            calendar.setTime(date);
+            calendar.set(Calendar.HOUR_OF_DAY, 23);
+            calendar.set(Calendar.MINUTE, 59);
+            calendar.set(Calendar.SECOND, 59);
+            calendar.set(Calendar.MILLISECOND, 999);
+            return calendar.getTime();
+        }
+        return date;
+    }
+
+    private Integer calculatePeriodFromStart(Date submitTime, Date startDate, Integer cycle, String scope) {
+        long diffDays = Math.max(0, (submitTime.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+        int periodNumber = (int) (diffDays / cycle) + 1;
+        log.info("计算{}心得期数: 提交时间={}, 开始时间={}, 周期={}天, 期数={}",
+                scope, submitTime, startDate, cycle, periodNumber);
+        return periodNumber;
+    }
+
+    private boolean isBlank(String value) {
+        return value == null || value.trim().isEmpty();
     }
 
     @Override

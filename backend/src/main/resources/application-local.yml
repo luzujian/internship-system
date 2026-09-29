@@ -1,0 +1,38 @@
+# Explicit local profile: no remote database or Redis fallback.
+spring:
+  config:
+    import: "optional:file:../.codex/local-database/ai-provider-local.properties,optional:file:.codex/local-database/ai-provider-local.properties"
+  ai:
+    deepseek:
+      base-url: ${AI_API_BASE_URL:${DEEPSEEK_BASE_URL:https://api.deepseek.com}}
+      api-key: ${AI_API_KEY:${DEEPSEEK_API_KEY:}}
+  datasource:
+    url: jdbc:mysql://127.0.0.1:3306/internship?useSSL=false&serverTimezone=Asia/Shanghai&characterEncoding=utf8&useUnicode=true&allowPublicKeyRetrieval=true
+    username: user
+    password: ${LOCAL_DB_PASSWORD:${DB_PASSWORD:}}
+    hikari:
+      minimum-idle: 2
+      maximum-pool-size: 10
+  data:
+    redis:
+      host: 127.0.0.1
+      port: 6379
+      password: ${LOCAL_REDIS_PASSWORD:}
+      database: 13
+  sql:
+    init:
+      mode: never
+
+teacher:
+  auto-task:
+    cron: "-"
+    test-mode: false
+    local-mail-sink: true
+    recipient-allowlist: ""
+
+mail:
+  allow-local-send: false
+
+agent:
+  voice:
+    allowed-origins: http://localhost:5173,http://127.0.0.1:5173

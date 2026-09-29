@@ -66,7 +66,8 @@ public class JobDescriptionGeneratorService {
                     .call()
                     .content();
 
-            log.info("AI生成结果:\n{}", aiResponse);
+            log.debug("AI 岗位描述生成完成：responseLength={}",
+                    aiResponse != null ? aiResponse.length() : 0);
 
             // 解析返回内容
             result = parseGeneratedContent(aiResponse);
@@ -150,20 +151,21 @@ public class JobDescriptionGeneratorService {
                     modelCode = defaultModel.getModelCode();
                     log.info("使用管理员默认模型: {}", modelCode);
                 } else {
-                    modelCode = "deepseek-chat";
+                    modelCode = "deepseek-flash";
                 }
             } catch (Exception e) {
-                log.warn("获取默认模型失败，使用deepseek-chat: {}", e.getMessage());
-                modelCode = "deepseek-chat";
+                log.warn("获取默认模型失败，使用deepseek-flash: {}", e.getMessage());
+                modelCode = "deepseek-flash";
             }
         } else if ("deepseek-reasoner".equalsIgnoreCase(model)) {
             modelCode = "deepseek-reasoner";
-        } else if ("deepseek-v4-flash".equalsIgnoreCase(model)) {
-            modelCode = "deepseek-v4-flash";
+        } else if ("deepseek-v4-flash".equalsIgnoreCase(model) || "deepseek-flash".equalsIgnoreCase(model)) {
+            // deepseek-v4-flash 已下线，统一使用 v4.1 (deepseek-flash)，旧配置值作为别名兼容
+            modelCode = "deepseek-flash";
         } else if ("deepseek-v4-pro".equalsIgnoreCase(model)) {
             modelCode = "deepseek-v4-pro";
         } else {
-            modelCode = "deepseek-chat";
+            modelCode = "deepseek-flash";
         }
         return chatClientFactory.createChatClient(modelCode, SYSTEM_PROMPT);
     }

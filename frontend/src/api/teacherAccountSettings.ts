@@ -22,8 +22,6 @@ export interface ChangePasswordRequest {
 export interface UpdateContactRequest {
   phone?: string
   email?: string
-  verifyCode?: string
-  requestId?: string
 }
 
 export interface ApiResponse<T = any> {
@@ -36,10 +34,6 @@ export const accountSettingsApi = {
   getAccountInfo: async () => {
     const response = await request.get('/account-settings/info')
     return response.data
-  },
-
-  sendVerifyCode: (phone: string) => {
-    return request.post('/account-settings/send-verify-code', { phone })
   },
 
   changePassword: (data: ChangePasswordRequest) => {

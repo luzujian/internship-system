@@ -4,6 +4,7 @@ import positionApi from '@/api/PositionService'
 import applicationApi from '@/api/InternshipApplicationService'
 import internshipStatusApi from '@/api/InternshipStatusService'
 import majorApi from '@/api/MajorService'
+import { normalizeSalaryUnit } from '@/utils/salaryRange.js'
 
 export interface Position {
   id: number
@@ -11,8 +12,9 @@ export interface Position {
   categoryId: number
   department: string
   workLocation: string
-  salaryMin: number | null
-  salaryMax: number | null
+  salaryMin: number | string | null
+  salaryMax: number | string | null
+  salaryUnit: string
   plannedRecruit: number
   recruitedCount: number
   remainingQuota: number
@@ -26,8 +28,13 @@ export interface Position {
   description: string
   requirements: string
   positionType: string
-  internshipStartDate: string | null
-  internshipEndDate: string | null
+  interviewTime?: string
+  interviewLocation?: string
+  interviewMethod?: string
+  interviewRemark?: string
+  requiredMajors?: string
+  internshipEnvironment?: string
+  providesAccommodation?: number
 }
 
 export interface Application {
@@ -66,6 +73,8 @@ export interface JobApplication {
   grade: string
   selfIntroduction: string
   status: string
+  rejectReason?: string
+  directHire?: boolean
   applyDate: string
   createTime: string
 }
@@ -121,6 +130,7 @@ export const usePositionStore = defineStore('position', () => {
           workLocation: formatWorkLocation(item),
           salaryMin: item.salaryMin || null,
           salaryMax: item.salaryMax || null,
+          salaryUnit: normalizeSalaryUnit(item.salaryUnit),
           plannedRecruit: item.plannedRecruit || 0,
           recruitedCount: item.recruitedCount || 0,
           remainingQuota: item.remainingQuota || 0,
@@ -134,12 +144,13 @@ export const usePositionStore = defineStore('position', () => {
           description: item.description || '',
           requirements: item.requirements || '',
           positionType: item.positionType || '',
-          internshipStartDate: item.internshipStartDate || '',
-          internshipEndDate: item.internshipEndDate || '',
           interviewTime: item.interviewTime || '',
           interviewLocation: item.interviewLocation || '',
           interviewMethod: item.interviewMethod || '线下',
-          interviewRemark: item.interviewRemark || ''
+          interviewRemark: item.interviewRemark || '',
+          requiredMajors: item.requiredMajors || '',
+          internshipEnvironment: item.internshipEnvironment || '',
+          providesAccommodation: item.providesAccommodation || 0
         }))
         syncRecruitedCountFromInternshipStatuses()
       }
@@ -168,8 +179,20 @@ export const usePositionStore = defineStore('position', () => {
   }
 
   const formatSalaryRange = (item: any): string => {
-    if (item.salaryMin !== null && item.salaryMax !== null) {
-      return `${item.salaryMin}K-${item.salaryMax}K`
+    const unit = normalizeSalaryUnit(item.salaryUnit)
+    if (unit === '面议') {
+      return '面议'
+    }
+    const min = item.salaryMin
+    const max = item.salaryMax
+    if (min !== null && max !== null) {
+      return `${min}-${max}${unit}`
+    }
+    if (min !== null) {
+      return `${min}${unit}起`
+    }
+    if (max !== null) {
+      return `最高${max}${unit}`
     }
     return '面议'
   }
@@ -208,12 +231,11 @@ export const usePositionStore = defineStore('position', () => {
         city: positionData.city || '',
         district: positionData.district || '',
         detailAddress: positionData.detailAddress || '',
-        salaryMin: positionData.salaryMin && positionData.salaryMin !== '' ? parseInt(String(positionData.salaryMin)) : 0,
-        salaryMax: positionData.salaryMax && positionData.salaryMax !== '' ? parseInt(String(positionData.salaryMax)) : 0,
+        salaryUnit: positionData.salaryUnit || 'K/月',
+        salaryMin: positionData.salaryMin !== null && positionData.salaryMin !== '' ? parseFloat(String(positionData.salaryMin)) : null,
+        salaryMax: positionData.salaryMax !== null && positionData.salaryMax !== '' ? parseFloat(String(positionData.salaryMax)) : null,
         description: positionData.description || '',
         requirements: positionData.requirements || '',
-        internshipStartDate: positionData.internshipStartDate || null,
-        internshipEndDate: positionData.internshipEndDate || null,
         plannedRecruit: positionData.plannedRecruit ? parseInt(String(positionData.plannedRecruit)) : 1,
         recruitedCount: 0,
         remainingQuota: positionData.plannedRecruit ? parseInt(String(positionData.plannedRecruit)) : 1,
@@ -222,7 +244,11 @@ export const usePositionStore = defineStore('position', () => {
         interviewTime: positionData.interviewTime || null,
         interviewLocation: positionData.interviewLocation || null,
         interviewMethod: positionData.interviewMethod || null,
-        interviewRemark: positionData.interviewRemark || null
+        interviewRemark: positionData.interviewRemark || null,
+        requiredMajors: positionData.requiredMajors || null,
+        internshipEnvironment: positionData.internshipEnvironment || null,
+        providesAccommodation: positionData.providesAccommodation || 0,
+        categoryId: positionData.categoryId || null
       }
       console.log('提交的岗位数据:', data)
       const response = await positionApi.createPosition(data)
@@ -248,17 +274,20 @@ export const usePositionStore = defineStore('position', () => {
         city: positionData.city,
         district: positionData.district,
         detailAddress: positionData.detailAddress,
-        salaryMin: positionData.salaryMin && positionData.salaryMin !== '' ? parseInt(String(positionData.salaryMin)) : null,
-        salaryMax: positionData.salaryMax && positionData.salaryMax !== '' ? parseInt(String(positionData.salaryMax)) : null,
+        salaryUnit: positionData.salaryUnit || 'K/月',
+        salaryMin: positionData.salaryMin !== null && positionData.salaryMin !== '' ? parseFloat(String(positionData.salaryMin)) : null,
+        salaryMax: positionData.salaryMax !== null && positionData.salaryMax !== '' ? parseFloat(String(positionData.salaryMax)) : null,
         description: positionData.description,
         requirements: positionData.requirements,
-        internshipStartDate: positionData.internshipStartDate || null,
-        internshipEndDate: positionData.internshipEndDate || null,
         plannedRecruit: positionData.plannedRecruit,
         interviewTime: positionData.interviewTime || null,
         interviewLocation: positionData.interviewLocation || null,
         interviewMethod: positionData.interviewMethod || null,
-        interviewRemark: positionData.interviewRemark || null
+        interviewRemark: positionData.interviewRemark || null,
+        requiredMajors: positionData.requiredMajors || null,
+        internshipEnvironment: positionData.internshipEnvironment || null,
+        providesAccommodation: positionData.providesAccommodation || 0,
+        categoryId: positionData.categoryId || null
       }
       const response = await positionApi.updatePosition(positionId, data)
       if (response.code === 200) {
@@ -390,6 +419,7 @@ export const usePositionStore = defineStore('position', () => {
           grade: item.grade || '',
           selfIntroduction: item.selfIntroduction || '',
           status: item.status || 'pending',
+          rejectReason: item.rejectReason || '',
           applyDate: formatDate(item.applyDate || item.createTime),
           createTime: item.createTime
         }))
@@ -423,9 +453,13 @@ export const usePositionStore = defineStore('position', () => {
     return applications.value.filter(app => app.status === status)
   }
 
-  const updateApplicationStatus = async (applicationId: number, newStatus: string): Promise<boolean> => {
+  const updateApplicationStatus = async (
+    applicationId: number,
+    newStatus: string,
+    rejectReason?: string
+  ): Promise<boolean> => {
     try {
-      await applicationApi.updateApplyStatus(applicationId, newStatus)
+      await applicationApi.updateApplyStatus(applicationId, newStatus, rejectReason)
       const application = applications.value.find(app => app.id === applicationId)
       if (application) {
         application.status = newStatus

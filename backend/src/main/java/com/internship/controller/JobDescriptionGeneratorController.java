@@ -11,6 +11,8 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/ai")
 public class JobDescriptionGeneratorController {
+    @Autowired private com.internship.agent.business.LegacyAiAccessPolicy legacyAccess;
+    @Autowired private com.internship.agent.business.LegacyAiRequestLimiter requestLimiter;
 
     private final JobDescriptionGeneratorService jobDescriptionGeneratorService;
 
@@ -24,6 +26,14 @@ public class JobDescriptionGeneratorController {
      */
     @PostMapping("/generate-job-description")
     public ResponseEntity<Map<String, Object>> generateJobDescription(@RequestBody Map<String, Object> request) {
+        var actor = legacyAccess.require();
+        if (!"ROLE_COMPANY".equals(actor.role())) {
+            throw new org.springframework.security.access.AccessDeniedException("仅企业可生成岗位描述");
+        }
+        if (request.toString().length() > 4000) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", "请求内容过长"));
+        }
+        var lease = requestLimiter.acquire(actor.role() + ":" + actor.id());
         try {
             String positionName = (String) request.get("positionName");
             String department = (String) request.get("department");
@@ -54,6 +64,6 @@ public class JobDescriptionGeneratorController {
             errorResponse.put("message", "生成失败: " + e.getMessage());
             errorResponse.put("timestamp", System.currentTimeMillis());
             return ResponseEntity.status(500).body(errorResponse);
-        }
+        } finally { com.internship.agent.business.LegacyAiRequestLimiter.release(lease); }
     }
 }

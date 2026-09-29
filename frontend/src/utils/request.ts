@@ -1,7 +1,9 @@
 import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse, InternalAxiosRequestConfig, AxiosHeaders } from 'axios'
 import { ElMessage } from 'element-plus'
+import { getUploadErrorMessage } from './uploadErrorMessage'
 import router from '@/router'
 import { useAuthStore } from '@/store/auth'
+import { clearTabSession } from '@/store/auth/tabSession.mjs'
 
 interface Config {
   BASE_URL: string
@@ -51,20 +53,16 @@ const CONFIG: Config = {
   BEARER_PREFIX: 'Bearer ',
   PUBLIC_ENDPOINTS: [
     '/auth/login',
-    '/auth/register',
     '/auth/forgot-password',
     '/auth/reset-password',
     '/auth/refresh-token',
+    '/auth/password-rules',
     '/company/register',
     '/company/check-username',
     '/company/check-status',
-    '/company/send-verify-code',
+    '/company/update/',
     '/company/recall',
     '/teacher/login',
-    '/upload/image',
-    '/upload/images',
-    '/upload/file',
-    '/upload/files',
     '/admin/ai-model/public/enabled'
   ]
 }
@@ -129,50 +127,14 @@ function getRoleStoragePrefix(role: string): string {
   return STORAGE_KEYS.ROLE_PREFIXES.ROLE_ADMIN
 }
 
-function getAccessToken(): string | null {
-  let currentRole = localStorage.getItem(STORAGE_KEYS.CURRENT_ROLE)
-
-  if (!currentRole) {
-    currentRole = getRoleFromPath()
-  }
-
-  const rolePrefix = getRoleStoragePrefix(currentRole)
-
-  console.log('[request] 获取访问令牌 - 当前角色:', currentRole, '角色前缀:', rolePrefix)
-
-  const teacherRoles = ['ROLE_TEACHER_COLLEGE', 'ROLE_TEACHER_DEPARTMENT', 'ROLE_TEACHER_COUNSELOR', 'ROLE_TEACHER']
-  const isTeacherPath = currentRole.startsWith('ROLE_TEACHER')
-
-  let tokenKeys = []
-
-  if (isTeacherPath) {
-    teacherRoles.forEach(teacherRole => {
-      tokenKeys.push(`${rolePrefix}${STORAGE_KEYS.ACCESS_TOKEN}_${teacherRole}`)
-      tokenKeys.push(`${rolePrefix}token_${teacherRole}`)
-    })
-  }
-
-  tokenKeys.push(`${rolePrefix}${STORAGE_KEYS.ACCESS_TOKEN}_${currentRole}`)
-  tokenKeys.push(`${rolePrefix}${STORAGE_KEYS.ACCESS_TOKEN}`)
-  tokenKeys.push(`${rolePrefix}token_${currentRole}`)
-  tokenKeys.push(`${rolePrefix}token`)
-
-  console.log('[request] 尝试的 token keys:', tokenKeys)
-
-  for (const key of tokenKeys) {
-    const token = localStorage.getItem(key)
-    console.log(`[request] 检查 key "${key}":`, token ? '找到 token' : '无 token')
-    if (token) {
-      console.log('[request] 成功获取访问令牌，key:', key)
-      return token
-    }
-  }
-
-  console.warn('[request] 未找到访问令牌，所有 key 都未找到 token')
-  return null
+export function getAccessToken(): string | null {
+  // The in-memory store belongs to this tab; shared localStorage may belong to
+  // another tab/account, even when both accounts have the same teacher role.
+  return useAuthStore().token || null
 }
 
 function cleanupTokens(): void {
+  clearTabSession()
   console.log('[request] 清理认证令牌信息')
 
   const keysToRemove = [
@@ -246,13 +208,42 @@ function handleLogout(): void {
   router.push('/login')
 }
 
-const request: AxiosInstance = axios.create({
+/**
+ * 后端统一业务包形态。响应拦截器已将 `response.data` 直接返回，
+ * 调用方拿到的即此包体而非完整 AxiosResponse，类型在此如实声明。
+ */
+export interface ApiResult<T = unknown> {
+  code: number
+  message?: string
+  msg?: string
+  data: T
+}
+
+/**
+ * 解包后的实例类型：与 AxiosInstance 同一运行时对象，
+ * 仅把各请求方法的返回声明为拦截器实际返回的业务包体。
+ */
+export interface UnwrappedAxiosInstance extends Omit<AxiosInstance,
+  'request' | 'get' | 'delete' | 'head' | 'options' | 'post' | 'put' | 'patch'> {
+  <T = unknown>(config: AxiosRequestConfig): Promise<ApiResult<T>>
+  <T = unknown>(url: string, config?: AxiosRequestConfig): Promise<ApiResult<T>>
+  request<T = unknown>(config: AxiosRequestConfig): Promise<ApiResult<T>>
+  get<T = unknown>(url: string, config?: AxiosRequestConfig): Promise<ApiResult<T>>
+  delete<T = unknown>(url: string, config?: AxiosRequestConfig): Promise<ApiResult<T>>
+  head<T = unknown>(url: string, config?: AxiosRequestConfig): Promise<ApiResult<T>>
+  options<T = unknown>(url: string, config?: AxiosRequestConfig): Promise<ApiResult<T>>
+  post<T = unknown>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<ApiResult<T>>
+  put<T = unknown>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<ApiResult<T>>
+  patch<T = unknown>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<ApiResult<T>>
+}
+
+const request = axios.create({
   baseURL: CONFIG.BASE_URL,
   timeout: CONFIG.TIMEOUT,
   headers: {
     'Content-Type': 'application/json'
   }
-})
+}) as UnwrappedAxiosInstance
 
 interface CustomAxiosRequestConfig extends InternalAxiosRequestConfig {
   skipReadOnlyCheck?: boolean
@@ -260,6 +251,12 @@ interface CustomAxiosRequestConfig extends InternalAxiosRequestConfig {
   skipBackendLogout?: boolean
   skipErrorMessage?: boolean
   _retry?: boolean
+  _authOwner?: string
+}
+
+function requestOwner(): string {
+  const auth = useAuthStore()
+  return JSON.stringify([auth.role, auth.user?.id, auth.user?.username, auth.user?.isReadOnly === true])
 }
 
 request.interceptors.request.use(
@@ -300,6 +297,9 @@ request.interceptors.request.use(
     const isAIModelPublicEndpoint = config.url?.includes('/admin/ai-model/public/')
 
     if (!isPublicEndpoint && !isAIModelPublicEndpoint) {
+      const owner = requestOwner()
+      if (config._authOwner && config._authOwner !== owner) throw new axios.CanceledError('登录身份已变化，请重新操作。')
+      config._authOwner = owner
       const accessToken = getAccessToken()
 
       if (accessToken) {
@@ -334,24 +334,6 @@ function executeSubscribers(newToken: string | null): void {
 async function refreshToken(): Promise<string | null> {
   const authStore = useAuthStore()
 
-  const currentRole = authStore.role || localStorage.getItem(STORAGE_KEYS.CURRENT_ROLE) || 'ROLE_ADMIN'
-  const rolePrefix = getRoleStoragePrefix(currentRole)
-  let refreshToken = localStorage.getItem(rolePrefix + 'refreshToken_' + currentRole)
-
-  if (!refreshToken) {
-    refreshToken = localStorage.getItem(rolePrefix + 'refreshToken')
-  }
-
-  if (!refreshToken) {
-    refreshToken = localStorage.getItem('refreshToken')
-  }
-
-  if (!refreshToken) {
-    // 无刷新令牌，通知等待者停止等待
-    executeSubscribers(null)
-    return null
-  }
-
   const success = await authStore.refreshAccessToken()
 
   if (success) {
@@ -369,8 +351,9 @@ request.interceptors.response.use(
   (response: AxiosResponse) => {
     console.log('[request] 响应拦截器 - URL:', response.config.url)
     console.log('[request] 响应拦截器 - 状态码:', response.status)
-    console.log('[request] 响应拦截器 - 响应数据:', response.data)
 
+    const owner = (response.config as CustomAxiosRequestConfig)._authOwner
+    if (owner && owner !== requestOwner()) return Promise.reject(new axios.CanceledError('登录身份已变化，已忽略旧请求结果。'))
     // 检查业务状态码
     const responseData = response.data
     if (responseData && responseData.code !== undefined && responseData.code !== 200) {
@@ -386,6 +369,7 @@ request.interceptors.response.use(
   },
   async (error) => {
     const { config, response, code } = error || {}
+    if (axios.isCancel(error) || (config?._authOwner && config._authOwner !== requestOwner())) return Promise.reject(error)
 
     if (code === 'ECONNABORTED' || error.message?.includes('timeout')) {
       ElMessage.error('请求超时，请检查网络或稍后重试')
@@ -394,6 +378,12 @@ request.interceptors.response.use(
 
     if (!response) {
       ElMessage.error(ERROR_MESSAGES.NETWORK_ERROR)
+      return Promise.reject(error)
+    }
+
+    if (response.status === 413) {
+      ElMessage.error(getUploadErrorMessage(error))
+      error.skipErrorMessage = true
       return Promise.reject(error)
     }
 
@@ -429,8 +419,9 @@ request.interceptors.response.use(
       config._retry = true
 
       if (isRefreshing) {
-        return new Promise((resolve) => {
+        return new Promise((resolve, reject) => {
           addSubscriber((newToken) => {
+            if (!newToken || config._authOwner !== requestOwner()) { reject(error); return }
             if (newToken && config.headers) {
               config.headers.Authorization = `${CONFIG.BEARER_PREFIX}${newToken}`
             }
@@ -456,7 +447,7 @@ request.interceptors.response.use(
       } catch (refreshError) {
         console.error('[request] 刷新令牌失败，自动退出到登录页:', refreshError)
         refreshSubscribers = []
-        handleLogout()
+        if (!config._authOwner || config._authOwner === requestOwner()) handleLogout()
         return Promise.reject(refreshError)
       } finally {
         isRefreshing = false

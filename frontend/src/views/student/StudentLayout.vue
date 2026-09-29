@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, provide, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, provide, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import {
   Bell,
@@ -25,11 +25,18 @@ import {
   disconnectAnnouncementWebSocket
 } from '@/utils/websocket'
 import emitter from '@/utils/event-bus'
-import FloatingAIBall from '@/components/FloatingAIBall.vue'
+import AgentWorkspace from '@/components/agent/AgentWorkspace.vue'
+import AgentEntry from '@/components/agent/AgentEntry.vue'
+import FeedbackSubmitDialog from '@/components/FeedbackSubmitDialog.vue'
+import { loadStudentMenus, type StudentMenuItem } from '@/utils/studentMenuConfig'
+import { useResponsiveSidebar } from '@/composables/useResponsiveSidebar'
 
 const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
+
+// 问题反馈弹窗
+const feedbackVisible = ref(false)
 
 // 只读模式
 const isReadOnlyMode = computed(() => authStore.user?.isReadOnly || false)
@@ -121,7 +128,7 @@ const logout = async () => {
   }
 }
 
-const sidebarCollapsed = ref(false)
+const { isMobile, sidebarCollapsed, toggleSidebar, closeSidebar } = useResponsiveSidebar()
 const isDialogOpen = ref(false)
 
 // 获取用户名
@@ -139,14 +146,38 @@ const headerStatus = ref('')
 const headerStatusClass = ref('')
 const fetchHeaderStatus = async () => {
   try {
-    const response = await request.get('/student/home/internship-status')
+    interface HeaderStatusRow {
+      jobSearchStatus?: string
+      job_search_status?: string
+      jobSearchStatusText?: string
+      hasRecord?: boolean
+      currentStatus?: number
+      current_status?: number
+      [key: string]: unknown
+    }
+    const response = await request.get<HeaderStatusRow>('/student/home/internship-status')
     if (response?.code === 200 && response.data) {
       const data = response.data
-      if (data.hasRecord && data.currentStatus !== undefined) {
-        const map = { 0: '待就业', 1: '待确认', 2: '已确定', 3: '实习中', 4: '已结束', 5: '已中断', 6: '延期' }
-        const clsMap = { 0: '', 1: 'offer', 2: 'confirmed', 3: 'in-progress', 4: 'ended', 5: 'interrupted', 6: 'delayed' }
-        headerStatus.value = map[data.currentStatus] ?? ''
-        headerStatusClass.value = clsMap[data.currentStatus] ?? ''
+      const searchStatus = data.jobSearchStatus ?? data.job_search_status
+      if (searchStatus && data.jobSearchStatusText) {
+        const clsMap: Record<string, string> = {
+          NOT_FOUND: '',
+          NO_OFFER: 'offer',
+          PENDING_CONFIRMATION: 'offer',
+          CONFIRMED: 'confirmed',
+          IN_PROGRESS: 'in-progress',
+          ENDED: 'ended',
+          INTERRUPTED: 'interrupted',
+          DELAYED: 'delayed'
+        }
+        headerStatus.value = data.jobSearchStatusText
+        headerStatusClass.value = clsMap[searchStatus] ?? ''
+      } else if (data.hasRecord && (data.currentStatus ?? data.current_status) !== undefined) {
+        const currentStatus = data.currentStatus ?? data.current_status ?? 0
+        const map: Record<number, string> = { 0: '无offer', 1: '待确认', 2: '已确定', 3: '实习中', 4: '已结束', 5: '已中断', 6: '延期' }
+        const clsMap: Record<number, string> = { 0: '', 1: 'offer', 2: 'confirmed', 3: 'in-progress', 4: 'ended', 5: 'interrupted', 6: 'delayed' }
+        headerStatus.value = map[currentStatus] ?? ''
+        headerStatusClass.value = clsMap[currentStatus] ?? ''
       }
     }
   } catch (e) { /* 静默失败 */ }
@@ -159,11 +190,21 @@ const currentReminder = ref<{ id: number; content: string } | null>(null)
 const checkPendingReminders = async () => {
   if (!studentId.value) return
   try {
-    const response = await request.get('/student/reminder/pending', {
+    interface PendingReminderRow {
+      id?: number
+      content?: string
+      [key: string]: unknown
+    }
+    const response = await request.get<PendingReminderRow[]>('/student/reminder/pending', {
       params: { studentId: studentId.value }
     })
-    if (response.data && response.data.length > 0) {
-      currentReminder.value = response.data[0]
+    const reminderRows = Array.isArray(response.data) ? response.data : []
+    if (reminderRows.length > 0) {
+      const first = reminderRows[0]
+      currentReminder.value = {
+        id: typeof first.id === 'number' ? first.id : Number(first.id),
+        content: typeof first.content === 'string' ? first.content : ''
+      }
       hasUnconfirmedReminder.value = true
     }
   } catch (error) {
@@ -199,11 +240,6 @@ const activeMenu = computed(() => {
   return path
 })
 
-// 切换侧边栏
-const toggleSidebar = () => {
-  sidebarCollapsed.value = !sidebarCollapsed.value
-}
-
 // 处理菜单选择
 const handleMenuSelect = (index) => {
   router.push(index)
@@ -222,23 +258,18 @@ const handleCommand = async (command) => {
       break
     case 'clear':
       break
+    case 'feedback':
+      feedbackVisible.value = true
+      break
     case 'logout':
       await logout()
       break
   }
 }
 
-// 学生菜单配置
-const defaultStudentMenus = [
-  { path: '/student/home', name: '首页', icon: 'HomeFilled', visible: true },
-  { path: '/student/jobs', name: '职位浏览', icon: 'Briefcase', visible: true },
-  { path: '/student/applications', name: '我的申请', icon: 'Document', visible: true },
-  { path: '/student/interviews', name: '面试管理', icon: 'ChatDotRound', visible: true },
-  { path: '/student/internship-confirmation-form', name: '实习确认表', icon: 'DocumentChecked', visible: true },
-  { path: '/student/internships', name: '实习心得', icon: 'Document', visible: true },
-  { path: '/student/profile', name: '个人中心', icon: 'User', visible: true }
-]
-const studentMenus = ref([...defaultStudentMenus])
+// 权限配置返回前不渲染默认菜单，避免登录瞬间闪出全部入口
+const studentMenus = ref<StudentMenuItem[]>([])
+const studentMenusLoaded = ref(false)
 
 const visibleStudentMenus = computed(() => {
   return studentMenus.value.filter(m => m.visible !== false)
@@ -257,38 +288,15 @@ const getMenuIcon = (iconName: string) => {
 }
 
 const fetchStudentMenus = async () => {
+  studentMenusLoaded.value = false
+  studentMenus.value = []
   try {
-    const response = await request.get('/student/home/menu-config')
-    if (response && response.code === 200 && response.data) {
-      let configMenus = []
-      try {
-        configMenus = JSON.parse(response.data)
-      } catch (e) {
-        console.error('解析学生菜单配置失败:', e)
-      }
-      
-      if (Array.isArray(configMenus) && configMenus.length > 0) {
-        const configMap = new Map(configMenus.map(m => [m.path, m]))
-        const mergedMenus = []
-        
-        for (const configMenu of configMenus) {
-          const defaultMenu = defaultStudentMenus.find(m => m.path === configMenu.path)
-          if (defaultMenu) {
-            mergedMenus.push({ ...defaultMenu, visible: configMenu.visible !== false })
-          }
-        }
-        
-        for (const defaultMenu of defaultStudentMenus) {
-          if (!configMap.has(defaultMenu.path)) {
-            mergedMenus.push({ ...defaultMenu, visible: true })
-          }
-        }
-        
-        studentMenus.value = mergedMenus
-      }
-    }
+    studentMenus.value = await loadStudentMenus()
   } catch (error) {
     console.error('获取学生菜单配置失败:', error)
+    studentMenus.value = []
+  } finally {
+    studentMenusLoaded.value = true
   }
 }
 
@@ -300,6 +308,9 @@ onMounted(() => {
 
   // 初始化 WebSocket 连接
   initStudentWebSocket()
+
+  // 若进入页面时已处于只读模式，立即同步横幅高度
+  if (isReadOnlyMode.value) syncRoBannerHeight()
 })
 
 // 初始化学生端 WebSocket
@@ -350,6 +361,10 @@ const handleStudentWebSocketMessage = (data) => {
     console.log('[StudentLayout] 收到实习确认结果更新:', data.data)
     // 触发刷新事件，让 InternshipConfirmationForm 刷新确认记录
     emitter.emit('confirmation-result-update', data.data)
+  } else if (data.type === 'internship_status_update' && data.data) {
+    console.log('[StudentLayout] 收到实习状态更新:', data.data)
+    // numeric 状态保持兼容，展示文案统一以服务端派生结果为准。
+    fetchHeaderStatus()
   }
 }
 
@@ -365,15 +380,47 @@ watch(() => authStore.user?.isReadOnly, (newVal, oldVal) => {
   console.log('[StudentLayout] authStore.user:', authStore.user)
 })
 
+// 只读横幅高度联动：实测横幅真实高度，通过 CSS 变量同步给 header/侧栏/主区域偏移
+const readOnlyBannerRef = ref<HTMLElement | null>(null)
+const roBannerHeight = ref(40)
+let roBannerObserver: ResizeObserver | null = null
+
+const syncRoBannerHeight = async () => {
+  await nextTick()
+  const el = readOnlyBannerRef.value
+  if (!el) return
+  roBannerHeight.value = el.offsetHeight
+  if (typeof ResizeObserver !== 'undefined') {
+    roBannerObserver?.disconnect()
+    roBannerObserver = new ResizeObserver(() => {
+      roBannerHeight.value = el.offsetHeight
+    })
+    roBannerObserver.observe(el)
+  }
+}
+
+watch(isReadOnlyMode, (val) => {
+  if (val) {
+    syncRoBannerHeight()
+  } else {
+    roBannerObserver?.disconnect()
+    roBannerObserver = null
+  }
+})
+
+onUnmounted(() => {
+  roBannerObserver?.disconnect()
+})
+
 onUnmounted(() => {
   disconnectAnnouncementWebSocket()
 })
 </script>
 
 <template>
-  <div class="app-container">
+  <div class="app-container agent-host" :style="isReadOnlyMode ? { '--ro-banner-h': `${roBannerHeight}px` } : undefined">
     <!-- 只读模式横幅 -->
-    <div v-if="isReadOnlyMode" class="read-only-banner">
+    <div v-if="isReadOnlyMode" ref="readOnlyBannerRef" class="read-only-banner">
       <el-alert type="warning" :closable="false" show-icon>
         <template #title>
           <span class="banner-title">
@@ -412,7 +459,7 @@ onUnmounted(() => {
     </el-dialog>
 
     <!-- AI 助手悬浮球 -->
-    <FloatingAIBall role="student" />
+    <AgentWorkspace />
 
     <header :class="['header', { 'has-read-only': isReadOnlyMode }]">
       <div class="header-left">
@@ -431,11 +478,12 @@ onUnmounted(() => {
           <div class="logo-subtitle">学生端</div>
         </div>
       </div>
-      <div v-if="headerStatus" class="header-status">
-        <span :class="['header-status-badge', headerStatusClass]">{{ headerStatus }}</span>
-      </div>
       <div class="user-actions">
-        <el-dropdown @command="handleCommand" class="user-dropdown">
+        <AgentEntry />
+        <div v-if="headerStatus" class="header-status">
+          <span :class="['header-status-badge', headerStatusClass]">{{ headerStatus }}</span>
+        </div>
+        <el-dropdown :popper-style="{ zIndex: 2500 }" @command="handleCommand" class="user-dropdown">
           <el-button link class="user-btn">
             <div class="user-info">
               <el-icon class="user-avatar">
@@ -456,6 +504,13 @@ onUnmounted(() => {
                 <span>修改密码</span>
               </el-dropdown-item>
 
+              <el-dropdown-item command="feedback" class="dropdown-item">
+                <el-icon>
+                  <ChatDotRound />
+                </el-icon>
+                <span>问题反馈</span>
+              </el-dropdown-item>
+
               <el-dropdown-item command="logout" divided class="dropdown-item logout-item">
                 <el-icon>
                   <SwitchButton />
@@ -465,6 +520,7 @@ onUnmounted(() => {
             </el-dropdown-menu>
           </template>
         </el-dropdown>
+        <FeedbackSubmitDialog v-model="feedbackVisible" user-type="student" />
       </div>
     </header>
 
@@ -475,11 +531,10 @@ onUnmounted(() => {
         'sidebar-disabled': isDialogOpen,
         'has-read-only': isReadOnlyMode
       }]"
+      aria-label="主导航"
     >
-      <div class="sidebar-header">
-        <div class="sidebar-title" v-show="!sidebarCollapsed">系统菜单</div>
-      </div>
-      <el-menu 
+      <el-menu
+        v-if="studentMenusLoaded"
         :default-active="activeMenu" 
         @select="handleMenuSelect"
         :unique-opened="true"
@@ -492,7 +547,7 @@ onUnmounted(() => {
           v-for="menu in visibleStudentMenus" 
           :key="menu.path" 
           :index="menu.path"
-        >
+         :data-agent-route="menu.path">
           <el-icon>
             <component :is="getMenuIcon(menu.icon)" />
           </el-icon>
@@ -502,6 +557,9 @@ onUnmounted(() => {
         </el-menu-item>
       </el-menu>
     </aside>
+
+    <!-- 手机端侧边栏遮罩 -->
+    <div v-if="isMobile && !sidebarCollapsed" class="sidebar-overlay" @click="closeSidebar"></div>
 
     <!-- 主体区域 -->
     <div :class="['main-wrapper', { 'has-read-only': isReadOnlyMode }]">
@@ -619,10 +677,13 @@ html, body {
 }
 
 .header-status {
-  flex: 1;
   display: flex;
-  justify-content: flex-end;
-  margin-right: 20px;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.user-actions :deep(.agent-entry) {
+  margin-inline: 0;
 }
 
 .header-status-badge {
@@ -772,20 +833,6 @@ html, body {
   transition: all 0.3s ease;
 }
 
-.sidebar-header {
-  padding: 20px;
-  border-bottom: 1px solid #e8e8e8;
-  background: white;
-  position: relative;
-  z-index: 10;
-}
-
-.sidebar-title {
-  font-size: clamp(14px, 1.5vw, 16px);
-  font-weight: 600;
-  color: #333;
-}
-
 .el-menu-vertical-demo {
   border-right: none;
   flex: 1;
@@ -869,29 +916,16 @@ html, body {
   color: white;
 }
 
-/* 只读模式横幅样式 */
+/* 只读模式横幅样式（文档流元素，与教师端/企业端一致，header 与主区域由 flex 布局自然让位） */
 .read-only-banner {
   margin: 0;
   border-radius: 0;
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  z-index: 1001;
+  flex-shrink: 0;
 }
 
-/* 只读模式时 header 往下偏移 */
-.header.has-read-only {
-  top: 40px;
-}
-
-/* 侧边栏也跟着偏移 */
+/* 侧边栏为 fixed 定位，无法跟随文档流，仍需横幅高度偏移（横幅真实高度由 JS 实测写入 --ro-banner-h） */
 .sidebar.has-read-only {
-  top: 104px;
-}
-
-.main-wrapper.has-read-only {
-  padding-top: 104px;
+  top: calc(64px + var(--ro-banner-h, 40px));
 }
 
 .banner-title {
@@ -913,6 +947,45 @@ html, body {
   display: flex;
   align-items: center;
   gap: 4px;
+}
+
+/* 手机端：侧边栏为遮罩抽屉，主内容不再预留侧栏宽度 */
+@media screen and (max-width: 768px) {
+  .header {
+    padding: 0 12px;
+  }
+
+  .logo-text {
+    font-size: 20px;
+    letter-spacing: 1px;
+  }
+
+  .logo-subtitle {
+    display: none;
+  }
+
+  .user-actions {
+    gap: 10px;
+  }
+
+  .user-name {
+    display: none;
+  }
+
+  .sidebar,
+  .sidebar.has-read-only {
+    top: 0;
+    width: min(82vw, 280px);
+    min-width: 0;
+    max-width: none;
+    z-index: 1999;
+    box-shadow: 4px 0 16px rgba(0, 0, 0, 0.18);
+  }
+
+  .el-main {
+    margin-left: 0;
+    padding: 12px !important;
+  }
 }
 
 .reminder-content {

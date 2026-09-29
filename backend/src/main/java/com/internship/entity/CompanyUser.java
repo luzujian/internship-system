@@ -1,9 +1,12 @@
 package com.internship.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
+import lombok.ToString;
 import java.util.Date;
+import java.util.List;
 
 @Data
 public class CompanyUser {
@@ -12,6 +15,8 @@ public class CompanyUser {
     @NotBlank(message = "公司名称不能为空")
     @Size(min = 2, max = 255, message = "公司名称长度必须在2-255个字符之间")
     private String companyName;
+
+    private String creditCode;
     
     @NotBlank(message = "联系人不能为空")
     @Size(min = 1, max = 50, message = "联系人长度必须在1-50个字符之间")
@@ -31,6 +36,8 @@ public class CompanyUser {
 
     private String username;
     
+    @JsonIgnore
+    @ToString.Exclude
     private String password;
     
     private String role = "ROLE_COMPANY";
@@ -56,7 +63,17 @@ public class CompanyUser {
     private Integer acceptBackup = 0;
     
     private Long maxBackupStudents = 0L;
-    
+
+    private Integer isAlumniUnit;
+
+    private String alumniRepresentativeName;
+
+    private String alumniRepresentativePhone;
+
+    private String alumniRepresentativePosition;
+
+    private Integer hasTrainingBaseAgreement = 0;
+
     private String companyTag;
     
     private Date registerTime;
@@ -100,4 +117,8 @@ public class CompanyUser {
     private String logo;
     private String photos;
     private String videos;
+
+    private List<CompanyAlumniMember> alumniMembers;
+    private List<CompanySchoolLiaison> schoolLiaisons;
+    private CompanyVisitSummary visitSummary;
 }

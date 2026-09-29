@@ -10,6 +10,8 @@
         <result property="updateTime" column="update_time" />
         <result property="creator" column="creator" />
         <result property="updater" column="updater" />
+        <result property="createAdminId" column="create_admin_id" />
+        <result property="updateAdminId" column="update_admin_id" />
         <result property="deleted" column="deleted" />
         <result property="applicationStartDate" column="application_start_date" />
         <result property="applicationEndDate" column="application_end_date" />
@@ -27,12 +29,12 @@
             application_start_date, application_end_date, company_confirmation_deadline,
             delay_application_deadline, report_cycle,
             start_date, end_date, report_deadline, evaluation_deadline,
-            create_time, update_time, creator, updater, deleted
+            create_time, update_time, creator, updater, create_admin_id, update_admin_id, deleted
         ) values (
             #{applicationStartDate}, #{applicationEndDate}, #{companyConfirmationDeadline},
             #{delayApplicationDeadline}, #{reportCycle},
             #{startDate}, #{endDate}, #{reportDeadline}, #{evaluationDeadline},
-            NOW(), NOW(), #{creator}, #{updater}, 0
+            NOW(), NOW(), #{creator}, #{updater}, #{createAdminId}, #{updateAdminId}, 0
         )
     </insert>
     
@@ -56,5 +58,22 @@
             update_time = NOW()
         </set>
         where id = #{id}
+    </update>
+
+    <update id="updateCalendarIfUnchanged">
+        update internship_time_settings
+        set start_date = #{updated.startDate},
+            end_date = #{updated.endDate},
+            report_cycle = #{updated.reportCycle},
+            evaluation_deadline = #{updated.evaluationDeadline},
+            updater = #{updated.updater},
+            update_admin_id = #{updated.updateAdminId},
+            update_time = NOW()
+        where id = #{current.id}
+          and (update_time &lt;=&gt; #{current.updateTime})
+          and (start_date &lt;=&gt; #{current.startDate})
+          and (end_date &lt;=&gt; #{current.endDate})
+          and (report_cycle &lt;=&gt; #{current.reportCycle})
+          and (evaluation_deadline &lt;=&gt; #{current.evaluationDeadline})
     </update>
 </mapper>

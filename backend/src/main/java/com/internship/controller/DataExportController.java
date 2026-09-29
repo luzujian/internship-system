@@ -27,7 +27,7 @@ public class DataExportController {
     /**
      * 导出学生实习状态汇总
      */
-    @Log(operationType = "EXPORT", module = "DATA_EXPORT", description = "导出学生实习状态汇总")
+    @Log(operationType = "EXPORT", module = "DATA_EXPORT", description = "导出学生实习状态汇总", riskLevel = "MEDIUM", critical = true)
     @GetMapping("/student-status")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<byte[]> exportStudentStatus(@RequestParam(required = false) Integer status) {
@@ -44,7 +44,7 @@ public class DataExportController {
     /**
      * 导出各专业实习进度
      */
-    @Log(operationType = "EXPORT", module = "DATA_EXPORT", description = "导出各专业实习进度")
+    @Log(operationType = "EXPORT", module = "DATA_EXPORT", description = "导出各专业实习进度", riskLevel = "MEDIUM", critical = true)
     @GetMapping("/major-progress")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<byte[]> exportMajorProgress() {
@@ -61,7 +61,7 @@ public class DataExportController {
     /**
      * 导出企业招聘情况
      */
-    @Log(operationType = "EXPORT", module = "DATA_EXPORT", description = "导出企业招聘情况")
+    @Log(operationType = "EXPORT", module = "DATA_EXPORT", description = "导出企业招聘情况", riskLevel = "MEDIUM", critical = true)
     @GetMapping("/company-recruitment")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<byte[]> exportCompanyRecruitment() {
@@ -78,7 +78,7 @@ public class DataExportController {
     /**
      * 导出重点关注学生
      */
-    @Log(operationType = "EXPORT", module = "DATA_EXPORT", description = "导出重点关注学生")
+    @Log(operationType = "EXPORT", module = "DATA_EXPORT", description = "导出重点关注学生", riskLevel = "MEDIUM", critical = true)
     @GetMapping("/focus-students")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<byte[]> exportFocusStudents() {
@@ -95,7 +95,7 @@ public class DataExportController {
     /**
      * 导出班级实习统计
      */
-    @Log(operationType = "EXPORT", module = "DATA_EXPORT", description = "导出班级实习统计")
+    @Log(operationType = "EXPORT", module = "DATA_EXPORT", description = "导出班级实习统计", riskLevel = "MEDIUM", critical = true)
     @GetMapping("/class-statistics")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<byte[]> exportClassStatistics() {
@@ -112,7 +112,7 @@ public class DataExportController {
     /**
      * 导出学生材料归档
      */
-    @Log(operationType = "EXPORT", module = "DATA_EXPORT", description = "导出学生材料归档")
+    @Log(operationType = "EXPORT", module = "DATA_EXPORT", description = "导出学生材料归档", riskLevel = "MEDIUM", critical = true)
     @GetMapping("/archives")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<byte[]> exportArchives() {

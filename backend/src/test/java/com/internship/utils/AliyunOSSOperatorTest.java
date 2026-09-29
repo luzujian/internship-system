@@ -1,6 +1,7 @@
 package com.internship.utils;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.slf4j.Logger;
@@ -13,6 +14,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * 验证 OSS 文件下载功能是否正常
  */
 @SpringBootTest
+@EnabledIfEnvironmentVariable(named = "RUN_LIVE_OSS_TESTS", matches = "true")
 public class AliyunOSSOperatorTest {
 
     private static final Logger log = LoggerFactory.getLogger(AliyunOSSOperatorTest.class);

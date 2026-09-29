@@ -1,6 +1,7 @@
 package com.internship.mapper;
 
 import com.internship.entity.Position;
+import org.apache.ibatis.annotations.Delete;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
@@ -150,6 +151,9 @@ public interface PositionMapper {
      * @param positionId 岗位ID
      * @return 更新的记录数
      */
+    /** 到期安全阀:暂停实习期已过的在招岗位,返回暂停行数 */
+    int pauseExpiredActivePositions();
+
     int updateRecruitedCount(@Param("positionId") Long positionId);
 
     /**
@@ -181,4 +185,32 @@ public interface PositionMapper {
      * @return 省份列表
      */
     List<String> findDistinctProvinces();
+
+    // ========== 删除岗位级联清理：按 position_id 删除所有引用该岗位的业务表记录（每条都在 Service 层独立 try-catch，表不存在时跳过） ==========
+    @Delete("delete from student_internship_status where position_id = #{positionId}")
+    int deleteInternshipStatusByPositionId(@Param("positionId") Long positionId);
+
+    @Delete("delete from student_job_application where position_id = #{positionId}")
+    int deleteJobApplicationByPositionId(@Param("positionId") Long positionId);
+
+    @Delete("delete from internship_application where position_id = #{positionId}")
+    int deleteInternshipApplicationByPositionId(@Param("positionId") Long positionId);
+
+    @Delete("delete from internship_confirmation_record where position_id = #{positionId}")
+    int deleteConfirmationRecordByPositionId(@Param("positionId") Long positionId);
+
+    @Delete("delete from internship_stage_assignment where position_id = #{positionId}")
+    int deleteStageAssignmentByPositionId(@Param("positionId") Long positionId);
+
+    @Delete("delete from interview_invitation where position_id = #{positionId}")
+    int deleteInterviewInvitationByPositionId(@Param("positionId") Long positionId);
+
+    @Delete("delete from position_favorite where position_id = #{positionId}")
+    int deletePositionFavoriteByPositionId(@Param("positionId") Long positionId);
+
+    @Delete("delete from position_view_record where position_id = #{positionId}")
+    int deletePositionViewRecordByPositionId(@Param("positionId") Long positionId);
+
+    @Delete("delete from company_notification where position_id = #{positionId}")
+    int deleteCompanyNotificationByPositionId(@Param("positionId") Long positionId);
 }

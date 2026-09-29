@@ -71,7 +71,7 @@ public class ProblemFeedbackController {
                 return Result.success(feedback);
             }
             Long currentUserId = CurrentHolder.getUserId();
-            if (currentUserId != null && !currentUserId.equals(feedback.getUserId())) {
+            if (!ownsFeedback(feedback)) {
                 log.warn("用户尝试查看他人的问题反馈: currentUserId={}, feedbackUserId={}", currentUserId, feedback.getUserId());
                 return Result.error("无权查看他人的问题反馈");
             }
@@ -125,7 +125,16 @@ public class ProblemFeedbackController {
     public Result addFeedback(@RequestBody ProblemFeedback feedback) {
         log.info("新增问题反馈: {}", feedback.getTitle());
         try {
-            String userType = feedback.getUserType();
+            com.internship.entity.User actor = CurrentHolder.getUser();
+            String userType = currentFeedbackType();
+            if (actor == null || actor.getId() == null || userType == null) {
+                return Result.error("当前用户身份不可用");
+            }
+            feedback.setId(null);
+            feedback.setUserType(userType);
+            feedback.setUserId(actor.getId());
+            feedback.setUserName(actor.getName());
+            feedback.setUserAccount(actor.getUsername());
             String priority = "normal";
             
             if ("company".equals(userType)) {
@@ -173,7 +182,7 @@ public class ProblemFeedbackController {
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_STUDENT', 'ROLE_TEACHER', 'ROLE_COMPANY')")
+    @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_STUDENT', 'ROLE_TEACHER_COLLEGE', 'ROLE_TEACHER_DEPARTMENT', 'ROLE_TEACHER_COUNSELOR', 'ROLE_COMPANY')")
     @Log(operationType = "UPDATE", module = "PROBLEM_FEEDBACK", description = "更新问题反馈")
     public Result updateFeedback(@PathVariable Long id, @RequestBody ProblemFeedback feedback) {
         log.info("更新问题反馈: ID={}", id);
@@ -185,10 +194,16 @@ public class ProblemFeedbackController {
                 if (existing == null) {
                     return Result.error("问题反馈不存在");
                 }
-                Long currentUserId = CurrentHolder.getUserId();
-                if (currentUserId == null || !currentUserId.equals(existing.getUserId())) {
+                if (!ownsFeedback(existing)) {
                     return Result.error("无权修改他人的问题反馈");
                 }
+                // 普通提交者仅能编辑反馈正文，处理状态与回复由管理员管理。
+                ProblemFeedback editable = new ProblemFeedback();
+                editable.setTitle(feedback.getTitle());
+                editable.setContent(feedback.getContent());
+                editable.setFeedbackType(feedback.getFeedbackType());
+                editable.setAttachmentUrl(feedback.getAttachmentUrl());
+                feedback = editable;
             }
             feedback.setId(id);
             int result = problemFeedbackMapper.update(feedback);
@@ -215,7 +230,7 @@ public class ProblemFeedbackController {
 
     @DeleteMapping("/batch")
     @PreAuthorize("hasRole('ROLE_ADMIN')")
-    @Log(operationType = "DELETE", module = "PROBLEM_FEEDBACK", description = "批量删除问题反馈")
+    @Log(operationType = "DELETE", module = "PROBLEM_FEEDBACK", description = "批量删除问题反馈", riskLevel = "HIGH", critical = true)
     public Result batchDeleteFeedback(@RequestBody Map<String, List<Long>> request) {
         List<Long> ids = request.get("ids");
         log.info("批量删除问题反馈，IDs: {}", ids);
@@ -238,8 +253,10 @@ public class ProblemFeedbackController {
             @RequestParam Long userId) {
         log.info("获取我的问题反馈，用户类型: {}, 用户ID: {}", userType, userId);
         try {
-            List<ProblemFeedback> feedbackList = problemFeedbackMapper.list(
-                userType, null, null, null, null, null);
+            String actorType = currentFeedbackType();
+            Long actorId = CurrentHolder.getUserId();
+            if (actorType == null || actorId == null) return Result.error("当前用户身份不可用");
+            List<ProblemFeedback> feedbackList = problemFeedbackMapper.findByOwner(actorType, actorId);
             
             List<ProblemFeedbackVO> feedbackVOList = feedbackList.stream()
                 .map(this::convertToVO)
@@ -254,6 +271,7 @@ public class ProblemFeedbackController {
 
     @PutMapping("/{id}/status")
     @PreAuthorize("hasRole('ROLE_ADMIN')")
+    @Log(operationType = "AUDIT", module = "PROBLEM_FEEDBACK", description = "处理问题反馈", riskLevel = "MEDIUM")
     public Result updateStatus(@PathVariable Long id, @RequestBody Map<String, String> request) {
         log.info("更新问题反馈状态: ID={}, 状态={}", id, request.get("status"));
         try {
@@ -327,7 +345,7 @@ public class ProblemFeedbackController {
     /**
      * 导出问题反馈到 Excel
      */
-    @Log(operationType = "EXPORT", module = "PROBLEM_FEEDBACK", description = "导出问题反馈")
+    @Log(operationType = "EXPORT", module = "PROBLEM_FEEDBACK", description = "导出问题反馈", riskLevel = "MEDIUM", critical = true)
     @GetMapping("/export")
     @PreAuthorize("hasRole('ROLE_ADMIN')")
     public void exportFeedbackData(HttpServletResponse response) {
@@ -470,6 +488,24 @@ public class ProblemFeedbackController {
             case "closed": return "已关闭";
             default: return status;
         }
+    }
+
+    private String currentFeedbackType() {
+        String role = CurrentHolder.getUserRole();
+        if (role == null) return null;
+        return switch (role) {
+            case "ROLE_STUDENT" -> "student";
+            case "ROLE_COMPANY" -> "company";
+            case "ROLE_TEACHER", "ROLE_TEACHER_COLLEGE", "ROLE_TEACHER_DEPARTMENT", "ROLE_TEACHER_COUNSELOR" -> "teacher";
+            default -> null;
+        };
+    }
+
+    private boolean ownsFeedback(ProblemFeedback feedback) {
+        Long id = CurrentHolder.getUserId();
+        String type = currentFeedbackType();
+        return id != null && type != null && id.equals(feedback.getUserId())
+                && type.equals(feedback.getUserType()) && !Integer.valueOf(1).equals(feedback.getDeleted());
     }
 
     private boolean isAdmin(Authentication authentication) {

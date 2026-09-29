@@ -4,7 +4,7 @@
       <template #header>
         <div class="card-header">
           <span>管理员用户管理</span>
-          <el-button v-if="authStore.hasPermission('user:admin:add')" type="primary" @click="showAddDialog" style="margin-right: 10px">添加管理员</el-button>
+          <el-button v-if="authStore.hasPermission('user:admin:add')" type="primary" data-agent-open @click="showAddDialog" style="margin-right: 10px">添加管理员</el-button>
           <el-button v-if="authStore.hasPermission('user:admin:view')" type="success" @click="handleExportToExcel">
             <Download />
             导出Excel
@@ -31,9 +31,11 @@
         <el-table-column label="操作" width="250" fixed="right">
           <template #default="scope">
             <!-- 超级管理员不可编辑和删除 -->
-            <el-button v-if="authStore.hasPermission('user:admin:edit')" type="primary" size="small" @click="showEditDialog(scope.row)" :disabled="isSuperAdmin(scope.row)">编辑</el-button>
-            <el-button v-if="authStore.hasPermission('user:admin:reset')" type="warning" size="small" @click="showResetPasswordDialog(scope.row)" :disabled="isSuperAdmin(scope.row)">重置密码</el-button>
-            <el-button v-if="authStore.hasPermission('user:admin:delete')" type="danger" size="small" @click="deleteUser(scope.row.id)" :disabled="isSuperAdmin(scope.row)">删除</el-button>
+            <MobileMoreActions>
+              <el-button v-if="authStore.hasPermission('user:admin:edit')" type="primary" size="small" @click="showEditDialog(scope.row)" :disabled="isSuperAdmin(scope.row)">编辑</el-button>
+              <el-button v-if="authStore.hasPermission('user:admin:reset')" type="warning" size="small" @click="showResetPasswordDialog(scope.row)" :disabled="isSuperAdmin(scope.row)">重置密码</el-button>
+              <el-button v-if="authStore.hasPermission('user:admin:delete')" type="danger" size="small" @click="deleteUser(scope.row.id)" :disabled="isSuperAdmin(scope.row)">删除</el-button>
+            </MobileMoreActions>
           </template>
         </el-table-column>
       </el-table>
@@ -49,7 +51,7 @@
     
     <!-- 添加管理员对话框 -->
     <el-dialog v-model="addDialogVisible" title="添加管理员" width="500px">
-      <el-form ref="addForm" :model="addForm" :rules="addRules" label-width="80px">
+      <el-form ref="addFormRef" :model="addForm" :rules="addRules" label-width="80px">
         <el-form-item label="用户名" prop="username">
           <el-input v-model="addForm.username" />
         </el-form-item>
@@ -65,7 +67,7 @@
 
     <!-- 编辑管理员对话框 -->
     <el-dialog v-model="editDialogVisible" title="编辑管理员" width="500px">
-      <el-form ref="editForm" :model="editForm" :rules="addRules" label-width="80px">
+      <el-form ref="editFormRef" :model="editForm" :rules="addRules" label-width="80px">
         <el-form-item label="用户名" prop="username">
           <el-input v-model="editForm.username" disabled />
         </el-form-item>
@@ -82,9 +84,9 @@
     <!-- 重置密码对话框 -->
     <el-dialog v-model="resetPasswordDialogVisible" title="重置密码" width="400px">
       <el-form ref="resetPasswordForm" :model="resetPasswordForm" :rules="resetPasswordForm" label-width="80px">
-        <!-- 隐藏密码输入框，默认密码为123456 -->
+        <!-- 重置后密码统一为 123456 -->
         <div style="padding: 20px; text-align: center;">
-          <p>密码将被重置为: <span style="color: #409eff; font-weight: bold;">123456</span></p>
+          <p>密码将统一重置为 123456。</p>
           <p style="color: #909399; font-size: 12px; margin-top: 10px;">请确认是否继续重置密码</p>
         </div>
       </el-form>
@@ -99,13 +101,15 @@
 <script setup lang="ts">
 import logger from '@/utils/logger'
 import { createRequiredValidator, createPhoneValidator } from '@/utils/validation'
-import { ref, onMounted, inject } from 'vue'
+import { ref, onMounted, onUnmounted, inject, watch } from 'vue'
+import { useFormContext } from '@/agent/formContext'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Download } from '@element-plus/icons-vue'
 import Pagination from '../../components/Pagination.vue'
 import AdminUserService from '../../api/AdminUserService'
 import AdminService from '../../api/adminService'
 import { exportToExcel } from '../../utils/xlsx'
+import MobileMoreActions from '../../components/MobileMoreActions.vue'
 import { useSystemSettingsStore } from '../../store/systemSettings'
 import { useAuthStore } from '../../store/auth'
 
@@ -115,7 +119,7 @@ const systemSettingsStore = useSystemSettingsStore()
 // 获取全局预加载服务
 const preloadService = inject('preloadService', null)
 
-const users = ref([])
+const users = ref<Array<{ id?: number; username?: string; phone?: string; name?: string; [key: string]: unknown }>>([])
 const total = ref(0)
 const currentPage = ref(1)
 const pageSize = ref(10)
@@ -126,13 +130,23 @@ const addDialogVisible = ref(false)
 const editDialogVisible = ref(false)
 const resetPasswordDialogVisible = ref(false)
 
+const addFormRef = ref<any>(null)
+const editFormRef = ref<any>(null)
 const addForm = ref({
   username: '',
   phone: '',
   role: 'ROLE_ADMIN'
 })
 
-const editForm = ref({})
+interface AdminEditForm {
+  id?: number
+  username?: string
+  name?: string
+  phone?: string
+  role?: string
+  [key: string]: unknown
+}
+const editForm = ref<AdminEditForm>({})
 const resetPasswordForm = ref({})
 const selectedUserId = ref(null)
 
@@ -144,6 +158,34 @@ const addRules = ref({
   phone: createPhoneValidator('请输入 11 位中国大陆手机号')
 })
 
+// ===== 智能填表：新增/编辑管理员注册到 AI 侧栏 =====
+// 用户名只读态与重置密码确认弹窗不接入语音
+const formContext = useFormContext()
+watch(addDialogVisible, (open) => {
+  if (open) {
+    formContext.register({
+      formId: 'admin:admin-user',
+      title: '添加管理员',
+      fields: [
+        { prop: 'username', label: '用户名', type: 'input', required: true },
+        { prop: 'phone', label: '手机号', type: 'input', patternHint: '11位手机号码' }
+      ],
+      getModel: () => addForm.value, getFormEl: () => addFormRef.value
+    })
+  } else formContext.unregister('admin:admin-user')
+})
+watch(editDialogVisible, (open) => {
+  if (open) {
+    formContext.register({
+      formId: 'admin:admin-user-edit',
+      title: '编辑管理员',
+      fields: [{ prop: 'phone', label: '手机号', type: 'input', patternHint: '11位手机号码' }],
+      getModel: () => editForm.value, getFormEl: () => editFormRef.value
+    })
+  } else formContext.unregister('admin:admin-user-edit')
+})
+onUnmounted(() => { formContext.unregister('admin:admin-user'); formContext.unregister('admin:admin-user-edit') })
+
 // 判断是否为超级管理员
 const isSuperAdmin = (user) => {
   return user.username === 'admin'
@@ -152,11 +194,24 @@ const isSuperAdmin = (user) => {
 // 加载管理员用户列表
 const loadAdmins = () => {
   loading.value = true
+  interface AdminPageData {
+    rows?: Array<{ id?: number; username?: string; phone?: string; [key: string]: unknown }>
+    total?: number
+    data?: { rows?: Array<{ id?: number; username?: string; phone?: string; [key: string]: unknown }>; total?: number }
+  }
+  interface AdminListEnvelope {
+    code?: number
+    message?: string
+    msg?: string
+    data?: AdminPageData | { rows?: Array<{ id?: number; username?: string; phone?: string; [key: string]: unknown }>; total?: number }
+  }
   AdminUserService.getAdmins(currentPage.value, pageSize.value, searchQuery.value)
     .then(response => {
-      const result = response.data || response
-      users.value = result.data?.rows || []
-      total.value = result.data?.total || 0
+      const envelope = response as unknown as AdminListEnvelope
+      const result = (envelope.data ?? envelope) as AdminPageData
+      const inner = (result.data ?? result) as { rows?: Array<{ id?: number; username?: string; phone?: string; [key: string]: unknown }>; total?: number }
+      users.value = Array.isArray(inner.rows) ? inner.rows : []
+      total.value = typeof inner.total === 'number' ? inner.total : 0
     })
     .catch(error => {
       ElMessage.error('加载管理员用户列表失败: ' + (error.message || '未知错误'))
@@ -182,11 +237,17 @@ const showAddDialog = () => {
   addDialogVisible.value = true
 }
 
-// 添加管理员
-const addUser = () => {
-  AdminUserService.addAdmin(addForm.value)
-    .then(() => {
-      ElMessage.success('添加管理员用户成功')
+// 添加管理员（addForm 仅含 username/phone/role，后端建模时补齐 name/adminId；此处用精确断言保持运行时原样）
+const addUser = async () => {
+  if (!addFormRef.value) return
+  try { await addFormRef.value.validate() } catch { return }
+  const operation = formContext.beginFormOperation('admin:admin-user')
+    AdminUserService.addAdmin(addForm.value as unknown as Omit<import('../../api/AdminUserService').AdminUser, 'id' | 'createTime' | 'updateTime'>)
+    .then(response => {
+      if (response?.code !== 200) throw new Error(response?.message || '添加管理员用户失败')
+      operation.complete({ status: 'saved', label: '管理员账号已保存', url: '/admin/admin-users' })
+
+      ElMessage.success('添加管理员用户成功，初始密码默认为 123456')
       addDialogVisible.value = false
       loadAdmins()
     })
@@ -218,20 +279,34 @@ const showResetPasswordDialog = (user) => {
 // 重置管理员密码
 const resetUserPassword = async () => {
   try {
-    const response = await AdminUserService.resetAdminPassword(selectedUserId.value, '123456')
-    const result = response.data || response
+    const response = await AdminUserService.resetAdminPassword(selectedUserId.value) as unknown as {
+      code?: number
+      success?: boolean
+      msg?: string
+      message?: string
+      data?: string | { code?: number; success?: boolean; msg?: string; message?: string; data?: string }
+    }
+    const rawData: unknown = response.data
+    const result = (rawData !== null && typeof rawData === 'object' && ('code' in (rawData as Record<string, unknown>) || 'success' in (rawData as Record<string, unknown>) || 'msg' in (rawData as Record<string, unknown>) || 'message' in (rawData as Record<string, unknown>))
+      ? (rawData as { code?: number; success?: boolean; msg?: string; message?: string })
+      : response)
     
     // 检查响应格式
-    if (result.code === 200 || result.code === undefined || result.success) {
-      ElMessage.success('密码重置成功，新密码为123456')
+    if (result.code === 200 || result.success) {
       resetPasswordDialogVisible.value = false
+      ElMessage.success('管理员密码已重置为 123456')
     } else {
       ElMessage.error('重置密码失败: ' + (result.msg || result.message || '未知错误'))
     }
   } catch (error) {
     if (error !== 'cancel') {
       logger.error('重置管理员密码失败:', error)
-      ElMessage.error('重置密码失败: ' + (error.response?.data?.msg || error.response?.data?.message || error.message || '未知错误'))
+      const errData: unknown = (error as { response?: { data?: unknown } })?.response?.data
+      const errMsg = (errData !== null && typeof errData === 'object' && errData !== undefined)
+        ? ((errData as { msg?: unknown }).msg ?? (errData as { message?: unknown }).message)
+        : undefined
+      const fallbackMsg = (error as { message?: unknown }).message
+      ElMessage.error('重置密码失败: ' + (typeof errMsg === 'string' ? errMsg : (typeof fallbackMsg === 'string' ? fallbackMsg : '未知错误')))
     }
   }
 }
@@ -272,9 +347,15 @@ const deleteUser = (id) => {
 }
 
 // 更新管理员信息
-const updateUser = () => {
-  AdminUserService.updateAdmin(editForm.value)
-    .then(() => {
+const updateUser = async () => {
+  if (!editFormRef.value) return
+  try { await editFormRef.value.validate() } catch { return }
+  const operation = formContext.beginFormOperation('admin:admin-user-edit')
+    AdminUserService.updateAdmin(editForm.value)
+    .then(response => {
+      if (response?.code !== 200) throw new Error(response?.message || '更新管理员信息失败')
+      operation.complete({ status: 'saved', label: '管理员资料已保存', url: '/admin/admin-users' })
+
       ElMessage.success('更新管理员信息成功')
       editDialogVisible.value = false
       loadAdmins()

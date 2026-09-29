@@ -46,19 +46,12 @@ public class BackupController {
     }
 
     private String getClientIp(HttpServletRequest request) {
-        String ip = request.getHeader("X-Forwarded-For");
-        if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
-            ip = request.getHeader("X-Real-IP");
-        }
-        if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
-            ip = request.getRemoteAddr();
-        }
-        return ip;
+        return com.internship.utils.IpUtils.getClientIp(request);
     }
 
     @PostMapping("/manual")
     @PreAuthorize("hasAuthority('backup:create')")
-    @Log(module = "BACKUP", operationType = "BACKUP", description = "手动备份数据")
+    @Log(module = "BACKUP", operationType = "BACKUP", description = "手动备份数据", riskLevel = "HIGH", critical = true)
     public Result manualBackup(HttpServletRequest request) {
         String operator = getCurrentUsername();
         String operatorIp = getClientIp(request);
@@ -95,7 +88,7 @@ public class BackupController {
 
     @PostMapping("/restore/{id}")
     @PreAuthorize("hasAuthority('backup:restore')")
-    @Log(module = "BACKUP", operationType = "RESTORE", description = "恢复数据")
+    @Log(module = "BACKUP", operationType = "RESTORE", description = "恢复数据", riskLevel = "HIGH", critical = true)
     public Result restoreBackup(@PathVariable Long id, HttpServletRequest request) {
         String operator = getCurrentUsername();
         String operatorIp = getClientIp(request);
@@ -131,7 +124,7 @@ public class BackupController {
             }
 
             log.info("开始从OSS下载备份文件: {}", record.getBackupPath());
-            byte[] fileContent = aliyunOSSOperator.downloadFile(record.getBackupPath());
+            byte[] fileContent = backupService.readBackup(record.getBackupPath());
             log.info("从OSS下载备份文件成功，大小: {} bytes", fileContent.length);
             
             Resource resource = new org.springframework.core.io.ByteArrayResource(fileContent);
@@ -149,7 +142,7 @@ public class BackupController {
 
     @DeleteMapping("/{id}")
     @PreAuthorize("hasAuthority('backup:delete')")
-    @Log(module = "BACKUP", operationType = "DELETE", description = "删除备份")
+    @Log(module = "BACKUP", operationType = "DELETE", description = "删除备份", riskLevel = "HIGH", critical = true)
     public Result deleteBackup(@PathVariable Long id) {
         log.info("删除备份，备份ID: {}", id);
         try {
@@ -190,7 +183,7 @@ public class BackupController {
 
     @PostMapping("/incremental/{parentBackupId}")
     @PreAuthorize("hasAuthority('backup:create')")
-    @Log(module = "BACKUP", operationType = "BACKUP", description = "增量备份")
+    @Log(module = "BACKUP", operationType = "BACKUP", description = "增量备份", riskLevel = "HIGH", critical = true)
     public Result incrementalBackup(@PathVariable Long parentBackupId, HttpServletRequest request) {
         String operator = getCurrentUsername();
         String operatorIp = getClientIp(request);

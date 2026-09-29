@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.internship.mapper.InternshipStageSettingMapper">
+    <resultMap id="StageSettingMap" type="com.internship.entity.InternshipStageSetting">
+        <id property="id" column="id"/>
+        <result property="stageNo" column="stage_no"/>
+        <result property="stageName" column="stage_name"/>
+        <result property="selectionStartDate" column="selection_start_date"/>
+        <result property="selectionEndDate" column="selection_end_date"/>
+        <result property="changeDeadline" column="change_deadline"/>
+        <result property="internshipStartDate" column="internship_start_date"/>
+        <result property="internshipEndDate" column="internship_end_date"/>
+        <result property="confirmationDeadline" column="confirmation_deadline"/>
+        <result property="reportCycle" column="report_cycle"/>
+        <result property="reportDeadline" column="report_deadline"/>
+        <result property="appraisalDeadline" column="appraisal_deadline"/>
+        <result property="enabled" column="enabled"/>
+        <result property="version" column="version"/>
+        <result property="updaterId" column="updater_id"/>
+        <result property="updaterName" column="updater_name"/>
+        <result property="createTime" column="create_time"/>
+        <result property="updateTime" column="update_time"/>
+    </resultMap>
+
+    <select id="findAll" resultMap="StageSettingMap">
+        select * from internship_stage_settings order by stage_no asc
+    </select>
+
+    <select id="findByStageNo" resultMap="StageSettingMap">
+        select * from internship_stage_settings where stage_no = #{stageNo} limit 1
+    </select>
+
+    <insert id="insert" parameterType="com.internship.entity.InternshipStageSetting"
+            useGeneratedKeys="true" keyProperty="id">
+        insert into internship_stage_settings (
+            stage_no, stage_name, selection_start_date, selection_end_date, change_deadline,
+            internship_start_date, internship_end_date, confirmation_deadline,
+            report_cycle, report_deadline, appraisal_deadline, enabled, version,
+            updater_id, updater_name, create_time, update_time
+        ) values (
+            #{stageNo}, #{stageName}, #{selectionStartDate}, #{selectionEndDate}, #{changeDeadline},
+            #{internshipStartDate}, #{internshipEndDate}, #{confirmationDeadline},
+            #{reportCycle}, #{reportDeadline}, #{appraisalDeadline},
+            coalesce(#{enabled}, 1), coalesce(#{version}, 0),
+            #{updaterId}, #{updaterName}, now(), now()
+        )
+    </insert>
+
+    <update id="updateByVersion" parameterType="com.internship.entity.InternshipStageSetting">
+        update internship_stage_settings
+        <set>
+            stage_name = #{stageName},
+            selection_start_date = #{selectionStartDate},
+            selection_end_date = #{selectionEndDate},
+            change_deadline = #{changeDeadline},
+            internship_start_date = #{internshipStartDate},
+            internship_end_date = #{internshipEndDate},
+            confirmation_deadline = #{confirmationDeadline},
+            report_cycle = #{reportCycle},
+            report_deadline = #{reportDeadline},
+            appraisal_deadline = #{appraisalDeadline},
+            enabled = #{enabled},
+            version = version + 1,
+            updater_id = #{updaterId},
+            updater_name = #{updaterName},
+            update_time = now()
+        </set>
+        where id = #{id} and version = #{version}
+    </update>
+</mapper>

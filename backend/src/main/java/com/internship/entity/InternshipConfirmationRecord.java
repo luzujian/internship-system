@@ -26,7 +26,8 @@ public class InternshipConfirmationRecord {
     private Integer internshipDuration;
     private String remark;
     private Integer status; // 0=待企业确认，1=企业已确认，2=企业已拒绝
-    private Integer recallStatus = 0; // 撤回状态：0-未撤回，1-撤回申请中，2-已撤回
+    // null=已保存未提交，0=已提交且未撤回，1=撤回申请中，2=已撤回
+    private Integer recallStatus;
     private String recallReason; // 撤回原因
     private LocalDateTime recallApplyTime; // 撤回申请时间
     private LocalDateTime createTime;

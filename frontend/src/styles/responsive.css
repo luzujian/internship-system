@@ -1,0 +1,301 @@
+/**
+ * 全局响应式基础样式（移动断点 768px）
+ *
+ * 原则：
+ * - 桌面端（> 768px）不受影响
+ * - 页面外层禁止整体横向溢出，表格仅在容器内部横滑
+ * - 弹窗/表单/分页/触控区在移动端使用统一适配
+ * - 100dvh 优先，保留 100vh 回退；安全区变量供固定定位元素使用
+ */
+
+:root {
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+}
+
+/* 动态视口高度（全局容器；各布局组件内部另有 scoped 覆盖） */
+#app {
+  height: 100vh;
+  height: 100dvh;
+}
+
+/* 页面外层禁止整体横向溢出（表格等宽内容只能在自身容器内横滑） */
+html,
+body {
+  overflow-x: hidden;
+  overscroll-behavior-x: none;
+}
+
+/* 手机端侧边栏遮罩（四个角色布局共用；低于 Element Plus 弹层 2000，高于页面内容） */
+.sidebar-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1998;
+  background: rgba(15, 23, 42, 0.45);
+  animation: sidebar-overlay-fade 0.2s ease;
+}
+
+@keyframes sidebar-overlay-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* 表格内部恢复横滑手势（覆盖 style.css 中的 pan-y 限制） */
+.el-table__body-wrapper,
+.el-table__body,
+.el-table__header-wrapper,
+.el-table__footer-wrapper {
+  touch-action: pan-x pan-y;
+}
+
+/* 表格内部 el-scrollbar 容器恢复横滑手势（覆盖 style.css 的 pan-y 限制） */
+.el-table .el-scrollbar__wrap {
+  touch-action: pan-x pan-y;
+}
+
+/* 表格横向滚动条滑块允许触摸拖动（覆盖 style.css 的 pan-y 限制） */
+.el-table .el-scrollbar__bar.is-horizontal {
+  touch-action: pan-x;
+}
+
+/* 移动端：加宽表格横向滚动条，便于触摸拖动 */
+@media (max-width: 768px) {
+  .el-table .el-scrollbar__bar.is-horizontal {
+    height: 10px;
+  }
+
+  .el-table .el-scrollbar__bar.is-horizontal .el-scrollbar__thumb {
+    height: 8px;
+  }
+}
+
+/* 长文本（文件名、URL、错误信息）允许换行 */
+.el-table .cell,
+.el-descriptions__content,
+.el-dialog__body {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+@media (max-width: 768px) {
+  /* ===== 弹窗：最大宽度为视口减 24px，内容区限制动态视口高度并可纵向滚动 ===== */
+  .el-dialog {
+    max-width: calc(100vw - 24px);
+    margin-top: 5vh;
+    margin-bottom: 24px;
+  }
+
+  .el-dialog__body {
+    max-height: calc(100vh - 190px);
+    max-height: calc(100dvh - 190px);
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .el-message-box {
+    max-width: calc(100vw - 24px);
+  }
+
+  .el-message {
+    max-width: calc(100vw - 24px);
+  }
+
+  .el-drawer {
+    max-width: 100vw;
+  }
+
+  /* ===== 表单：标签置顶、控件满宽、输入字体不低于 16px（防 iOS 聚焦缩放） ===== */
+  .el-form .el-form-item {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .el-form .el-form-item__label {
+    width: auto !important;
+    height: auto;
+    min-height: 0;
+    line-height: 1.4;
+    padding: 0 0 4px;
+    justify-content: flex-start;
+    text-align: left;
+  }
+
+  .el-form .el-form-item__content {
+    margin-left: 0 !important;
+    width: 100%;
+  }
+
+  .el-form .el-input,
+  .el-form .el-select,
+  .el-form .el-date-editor,
+  .el-form .el-cascader,
+  .el-form .el-textarea,
+  .el-form .el-input-number {
+    width: 100%;
+  }
+
+  .el-input__inner,
+  .el-textarea__inner {
+    font-size: 16px;
+  }
+
+  .el-input__inner {
+    min-height: 40px;
+  }
+
+  /* ===== 主要点击区不低于 44px ===== */
+  .el-button {
+    min-height: 44px;
+  }
+
+  .el-button--small {
+    min-height: 32px;
+  }
+
+  .el-button.is-link,
+  .el-button.is-text {
+    min-height: 32px;
+  }
+
+  .el-menu-item,
+  .el-sub-menu__title {
+    min-height: 44px;
+  }
+
+  /* ===== 分页：隐藏总数、页容量和跳页器，仅保留紧凑页码与前后翻页 ===== */
+  .el-pagination {
+    justify-content: center;
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+
+  .el-pagination__total,
+  .el-pagination__sizes,
+  .el-pagination__jump,
+  .el-pagination__goto {
+    display: none !important;
+  }
+
+  .el-pagination .el-pager li {
+    display: none;
+  }
+
+  .el-pagination .el-pager li:first-child,
+  .el-pagination .el-pager li:last-child,
+  .el-pagination .el-pager li.is-active {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* ===== 密集表格：只允许容器内部横滑，取消固定操作列对视口的遮挡 =====
+     Element Plus 2.x 固定列使用 position: sticky !important，这里以同等优先级取消吸附 */
+  .el-table-fixed-column--left,
+  .el-table-fixed-column--right,
+  .el-table__header-wrapper tr td.el-table-fixed-column--left,
+  .el-table__header-wrapper tr td.el-table-fixed-column--right,
+  .el-table__header-wrapper tr th.el-table-fixed-column--left,
+  .el-table__header-wrapper tr th.el-table-fixed-column--right,
+  .el-table__body-wrapper tr td.el-table-fixed-column--left,
+  .el-table__body-wrapper tr td.el-table-fixed-column--right,
+  .el-table__body-wrapper tr th.el-table-fixed-column--left,
+  .el-table__body-wrapper tr th.el-table-fixed-column--right,
+  .el-table__footer-wrapper tr td.el-table-fixed-column--left,
+  .el-table__footer-wrapper tr td.el-table-fixed-column--right,
+  .el-table__footer-wrapper tr th.el-table-fixed-column--left,
+  .el-table__footer-wrapper tr th.el-table-fixed-column--right {
+    position: static !important;
+  }
+
+  .el-table-fixed-column--left.is-last-column::before,
+  .el-table-fixed-column--right.is-first-column::before {
+    box-shadow: none !important;
+  }
+
+  /* ===== 图片/媒体不撑破视口 ===== */
+  img,
+  video,
+  canvas,
+  iframe {
+    max-width: 100%;
+  }
+}
+
+/* ===== 手机端卡片列表（表格卡片化共用样式，配合 v-if="isMobile" 使用） ===== */
+.mobile-card-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.mobile-card {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 14px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+}
+
+.mobile-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.mobile-card-title {
+  font-weight: 600;
+  font-size: 15px;
+  color: #1e293b;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.mobile-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mobile-card-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 14px;
+}
+
+.mobile-card-label {
+  color: #64748b;
+  flex-shrink: 0;
+}
+
+.mobile-card-value {
+  color: #1e293b;
+  text-align: right;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.mobile-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.mobile-card-actions .el-button {
+  flex: 1;
+  min-width: 96px;
+}
+
+.mobile-card-actions .el-button + .el-button {
+  margin-left: 0;
+}

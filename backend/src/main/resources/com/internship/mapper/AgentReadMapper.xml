@@ -1,0 +1,246 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.internship.mapper.AgentReadMapper">
+    <sql id="VisibleJobs">
+        FROM position p JOIN company_users cu ON cu.id = p.company_id
+        WHERE p.status = 'active' AND cu.status = 1 AND cu.audit_status = 1
+        <if test="keyword != null and keyword != ''">AND (p.position_name LIKE CONCAT('%', #{keyword}, '%') OR cu.company_name LIKE CONCAT('%', #{keyword}, '%'))</if>
+        <if test="city != null and city != ''">AND (p.city LIKE CONCAT('%', #{city}, '%') OR p.province LIKE CONCAT('%', #{city}, '%'))</if>
+    </sql>
+    <select id="searchJobs" resultType="map">
+        SELECT CAST(p.id AS CHAR) AS id, p.position_name AS title, cu.company_name AS company,
+               p.province, p.city, p.district, p.detail_address AS detailAddress,
+               p.salary_min AS salaryMin, p.salary_max AS salaryMax, p.salary_unit AS salaryUnit,
+               p.required_majors AS requiredMajors, p.status
+        <include refid="VisibleJobs"/> ORDER BY p.id DESC LIMIT #{offset}, #{limit}
+    </select>
+    <select id="countJobs" resultType="long">SELECT COUNT(*) <include refid="VisibleJobs"/></select>
+    <sql id="TeacherAuthorization">
+        <choose>
+            <when test='actor.teacherType == "COLLEGE"'>AND m.department_id = #{actor.departmentId}</when>
+            <when test='actor.teacherType == "DEPARTMENT"'>AND m.division_id = #{actor.divisionId}</when>
+            <when test='actor.teacherType == "COUNSELOR"'>AND EXISTS (SELECT 1 FROM class_counselor_relation r WHERE r.class_id = su.class_id AND r.counselor_id = #{actor.id})</when>
+            <otherwise>AND 1 = 0</otherwise>
+        </choose>
+    </sql>
+    <sql id="ReflectionScope">
+        FROM student_users su LEFT JOIN major m ON m.id = su.major_id LEFT JOIN `class` c ON c.id = su.class_id
+        LEFT JOIN internship_reflection ir ON ir.id = (
+            SELECT MAX(latest.id) FROM internship_reflection latest
+            WHERE latest.student_id = su.id AND latest.period_number = #{period} AND latest.deleted = 0
+        )
+        WHERE su.status = 1
+        <include refid="TeacherAuthorization"/>
+        <if test="classId != null">AND su.class_id = #{classId}</if>
+        <if test="studentId != null">AND su.id = #{studentId}</if>
+    </sql>
+    <select id="reflectionCounts" resultType="map">
+        SELECT COUNT(*) AS responsible,
+          COALESCE(SUM(CASE WHEN ir.id IS NOT NULL AND ir.submit_time IS NOT NULL AND ir.status &gt;= 0 AND NOT (ir.status = 0 AND COALESCE(ir.remark,'') = '0') THEN 1 ELSE 0 END),0) AS submitted
+        <include refid="ReflectionScope"/>
+    </select>
+    <select id="teacherReflections" resultType="map">
+        SELECT CAST(su.id AS CHAR) AS id, su.name AS title, c.name AS className,
+               CAST(ir.id AS CHAR) AS reflectionId, ir.period_number AS periodNumber,
+               ir.deadline AS deadline, ir.submit_time AS submittedAt,
+               CASE WHEN ir.id IS NOT NULL AND ir.submit_time IS NOT NULL AND ir.status &gt;= 0 AND NOT (ir.status = 0 AND COALESCE(ir.remark,'') = '0') THEN 'SUBMITTED' ELSE 'NOT_SUBMITTED' END AS status
+        <include refid="ReflectionScope"/>
+        <if test='status == "SUBMITTED"'>AND ir.id IS NOT NULL AND ir.submit_time IS NOT NULL AND ir.status &gt;= 0 AND NOT (ir.status = 0 AND COALESCE(ir.remark,'') = '0')</if>
+        <if test='status == "NOT_SUBMITTED"'>AND (ir.id IS NULL OR ir.submit_time IS NULL OR ir.status IS NULL OR ir.status &lt; 0 OR (ir.status = 0 AND ir.remark = '0'))</if>
+        ORDER BY su.id LIMIT #{offset}, #{limit}
+    </select>
+    <select id="teacherScopeIds" resultType="long">
+        SELECT su.id FROM student_users su LEFT JOIN major m ON m.id = su.major_id
+        WHERE su.status = 1 <include refid="TeacherAuthorization"/> ORDER BY su.id
+    </select>
+
+    <!-- 教师简报：学院按学院、系教师按本系、辅导员按负责班级。 -->
+    <sql id="TeacherSummaryAuthorization">
+        <choose>
+            <when test='actor.teacherType == "COLLEGE"'>AND COALESCE(m.department_id, dv.department_id) = #{actor.departmentId}</when>
+            <when test='actor.teacherType == "DEPARTMENT"'>AND m.division_id = #{actor.divisionId}</when>
+            <when test='actor.teacherType == "COUNSELOR"'>AND EXISTS (SELECT 1 FROM class_counselor_relation summary_ccr WHERE summary_ccr.class_id = su.class_id AND summary_ccr.counselor_id = #{actor.id})</when>
+            <otherwise>AND 1 = 0</otherwise>
+        </choose>
+    </sql>
+    <sql id="TeacherSummaryClassAuthorization">
+        <choose>
+            <when test='actor.teacherType == "COLLEGE"'>AND COALESCE(m.department_id, dv.department_id) = #{actor.departmentId}</when>
+            <when test='actor.teacherType == "DEPARTMENT"'>AND m.division_id = #{actor.divisionId}</when>
+            <when test='actor.teacherType == "COUNSELOR"'>AND EXISTS (SELECT 1 FROM class_counselor_relation summary_ccr WHERE summary_ccr.class_id = c.id AND summary_ccr.counselor_id = #{actor.id})</when>
+            <otherwise>AND 1 = 0</otherwise>
+        </choose>
+    </sql>
+    <select id="teacherSummaryScopes" resultType="map">
+        <choose>
+            <when test='scopeType == "COLLEGE"'>
+                SELECT CAST(d.id AS CHAR) AS id, d.name
+                FROM department d
+                WHERE d.id = #{actor.departmentId}
+                <if test='actor.teacherType != "COLLEGE"'>AND 1 = 0</if>
+                <if test="scopeId != null">AND d.id = #{scopeId}</if>
+                <if test="scopeName != null and scopeName != ''">AND d.name LIKE CONCAT('%', #{scopeName}, '%')</if>
+                ORDER BY d.id
+            </when>
+            <when test='scopeType == "DIVISION"'>
+                SELECT CAST(dv.id AS CHAR) AS id, dv.name
+                FROM division dv
+                WHERE dv.department_id = #{actor.departmentId}
+                <if test='actor.teacherType == "DEPARTMENT"'>AND dv.id = #{actor.divisionId}</if>
+                <if test='actor.teacherType == "COUNSELOR"'>AND 1 = 0</if>
+                <if test="scopeId != null">AND dv.id = #{scopeId}</if>
+                <if test="scopeName != null and scopeName != ''">AND dv.name LIKE CONCAT('%', #{scopeName}, '%')</if>
+                ORDER BY dv.id
+            </when>
+            <when test='scopeType == "CLASS"'>
+                SELECT CAST(c.id AS CHAR) AS id, c.name
+                FROM class c
+                LEFT JOIN major m ON m.id = c.major_id
+                LEFT JOIN division dv ON dv.id = m.division_id
+                WHERE 1 = 1
+                <include refid="TeacherSummaryClassAuthorization"/>
+                <if test="scopeId != null">AND c.id = #{scopeId}</if>
+                <if test="scopeName != null and scopeName != ''">AND c.name LIKE CONCAT('%', #{scopeName}, '%')</if>
+                ORDER BY c.id
+            </when>
+            <otherwise>SELECT NULL AS id, NULL AS name WHERE 1 = 0</otherwise>
+        </choose>
+    </select>
+    <select id="teacherSummaryStudentRows" resultType="map">
+        SELECT CAST(su.id AS CHAR) AS id, su.name AS title, su.student_user_id AS studentNo,
+               c.name AS className, m.name AS major, dv.name AS division,
+               sis.status AS internshipStatus, sis.company_name AS company, sis.position_name AS position
+        FROM student_users su
+        LEFT JOIN major m ON m.id = su.major_id
+        LEFT JOIN division dv ON dv.id = m.division_id
+        LEFT JOIN class c ON c.id = su.class_id
+        LEFT JOIN student_internship_status sis ON sis.id = (
+            SELECT latest_status.id FROM student_internship_status latest_status
+            WHERE latest_status.student_id = su.id
+            ORDER BY latest_status.create_time DESC, latest_status.id DESC LIMIT 1
+        )
+        WHERE su.status = 1
+        <include refid="TeacherSummaryAuthorization"/>
+        <if test='scopeType == "DIVISION" and scopeId != null'>AND dv.id = #{scopeId}</if>
+        <if test='scopeType == "CLASS" and scopeId != null'>AND c.id = #{scopeId}</if>
+        ORDER BY su.id
+    </select>
+    <!-- 企业端：本企业岗位。companyId 来自后端核验的企业身份，不接受前端传入。 -->
+    <sql id="CompanyPositions">
+        FROM position p
+        WHERE p.company_id = #{companyId}
+        <if test="status != null and status != ''">AND p.status = #{status}</if>
+    </sql>
+    <select id="countCompanyJobs" resultType="long">SELECT COUNT(*) <include refid="CompanyPositions"/></select>
+    <select id="companyJobs" resultType="map">
+        SELECT CAST(p.id AS CHAR) AS id, p.position_name AS title, p.status, p.remaining_quota AS remainingQuota,
+               p.planned_recruit AS plannedRecruit, p.recruited_count AS recruitedCount,
+               p.province, p.city, p.district, p.detail_address AS detailAddress,
+               p.salary_min AS salaryMin, p.salary_max AS salaryMax, p.salary_unit AS salaryUnit,
+               p.publish_date AS publishDate, p.view_count AS viewCount,
+               (SELECT COUNT(*) FROM student_job_application a WHERE a.position_id = p.id) AS applicationCount
+        <include refid="CompanyPositions"/>
+        ORDER BY p.id DESC LIMIT #{offset}, #{limit}
+    </select>
+
+    <!-- 企业端：收到的岗位申请 -->
+    <sql id="CompanyApplications">
+        FROM student_job_application a
+        WHERE a.company_id = #{companyId}
+        <if test="positionId != null">AND a.position_id = #{positionId}</if>
+        <if test="status != null and status != ''">AND a.status = #{status}</if>
+    </sql>
+    <select id="countCompanyApplications" resultType="long">SELECT COUNT(*) <include refid="CompanyApplications"/></select>
+    <select id="companyApplications" resultType="map">
+        SELECT CAST(a.id AS CHAR) AS id, CAST(a.position_id AS CHAR) AS positionId, a.position_name AS title,
+               a.student_name AS studentName, a.student_no AS studentNo, a.major, a.grade, a.status,
+               a.apply_date AS applyDate, a.source_type AS sourceType
+        <include refid="CompanyApplications"/>
+        ORDER BY a.id DESC LIMIT #{offset}, #{limit}
+    </select>
+
+    <!-- 企业端：待本企业确认的实习确认表（status=0 且未撤回） -->
+    <select id="companyPendingConfirmations" resultType="map">
+        SELECT CAST(r.id AS CHAR) AS id, CAST(r.student_id AS CHAR) AS studentId, r.student_name AS studentName,
+               r.major, r.grade, r.class_name AS className, r.position_name AS title,
+               r.internship_start_time AS startTime, r.internship_end_time AS endTime,
+               r.status, r.create_time AS submittedAt
+        FROM internship_confirmation_record r
+        WHERE r.company_id = #{companyId} AND r.status = 0 AND COALESCE(r.recall_status, 0) = 0
+        ORDER BY r.id LIMIT #{offset}, #{limit}
+    </select>
+    <select id="countCompanyPendingConfirmations" resultType="long">
+        SELECT COUNT(*) FROM internship_confirmation_record r
+        WHERE r.company_id = #{companyId} AND r.status = 0 AND COALESCE(r.recall_status, 0) = 0
+    </select>
+
+    <!-- 管理端：待审核企业 -->
+    <select id="adminPendingCompanies" resultType="map">
+        SELECT CAST(cu.id AS CHAR) AS id, cu.company_name AS title, cu.industry, cu.scale,
+               cu.province, cu.city, cu.register_time AS registerTime, cu.apply_time AS applyTime, cu.audit_status AS auditStatus
+        FROM company_users cu WHERE cu.audit_status = 0
+        ORDER BY cu.id LIMIT #{offset}, #{limit}
+    </select>
+    <select id="countAdminPendingCompanies" resultType="long">
+        SELECT COUNT(*) FROM company_users cu WHERE cu.audit_status = 0
+    </select>
+
+    <!-- 管理端：总量与分布（与管理员现有页面同源计数） -->
+    <select id="adminOverview" resultType="map">
+        SELECT (SELECT COUNT(*) FROM student_users WHERE status = 1) AS students,
+               (SELECT COUNT(*) FROM teacher_users WHERE status = 1) AS teachers,
+               (SELECT COUNT(*) FROM company_users WHERE status = 1 AND audit_status = 1) AS approvedCompanies,
+               (SELECT COUNT(*) FROM company_users WHERE audit_status = 0) AS pendingCompanies,
+               (SELECT COUNT(*) FROM position) AS positions,
+               (SELECT COUNT(*) FROM position WHERE status = 'active') AS activePositions,
+               (SELECT COUNT(*) FROM student_job_application) AS jobApplications,
+               (SELECT COUNT(*) FROM internship_confirmation_record WHERE status = 0 AND COALESCE(recall_status, 0) = 0) AS pendingConfirmations
+    </select>
+
+    <!-- 归属校验用最小投影 -->
+    <select id="reflectionOwner" resultType="long">SELECT student_id FROM internship_reflection WHERE id = #{id} AND deleted = 0</select>
+    <select id="appraisalOwner" resultType="long">SELECT student_id FROM internship_appraisal_submission WHERE id = #{id}</select>
+    <select id="positionOwnerCompany" resultType="long">SELECT company_id FROM position WHERE id = #{id}</select>
+    <select id="applicationOwnerCompany" resultType="long">SELECT company_id FROM student_job_application WHERE id = #{id}</select>
+
+    <select id="studentAdvisorProfile" resultType="map">
+        SELECT su.name AS title, su.student_user_id AS studentNumber, su.grade,
+               c.name AS className, m.name AS major, d.name AS college, dv.name AS division,
+               CASE WHEN COALESCE(su.phone,'') != '' THEN TRUE ELSE FALSE END AS phoneConfigured,
+               CASE WHEN COALESCE(su.email,'') != '' THEN TRUE ELSE FALSE END AS emailConfigured
+        FROM student_users su
+        LEFT JOIN `class` c ON c.id = su.class_id
+        LEFT JOIN major m ON m.id = su.major_id
+        LEFT JOIN division dv ON dv.id = m.division_id
+        LEFT JOIN department d ON d.id = COALESCE(m.department_id,dv.department_id)
+        WHERE su.id = #{studentId}
+    </select>
+    <select id="studentReflections" resultType="map">
+        SELECT CAST(ir.id AS CHAR) AS id, ir.period_number AS periodNumber,
+               ir.deadline, ir.submit_time AS submittedAt, ir.status,
+               CASE WHEN ir.submit_time IS NOT NULL AND ir.status &gt;= 0 AND NOT (ir.status = 0 AND COALESCE(ir.remark,'') = '0') THEN 'SUBMITTED' ELSE 'NOT_SUBMITTED' END AS submissionStatus
+        FROM internship_reflection ir WHERE ir.student_id = #{studentId} AND ir.deleted = 0
+        ORDER BY ir.period_number DESC, ir.id DESC LIMIT #{offset}, #{limit}
+    </select>
+    <select id="countStudentReflections" resultType="long">
+        SELECT COUNT(*) FROM internship_reflection WHERE student_id = #{studentId} AND deleted = 0
+    </select>
+    <select id="studentAppraisal" resultType="map">
+        SELECT CAST(s.id AS CHAR) AS id, s.status, s.submitted_at AS submittedAt,
+               s.reviewed_at AS reviewedAt, s.review_comment AS reviewComment,
+               (SELECT COUNT(*) FROM internship_appraisal_file f WHERE f.submission_id = s.id) AS fileCount
+        FROM internship_appraisal_submission s WHERE s.student_id = #{studentId}
+        ORDER BY s.id DESC LIMIT 1
+    </select>
+    <select id="teacherTodoCounts" resultType="map">
+        SELECT COUNT(*) AS responsible,
+            COALESCE(SUM(CASE WHEN ap.status = 'SUBMITTED' THEN 1 ELSE 0 END),0) AS appraisalSubmitted,
+            COALESCE(SUM(CASE WHEN ap.id IS NULL OR ap.status != 'SUBMITTED' THEN 1 ELSE 0 END),0) AS appraisalNotSubmitted,
+            COALESCE(SUM((SELECT COUNT(*) FROM student_application sa WHERE sa.student_id = su.id AND sa.application_type = 'selfPractice' AND sa.status = 'pending')),0) AS selfPracticePending,
+            COALESCE(SUM((SELECT COUNT(*) FROM student_application sa WHERE sa.student_id = su.id AND sa.application_type = 'delay' AND sa.status = 'pending')),0) AS delayPending,
+            COALESCE(SUM((SELECT COUNT(*) FROM internship_reflection ir WHERE ir.student_id = su.id AND ir.deleted = 0 AND ir.status = 0 AND ir.submit_time IS NOT NULL AND COALESCE(ir.remark,'') != '0')),0) AS pendingReflection
+        FROM student_users su LEFT JOIN major m ON m.id = su.major_id
+        LEFT JOIN internship_appraisal_submission ap ON ap.id = (SELECT MAX(latest.id) FROM internship_appraisal_submission latest WHERE latest.student_id = su.id)
+        WHERE su.status = 1 <include refid="TeacherAuthorization"/>
+    </select>
+</mapper>

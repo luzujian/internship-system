@@ -120,6 +120,39 @@ public class LoginLogController {
     }
     
     /**
+     * 统计登录用户数（按角色去重，仅统计登录成功）
+     * xxxCount 为累计去重数，xxxTodayCount 为今日去重数
+     * 其中学生数为现存学生中有过登录记录的人数（已删除账号不计入）
+     */
+    @GetMapping("/user-stats")
+    @PreAuthorize("hasRole('ADMIN')")
+    public Result getLoginUserStats() {
+        try {
+            Calendar cal = Calendar.getInstance();
+            cal.set(Calendar.HOUR_OF_DAY, 0);
+            cal.set(Calendar.MINUTE, 0);
+            cal.set(Calendar.SECOND, 0);
+            cal.set(Calendar.MILLISECOND, 0);
+            Date todayStart = cal.getTime();
+            Date now = new Date();
+
+            Map<String, Object> data = new HashMap<>();
+            // 学生只统计现存 student_users，避免已删除/测试孤儿账号撑大数字
+            data.put("studentCount", loginLogMapper.countExistingStudentUsers("SUCCESS"));
+            data.put("studentTodayCount", loginLogMapper.countExistingStudentUsersByTimeRange(todayStart, now, "SUCCESS"));
+            data.put("teacherCount", loginLogMapper.countDistinctUsers("TEACHER", "SUCCESS"));
+            data.put("teacherTodayCount", loginLogMapper.countDistinctUsersByTimeRange(todayStart, now, "TEACHER", "SUCCESS"));
+            data.put("adminCount", loginLogMapper.countDistinctUsers("ADMIN", "SUCCESS"));
+            data.put("adminTodayCount", loginLogMapper.countDistinctUsersByTimeRange(todayStart, now, "ADMIN", "SUCCESS"));
+
+            return Result.success(data);
+        } catch (Exception e) {
+            log.error("统计登录用户数失败: {}", e.getMessage(), e);
+            return Result.error("统计登录用户数失败: " + e.getMessage());
+        }
+    }
+    
+    /**
      * 获取用户活跃度统计数据
      * @param days 统计天数，默认7天
      * @param startDate 开始日期，格式: yyyy-MM-dd

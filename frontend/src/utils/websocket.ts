@@ -27,10 +27,11 @@ interface InterviewCreateData {
   positionName: string
   companyId: number
   companyName: string
-  interviewTime: string
-  interviewLocation: string
+  interviewTime?: string
+  interviewLocation?: string
   interviewMethod: string
   status: string
+  directHire?: boolean
 }
 
 // 面试状态更新消息类型
@@ -38,6 +39,7 @@ interface InterviewStatusUpdateData {
   interviewId: number
   status: string
   statusText: string
+  directHire?: boolean
 }
 
 // AI分析结果消息类型
@@ -51,11 +53,12 @@ interface AIAnalysisResultData {
 // 学生申请状态更新消息类型
 export interface ApplicationStatusUpdateData {
   studentId: number
-  studentName: string
+  studentName?: string
   positionName: string
   companyName: string
   status: string
   statusText: string
+  directHire?: boolean
 }
 
 // 企业待办更新消息类型
@@ -81,6 +84,12 @@ export interface GradePublishedData {
   message: string
 }
 
+// 学生首页最近动态更新
+export interface StudentRecentActivityChangedData {
+  activityId?: number
+  eventId?: number
+}
+
 // 新申请消息类型
 interface NewApplicationData {
   studentName: string
@@ -99,6 +108,14 @@ const applicationStatusUpdateListeners: Array<(data: ApplicationStatusUpdateData
 const confirmationResultUpdateListeners: Array<(data: ConfirmationResultUpdateData) => void> = []
 const teacherTodoUpdateListeners: Array<(data: TeacherTodoUpdateData) => void> = []
 const gradePublishedListeners: Array<(data: GradePublishedData) => void> = []
+const studentRecentActivityChangedListeners: Array<(data: StudentRecentActivityChangedData) => void> = []
+
+// 实习状态更新消息类型
+export interface InternshipStatusUpdateData {
+  currentStatus: number
+}
+const internshipStatusUpdateListeners: Array<(data: InternshipStatusUpdateData) => void> = []
+
 type ErrorHandler = (error: Event) => void
 
 interface WebSocketOptions {
@@ -121,6 +138,7 @@ class WebSocketClient {
   private heartbeatTimer: number | null = null
   private isManualClose = false
   private reconnectTimer: number | null = null
+  private reconnectNotice: ReturnType<typeof ElMessage.warning> | null = null
 
   constructor(options: WebSocketOptions) {
     this.options = {
@@ -148,8 +166,9 @@ class WebSocketClient {
 
     try {
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-      // 开发环境直连后端端口，避免 Vite WS 代理转发问题
-      const host = import.meta.env.DEV ? 'localhost:8080' : window.location.host
+      // 同源连接：开发环境由 vite 将 /ws 代理到实际后端，Cookie 域与页面一致；
+      // 生产构建由后端自身提供页面，同源即后端。避免写死后端端口导致异机/模拟器连不上。
+      const host = window.location.host
       const fullUrl = `${protocol}//${host}${this.options.url}`
       
       // 通过 Cookie 传递 Token，避免出现在 URL 和服务器日志中
@@ -171,6 +190,8 @@ class WebSocketClient {
   private handleOpen(): void {
     logger.log('[WebSocket] 连接成功')
     this.reconnectAttempts = 0
+    this.reconnectNotice?.close()
+    this.reconnectNotice = null
     this.startHeartbeat()
 
     if (this.options.onConnected) {
@@ -224,18 +245,23 @@ class WebSocketClient {
   }
 
   private scheduleReconnect(): void {
-    if (this.reconnectAttempts >= (this.options.maxReconnectAttempts || 10)) {
-      logger.error('[WebSocket] 达到最大重连次数，停止重连')
-      ElMessage.warning('实时通知连接失败，请刷新页面重试')
-      return
-    }
+    if (this.isManualClose || this.reconnectTimer !== null) return
 
-    this.reconnectAttempts++
-    const delay = this.options.reconnectInterval || 5000
+    const fastRetryLimit = this.options.maxReconnectAttempts ?? 10
+    const interval = this.options.reconnectInterval ?? 5000
+    const recovering = this.reconnectAttempts >= fastRetryLimit
+    // 服务重启或网络短暂中断后仍自动恢复，超过快速重试次数则降低频率。
+    const delay = recovering ? Math.max(interval, 60000) : interval
+    if (recovering && !this.reconnectNotice) {
+      this.reconnectNotice = ElMessage.warning('实时通知暂时不可用，正在自动重连')
+    }
+    if (!recovering) this.reconnectAttempts++
 
     logger.log(`[WebSocket] 将在 ${delay}ms 后进行第 ${this.reconnectAttempts} 次重连`)
 
     this.reconnectTimer = window.setTimeout(() => {
+      this.reconnectTimer = null
+      if (this.isManualClose) return
       logger.log('[WebSocket] 开始重连...')
       this.connect()
     }, delay)
@@ -277,6 +303,8 @@ class WebSocketClient {
     logger.log('[WebSocket] 主动断开连接')
     this.isManualClose = true
     this.stopHeartbeat()
+    this.reconnectNotice?.close()
+    this.reconnectNotice = null
 
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer)
@@ -431,6 +459,26 @@ export function initAnnouncementWebSocket(
             callback(data.data as GradePublishedData)
           } catch (e) {
             console.error('[WebSocket] 成绩发布通知监听器执行失败:', e)
+          }
+        })
+        onMessage(data)
+      } else if (data.type === 'internship_status_update' && data.data) {
+        console.log('[WebSocket] 收到实习状态更新:', data.data)
+        internshipStatusUpdateListeners.forEach(callback => {
+          try {
+            callback(data.data as InternshipStatusUpdateData)
+          } catch (e) {
+            console.error('[WebSocket] 实习状态更新监听器执行失败:', e)
+          }
+        })
+        onMessage(data)
+      } else if (data.type === 'student_recent_activity_changed') {
+        logger.log('[WebSocket] 收到学生最近动态更新:', data.data)
+        studentRecentActivityChangedListeners.forEach(callback => {
+          try {
+            callback((data.data || {}) as StudentRecentActivityChangedData)
+          } catch (e) {
+            logger.error('[WebSocket] 学生最近动态监听器执行失败:', e)
           }
         })
         onMessage(data)
@@ -626,6 +674,36 @@ export function offGradePublished(callback: (data: GradePublishedData) => void):
   const index = gradePublishedListeners.indexOf(callback)
   if (index > -1) {
     gradePublishedListeners.splice(index, 1)
+  }
+}
+
+export function onInternshipStatusUpdate(callback: (data: InternshipStatusUpdateData) => void): void {
+  if (!internshipStatusUpdateListeners.includes(callback)) {
+    internshipStatusUpdateListeners.push(callback)
+  }
+}
+
+export function offInternshipStatusUpdate(callback: (data: InternshipStatusUpdateData) => void): void {
+  const index = internshipStatusUpdateListeners.indexOf(callback)
+  if (index > -1) {
+    internshipStatusUpdateListeners.splice(index, 1)
+  }
+}
+
+export function onStudentRecentActivityChanged(
+  callback: (data: StudentRecentActivityChangedData) => void
+): void {
+  if (!studentRecentActivityChangedListeners.includes(callback)) {
+    studentRecentActivityChangedListeners.push(callback)
+  }
+}
+
+export function offStudentRecentActivityChanged(
+  callback: (data: StudentRecentActivityChangedData) => void
+): void {
+  const index = studentRecentActivityChangedListeners.indexOf(callback)
+  if (index > -1) {
+    studentRecentActivityChangedListeners.splice(index, 1)
   }
 }
 

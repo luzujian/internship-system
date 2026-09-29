@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Map;
 
 public interface BackupService {
+    byte[] readBackup(String path) throws Exception;
     
     BackupRecord manualBackup();
     

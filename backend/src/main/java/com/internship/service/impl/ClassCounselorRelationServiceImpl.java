@@ -8,6 +8,7 @@ import com.internship.mapper.StudentInternshipStatusMapper;
 import com.internship.mapper.StudentUserMapper;
 import com.internship.mapper.TeacherUserMapper;
 import com.internship.service.ClassCounselorRelationService;
+import com.internship.service.JobSearchStatusService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -19,6 +20,63 @@ import java.util.stream.Collectors;
 @Slf4j
 @Service
 public class ClassCounselorRelationServiceImpl implements ClassCounselorRelationService {
+    @Override
+    public List<Class> findClaimableClasses(Long counselorId) {
+        var teacher = teacherUserMapper.findById(counselorId);
+        return classMapper.findClaimableByDepartment(requireCounselorDepartment(teacher));
+    }
+
+    private Long requireCounselorDepartment(com.internship.entity.TeacherUser teacher) {
+        if (teacher == null || !Integer.valueOf(1).equals(teacher.getStatus())
+                || !"COUNSELOR".equals(teacher.getTeacherType())) {
+            throw new org.springframework.security.access.AccessDeniedException("仅在职辅导员可以认领班级");
+        }
+        try {
+            long departmentId = Long.parseLong(teacher.getDepartmentId());
+            if (departmentId > 0) return departmentId;
+        } catch (NumberFormatException ignored) { }
+        throw new com.internship.exception.BusinessException("未配置所属学院，请联系管理员");
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    @org.springframework.cache.annotation.CacheEvict(value = "classes", key = "'all'")
+    public int claimClasses(Long counselorId, List<Long> classIds) {
+        if (classIds == null || classIds.isEmpty() || classIds.size() > 100
+                || classIds.stream().anyMatch(id -> id == null || id <= 0)) {
+            throw new com.internship.exception.BusinessException("请选择 1 至 100 个有效班级");
+        }
+        var teacher = teacherUserMapper.findByIdForUpdate(counselorId);
+        Long departmentId = requireCounselorDepartment(teacher);
+        if (teacher.getTeacherUserId() == null || teacher.getTeacherUserId().isBlank()) {
+            throw new com.internship.exception.BusinessException("教师工号未配置，请联系管理员");
+        }
+        // 固定加锁顺序；占用状态使用锁定读取，防止同时认领或与管理员分配发生竞争。
+        List<Class> selected = new ArrayList<>();
+        for (Long classId : classIds.stream().distinct().sorted().toList()) {
+            Class item = classMapper.findByIdForUpdate(classId);
+            if (item == null || !departmentId.equals(item.getDepartmentId())) {
+                throw new org.springframework.security.access.AccessDeniedException("只能认领本院的班级");
+            }
+            var relations = classCounselorRelationMapper.findByClassIdForUpdate(classId);
+            if ((item.getTeacherId() != null && !item.getTeacherId().isBlank()) || !relations.isEmpty()) {
+                throw new com.internship.exception.BusinessException("班级「" + item.getName() + "」已分配，请联系管理员确认新增或转交");
+            }
+            selected.add(item);
+        }
+        for (Class item : selected) {
+            ClassCounselorRelation relation = new ClassCounselorRelation();
+            relation.setClassId(item.getId());
+            relation.setClassName(item.getName());
+            relation.setCounselorId(counselorId);
+            relation.setCounselorName(teacher.getName());
+            relation.setCreateTime(new Date());
+            relation.setUpdateTime(new Date());
+            classCounselorRelationMapper.insert(relation);
+            classMapper.updateResponsibleTeacher(item.getId(), teacher.getTeacherUserId());
+        }
+        return selected.size();
+    }
 
     @Autowired
     private ClassCounselorRelationMapper classCounselorRelationMapper;
@@ -35,10 +93,14 @@ public class ClassCounselorRelationServiceImpl implements ClassCounselorRelation
     @Autowired
     private StudentInternshipStatusMapper studentInternshipStatusMapper;
 
+    @Autowired
+    private JobSearchStatusService jobSearchStatusService;
+
     @Override
     @Transactional(rollbackFor = Exception.class)
     public int assignClassToCounselor(Long classId, Long counselorId, String className, String counselorName) {
-        List<ClassCounselorRelation> existing = classCounselorRelationMapper.findByClassId(classId);
+        if (classMapper.findByIdForUpdate(classId) == null) throw new com.internship.exception.BusinessException("班级不存在");
+        List<ClassCounselorRelation> existing = classCounselorRelationMapper.findByClassIdForUpdate(classId);
         if (!existing.isEmpty()) {
             for (ClassCounselorRelation relation : existing) {
                 if (relation.getCounselorId().equals(counselorId)) {
@@ -69,13 +131,13 @@ public class ClassCounselorRelationServiceImpl implements ClassCounselorRelation
         }
 
         int count = 0;
-        for (Long classId : classIds) {
-            List<ClassCounselorRelation> existing = classCounselorRelationMapper.findByClassId(classId);
+        for (Long classId : classIds.stream().distinct().sorted().toList()) {
+            Class classEntity = classMapper.findByIdForUpdate(classId);
+            List<ClassCounselorRelation> existing = classCounselorRelationMapper.findByClassIdForUpdate(classId);
             boolean alreadyAssigned = existing.stream()
                     .anyMatch(r -> r.getCounselorId().equals(counselorId));
 
             if (!alreadyAssigned) {
-                Class classEntity = classMapper.findById(classId);
                 if (classEntity != null) {
                     ClassCounselorRelation relation = new ClassCounselorRelation();
                     relation.setClassId(classId);
@@ -94,8 +156,16 @@ public class ClassCounselorRelationServiceImpl implements ClassCounselorRelation
 
     @Override
     @Transactional(rollbackFor = Exception.class)
+    @org.springframework.cache.annotation.CacheEvict(value = "classes", key = "'all'")
     public int unassignClassFromCounselor(Long counselorId, Long classId) {
-        return classCounselorRelationMapper.deleteByClassAndCounselor(classId, counselorId);
+        var teacher = teacherUserMapper.findByIdForUpdate(counselorId);
+        Class item = classMapper.findByIdForUpdate(classId);
+        int count = classCounselorRelationMapper.deleteByClassAndCounselor(classId, counselorId);
+        if (count > 0 && item != null && teacher != null
+                && teacher.getTeacherUserId() != null && teacher.getTeacherUserId().equals(item.getTeacherId())) {
+            classMapper.updateResponsibleTeacher(classId, null);
+        }
+        return count;
     }
 
     @Override
@@ -110,18 +180,21 @@ public class ClassCounselorRelationServiceImpl implements ClassCounselorRelation
 
     @Override
     public List<Class> findClassesByCounselorId(Long counselorId) {
-        // 先通过 counselorId 获取教师的 teacherUserId
-        var teacher = teacherUserMapper.findById(counselorId);
-        if (teacher == null || teacher.getTeacherUserId() == null) {
-            return new ArrayList<>();
-        }
-        // 直接通过 class.teacher_user_id 查询班级
-        return classMapper.findByTeacherUserId(teacher.getTeacherUserId());
+        // 与班级权限、学生列表及统计使用同一份负责关系，包含单独分配的班级。
+        return classCounselorRelationMapper.findByCounselorId(counselorId).stream()
+                .map(ClassCounselorRelation::getClassId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .map(classMapper::findById)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toList());
     }
 
     @Override
     public List<Map<String, Object>> findStudentsByClassId(Long classId) {
-        return studentUserMapper.findByClassIdAsMap(classId);
+        List<Map<String, Object>> students = studentUserMapper.findByClassIdAsMap(classId);
+        jobSearchStatusService.enrichStudentMaps(students);
+        return students;
     }
 
     @Override
@@ -134,7 +207,9 @@ public class ClassCounselorRelationServiceImpl implements ClassCounselorRelation
             return new ArrayList<>();
         }
         
-        return studentUserMapper.findByClassIdAsMap(classId);
+        List<Map<String, Object>> students = studentUserMapper.findByClassIdAsMap(classId);
+        jobSearchStatusService.enrichStudentMaps(students);
+        return students;
     }
 
     @Override
@@ -157,7 +232,10 @@ public class ClassCounselorRelationServiceImpl implements ClassCounselorRelation
             return new ArrayList<>();
         }
 
-        return studentUserMapper.findByClassIdsAndSearch(classIds, searchName, major, grade, status, companyName);
+        List<Map<String, Object>> students = studentUserMapper.findByClassIdsAndSearch(
+                classIds, searchName, major, grade, status, companyName);
+        jobSearchStatusService.enrichStudentMaps(students);
+        return students;
     }
 
     @Override
@@ -165,9 +243,13 @@ public class ClassCounselorRelationServiceImpl implements ClassCounselorRelation
         Map<String, Object> statistics = new HashMap<>();
 
         List<ClassCounselorRelation> relations = classCounselorRelationMapper.findByCounselorId(counselorId);
-        statistics.put("classCount", relations.size());
+        // 过滤掉已被删除的班级（孤儿记录）
+        List<ClassCounselorRelation> validRelations = relations.stream()
+                .filter(r -> classMapper.findById(r.getClassId()) != null)
+                .collect(Collectors.toList());
+        statistics.put("classCount", validRelations.size());
 
-        if (relations.isEmpty()) {
+        if (validRelations.isEmpty()) {
             statistics.put("studentCount", 0);
             statistics.put("noOfferCount", 0);
             statistics.put("pendingCount", 0);
@@ -179,7 +261,7 @@ public class ClassCounselorRelationServiceImpl implements ClassCounselorRelation
             return statistics;
         }
 
-        List<Long> classIds = relations.stream()
+        List<Long> classIds = validRelations.stream()
                 .map(ClassCounselorRelation::getClassId)
                 .collect(Collectors.toList());
 
@@ -190,10 +272,8 @@ public class ClassCounselorRelationServiceImpl implements ClassCounselorRelation
                 ? ((Number) dashboardStats.get("totalStudents")).intValue() : 0;
         int confirmed = dashboardStats != null && dashboardStats.get("confirmed") != null
                 ? ((Number) dashboardStats.get("confirmed")).intValue() : 0;
-        int offer = dashboardStats != null && dashboardStats.get("offer") != null
-                ? ((Number) dashboardStats.get("offer")).intValue() : 0;
-        int noOffer = dashboardStats != null && dashboardStats.get("noOffer") != null
-                ? ((Number) dashboardStats.get("noOffer")).intValue() : 0;
+        int offer = Math.toIntExact(jobSearchStatusService.countByDisplayFilter(1, classIds));
+        int noOffer = Math.toIntExact(jobSearchStatusService.countByDisplayFilter(0, classIds));
         int interning = dashboardStats != null && dashboardStats.get("interning") != null
                 ? ((Number) dashboardStats.get("interning")).intValue() : 0;
         int finished = dashboardStats != null && dashboardStats.get("finished") != null

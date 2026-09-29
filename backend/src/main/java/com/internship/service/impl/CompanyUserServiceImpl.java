@@ -1,10 +1,13 @@
 package com.internship.service.impl;
 
 import com.internship.entity.CompanyUser;
+import com.internship.entity.CompanyAlumniMember;
 import com.internship.entity.PageResult;
 import com.internship.exception.BusinessException;
 import com.internship.mapper.CompanyUserMapper;
 import com.internship.service.CompanyUserService;
+import com.internship.service.CompanyAlumniService;
+import com.internship.utils.UserCredentialDefaults;
 import com.github.pagehelper.PageHelper;
 import com.github.pagehelper.PageInfo;
 import lombok.extern.slf4j.Slf4j;
@@ -29,18 +32,29 @@ public class CompanyUserServiceImpl implements CompanyUserService {
 
     private final CompanyUserMapper companyUserMapper;
     private final PasswordEncoder passwordEncoder;
+    private final CompanyAlumniService companyAlumniService;
 
     @Autowired
-    public CompanyUserServiceImpl(CompanyUserMapper companyUserMapper, PasswordEncoder passwordEncoder) {
+    public CompanyUserServiceImpl(CompanyUserMapper companyUserMapper,
+                                  PasswordEncoder passwordEncoder,
+                                  CompanyAlumniService companyAlumniService) {
         this.companyUserMapper = companyUserMapper;
         this.passwordEncoder = passwordEncoder;
+        this.companyAlumniService = companyAlumniService;
     }
     
     @Override
     @Transactional(rollbackFor = Exception.class)
     public int insert(CompanyUser companyUser) {
         log.debug("插入企业信息: {}", companyUser.getCompanyName());
-        
+        companyUser.setPassword(UserCredentialDefaults.PASSWORD);
+
+        if (companyUser.getIsAlumniUnit() == null) {
+            companyUser.setIsAlumniUnit(0);
+        }
+        List<CompanyAlumniMember> alumniMembers = companyAlumniService.normalize(
+                companyUser.getIsAlumniUnit(), companyUser.getAlumniMembers());
+        companyAlumniService.syncLegacyRepresentative(companyUser, alumniMembers);
         validateCompanyInfo(companyUser);
 
         // 使用 BCrypt 加密密码
@@ -51,6 +65,10 @@ public class CompanyUserServiceImpl implements CompanyUserService {
         companyUser.setUpdateTime(now);
         
         int result = companyUserMapper.insert(companyUser);
+        if (result > 0) {
+            companyAlumniService.replace(companyUser.getId(), alumniMembers);
+            companyUser.setAlumniMembers(alumniMembers);
+        }
         log.info("企业信息插入成功，企业名称: {}", companyUser.getCompanyName());
         return result;
     }
@@ -63,7 +81,12 @@ public class CompanyUserServiceImpl implements CompanyUserService {
             throw new BusinessException("企业ID无效");
         }
         
-        return companyUserMapper.findById(id);
+        CompanyUser company = companyUserMapper.findById(id);
+        if (company != null) {
+            normalizeLegacyCompanyTag(company);
+            company.setAlumniMembers(companyAlumniService.findByCompanyId(id));
+        }
+        return company;
     }
     
     @Override
@@ -74,7 +97,9 @@ public class CompanyUserServiceImpl implements CompanyUserService {
             throw new BusinessException("用户名不能为空");
         }
         
-        return companyUserMapper.findByUsername(username);
+        CompanyUser company = companyUserMapper.findByUsername(username);
+        normalizeLegacyCompanyTag(company);
+        return company;
     }
     
     @Override
@@ -91,12 +116,29 @@ public class CompanyUserServiceImpl implements CompanyUserService {
             throw new BusinessException("企业不存在");
         }
 
+        List<CompanyAlumniMember> normalizedAlumniMembers = null;
+        boolean alumniUpdateRequested = companyUser.getIsAlumniUnit() != null
+                || companyUser.getAlumniMembers() != null;
+        if (alumniUpdateRequested) {
+            Integer desiredAlumniFlag = companyUser.getIsAlumniUnit() != null
+                    ? companyUser.getIsAlumniUnit() : existingCompany.getIsAlumniUnit();
+            List<CompanyAlumniMember> desiredMembers = companyUser.getAlumniMembers();
+            if (desiredMembers == null && Integer.valueOf(1).equals(desiredAlumniFlag)) {
+                desiredMembers = companyAlumniService.findByCompanyId(companyUser.getId());
+            }
+            normalizedAlumniMembers = companyAlumniService.normalize(
+                    desiredAlumniFlag, desiredMembers);
+            companyUser.setIsAlumniUnit(desiredAlumniFlag);
+            existingCompany.setIsAlumniUnit(desiredAlumniFlag);
+            companyAlumniService.syncLegacyRepresentative(existingCompany, normalizedAlumniMembers);
+        }
+
         // 校验用户名唯一性
         if (StringUtils.isNotBlank(companyUser.getUsername())
                 && !companyUser.getUsername().equals(existingCompany.getUsername())) {
             CompanyUser byUsername = companyUserMapper.findByUsername(companyUser.getUsername());
             if (byUsername != null) {
-                throw new BusinessException("登录账号已存在，请使用其他账号");
+                throw new BusinessException("登录账号已存在，请修改");
             }
         }
 
@@ -143,6 +185,24 @@ public class CompanyUserServiceImpl implements CompanyUserService {
         if (companyUser.getIntroduction() != null) {
             existingCompany.setIntroduction(companyUser.getIntroduction());
         }
+        if (companyUser.getBusinessLicense() != null) {
+            existingCompany.setBusinessLicense(companyUser.getBusinessLicense());
+        }
+        if (companyUser.getLegalIdCard() != null) {
+            existingCompany.setLegalIdCard(companyUser.getLegalIdCard());
+        }
+        if (companyUser.getIsInternshipBase() != null) {
+            existingCompany.setIsInternshipBase(companyUser.getIsInternshipBase());
+        }
+        if (companyUser.getPlaquePhoto() != null) {
+            existingCompany.setPlaquePhoto(companyUser.getPlaquePhoto());
+        }
+        if (companyUser.getAcceptBackup() != null) {
+            existingCompany.setAcceptBackup(companyUser.getAcceptBackup());
+        }
+        if (companyUser.getHasTrainingBaseAgreement() != null) {
+            existingCompany.setHasTrainingBaseAgreement(companyUser.getHasTrainingBaseAgreement());
+        }
         if (companyUser.getCompanyTag() != null) {
             existingCompany.setCompanyTag(companyUser.getCompanyTag());
         }
@@ -183,6 +243,10 @@ public class CompanyUserServiceImpl implements CompanyUserService {
 
         // 审核相关字段
         if (companyUser.getAuditStatus() != null) {
+            if (Integer.valueOf(1).equals(companyUser.getAuditStatus())
+                    && !Integer.valueOf(1).equals(existingCompany.getAuditStatus())) {
+                existingCompany.setCooperationMode("mutual_choice");
+            }
             existingCompany.setAuditStatus(companyUser.getAuditStatus());
         }
         if (companyUser.getAuditRemark() != null) {
@@ -194,10 +258,21 @@ public class CompanyUserServiceImpl implements CompanyUserService {
         if (companyUser.getReviewerId() != null) {
             existingCompany.setReviewerId(companyUser.getReviewerId());
         }
+        if (companyUser.getApplyTime() != null) {
+            existingCompany.setApplyTime(companyUser.getApplyTime());
+        }
+        if (companyUser.getRecallStatus() != null) {
+            // recall_status 表示当前流程状态；历史撤回字段由显式清除接口维护，普通更新不得抹掉。
+            existingCompany.setRecallStatus(companyUser.getRecallStatus());
+        }
 
         existingCompany.setUpdateTime(new Date());
 
         int result = companyUserMapper.update(existingCompany);
+        if (result > 0 && normalizedAlumniMembers != null) {
+            companyAlumniService.replace(companyUser.getId(), normalizedAlumniMembers);
+            companyUser.setAlumniMembers(normalizedAlumniMembers);
+        }
         log.info("企业信息更新成功，企业名称: {}", companyUser.getCompanyName());
         return result;
     }
@@ -219,16 +294,20 @@ public class CompanyUserServiceImpl implements CompanyUserService {
     @Transactional(rollbackFor = Exception.class)
     public int delete(Long id) {
         log.debug("删除企业信息，ID: {}", id);
-        
+
         if (id == null || id <= 0) {
             throw new BusinessException("企业ID无效");
         }
-        
+
         CompanyUser company = companyUserMapper.findById(id);
         if (company == null) {
             throw new BusinessException("企业不存在");
         }
-        
+
+        // 级联清理所有引用 company_id 的业务表（每条独立 try-catch，表不存在时跳过，保证最后删企业成功）
+        safeCleanupCompanyRelations(id);
+
+        // 最后删除企业用户记录
         int result = companyUserMapper.deleteById(id);
         log.info("企业信息删除成功，企业名称: {}", company.getCompanyName());
         return result;
@@ -237,13 +316,13 @@ public class CompanyUserServiceImpl implements CompanyUserService {
     @Override
     public List<CompanyUser> findAll() {
         log.debug("查询所有企业信息");
-        return companyUserMapper.findAll();
+        return normalizeLegacyCompanyTags(companyUserMapper.findAll());
     }
     
     @Override
     public List<CompanyUser> list(String companyName, Integer status) {
         log.debug("动态条件查询企业信息，企业名称: {}, 状态: {}", companyName, status);
-        return companyUserMapper.list(companyName, status);
+        return normalizeLegacyCompanyTags(companyUserMapper.list(companyName, status));
     }
     
     @Override
@@ -254,18 +333,34 @@ public class CompanyUserServiceImpl implements CompanyUserService {
             return Collections.emptyList();
         }
         
-        return companyUserMapper.selectByIds(ids);
+        return normalizeLegacyCompanyTags(companyUserMapper.selectByIds(ids));
     }
     
     @Override
     @Transactional(rollbackFor = Exception.class)
+    public int resetAllPasswords() {
+        String passwordHash = passwordEncoder.encode(UserCredentialDefaults.PASSWORD);
+        return companyUserMapper.resetAllPasswords(passwordHash);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
     public int batchDelete(List<Long> ids) {
         log.debug("批量删除企业信息，ID列表: {}", ids);
-        
+
         if (ids == null || ids.isEmpty()) {
             throw new BusinessException("企业ID列表不能为空");
         }
-        
+
+        // 先逐个清理关联数据（每条跳过不影响整体）
+        for (Long id : ids) {
+            try {
+                safeCleanupCompanyRelations(id);
+            } catch (Exception e) {
+                log.warn("批量删除预清理企业ID={}关联数据时跳过: {}", id, trimErr(e));
+            }
+        }
+
         int result = companyUserMapper.batchDeleteByIds(ids);
         log.info("批量删除企业信息成功，删除数量: {}", result);
         return result;
@@ -290,6 +385,7 @@ public class CompanyUserServiceImpl implements CompanyUserService {
         
         PageHelper.startPage(page, pageSize);
         List<CompanyUser> companies = companyUserMapper.list(companyName, status);
+        normalizeLegacyCompanyTags(companies);
         
         PageInfo<CompanyUser> pageInfo = new PageInfo<>(companies);
         return PageResult.build(pageInfo.getTotal(), pageInfo.getList(),
@@ -303,6 +399,7 @@ public class CompanyUserServiceImpl implements CompanyUserService {
         
         PageHelper.startPage(page, pageSize);
         List<CompanyUser> companies = companyUserMapper.listWithRecallStatus(companyName, status, recallStatus);
+        normalizeLegacyCompanyTags(companies);
         
         PageInfo<CompanyUser> pageInfo = new PageInfo<>(companies);
         return PageResult.build(pageInfo.getTotal(), pageInfo.getList(),
@@ -320,13 +417,33 @@ public class CompanyUserServiceImpl implements CompanyUserService {
         }
         
         PageHelper.startPage(page, pageSize);
-        List<CompanyUser> companies = companyUserMapper.listWithRecallStatusAndTag(companyName, status, recallStatus, companyTags);
+        List<CompanyUser> companies = companyUserMapper.listWithRecallStatusAndTag(companyName, status, recallStatus, companyTags, null);
+        normalizeLegacyCompanyTags(companies);
         
         PageInfo<CompanyUser> pageInfo = new PageInfo<>(companies);
         return PageResult.build(pageInfo.getTotal(), pageInfo.getList(),
                 pageInfo.getPages(), pageInfo.getPageNum(), pageInfo.getPageSize());
     }
     
+    @Override
+    public PageResult<CompanyUser> findPage(Integer page, Integer pageSize, String companyName, Integer status, Integer recallStatus, String companyTag, String industry) {
+        log.debug("分页查询企业信息，页码: {}, 每页大小: {}, 企业名称: {}, 状态: {}, 撤回状态: {}, 企业标签: {}, 行业: {}",
+                page, pageSize, companyName, status, recallStatus, companyTag, industry);
+
+        List<String> companyTags = null;
+        if (companyTag != null && !companyTag.trim().isEmpty()) {
+            companyTags = Arrays.asList(companyTag.split(","));
+        }
+
+        PageHelper.startPage(page, pageSize);
+        List<CompanyUser> companies = companyUserMapper.listWithRecallStatusAndTag(companyName, status, recallStatus, companyTags, industry);
+        normalizeLegacyCompanyTags(companies);
+
+        PageInfo<CompanyUser> pageInfo = new PageInfo<>(companies);
+        return PageResult.build(pageInfo.getTotal(), pageInfo.getList(),
+                pageInfo.getPages(), pageInfo.getPageNum(), pageInfo.getPageSize());
+    }
+
     @Override
     public PageResult<CompanyUser> findPendingAuditPage(Integer page, Integer pageSize) {
         log.debug("分页查询待审核企业信息，页码: {}, 每页大小: {}", page, pageSize);
@@ -340,6 +457,7 @@ public class CompanyUserServiceImpl implements CompanyUserService {
 
         PageHelper.startPage(page, pageSize);
         List<CompanyUser> companies = companyUserMapper.findPendingAuditWithStatus(companyName, contactPerson, contactPhone, status);
+        normalizeLegacyCompanyTags(companies);
 
         log.info("查询到 {} 条企业记录", companies != null ? companies.size() : 0);
 
@@ -441,11 +559,8 @@ public class CompanyUserServiceImpl implements CompanyUserService {
         if (StringUtils.isBlank(companyUser.getContactPhone())) {
             throw new BusinessException("联系电话不能为空");
         }
-        
-        if (StringUtils.isBlank(companyUser.getContactEmail())) {
-            throw new BusinessException("联系邮箱不能为空");
-        }
-        
+
+        // 联系邮箱选填，与注册逻辑保持一致
         if (StringUtils.isBlank(companyUser.getAddress())) {
             throw new BusinessException("企业地址不能为空");
         }
@@ -487,6 +602,8 @@ public class CompanyUserServiceImpl implements CompanyUserService {
         }
 
         List<CompanyUser> validCompanyList = new ArrayList<>();
+        Map<String, String> pendingInitialPasswords = new HashMap<>();
+        List<Map<String, String>> initialCredentials = new ArrayList<>();
 
         for (int i = 0; i < companyDataList.size(); i++) {
             Map<String, Object> rowData = companyDataList.get(i);
@@ -495,6 +612,10 @@ public class CompanyUserServiceImpl implements CompanyUserService {
             failInfo.putAll(rowData);
 
             try {
+                // 跳过企业名称为空的空行（如模板自带的填写说明行）
+                if (StringUtils.isBlank(getStringValue(rowData, "企业名称"))) {
+                    continue;
+                }
                 CompanyUser companyUser = convertToCompanyUser(rowData);
 
                 if (existingCompanyMap.containsKey(companyUser.getCompanyName())) {
@@ -505,8 +626,11 @@ public class CompanyUserServiceImpl implements CompanyUserService {
                 }
 
                 validateCompanyInfo(companyUser);
+                String initialPassword = UserCredentialDefaults.PASSWORD;
+                companyUser.setPassword(passwordEncoder.encode(initialPassword));
 
                 validCompanyList.add(companyUser);
+                pendingInitialPasswords.put(companyUser.getCompanyName(), initialPassword);
                 existingCompanyMap.put(companyUser.getCompanyName(), companyUser);
 
             } catch (Exception e) {
@@ -528,7 +652,14 @@ public class CompanyUserServiceImpl implements CompanyUserService {
                 List<CompanyUser> batchList = validCompanyList.subList(start, end);
 
                 int batchResult = companyUserMapper.batchInsert(batchList);
+                if (batchResult != batchList.size()) {
+                    throw new BusinessException("企业导入未全部写入，请重试");
+                }
                 successCount += batchResult;
+                for (CompanyUser insertedCompany : batchList) {
+                    initialCredentials.add(Map.of("username", insertedCompany.getUsername(),
+                            "password", pendingInitialPasswords.get(insertedCompany.getCompanyName())));
+                }
 
                 log.info("导入批次 {} 成功，导入数量: {}", i + 1, batchResult);
             }
@@ -540,6 +671,7 @@ public class CompanyUserServiceImpl implements CompanyUserService {
         result.put("successCount", successCount);
         result.put("failCount", failCount);
         result.put("failList", failList);
+        result.put("initialCredentials", initialCredentials);
 
         return result;
     }
@@ -559,14 +691,17 @@ public class CompanyUserServiceImpl implements CompanyUserService {
         companyUser.setCompanyName(companyName);
         companyUser.setContactPerson(contactPerson);
         companyUser.setContactPhone(contactPhone);
-        companyUser.setContactEmail(contactEmail);
+        // 联系邮箱选填，但数据库列非空，缺失时存空字符串
+        companyUser.setContactEmail(contactEmail != null ? contactEmail : "");
         companyUser.setAddress(address);
 
         companyUser.setUsername(companyName);
-        companyUser.setPassword(passwordEncoder.encode("123456"));
         companyUser.setRole("ROLE_COMPANY");
         companyUser.setStatus(1);
         companyUser.setAuditStatus(1);
+        companyUser.setIsAlumniUnit(0);
+        // 管理员导入的企业统一贴上"校企双向选择"标签
+        companyUser.setCompanyTag("校企双向选择");
 
         Date now = new Date();
         companyUser.setCreateTime(now);
@@ -684,17 +819,34 @@ public class CompanyUserServiceImpl implements CompanyUserService {
     @Override
     public List<String> getDistinctTags() {
         List<String> rawTags = companyUserMapper.getDistinctTags();
-        if (rawTags == null || rawTags.isEmpty()) {
-            return Collections.emptyList();
-        }
         // company_tag 字段存的是逗号分隔的多标签，需要拆分后去重排序
-        return rawTags.stream()
-                .flatMap(tag -> Arrays.stream(tag.split(",")))
-                .map(String::trim)
-                .filter(StringUtils::isNotBlank)
-                .distinct()
-                .sorted()
-                .collect(Collectors.toList());
+        // 再合并合作模式映射标签与状态类标签（实习基地/已签协议/校友单位），保证筛选下拉完整
+        java.util.Set<String> result = new java.util.TreeSet<>();
+        if (rawTags != null) {
+            rawTags.stream()
+                    .flatMap(tag -> Arrays.stream(tag.split(",")))
+                    .map(String::trim)
+                    .map(tag -> "双向选择阶段".equals(tag) ? "校企双向选择" : tag)
+                    .filter(StringUtils::isNotBlank)
+                    .forEach(result::add);
+        }
+        List<String> modeTags = companyUserMapper.getDistinctCooperationModeTags();
+        if (modeTags != null) result.addAll(modeTags);
+        List<String> flagTags = companyUserMapper.getDistinctFlagTags();
+        if (flagTags != null) result.addAll(flagTags);
+        return new ArrayList<>(result);
+    }
+
+    private List<CompanyUser> normalizeLegacyCompanyTags(List<CompanyUser> companies) {
+        if (companies != null) companies.forEach(this::normalizeLegacyCompanyTag);
+        return companies;
+    }
+
+    private void normalizeLegacyCompanyTag(CompanyUser company) {
+        if (company != null && company.getCompanyTag() != null) {
+            company.setCompanyTag(company.getCompanyTag()
+                    .replace("双向选择阶段", "校企双向选择"));
+        }
     }
 
     @Override
@@ -707,6 +859,7 @@ public class CompanyUserServiceImpl implements CompanyUserService {
         if (company.getAuditStatus() != null && company.getAuditStatus() != 0) {
             throw new BusinessException("该企业已审核，无法重复操作");
         }
+        company.setCooperationMode("mutual_choice");
         company.setAuditStatus(1);
         company.setStatus(1);
         company.setAuditTime(new Date());
@@ -729,5 +882,89 @@ public class CompanyUserServiceImpl implements CompanyUserService {
         company.setReviewerId(reviewerId);
         company.setAuditRemark(reason);
         return companyUserMapper.update(company);
+    }
+
+    /**
+     * 安全级联清理企业关联的所有业务表。
+     * 每条清理都独立 try-catch，表不存在/外键异常只打 WARN，保证最后能删企业本身。
+     */
+    private void safeCleanupCompanyRelations(Long companyId) {
+        // ===== Step 1. 先删依赖子记录 =====
+        // 实习鉴定文件（外键到 internship_appraisal_submission，必须先删文件再删提交）
+        try {
+            companyUserMapper.deleteAppraisalFileByCompanyId(companyId);
+        } catch (Exception e) { log.warn("跳过清理 company→internship_appraisal_file: {}", trimErr(e)); }
+
+        // ===== Step 2. 删岗位（position.company_id → 删企业前必须先删全部岗位） =====
+        try {
+            companyUserMapper.deletePositionsByCompanyId(companyId);
+        } catch (Exception e) { log.warn("跳过清理 company→position: {}", trimErr(e)); }
+
+        // ===== Step 3. 实习申请 / 岗位申请 =====
+        try {
+            companyUserMapper.deleteInternshipApplicationByCompanyId(companyId);
+        } catch (Exception e) { log.warn("跳过清理 company→internship_application: {}", trimErr(e)); }
+        try {
+            companyUserMapper.deleteJobApplicationByCompanyId(companyId);
+        } catch (Exception e) { log.warn("跳过清理 company→student_job_application: {}", trimErr(e)); }
+
+        // ===== Step 4. 实习确认 / 阶段分配 / 实习状态 =====
+        try {
+            companyUserMapper.deleteConfirmationRecordByCompanyId(companyId);
+        } catch (Exception e) { log.warn("跳过清理 company→internship_confirmation_record: {}", trimErr(e)); }
+        try {
+            companyUserMapper.deleteStageAssignmentByCompanyId(companyId);
+        } catch (Exception e) { log.warn("跳过清理 company→internship_stage_assignment: {}", trimErr(e)); }
+        try {
+            companyUserMapper.deleteInternshipStatusByCompanyId(companyId);
+        } catch (Exception e) { log.warn("跳过清理 company→student_internship_status: {}", trimErr(e)); }
+
+        // ===== Step 5. 面试邀请 / 通知 =====
+        try {
+            companyUserMapper.deleteInterviewInvitationByCompanyId(companyId);
+        } catch (Exception e) { log.warn("跳过清理 company→interview_invitation: {}", trimErr(e)); }
+        try {
+            companyUserMapper.deleteCompanyNotificationByCompanyId(companyId);
+        } catch (Exception e) { log.warn("跳过清理 company→company_notification: {}", trimErr(e)); }
+
+        // ===== Step 6. 企业扩展信息：资质 / 校企联络员 / 校友成员 / 访问记录 / 推荐评级 =====
+        try {
+            companyUserMapper.deleteCompanyQualificationByCompanyId(companyId);
+        } catch (Exception e) { log.warn("跳过清理 company→company_qualification: {}", trimErr(e)); }
+        try {
+            companyUserMapper.deleteCompanySchoolLiaisonByCompanyId(companyId);
+        } catch (Exception e) { log.warn("跳过清理 company→company_school_liaison: {}", trimErr(e)); }
+        try {
+            companyUserMapper.deleteCompanyAlumniMemberByCompanyId(companyId);
+        } catch (Exception e) { log.warn("跳过清理 company→company_alumni_member: {}", trimErr(e)); }
+        try {
+            companyUserMapper.deleteCompanyVisitRecordByCompanyId(companyId);
+        } catch (Exception e) { log.warn("跳过清理 company→company_visit_record: {}", trimErr(e)); }
+        try {
+            companyUserMapper.deleteCompanyRecommendationRatingByCompanyId(companyId);
+        } catch (Exception e) { log.warn("跳过清理 company→company_recommendation_rating: {}", trimErr(e)); }
+
+        // ===== Step 7. 企业实习鉴定提交（在子记录和岗位之后） =====
+        try {
+            companyUserMapper.deleteAppraisalSubmissionByCompanyId(companyId);
+        } catch (Exception e) { log.warn("跳过清理 company→internship_appraisal_submission: {}", trimErr(e)); }
+
+        log.debug("企业关联业务数据级联清理完成（已跳过不存在的表），企业ID: {}", companyId);
+    }
+
+    /** 提取精简错误信息，避免超长 SQL 堆栈刷屏 */
+    private String trimErr(Throwable e) {
+        Throwable c = e;
+        String lastMsg = (e.getMessage() == null ? "" : e.getMessage().split(";")[0].trim());
+        int depth = 0;
+        while (c.getCause() != null && depth < 5) {
+            c = c.getCause();
+            if (c.getMessage() != null) {
+                String m = c.getMessage().split(";")[0].trim();
+                if (m.length() < 160) lastMsg = m;
+            }
+            depth++;
+        }
+        return lastMsg.length() > 160 ? lastMsg.substring(0, 160) : lastMsg;
     }
 }

@@ -5,10 +5,6 @@
         <h1 class="page-title">资源文档管理</h1>
         <p class="page-description">管理系统中的所有资源文档信息</p>
       </div>
-      <div class="header-illustration">
-        <div class="illustration-circle circle-1"></div>
-        <div class="illustration-circle circle-2"></div>
-      </div>
     </div>
 
     <!-- 搜索和操作区域 -->
@@ -42,7 +38,7 @@
           </el-form-item>
         </div>
         <div class="action-buttons-row">
-          <el-button type="primary" @click="handleAdd" class="action-btn primary">
+          <el-button type="primary" data-agent-open @click="handleAdd" class="action-btn primary">
             <el-icon><Plus /></el-icon>&nbsp;发布文档
           </el-button>
           <el-button type="danger" @click="handleBatchDelete" class="action-btn danger">
@@ -232,6 +228,7 @@
       v-model="filePreviewVisible"
       :file-url="currentFileUrl"
       :file-name="currentFileName"
+      :authorized-url="currentAuthorizedUrl"
     />
 
     <el-dialog v-model="dialogVisible" :title="dialogTitle" width="700px" @close="handleDialogClose" class="form-dialog">
@@ -244,10 +241,12 @@
         </el-form-item>
         <el-form-item label="文件">
           <el-upload
+            drag
             v-model:file-list="fileList"
             :action="uploadAction"
             :headers="uploadHeaders"
             :on-success="handleUploadSuccess"
+            :on-error="error => ElMessage.error(getUploadErrorMessage(error))"
             :on-remove="handleRemoveFile"
             :before-upload="beforeUpload"
             :limit="1"
@@ -255,10 +254,8 @@
             :auto-upload="true"
             class="compact-upload"
           >
-            <el-button type="primary" size="small">
-              <el-icon><Upload /></el-icon>
-              选择文件
-            </el-button>
+            <el-icon class="el-icon--upload"><Upload /></el-icon>
+            <div class="el-upload__text">将资源文档拖到此处，或<em>点击上传</em></div>
             <template #tip>
               <div class="el-upload__tip">
                 支持 PDF、Word、Excel、PPT、TXT、ZIP、RAR、7Z 等格式，单个文件≤10MB
@@ -302,15 +299,20 @@
 </template>
 
 <script setup lang="ts">
+import { getUploadErrorMessage } from '@/utils/uploadErrorMessage'
 import logger from '@/utils/logger'
-import { ref, reactive, onMounted, computed } from 'vue'
+import { highlightPlainText as highlightKeyword } from '@/utils/highlightPlainText'
+import { ref, reactive, onMounted, onUnmounted, computed, watch } from 'vue'
+import type { FormFieldDescriptor } from '@/agent/types'
+import { useFormContext } from '@/agent/formContext'
 import type { ResourceDocument } from '@/types/admin'
 
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search, Refresh, Plus, Delete, Edit, View, Download, User, Clock, ZoomIn } from '@element-plus/icons-vue'
+import { Search, Refresh, Plus, Delete, Edit, View, Download, User, Clock, ZoomIn, Upload } from '@element-plus/icons-vue'
 import * as resourceDocumentApi from '../../api/resourceDocument'
 import { useAuthStore } from '../../store/auth'
 import FilePreviewDialog from '@/components/FilePreviewDialog.vue'
+import { resourceDocumentByteUrl } from '@/utils/authorizedFileUrl'
 
 const authStore = useAuthStore()
 
@@ -318,8 +320,26 @@ const currentPage = ref<number>(1)
 const pageSize = ref(12)
 const total = ref<number>(0)
 const loading = ref<boolean>(false)
-const resourcesList = ref<unknown[]>([])
-const selectedIds = ref<unknown[]>([])
+interface TeacherResourceRow {
+  id?: number
+  title?: string
+  description?: string
+  fileUrl?: string
+  fileName?: string
+  fileType?: string
+  fileSize?: number
+  publisherId?: number
+  publisher?: string
+  publisherRole?: string
+  publishTime?: string
+  targetType?: string
+  status?: string
+  downloadCount?: number
+  viewCount?: number
+  [key: string]: unknown
+}
+const resourcesList = ref<TeacherResourceRow[]>([])
+const selectedIds = ref<Array<number | string>>([])
 const filterType = ref<string>('all')
 
 const searchForm = reactive({ title: '', status: '', publisherRole: '' })
@@ -341,12 +361,38 @@ const formData = reactive({
 
 const fileList = ref<unknown[]>([])
 
+// ===== 智能填表：资源弹窗注册到 AI 侧栏（只写响应式 formData，不触发提交） =====
+// 未覆盖字段说明：文件 upload 需手动上传；发布人身份/发布人为只读（系统带出，不声明）
+const formContext = useFormContext()
+const buildResourceFillFields = (): FormFieldDescriptor[] => [
+  { prop: 'title', label: '标题', type: 'input', required: true },
+  { prop: 'description', label: '描述', type: 'textarea' },
+  { prop: 'status', label: '状态', type: 'select', required: true, options: [{ label: '草稿', value: 'DRAFT' }, { label: '发布', value: 'PUBLISHED' }, { label: '归档', value: 'ARCHIVED' }] },
+  { prop: 'targetType', label: '目标群体', type: 'select', options: [{ label: '全体师生', value: 'ALL' }, { label: '全体学生', value: 'STUDENT' }, { label: '全体教师', value: 'TEACHER' }], patternHint: '文件需手动上传' }
+]
+const registerResourceForm = (title: string) => {
+  formContext.register({
+    formId: 'teacher:resource',
+    title,
+    fields: buildResourceFillFields(),
+    getFields: buildResourceFillFields,
+    getModel: () => formData,
+    getValidationSummary: () => ({ missingFields: resourceMissingFields(), validationErrors: [] }),
+    getFormEl: () => formRef.value
+  })
+}
+watch(dialogVisible, (open) => {
+  if (!open) formContext.unregister('teacher:resource')
+})
+onUnmounted(() => formContext.unregister('teacher:resource'))
+
 const detailDialogVisible = ref<boolean>(false)
-const selectedResource = ref<ResourceDocument | null>(null)
+const selectedResource = ref<ResourceDocument | TeacherResourceRow | null>(null)
 
 const filePreviewVisible = ref<boolean>(false)
 const currentFileUrl = ref<string>('')
 const currentFileName = ref<string>('')
+const currentAuthorizedUrl = ref<string>('')
 const originalFileUrl = ref<string>('')
 
 const uploadAction = '/api/upload/file'
@@ -393,16 +439,39 @@ const fetchData = async (): Promise<void> => {
       filterType: filterType.value
     }
     logger.log('教师端资源文档查询参数:', params)
-    const response = await resourceDocumentApi.getTeacherResourceDocumentsByPage(params)
+    const response = await resourceDocumentApi.getTeacherResourceDocumentsByPage(params) as unknown as {
+      code?: number
+      message?: string
+      msg?: string
+      data?: {
+        code?: number
+        msg?: string
+        data?: TeacherResourceRow[] | { rows?: TeacherResourceRow[]; total?: number }
+      } | TeacherResourceRow[] | { rows?: TeacherResourceRow[]; total?: number }
+    }
     logger.log('教师端资源文档响应:', response)
     
     const result = response
-    if (result && result.code === 200 && result.data) {
-      resourcesList.value = result.data.rows || []
-      total.value = result.data.total || 0
-    } else if (result && Array.isArray(result.data)) {
-      resourcesList.value = result.data
-      total.value = result.data.length || 0
+    const outerData: unknown = result.data
+    const pageData: unknown = (outerData !== null && typeof outerData === 'object' && 'data' in (outerData as Record<string, unknown>)
+      ? (outerData as { data?: unknown }).data
+      : outerData)
+    if (result && result.code === 200 && pageData) {
+      if (Array.isArray(pageData)) {
+        resourcesList.value = pageData
+        total.value = pageData.length || 0
+      } else if (pageData !== null && typeof pageData === 'object') {
+        const rows = (pageData as { rows?: TeacherResourceRow[] }).rows
+        const totalCount = (pageData as { total?: number }).total
+        resourcesList.value = Array.isArray(rows) ? rows : []
+        total.value = typeof totalCount === 'number' ? totalCount : 0
+      } else {
+        resourcesList.value = []
+        total.value = 0
+      }
+    } else if (result && Array.isArray(pageData)) {
+      resourcesList.value = pageData
+      total.value = pageData.length || 0
     } else {
       resourcesList.value = []
       total.value = 0
@@ -455,8 +524,8 @@ const refreshData = () => {
 }
 
 const handleCheckboxChange = (id: number, checked: boolean) => {
-  const resource = resourcesList.value.find(r => (r as ResourceDocument).id === id)
-  if (resource && !isMyResource(resource as ResourceDocument)) {
+  const resource = resourcesList.value.find(r => r.id === id)
+  if (resource && !isMyResource(resource)) {
     ElMessage.warning('只能选择自己上传的资源文档')
     return
   }
@@ -473,14 +542,8 @@ const handleCheckboxChange = (id: number, checked: boolean) => {
   }
 }
 
-const isMyResource = (resource: ResourceDocument): boolean => {
+const isMyResource = (resource: ResourceDocument | TeacherResourceRow): boolean => {
   return resource.publisherId === currentUserId.value
-}
-
-const highlightKeyword = (text: string, keyword: string): string => {
-  if (!keyword || !text) return text
-  const regex = new RegExp(`(${keyword})`, 'gi')
-  return text.replace(regex, '<span style="background-color: #ffeb3b;">$1</span>')
 }
 
 const getStatusText = (status: string): string => {
@@ -575,7 +638,7 @@ const formatFileSize = (bytes: number): string => {
   return (bytes / Math.pow(k, i)).toFixed(2) + ' ' + sizes[i]
 }
 
-const viewResourceDetail = async (resource: ResourceDocument) => {
+const viewResourceDetail = async (resource: ResourceDocument | TeacherResourceRow) => {
   try {
     await resourceDocumentApi.getResourceDocumentById(resource.id)
     resource.viewCount = (resource.viewCount ?? 0) + 1
@@ -586,7 +649,7 @@ const viewResourceDetail = async (resource: ResourceDocument) => {
   detailDialogVisible.value = true
 }
 
-const editResource = async (resource: ResourceDocument): Promise<void> => {
+const editResource = async (resource: ResourceDocument | TeacherResourceRow): Promise<void> => {
   if (!isMyResource(resource)) {
     ElMessage.warning('您只能编辑自己上传的资源文档')
     return
@@ -614,6 +677,7 @@ const editResource = async (resource: ResourceDocument): Promise<void> => {
   }
   
   dialogVisible.value = true
+  registerResourceForm('编辑文档')
 }
 
 const deleteResource = async (id: number): Promise<void> => {
@@ -639,10 +703,10 @@ const deleteResource = async (id: number): Promise<void> => {
   }
 }
 
-const downloadResource = async (resource: ResourceDocument): Promise<void> => {
+const downloadResource = async (resource: ResourceDocument | TeacherResourceRow): Promise<void> => {
   try {
-    // 响应拦截器已返回 Blob
-    const blob = await resourceDocumentApi.downloadResourceDocument(resource.id!)
+    // 响应拦截器返回 Blob 本体（类型声明为业务包）；用精确断言收敛，保持运行时原值
+    const blob = await resourceDocumentApi.downloadResourceDocument(resource.id!) as unknown as Blob
     const url = window.URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
@@ -659,39 +723,20 @@ const downloadResource = async (resource: ResourceDocument): Promise<void> => {
   }
 }
 
-const previewResource = (resource: ResourceDocument) => {
+const previewResource = (resource: ResourceDocument | TeacherResourceRow) => {
   if (!resource) {
     ElMessage.error('资源信息不存在')
     return
   }
 
-  const fileUrl = resource.fileUrl
-  logger.log('[TeacherResources] previewResource called with fileUrl:', fileUrl)
-
-  if (!fileUrl) {
-    ElMessage.error('文件地址不存在')
+  const authorizedUrl = resourceDocumentByteUrl(resource.id)
+  if (!authorizedUrl) {
+    ElMessage.error('资源记录不存在')
     return
   }
-
-  let proxyUrl: string
-  if (fileUrl.startsWith('http://') || fileUrl.startsWith('https://')) {
-    try {
-      const urlObj = new URL(fileUrl)
-      const ossPath = urlObj.pathname.substring(1)
-      proxyUrl = `/api/upload/preview/${ossPath}`
-      logger.log('[TeacherResources] 使用 OSS URL 转换后的代理 URL:', proxyUrl)
-    } catch (e) {
-      logger.error('解析 OSS URL 失败:', e)
-      proxyUrl = fileUrl
-    }
-  } else {
-    const cleanPath = fileUrl.startsWith('/') ? fileUrl.substring(1) : fileUrl
-    proxyUrl = `/api/upload/preview/${cleanPath}`
-    logger.log('[TeacherResources] 使用相对路径的代理 URL:', proxyUrl)
-  }
-
-  currentFileUrl.value = proxyUrl
+  currentFileUrl.value = resource.fileUrl || ''
   currentFileName.value = resource.fileName || '未知文件'
+  currentAuthorizedUrl.value = authorizedUrl
   filePreviewVisible.value = true
 }
 
@@ -727,6 +772,7 @@ const handleAdd = () => {
   dialogTitle.value = '发布文档'
   resetFormData()
   dialogVisible.value = true
+  registerResourceForm('发布文档')
 }
 
 const resetFormData = () => {
@@ -766,7 +812,7 @@ const beforeUpload = (file: File) => {
   ]
   
   const isAllowedType = allowedTypes.includes(file.type) || file.type.startsWith('image/')
-  const isLt10M = file.size / 1024 / 1024 < 10
+  const isLt10M = file.size / 1024 / 1024 <= 10
   
   if (!isAllowedType) {
     ElMessage.error('不支持的文件格式！')
@@ -825,6 +871,13 @@ const rules = {
   ]
 }
 
+const resourceMissingFields = (): string[] => [
+  ...(!formData.title ? ['文档标题'] : []),
+  ...(!formData.publisher ? ['发布人'] : []),
+  ...(!formData.publisherRole ? ['发布人身份'] : []),
+  ...((dialogTitle.value === '发布文档' ? !fileList.value.length : !fileList.value.length && !originalFileUrl.value) ? ['文件（请手动上传）'] : [])
+]
+
 const handleSubmit = async (): Promise<void> => {
   if (!formData.title) {
     ElMessage.warning('请输入文档标题')
@@ -851,6 +904,9 @@ const handleSubmit = async (): Promise<void> => {
 
   submitLoading.value = true
   try {
+    const operation = formContext.beginFormOperation('teacher:resource')
+    const published = formData.status === 'PUBLISHED'
+    const receipt = { status: published ? 'published' as const : 'saved' as const, label: published ? '资源已发布' : '资源已保存', url: '/teacher/resources' }
     if (dialogTitle.value === '发布文档') {
       const formDataObj = new FormData()
       const fileItem = fileList.value[0] as { raw?: File }
@@ -865,6 +921,7 @@ const handleSubmit = async (): Promise<void> => {
       const response = await resourceDocumentApi.teacherUploadResourceDocument(formDataObj)
       const result = response
       if (result && result.code === 200) {
+        operation.complete(receipt)
         ElMessage.success('发布成功')
         dialogVisible.value = false
         fetchData()
@@ -892,6 +949,7 @@ const handleSubmit = async (): Promise<void> => {
 
         const result = await resourceDocumentApi.teacherUpdateResourceDocument(formData.id!, updateData)
         if (result && result.code === 200) {
+          operation.complete(receipt)
           ElMessage.success('更新成功')
           dialogVisible.value = false
           fetchData()
@@ -912,6 +970,7 @@ const handleSubmit = async (): Promise<void> => {
 
         const result = await resourceDocumentApi.teacherUpdateResourceDocument(formData.id!, updateData)
         if (result && result.code === 200) {
+          operation.complete(receipt)
           ElMessage.success('更新成功')
           dialogVisible.value = false
           fetchData()
@@ -936,6 +995,20 @@ const handleDialogClose = () => {
 </script>
 
 <style scoped>
+.compact-upload,
+.compact-upload :deep(.el-upload) {
+  width: 100%;
+}
+
+.compact-upload :deep(.el-upload-dragger) {
+  padding: 20px 12px;
+}
+
+.compact-upload .el-icon--upload {
+  font-size: 36px;
+  margin-bottom: 8px;
+}
+
 .resource-document-management-container {
   padding: 20px;
   background: #f5f7fa;
@@ -946,58 +1019,21 @@ const handleDialogClose = () => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  background: linear-gradient(135deg, #409EFF 0%, #52c41a 100%);
-  border-radius: 16px;
-  padding: 24px 32px;
-  color: white;
-  margin-bottom: 24px;
-  box-shadow: 0 8px 25px rgba(102, 126, 234, 0.25);
-  position: relative;
-  overflow: hidden;
-}
-
-.page-header::before {
-  content: '';
-  position: absolute;
-  top: -50%;
-  right: -50%;
-  width: 100%;
-  height: 100%;
-  background: radial-gradient(circle, rgba(255, 255, 255, 0.1) 0%, transparent 70%);
-  transform: rotate(30deg);
-}
-
-.header-content {
-  z-index: 1;
-}
-
-.header-content h1 {
-  font-size: 28px;
-  font-weight: 700;
+  padding: 12px 4px;
   margin-bottom: 8px;
-  color: white;
-}
-
-.header-content p {
-  font-size: 14px;
-  opacity: 0.95;
-  font-weight: 500;
-  margin: 0;
 }
 
 .page-title {
-  font-size: 28px;
+  font-size: 24px;
   font-weight: 700;
   margin: 0 0 8px 0;
-  color: white;
+  color: #000;
 }
 
 .page-description {
   font-size: 14px;
-  opacity: 0.95;
-  font-weight: 500;
   margin: 0;
-  color: white;
+  color: #606266;
 }
 
 .search-card,
@@ -1077,40 +1113,6 @@ const handleDialogClose = () => {
   color: #409EFF;
   border-bottom-color: #409EFF;
   font-weight: 600;
-}
-
-.header-illustration {
-  position: relative;
-  width: 100px;
-  height: 100px;
-}
-
-.illustration-circle {
-  position: absolute;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.15);
-  animation: float 6s ease-in-out infinite;
-}
-
-.circle-1 {
-  width: 60px;
-  height: 60px;
-  top: 0;
-  right: 0;
-  animation-delay: 0s;
-}
-
-.circle-2 {
-  width: 40px;
-  height: 40px;
-  bottom: 10px;
-  right: 20px;
-  animation-delay: 3s;
-}
-
-@keyframes float {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-8px); }
 }
 
 .search-btn,
@@ -1417,16 +1419,6 @@ const handleDialogClose = () => {
 @media screen and (max-width: 768px) {
   .resource-document-management-container {
     padding: 15px;
-  }
-
-  .page-header {
-    flex-direction: column;
-    text-align: center;
-    padding: 20px;
-  }
-
-  .header-illustration {
-    margin-top: 15px;
   }
 
   .action-buttons-row {

@@ -16,7 +16,7 @@
       >
         <template #default>
           <p>• 提交申请后，相关负责人会在 1-3 个工作日内完成审核</p>
-          <p>• 审核通过：系统将通过邮件和短信通知您登录账号和密码</p>
+          <p>• 审核通过后，可用企业名称和初始密码登录；也可通过个人邮箱找回密码</p>
           <p>• 审核未通过：系统将通知您未通过的原因，请补充材料后重新提交</p>
         </template>
       </el-alert>
@@ -55,6 +55,14 @@
           </div>
         </el-form-item>
 
+        <el-form-item label="统一社会信用代码" prop="creditCode" class="credit-code-item">
+          <el-input
+            v-model="registerForm.creditCode"
+            placeholder="请输入统一社会信用代码"
+            :disabled="isRecallMode"
+          />
+        </el-form-item>
+
         <el-form-item label="所属行业" prop="industry">
           <el-select v-model="registerForm.industry" placeholder="请选择所属行业" style="width: 100%">
             <el-option
@@ -85,14 +93,6 @@
           <el-input v-model="registerForm.contactPhone" placeholder="请输入企业联系电话（用于对外业务联系）" />
         </el-form-item>
 
-        <el-form-item label="个人手机号" prop="phone">
-          <el-input
-            v-model="registerForm.phone"
-            placeholder="请输入个人手机号（用于接收验证码）"
-            maxlength="11"
-          />
-        </el-form-item>
-
         <el-form-item label="企业地址" prop="province">
           <elui-china-area-dht
             v-model="chinaAreaValue"
@@ -112,19 +112,12 @@
         </el-form-item>
 
         <el-form-item label="个人邮箱" prop="email">
-          <el-input v-model="registerForm.email" placeholder="请输入个人邮箱（用于账号通知）（选填）" />
+          <el-input v-model="registerForm.email" placeholder="请输入个人邮箱（用于找回密码）" />
+          <div class="form-tip">请确保填写正确，审核通过后可通过此邮箱找回密码</div>
         </el-form-item>
 
         <el-form-item label="企业网站" prop="website">
           <el-input v-model="registerForm.website" placeholder="请输入企业网站（选填）" />
-        </el-form-item>
-
-        <el-form-item label="合作模式" prop="cooperationMode">
-          <el-select v-model="registerForm.cooperationMode" placeholder="请选择合作模式（选填）" style="width: 100%" clearable>
-            <el-option label="双向选择阶段" value="mutual_choice" />
-            <el-option label="学生自主联系" value="student_contact" />
-          </el-select>
-          <div class="form-tip">如不选择，系统将自动根据双向选择时间段进行填写</div>
         </el-form-item>
 
         <el-form-item label="企业简介" prop="introduction">
@@ -136,104 +129,11 @@
           />
         </el-form-item>
 
-        <el-form-item label="营业执照" prop="businessLicense" required>
-          <el-upload
-            class="upload-demo"
-            action="#"
-            :auto-upload="false"
-            :on-change="handleBusinessLicenseChange"
-            :show-file-list="false"
-            accept="image/*"
-          >
-            <div v-if="!registerForm.businessLicense" class="upload-trigger">
-              <el-icon class="upload-icon"><Plus /></el-icon>
-              <div class="upload-text">点击上传营业执照</div>
-              <div class="upload-tip">支持 jpg、png 等图片格式</div>
-            </div>
-            <div v-else class="file-preview">
-              <img :src="getImageUrl(registerForm.businessLicense)" alt="营业执照预览" />
-              <el-button type="danger" size="small" class="delete-btn" @click="deleteBusinessLicense">删除</el-button>
-            </div>
-          </el-upload>
-        </el-form-item>
-
-        <el-form-item label="法人身份证" required>
-          <div class="id-card-upload-container">
-            <!-- 正面上传 -->
-            <div class="id-card-upload-item">
-              <div class="id-card-label-title">身份证正面</div>
-              <el-upload
-                class="upload-demo"
-                action="#"
-                :auto-upload="false"
-                :on-change="(file) => handleIdCardFrontChange(file)"
-                :show-file-list="false"
-                accept="image/*"
-              >
-                <div v-if="!registerForm.legalIdCardFront" class="upload-trigger id-card-trigger">
-                  <el-icon class="upload-icon"><Plus /></el-icon>
-                  <div class="upload-text">点击上传正面</div>
-                  <div class="upload-tip">人像面</div>
-                </div>
-                <div v-else class="file-preview id-card-preview-single">
-                  <img :src="getImageUrl(registerForm.legalIdCardFront)" alt="身份证正面" />
-                  <el-button type="danger" size="small" class="delete-btn" @click.stop="deleteIdCard('front')">删除</el-button>
-                </div>
-              </el-upload>
-            </div>
-
-            <!-- 反面上传 -->
-            <div class="id-card-upload-item">
-              <div class="id-card-label-title">身份证反面</div>
-              <el-upload
-                class="upload-demo"
-                action="#"
-                :auto-upload="false"
-                :on-change="(file) => handleIdCardBackChange(file)"
-                :show-file-list="false"
-                accept="image/*"
-              >
-                <div v-if="!registerForm.legalIdCardBack" class="upload-trigger id-card-trigger">
-                  <el-icon class="upload-icon"><Plus /></el-icon>
-                  <div class="upload-text">点击上传反面</div>
-                  <div class="upload-tip">国徽面</div>
-                </div>
-                <div v-else class="file-preview id-card-preview-single">
-                  <img :src="getImageUrl(registerForm.legalIdCardBack)" alt="身份证反面" />
-                  <el-button type="danger" size="small" class="delete-btn" @click.stop="deleteIdCard('back')">删除</el-button>
-                </div>
-              </el-upload>
-            </div>
-          </div>
-        </el-form-item>
-
         <el-form-item label="挂牌实习基地" prop="isInternshipBase">
           <el-radio-group v-model="registerForm.isInternshipBase">
             <el-radio :label="0">否</el-radio>
-            <el-radio :label="2">省级</el-radio>
-            <el-radio :label="1">国家级</el-radio>
+            <el-radio :label="1">是</el-radio>
           </el-radio-group>
-        </el-form-item>
-
-        <el-form-item v-if="registerForm.isInternshipBase > 0" label="牌匾照片" prop="plaquePhoto">
-          <el-upload
-            class="upload-demo"
-            action="#"
-            :auto-upload="false"
-            :on-change="handlePlaquePhotoChange"
-            :show-file-list="false"
-            accept="image/*"
-          >
-            <div v-if="!registerForm.plaquePhoto" class="upload-trigger">
-              <el-icon class="upload-icon"><Plus /></el-icon>
-              <div class="upload-text">点击上传牌匾照片</div>
-              <div class="upload-tip">支持 jpg、png 等图片格式</div>
-            </div>
-            <div v-else class="file-preview">
-              <img :src="getImageUrl(registerForm.plaquePhoto)" alt="牌匾照片预览" />
-              <el-button type="danger" size="small" class="delete-btn" @click="deletePlaquePhoto">删除</el-button>
-            </div>
-          </el-upload>
         </el-form-item>
 
         <el-form-item label="接受兜底" prop="acceptBackup">
@@ -243,32 +143,38 @@
           </el-radio-group>
         </el-form-item>
 
-        <el-form-item v-if="registerForm.acceptBackup === 1" label="兜底学生数量" prop="maxBackupStudents">
-          <el-input
-            v-model.number="registerForm.maxBackupStudents"
-            type="number"
-            :min="0"
-            :max="1000"
-            placeholder="请输入能接受兜底的最多学生数量（最多1000名）"
-          />
-          <div class="form-tip">最多允许兜底 1000 名学生</div>
+        <el-form-item label="是否校友单位" prop="isAlumniUnit">
+          <el-radio-group v-model="registerForm.isAlumniUnit" @change="handleAlumniUnitChange">
+            <el-radio :label="0">否</el-radio>
+            <el-radio :label="1">是</el-radio>
+          </el-radio-group>
         </el-form-item>
 
-        <el-form-item label="手机号验证码" prop="verifyCode">
-          <el-input
-            v-model="registerForm.verifyCode"
-            placeholder="请输入验证码"
-            maxlength="6"
-            style="width: 150px;"
-          />
-          <el-button
-            type="primary"
-            :disabled="countdown > 0"
-            @click="sendVerifyCode"
-            class="verify-code-btn"
-          >
-            {{ countdown > 0 ? `${countdown}秒后重试` : '发送验证码' }}
-          </el-button>
+        <template v-if="registerForm.isAlumniUnit === 1">
+          <el-form-item label="校友信息" prop="alumniMembers">
+            <div class="alumni-members">
+              <div v-for="(member, index) in registerForm.alumniMembers" :key="index" class="alumni-member-card">
+                <div class="alumni-member-title">
+                  <span>校友 {{ index + 1 }}</span>
+                  <el-button text type="danger" :disabled="registerForm.alumniMembers.length === 1" @click="removeAlumniMember(index)">删除</el-button>
+                </div>
+                <el-input v-model="member.name" placeholder="姓名" maxlength="50" />
+                <el-input v-model="member.phone" placeholder="联系电话" maxlength="20" />
+                <el-input v-model="member.position" placeholder="在企业的任职" maxlength="100" />
+              </div>
+              <el-button type="primary" plain :icon="Plus" @click="addAlumniMember">添加校友</el-button>
+            </div>
+          </el-form-item>
+        </template>
+
+        <el-form-item prop="hasTrainingBaseAgreement">
+          <template #label>
+            <span style="line-height: 1.4;">是否与学校签署<br/>实训基地的协议</span>
+          </template>
+          <el-radio-group v-model="registerForm.hasTrainingBaseAgreement">
+            <el-radio :label="0">否</el-radio>
+            <el-radio :label="1">是</el-radio>
+          </el-radio-group>
         </el-form-item>
 
         <el-form-item>
@@ -285,7 +191,7 @@
 <script lang="ts" setup>
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import { EluiChinaAreaDht } from 'elui-china-area-dht'
 import request from '@/utils/request'
@@ -294,22 +200,16 @@ const router = useRouter()
 const route = useRoute()
 const registerFormRef = ref(null)
 const loading = ref(false)
-const countdown = ref(0)
 const usernameChecked = ref(false)
 const usernameAvailable = ref(false)
 const isRecallMode = ref(false)
-const existingCompanyId = ref(null)
+const existingCompanyId = ref<number | null>(null)
 
 const industryOptions = [
-  { label: '互联网/IT', value: 'internet' },
-  { label: '金融', value: 'finance' },
-  { label: '教育', value: 'education' },
-  { label: '医疗', value: 'medical' },
-  { label: '制造业', value: 'manufacturing' },
-  { label: '服务业', value: 'service' },
-  { label: '房地产', value: 'realestate' },
-  { label: '能源', value: 'energy' },
-  { label: '其他', value: 'other' }
+  { label: 'IT企业', value: 'it' },
+  { label: '医疗设备企业', value: 'medical_equipment' },
+  { label: '医院', value: 'hospital' },
+  { label: '其它', value: 'other' }
 ]
 
 const scaleOptions = [
@@ -341,8 +241,16 @@ const handleAddressChange = (e) => {
   }
 }
 
+const escapeHtml = (str: string) => {
+  if (!str) return ''
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+}
+
+const createEmptyAlumniMember = () => ({ name: '', phone: '', position: '' })
+
 const registerForm = reactive({
   companyName: '',
+  creditCode: '',
   industry: '',
   scale: '',
   province: '',
@@ -354,19 +262,26 @@ const registerForm = reactive({
   contactEmail: '',
   email: '',
   website: '',
-  cooperationMode: '',
-  phone: '',
-  verifyCode: '',
-  requestId: '',
   introduction: '',
-  businessLicense: '',
-  legalIdCardFront: '',
-  legalIdCardBack: '',
   isInternshipBase: 0,
-  plaquePhoto: '',
   acceptBackup: 0,
-  maxBackupStudents: 0
+  isAlumniUnit: 0,
+  alumniMembers: [] as Array<{ name: string; phone: string; position: string }>,
+  hasTrainingBaseAgreement: 0
 })
+
+const handleAlumniUnitChange = (value: number) => {
+  if (value === 1 && registerForm.alumniMembers.length === 0) {
+    registerForm.alumniMembers.push(createEmptyAlumniMember())
+  }
+  if (value === 0) registerForm.alumniMembers = []
+}
+
+const addAlumniMember = () => registerForm.alumniMembers.push(createEmptyAlumniMember())
+
+const removeAlumniMember = (index: number) => {
+  if (registerForm.alumniMembers.length > 1) registerForm.alumniMembers.splice(index, 1)
+}
 
 const getImageUrl = (url) => {
   if (!url) return ''
@@ -389,20 +304,47 @@ onMounted(async () => {
   }
 })
 
+interface ExistingCompanyRow {
+  id?: number | string
+  creditCode?: string
+  contactPerson?: string
+  contactPhone?: string
+  contactEmail?: string
+  email?: string
+  industry?: string
+  scale?: string
+  province?: string
+  city?: string
+  district?: string
+  detailAddress?: string
+  website?: string
+  introduction?: string
+  isInternshipBase?: number
+  acceptBackup?: number
+  isAlumniUnit?: number
+  alumniMembers?: Array<{ name?: string; phone?: string; position?: string }>
+  alumniRepresentativeName?: string
+  alumniRepresentativePhone?: string
+  alumniRepresentativePosition?: string
+  hasTrainingBaseAgreement?: number
+}
+
 const loadExistingData = async () => {
   try {
-    const response = await request.get('/company/check-status', {
+    const response = await request.get<ExistingCompanyRow>('/company/check-status', {
       params: { companyName: registerForm.companyName }
     })
 
     if (response.code === 200) {
       const data = response.data
-      existingCompanyId.value = data.id
+      const companyId = Number(data.id)
+      if (!Number.isSafeInteger(companyId) || companyId <= 0) throw new Error('企业编号无效')
+      existingCompanyId.value = companyId
+      registerForm.creditCode = data.creditCode || ''
       registerForm.contactPerson = data.contactPerson || ''
       registerForm.contactPhone = data.contactPhone || ''
       registerForm.contactEmail = data.contactEmail || ''
       registerForm.email = data.email || ''
-      registerForm.phone = data.phone || ''
       registerForm.industry = data.industry || ''
       registerForm.scale = data.scale || ''
       registerForm.province = data.province || ''
@@ -410,20 +352,21 @@ const loadExistingData = async () => {
       registerForm.district = data.district || ''
       registerForm.detailAddress = data.detailAddress || ''
       registerForm.website = data.website || ''
-      registerForm.cooperationMode = data.cooperationMode || ''
       registerForm.introduction = data.introduction || ''
-      registerForm.businessLicense = data.businessLicense || ''
-
-      if (data.legalIdCard) {
-        const idCardImages = data.legalIdCard.split(',')
-        registerForm.legalIdCardFront = idCardImages[0] || ''
-        registerForm.legalIdCardBack = idCardImages[1] || ''
-      }
 
       registerForm.isInternshipBase = data.isInternshipBase || 0
-      registerForm.plaquePhoto = data.plaquePhoto || ''
       registerForm.acceptBackup = data.acceptBackup || 0
-      registerForm.maxBackupStudents = data.maxBackupStudents || 0
+      registerForm.isAlumniUnit = data.isAlumniUnit || 0
+      registerForm.alumniMembers = Array.isArray(data.alumniMembers) && data.alumniMembers.length
+        ? data.alumniMembers.map(member => ({ name: member.name || '', phone: member.phone || '', position: member.position || '' }))
+        : (registerForm.isAlumniUnit === 1
+            ? [{
+                name: data.alumniRepresentativeName || '',
+                phone: data.alumniRepresentativePhone || '',
+                position: data.alumniRepresentativePosition || ''
+              }]
+            : [])
+      registerForm.hasTrainingBaseAgreement = data.hasTrainingBaseAgreement || 0
       ElMessage.success('已加载原有注册信息，请修改后重新提交')
     }
   } catch (error) {
@@ -436,6 +379,9 @@ const rules = {
   companyName: [
     { required: true, message: '请输入企业名称', trigger: 'blur' },
     { min: 2, max: 255, message: '企业名称长度必须在 2-255 个字符之间', trigger: 'blur' }
+  ],
+  creditCode: [
+    { required: true, message: '请输入统一社会信用代码', trigger: 'blur' }
   ],
   industry: [
     { required: true, message: '请选择所属行业', trigger: 'change' }
@@ -465,43 +411,24 @@ const rules = {
     { type: 'email', message: '请输入正确的邮箱格式', trigger: 'blur' }
   ],
   email: [
+    { required: true, message: '请输入个人邮箱', trigger: 'blur' },
     { type: 'email', message: '请输入正确的邮箱格式', trigger: 'blur' }
   ],
-  phone: [
-    { required: true, message: '请输入手机号', trigger: 'blur' },
-    { pattern: /^1[3-9]\d{9}$/, message: '请输入正确的手机号格式', trigger: 'blur' }
-  ],
-  verifyCode: [
-    { required: true, message: '请输入验证码', trigger: 'blur' },
-    { len: 6, message: '验证码必须是 6 位数字', trigger: 'blur' }
-  ],
-  businessLicense: [
-    { required: true, message: '请上传营业执照', trigger: 'change' }
-  ],
-  legalIdCardFront: [
-    { required: true, message: '请上传身份证正面', trigger: 'change' }
-  ],
-  legalIdCardBack: [
-    { required: true, message: '请上传身份证反面', trigger: 'change' }
-  ],
-  maxBackupStudents: [
+  alumniMembers: [
     {
       validator: (rule, value, callback) => {
-        if (registerForm.acceptBackup === 1) {
-          if (!value && value !== 0) {
-            callback(new Error('请输入兜底学生数量'))
-          } else if (value < 1) {
-            callback(new Error('兜底学生数量最少为 1'))
-          } else if (value > 1000) {
-            callback(new Error('兜底学生数量最多为 1000'))
-          } else {
-            callback()
-          }
+        if (registerForm.isAlumniUnit === 1) {
+          if (!Array.isArray(value) || value.length === 0) return callback(new Error('请至少填写一名校友'))
+          const invalid = value.find(member => !member.name?.trim() || !member.phone?.trim() || !member.position?.trim())
+          if (invalid) return callback(new Error('请完整填写每名校友的姓名、电话和任职'))
+          const tooLong = value.find(member => member.name.length > 50 || member.phone.length > 20 || member.position.length > 100)
+          if (tooLong) return callback(new Error('校友信息长度超过限制'))
+          callback()
         } else {
           callback()
         }
       },
-      trigger: 'blur'
+      trigger: 'change'
     }
   ]
 }
@@ -523,154 +450,6 @@ const checkUsername = async () => {
     console.error('检查企业名称失败:', error)
     usernameChecked.value = false
   }
-}
-
-const sendVerifyCode = async () => {
-  if (!registerForm.phone) {
-    ElMessage.warning('请先输入手机号')
-    return
-  }
-
-  if (!/^1[3-9]\d{9}$/.test(registerForm.phone)) {
-    ElMessage.warning('手机号格式不正确')
-    return
-  }
-
-  try {
-    const response = await request.post('/company/send-verify-code', {
-      phone: registerForm.phone
-    })
-
-    if (response.code === 200) {
-      ElMessage.success('验证码发送成功')
-      // 保存 requestId 用于后续验证
-      registerForm.requestId = response.data?.requestId || ''
-      countdown.value = 60
-      const timer = setInterval(() => {
-        countdown.value--
-        if (countdown.value <= 0) {
-          clearInterval(timer)
-        }
-      }, 1000)
-    } else {
-      ElMessage.error(response.message || '发送验证码失败')
-    }
-  } catch (error) {
-    console.error('发送验证码失败:', error)
-    ElMessage.error('发送验证码失败')
-  }
-}
-
-const handleBusinessLicenseChange = async (file) => {
-  try {
-    const formData = new FormData()
-    formData.append('file', file.raw)
-
-    const response = await request.post('/upload/image', formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data'
-      }
-    })
-
-    if (response.code === 200) {
-      registerForm.businessLicense = response.data.url
-      ElMessage.success('营业执照上传成功')
-    } else {
-      ElMessage.error(response.message || '营业执照上传失败')
-    }
-  } catch (error) {
-    console.error('营业执照上传失败:', error)
-    ElMessage.error('营业执照上传失败')
-  }
-}
-
-const deleteBusinessLicense = () => {
-  registerForm.businessLicense = ''
-  ElMessage.success('已删除营业执照')
-}
-
-const handleIdCardFrontChange = async (file) => {
-  try {
-    const formData = new FormData()
-    formData.append('file', file.raw)
-
-    const response = await request.post('/upload/image', formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data'
-      }
-    })
-
-    if (response.code === 200) {
-      registerForm.legalIdCardFront = response.data.url
-      ElMessage.success('身份证正面上传成功')
-    } else {
-      ElMessage.error(response.message || '身份证正面上传失败')
-    }
-  } catch (error) {
-    console.error('身份证正面上传失败:', error)
-    ElMessage.error('身份证正面上传失败')
-  }
-}
-
-const handleIdCardBackChange = async (file) => {
-  try {
-    const formData = new FormData()
-    formData.append('file', file.raw)
-
-    const response = await request.post('/upload/image', formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data'
-      }
-    })
-
-    if (response.code === 200) {
-      registerForm.legalIdCardBack = response.data.url
-      ElMessage.success('身份证反面上传成功')
-    } else {
-      ElMessage.error(response.message || '身份证反面上传失败')
-    }
-  } catch (error) {
-    console.error('身份证反面上传失败:', error)
-    ElMessage.error('身份证反面上传失败')
-  }
-}
-
-const deleteIdCard = (side) => {
-  if (side === 'front') {
-    registerForm.legalIdCardFront = ''
-    ElMessage.success('已删除身份证正面')
-  } else if (side === 'back') {
-    registerForm.legalIdCardBack = ''
-    ElMessage.success('已删除身份证反面')
-  }
-}
-
-const handlePlaquePhotoChange = async (file) => {
-  try {
-    const formData = new FormData()
-    formData.append('file', file.raw)
-
-    const response = await request.post('/upload/image', formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data'
-      }
-    })
-
-    if (response.code === 200) {
-      registerForm.plaquePhoto = response.data.url
-      ElMessage.success('牌匾照片上传成功')
-    } else {
-      ElMessage.error(response.message || '牌匾照片上传失败')
-    }
-  } catch (error) {
-    console.error('牌匾照片上传失败:', error)
-    ElMessage.error('牌匾照片上传失败')
-  }
-}
-
-const deletePlaquePhoto = () => {
-  registerForm.plaquePhoto = ''
-  ElMessage.success('已删除牌匾照片')
 }
 
 const submitRegister = async () => {
@@ -706,13 +485,26 @@ const submitRegister = async () => {
     } else {
       response = await request.post('/company/register', registerForm)
       if (response.code === 200) {
-        ElMessage.success('注册申请提交成功，请等待审核')
-        setTimeout(() => {
+        ElMessageBox.alert(
+          `<div style="text-align: left; line-height: 1.8;">
+            <p style="font-size: 15px; color: #333; margin: 0 0 14px 0;">申请已提交，请耐心等待审核（1-3 个工作日）</p>
+            <div style="background: #fff3e0; border-left: 4px solid #ff9800; padding: 10px 14px; margin-bottom: 14px; border-radius: 4px;">
+              <p style="color: #e65100; font-weight: 600; margin: 0 0 4px 0; font-size: 14px;">审核通过后方可使用以下信息登录</p>
+              <p style="color: #999; margin: 0; font-size: 12px;">未通过审核前，账号无法登录系统</p>
+            </div>
+            <div style="background: #f5f7fa; padding: 12px 14px; border-radius: 4px; font-size: 14px;">
+              <p style="margin: 0 0 6px 0;">账 号：<b>${escapeHtml(registerForm.companyName)}</b></p>
+              <p style="margin: 0;">密 码：<b>123456</b></p>
+            </div>
+          </div>`,
+          '注册申请提交成功',
+          { dangerouslyUseHTMLString: true, confirmButtonText: '我知道了', type: 'success' }
+        ).then(() => {
           router.push({
             path: '/company-check',
             query: { companyName: registerForm.companyName }
           })
-        }, 2000)
+        })
       } else {
         ElMessage.error(response.message || '注册申请提交失败')
       }
@@ -783,10 +575,6 @@ const goBack = () => {
 
 .register-form {
   margin-top: 30px;
-}
-
-.verify-code-btn {
-  margin-left: 10px;
 }
 
 .check-result {
@@ -942,5 +730,81 @@ const goBack = () => {
   font-size: 12px;
   color: #909399;
   line-height: 1.5;
+}
+
+.alumni-members {
+  width: 100%;
+  display: grid;
+  gap: 12px;
+}
+
+.alumni-member-card {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid #e4e7ed;
+  border-radius: 8px;
+  background: #fafafa;
+}
+
+.alumni-member-title {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-weight: 600;
+  color: #303133;
+}
+
+@media (max-width: 720px) {
+  .alumni-member-card {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* 手机端：单列布局，上传区满宽，长文本可换行 */
+@media screen and (max-width: 768px) {
+  .register-container {
+    padding: calc(16px + var(--safe-top, 0px)) 12px 24px;
+    background-size: cover;
+  }
+
+  .register-box {
+    margin-top: 0;
+    padding: 20px 16px;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  .register-header {
+    margin-bottom: 20px;
+  }
+
+  .register-header h2 {
+    font-size: 22px;
+  }
+
+  .id-card-upload-container {
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .id-card-upload-item {
+    max-width: 100%;
+  }
+
+  .id-card-trigger,
+  .id-card-preview-single,
+  .file-preview {
+    width: 100%;
+    max-width: 280px;
+  }
+
+}
+
+.credit-code-item :deep(.el-form-item__label) {
+  white-space: nowrap;
+  overflow: visible;
 }
 </style>

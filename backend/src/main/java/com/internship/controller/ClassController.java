@@ -150,7 +150,7 @@ public class ClassController {
     }
 
     // 导出班级数据到 Excel
-    @Log(operationType = "EXPORT", module = "CLASS_MANAGEMENT", description = "导出班级数据")
+    @Log(operationType = "EXPORT", module = "CLASS_MANAGEMENT", description = "导出班级数据", riskLevel = "MEDIUM", critical = true)
     @GetMapping("/export")
     @PreAuthorize("hasAuthority('class:view')")
     public void exportExcel(HttpServletResponse response) {
@@ -253,7 +253,7 @@ public class ClassController {
     }
 
     // 批量删除班级
-    @Log(operationType = "DELETE", module = "CLASS_MANAGEMENT", description = "批量删除班级")
+    @Log(operationType = "DELETE", module = "CLASS_MANAGEMENT", description = "批量删除班级", riskLevel = "HIGH", critical = true)
     @DeleteMapping("/batch")
     @PreAuthorize("hasAuthority('class:delete')")
     public Result batchDeleteClass(@RequestBody Map<String, List<Long>> request) {

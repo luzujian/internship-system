@@ -304,11 +304,13 @@
 </template>
 
 <script setup lang="ts">
+import { useAuthStore } from '@/store/auth'
+const authStore = useAuthStore()
 import { ref, onMounted, watch, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { dashboardApi } from '../../api/teacherDashboard'
 import type { DashboardStats } from '../../api/teacherDashboard'
-import { getInternshipNodes } from '../../api/teacherSettings'
+import { getInternshipCalendar } from '../../api/teacherSettings'
 import emitter from '../../utils/eventBus'
 
 // 时间范围
@@ -324,13 +326,13 @@ const router = useRouter()
 const route = useRoute()
 
 // 获取教师类型
-const teacherType = localStorage.getItem('teacherType') || ''
+const teacherType = authStore.user?.teacherType || authStore.role?.replace('ROLE_TEACHER_', '') || ''
 const isCounselor = computed(() => teacherType === 'COUNSELOR')
 const isCollegeTeacher = computed(() => teacherType === 'COLLEGE')
 
 // 获取辅导员 ID
 const counselorId = computed(() => {
-  const teacherId = localStorage.getItem('teacherId')
+  const teacherId = authStore.user?.id
   return teacherId ? parseInt(teacherId) : 0
 })
 
@@ -502,22 +504,21 @@ const handleClassClick = (className: string) => {
 // 加载默认时间范围（从系统设置）
 const loadDefaultDateRange = async () => {
   try {
-    const response = await getInternshipNodes()
+    const response = await getInternshipCalendar()
     if (response.data) {
       const data = response.data as any
-      if (data.applicationStartTime) {
-        defaultStartDate.value = data.applicationStartTime
+      if (data.startDate) {
+        defaultStartDate.value = data.startDate
       }
       if (data.endDate) {
         defaultEndDate.value = data.endDate
-      } else if (data.applicationEndTime) {
-        defaultEndDate.value = data.applicationEndTime
       }
     }
   } catch (error) {
     console.error('加载默认时间范围失败:', error)
-    if (!defaultStartDate.value) defaultStartDate.value = '2026-03-01'
-    if (!defaultEndDate.value) defaultEndDate.value = '2026-12-31'
+    const currentYear = new Date().getFullYear()
+    if (!defaultStartDate.value) defaultStartDate.value = `${currentYear}-01-01`
+    if (!defaultEndDate.value) defaultEndDate.value = `${currentYear}-12-31`
   }
 }
 
@@ -552,7 +553,7 @@ onMounted(async () => {
 })
 
 // 监听路由变化，当从首页跳转过来时自动加载数据
-watch(() => route.state?.fromHome, (fromHome) => {
+watch(() => (route as unknown as { state?: { fromHome?: boolean } }).state?.fromHome, (fromHome) => {
   if (fromHome) {
     loadDashboardData()
   }

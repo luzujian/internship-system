@@ -111,7 +111,7 @@
         FROM student_users su
         INNER JOIN major m ON su.major_id = m.id
         LEFT JOIN student_internship_status sis ON su.id = sis.student_id
-        WHERE m.division_id = #{divisionId} AND (sis.status = 0 OR sis.status IS NULL)
+        WHERE m.division_id = #{divisionId} AND <include refid="com.internship.mapper.JobSearchStatusMapper.effectiveNumericStatus"/> = 0
     </select>
 
     <!-- 根据系ID查询有Offer未确定的学生数 -->

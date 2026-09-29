@@ -15,4 +15,8 @@ public class CoreMetricsDTO {
     private Integer approvalCountChange;
     private Integer resourceDownloads;
     private Integer resourceDownloadsChange;
+    /** 剩余岗位数量 */
+    private Integer remainingPositionCount;
+    /** 尚无 Offer 学生数量 */
+    private Integer unplacedStudentCount;
 }

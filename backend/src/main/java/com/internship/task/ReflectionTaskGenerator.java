@@ -1,27 +1,50 @@
 package com.internship.task;
 
-import com.internship.entity.*;
+import com.internship.entity.InternshipReflection;
+import com.internship.entity.InternshipStageAssignment;
+import com.internship.entity.StudentInternshipStatus;
+import com.internship.entity.User;
+import com.internship.entity.dto.InternshipCalendar;
 import com.internship.mapper.InternshipReflectionMapper;
-import com.internship.service.*;
+import com.internship.service.ClassCounselorRelationService;
+import com.internship.service.CounselorAISettingsService;
+import com.internship.service.InternshipCalendarService;
+import com.internship.service.InternshipStageAssignmentService;
+import com.internship.service.StudentInternshipStatusService;
+import com.internship.service.UserService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
-import java.util.Calendar;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
+import java.util.Comparator;
 import java.util.Date;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 /**
- * 实习心得任务生成器
- * 根据辅导员的提交周期设置，自动为学生生成待提交的实习心得任务
+ * 按全局实习日历生成心得任务。换岗不会重置期次，同一学生同一期最多一条任务。
  */
 @Slf4j
 @Component
 public class ReflectionTaskGenerator {
+    static final ZoneId BUSINESS_ZONE = ZoneId.of("Asia/Shanghai");
+    private static final Set<String> REFLECTION_ASSIGNMENT_STATUSES =
+            Set.of("CONFIRMED", "REPLACED", "INTERRUPTED", "ENDED");
 
     @Autowired
-    private InternshipTimeSettingsService timeSettingsService;
+    private InternshipCalendarService calendarService;
+
+    @Autowired
+    private InternshipStageAssignmentService assignmentService;
 
     @Autowired
     private StudentInternshipStatusService statusService;
@@ -38,202 +61,166 @@ public class ReflectionTaskGenerator {
     @Autowired
     private UserService userService;
 
-    /**
-     * 每天凌晨2点执行，检查并生成实习心得任务
-     */
+    @Autowired
+    private com.internship.service.AuditLogService auditLogService;
+
     @Scheduled(cron = "0 0 2 * * ?")
     public void generateReflectionTasks() {
-        log.info("开始生成实习心得提交任务");
+        PeriodWindow window = currentWindow(calendarService.getCalendar(), LocalDate.now(BUSINESS_ZONE));
+        if (window == null) {
+            log.info("当前不在已配置的全局实习日历内，跳过心得任务生成");
+            return;
+        }
 
-        try {
-            // 1. 获取实习时间设置
-            InternshipTimeSettings settings = timeSettingsService.findLatest();
-            if (settings == null || settings.getReportCycle() == null || settings.getReportCycle() <= 0) {
-                log.info("未设置实习心得提交周期，跳过任务生成");
-                return;
+        List<InternshipStageAssignment> assignments = assignmentService.findAll();
+        if (assignments == null || assignments.isEmpty()) return;
+
+        Map<Long, InternshipStageAssignment> placements = assignments.stream()
+                .filter(this::isReflectionPlacement)
+                .filter(item -> overlaps(item, window))
+                .collect(Collectors.toMap(
+                        InternshipStageAssignment::getStudentId,
+                        Function.identity(),
+                        this::laterPlacement));
+
+        int generated = 0;
+        for (InternshipStageAssignment placement : placements.values()) {
+            Long counselorId = classCounselorRelationService
+                    .findCounselorIdByStudentId(placement.getStudentId());
+            if (counselorId != null && createTaskIfMissing(placement, counselorId, window)) {
+                generated++;
             }
+        }
+        log.info("全局第 {} 期心得任务生成完成，共生成 {} 条", window.periodNumber(), generated);
 
-            Integer reportCycle = settings.getReportCycle();
-            log.info("实习心得提交周期: {} 天", reportCycle);
-
-            // 2. 获取所有实习中的学生 (status=2 表示已确认实习)
-            List<StudentInternshipStatus> interningStudents = statusService.list(
-                    null, null, null, 2, null, null, null, null, null, null);
-
-            if (interningStudents == null || interningStudents.isEmpty()) {
-                log.info("没有实习中的学生，跳过任务生成");
-                return;
+        // 后台任务以 SYSTEM 身份记录自动状态变更（每批次汇总一条）
+        if (generated > 0) {
+            try {
+                auditLogService.recordSystemOperation("INTERNSHIP_REFLECTION", "CREATE",
+                        "定时生成第" + window.periodNumber() + "期心得任务", "LOW", generated);
+            } catch (Exception auditEx) {
+                log.error("记录心得任务生成审计失败: {}", auditEx.getMessage());
             }
-
-            log.info("共有 {} 个实习中的学生", interningStudents.size());
-
-            int generatedCount = 0;
-
-            for (StudentInternshipStatus studentStatus : interningStudents) {
-                try {
-                    // 3. 检查学生是否有未提交的实习心得任务
-                    List<InternshipReflection> pendingReflections = reflectionMapper.list(
-                            studentStatus.getStudentId(), null, null, 0);
-
-                    // 如果有未提交的任务，跳过
-                    if (pendingReflections != null && !pendingReflections.isEmpty()) {
-                        log.debug("学生 {} 已有未提交的实习心得任务，跳过", studentStatus.getStudentId());
-                        continue;
-                    }
-
-                    // 4. 检查学生最近一次提交的实习心得距今是否超过一个周期
-                    List<InternshipReflection> recentReflections = reflectionMapper.list(studentStatus.getStudentId(), null, null, null);
-                    InternshipReflection lastReflection = null;
-                    if (recentReflections != null && !recentReflections.isEmpty()) {
-                        lastReflection = recentReflections.get(0);
-                        Date lastSubmitTime = lastReflection.getSubmitTime();
-                        if (lastSubmitTime != null) {
-                            Calendar calendar = Calendar.getInstance();
-                            calendar.setTime(lastSubmitTime);
-                            calendar.add(Calendar.DAY_OF_YEAR, reportCycle);
-                            Date nextDeadline = calendar.getTime();
-
-                            // 如果还没到下一个提交周期，跳过
-                            if (new Date().before(nextDeadline)) {
-                                log.debug("学生 {} 距离上次提交未超过周期，跳过", studentStatus.getStudentId());
-                                continue;
-                            }
-                        }
-                    }
-
-                    // 5. 获取学生的辅导员
-                    Long counselorId = classCounselorRelationService.findCounselorIdByStudentId(studentStatus.getStudentId());
-                    if (counselorId == null) {
-                        log.warn("学生 {} 没有对应的辅导员，跳过", studentStatus.getStudentId());
-                        continue;
-                    }
-
-                    // 6. 检查辅导员是否开启了AI评分
-                    if (!counselorAISettingsService.isAiScoringEnabled(counselorId)) {
-                        log.debug("辅导员 {} 未开启AI评分，跳过", counselorId);
-                        continue;
-                    }
-
-                    // 7. 获取学生信息
-                    User student = userService.findById(studentStatus.getStudentId());
-                    if (student == null) {
-                        log.warn("学生 {} 信息不存在，跳过", studentStatus.getStudentId());
-                        continue;
-                    }
-
-                    // 8. 计算第几期
-                    int periodNumber = (recentReflections != null ? recentReflections.size() : 0) + 1;
-
-                    // 9. 计算截止日期
-                    Calendar deadlineCalendar = Calendar.getInstance();
-                    deadlineCalendar.add(Calendar.DAY_OF_YEAR, reportCycle);
-                    Date deadline = deadlineCalendar.getTime();
-
-                    // 10. 创建待提交的实习心得任务
-                    InternshipReflection reflection = new InternshipReflection();
-                    reflection.setStudentId(studentStatus.getStudentId());
-                    reflection.setStudentName(student.getName());
-                    reflection.setStudentUserId(student.getUsername());
-                    reflection.setInternshipStatusId(studentStatus.getId());
-                    reflection.setPeriodNumber(periodNumber);
-                    reflection.setTaskType("auto");
-                    reflection.setDeadline(deadline);
-                    reflection.setCounselorId(counselorId);
-                    reflection.setStatus(0); // 待提交
-                    reflection.setRemark("0"); // 草稿状态
-                    reflection.setSubmitTime(new Date());
-                    reflection.setCreateTime(new Date());
-                    reflection.setUpdateTime(new Date());
-                    reflection.setDeleted(0);
-                    // content 在提交时才会填充，这里设置为空字符串
-                    reflection.setContent("");
-
-                    reflectionMapper.insert(reflection);
-                    generatedCount++;
-
-                    log.info("为学生 {} 生成了第 {} 期实习心得任务，截止日期: {}",
-                            student.getName(), periodNumber, deadline);
-
-                } catch (Exception e) {
-                    log.error("为学生 {} 生成任务时出错: {}", studentStatus.getStudentId(), e.getMessage(), e);
-                }
-            }
-
-            log.info("实习心得任务生成完成，共生成 {} 个任务", generatedCount);
-
-        } catch (Exception e) {
-            log.error("生成实习心得任务时发生异常: {}", e.getMessage(), e);
         }
     }
 
     /**
-     * 学生提交实习心得后，立即生成下一次的任务
-     * @param studentId 学生ID
-     * @param counselorId 辅导员ID
+     * 提交心得后不再按“提交时间 + 周期”滚动创建下一期；仅补齐当前全局期次的缺失任务。
      */
     public void generateNextTask(Long studentId, Long counselorId) {
-        try {
-            // 检查辅导员是否开启了AI评分
-            if (!counselorAISettingsService.isAiScoringEnabled(counselorId)) {
-                return;
-            }
+        if (studentId == null || counselorId == null) return;
+        PeriodWindow window = currentWindow(calendarService.getCalendar(), LocalDate.now(BUSINESS_ZONE));
+        if (window == null) return;
 
-            // 获取实习时间设置
-            InternshipTimeSettings settings = timeSettingsService.findLatest();
-            if (settings == null || settings.getReportCycle() == null || settings.getReportCycle() <= 0) {
-                return;
-            }
+        List<InternshipStageAssignment> assignments = assignmentService.findByStudentId(studentId);
+        if (assignments == null) return;
+        assignments.stream()
+                .filter(this::isReflectionPlacement)
+                .filter(item -> overlaps(item, window))
+                .max(Comparator
+                        .comparing(InternshipStageAssignment::getInternshipStartTime,
+                                Comparator.nullsFirst(Comparator.naturalOrder()))
+                        .thenComparing(InternshipStageAssignment::getId,
+                                Comparator.nullsFirst(Comparator.naturalOrder())))
+                .ifPresent(placement -> createTaskIfMissing(placement, counselorId, window));
+    }
 
-            Integer reportCycle = settings.getReportCycle();
-
-            // 获取学生信息
-            User student = userService.findById(studentId);
-            if (student == null) {
-                return;
-            }
-
-            // 获取学生的实习状态
-            StudentInternshipStatus studentStatus = statusService.findByStudentId(studentId);
-            if (studentStatus == null || studentStatus.getStatus() != 2) {
-                // 不是实习中状态，不生成任务
-                return;
-            }
-
-            // 计算当前是第几期
-            List<InternshipReflection> recentReflections = reflectionMapper.list(studentId, null, null, null);
-            int periodNumber = (recentReflections != null ? recentReflections.size() : 0) + 1;
-
-            // 计算截止日期
-            Calendar deadlineCalendar = Calendar.getInstance();
-            deadlineCalendar.add(Calendar.DAY_OF_YEAR, reportCycle);
-            Date deadline = deadlineCalendar.getTime();
-
-            // 创建待提交的实习心得任务
-            InternshipReflection reflection = new InternshipReflection();
-            reflection.setStudentId(studentId);
-            reflection.setStudentName(student.getName());
-            reflection.setStudentUserId(student.getUsername());
-            reflection.setInternshipStatusId(studentStatus.getId());
-            reflection.setPeriodNumber(periodNumber);
-            reflection.setTaskType("auto");
-            reflection.setDeadline(deadline);
-            reflection.setCounselorId(counselorId);
-            reflection.setStatus(0); // 待提交
-            reflection.setRemark("0"); // 草稿状态
-            reflection.setSubmitTime(new Date());
-            reflection.setCreateTime(new Date());
-            reflection.setUpdateTime(new Date());
-            reflection.setDeleted(0);
-            // content 在提交时才会填充，这里设置为空字符串
-            reflection.setContent("");
-
-            reflectionMapper.insert(reflection);
-
-            log.info("为学生 {} 提前生成了第 {} 期实习心得任务，截止日期: {}",
-                    student.getName(), periodNumber, deadline);
-
-        } catch (Exception e) {
-            log.error("为学生 {} 生成下一次任务时出错: {}", studentId, e.getMessage(), e);
+    private boolean createTaskIfMissing(InternshipStageAssignment placement,
+                                        Long counselorId,
+                                        PeriodWindow window) {
+        Long studentId = placement.getStudentId();
+        if (reflectionMapper.existsByStudentIdAndPeriodNumber(studentId, window.periodNumber())) {
+            return false;
         }
+        if (!counselorAISettingsService.isAiScoringEnabled(counselorId)) {
+            return false;
+        }
+
+        User student = userService.findById(studentId);
+        if (student == null) {
+            log.warn("学生 {} 不存在，跳过心得任务生成", studentId);
+            return false;
+        }
+        StudentInternshipStatus status = statusService.findByStudentId(studentId);
+        Date now = new Date();
+        InternshipReflection reflection = new InternshipReflection();
+        reflection.setStudentId(studentId);
+        reflection.setStudentName(student.getName());
+        reflection.setStudentUserId(student.getUsername());
+        reflection.setInternshipStatusId(status == null ? null : status.getId());
+        reflection.setStageAssignmentId(placement.getId());
+        reflection.setPeriodNumber(window.periodNumber());
+        reflection.setTaskType("auto");
+        reflection.setDeadline(toDate(window.endDate(), LocalTime.MAX));
+        reflection.setCounselorId(counselorId);
+        reflection.setStatus(0);
+        reflection.setRemark("0");
+        reflection.setSubmitTime(now);
+        reflection.setCreateTime(now);
+        reflection.setUpdateTime(now);
+        reflection.setDeleted(0);
+        reflection.setContent("");
+        return reflectionMapper.insert(reflection) == 1;
+    }
+
+    private PeriodWindow currentWindow(InternshipCalendar calendar, LocalDate today) {
+        if (calendar == null || !hasText(calendar.getStartDate()) || !hasText(calendar.getEndDate())
+                || calendar.getReportCycle() == null || calendar.getReportCycle() <= 0) {
+            return null;
+        }
+        try {
+            LocalDate globalStart = LocalDate.parse(calendar.getStartDate());
+            LocalDate globalEnd = LocalDate.parse(calendar.getEndDate());
+            if (today.isBefore(globalStart) || today.isAfter(globalEnd)) return null;
+            int period = (int) (ChronoUnit.DAYS.between(globalStart, today)
+                    / calendar.getReportCycle()) + 1;
+            LocalDate start = globalStart.plusDays((long) (period - 1) * calendar.getReportCycle());
+            LocalDate end = start.plusDays(calendar.getReportCycle() - 1L);
+            if (end.isAfter(globalEnd)) end = globalEnd;
+            return new PeriodWindow(period, start, end);
+        } catch (RuntimeException e) {
+            log.warn("全局实习日历配置无效，跳过心得任务生成: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    private boolean isReflectionPlacement(InternshipStageAssignment assignment) {
+        return assignment != null
+                && assignment.getStudentId() != null
+                && assignment.getInternshipStartTime() != null
+                && REFLECTION_ASSIGNMENT_STATUSES.contains(assignment.getStatus());
+    }
+
+    private boolean overlaps(InternshipStageAssignment assignment, PeriodWindow window) {
+        LocalDate start = toLocalDate(assignment.getInternshipStartTime());
+        LocalDate end = assignment.getInternshipEndTime() == null
+                ? window.endDate()
+                : toLocalDate(assignment.getInternshipEndTime());
+        return !start.isAfter(window.endDate()) && !end.isBefore(window.startDate());
+    }
+
+    private InternshipStageAssignment laterPlacement(InternshipStageAssignment first,
+                                                      InternshipStageAssignment second) {
+        Comparator<InternshipStageAssignment> comparator = Comparator
+                .comparing(InternshipStageAssignment::getInternshipStartTime,
+                        Comparator.nullsFirst(Comparator.naturalOrder()))
+                .thenComparing(InternshipStageAssignment::getId,
+                        Comparator.nullsFirst(Comparator.naturalOrder()));
+        return comparator.compare(first, second) >= 0 ? first : second;
+    }
+
+    private LocalDate toLocalDate(Date value) {
+        return value.toInstant().atZone(BUSINESS_ZONE).toLocalDate();
+    }
+
+    private Date toDate(LocalDate date, LocalTime time) {
+        return Date.from(LocalDateTime.of(date, time).atZone(BUSINESS_ZONE).toInstant());
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
+    }
+
+    private record PeriodWindow(int periodNumber, LocalDate startDate, LocalDate endDate) {
     }
 }

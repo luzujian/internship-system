@@ -1,0 +1,33 @@
+{
+  "code": 200,
+  "data": {
+    "items": [
+      {
+        "id": 100,
+        "eventType": "job_applied",
+        "category": "recruitment",
+        "title": "已投递岗位 A",
+        "description": "星河科技 · Java 实习生",
+        "status": "pending",
+        "statusText": "待企业处理",
+        "occurredAt": "2026-07-18T10:00:00+08:00",
+        "relatedId": 100,
+        "action": { "key": "VIEW_APPLICATION", "targetId": 100, "params": {} }
+      },
+      {
+        "id": 99,
+        "eventType": "interview_invited",
+        "category": "recruitment",
+        "title": "面试邀请 B",
+        "description": "云海科技 · 前端实习生",
+        "status": "info",
+        "statusText": "待面试",
+        "occurredAt": "2026-07-18T10:00:00+08:00",
+        "relatedId": 99,
+        "action": { "key": "VIEW_INTERVIEW", "targetId": 99, "params": {} }
+      }
+    ],
+    "nextCursor": null,
+    "hasMore": false
+  }
+}

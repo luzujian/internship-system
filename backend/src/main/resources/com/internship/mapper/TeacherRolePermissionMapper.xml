@@ -19,6 +19,17 @@
     <select id="findByPermissionId" resultType="com.internship.entity.TeacherRolePermission">
         select * from teacher_role_permission where permission_id = #{permissionId} and deleted = 0
     </select>
+
+    <select id="countRolesByPermissionCode" resultType="int">
+        select count(distinct trp.role_id)
+        from teacher_role_permission trp
+        join teacher_permission tp on trp.permission_id = tp.id
+        join teacher_role tr on trp.role_id = tr.id
+        where tp.permission_code = #{permissionCode}
+          and tp.deleted = 0
+          and trp.deleted = 0
+          and tr.deleted = 0
+    </select>
     
     <insert id="insert" parameterType="com.internship.entity.TeacherRolePermission" useGeneratedKeys="true" keyProperty="id">
         insert into teacher_role_permission (role_id, permission_id, sort_order, create_time, deleted)

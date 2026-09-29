@@ -20,6 +20,8 @@ public interface StudentUserService {
     PageResult<StudentUser> findPage(Integer page, Integer pageSize, String studentId, String name, Integer grade, String majorId, String classId);
     PageResult<StudentUser> findPage(Integer page, Integer pageSize, String studentId, String name, Integer grade, String majorId, String classId, Integer status);
     PageResult<StudentUser> findPage(Integer page, Integer pageSize, String studentId, String name, Integer grade, String majorId, String classId, Integer status, Integer gender, String department);
+    PageResult<StudentUser> findPageByTeacherScope(Integer page, Integer pageSize, String searchName, Long classId,
+                                                  List<Long> departmentIds, List<Long> divisionIds, List<Long> classIds);
     int delete(Long id);
     
     /**
@@ -35,6 +37,8 @@ public interface StudentUserService {
      * @return 删除的记录数
      */
     int batchDeleteStudentUsers(List<Long> ids);
+
+    int resetAllPasswords();
     
     /**
      * 查询所有满足条件的学生用户
@@ -77,7 +81,13 @@ public interface StudentUserService {
      * @return 删除的记录数
      */
     int deleteByClassId(Long classId);
-    
+
+    /**
+     * 班级删除兜底：当学生级联删除失败时，直接把该班级下所有学生的 class_id 置为 NULL，绕过外键直接删班级
+     * @param classId 班级ID
+     */
+    void clearClassIdOnStudents(Long classId);
+
     // 新增学生用户
     int save(StudentUser studentUser);
 }

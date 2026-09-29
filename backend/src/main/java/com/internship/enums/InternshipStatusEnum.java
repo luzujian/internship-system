@@ -14,7 +14,7 @@ import java.util.stream.Collectors;
 @Getter
 public enum InternshipStatusEnum {
 
-    NOT_FOUND(0, "待就业", "未找到实习岗位"),
+    NOT_FOUND(0, "尚无 Offer", "尚无 Offer，包含未投递与无 Offer"),
     HAS_OFFER(1, "待确认", "已获得实习 Offer 但未确认"),
     CONFIRMED(2, "已确定", "实习已确认，待开始"),
     IN_PROGRESS(3, "实习中", "实习进行中"),

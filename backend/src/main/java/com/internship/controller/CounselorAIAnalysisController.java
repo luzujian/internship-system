@@ -295,13 +295,12 @@ public class CounselorAIAnalysisController {
             // 解析 analysisReport 为分开的字段
             String analysisReport = analysis.getAnalysisReport();
             if (analysisReport != null && !analysisReport.isEmpty()) {
-                log.info("analysisReport 内容长度: {}, 前100字符: {}", analysisReport.length(), analysisReport.substring(0, Math.min(100, analysisReport.length())));
+                log.info("analysisReport 内容长度: {}", analysisReport.length());
                 try {
                     // 尝试作为 JSON 解析
                     com.fasterxml.jackson.databind.ObjectMapper objectMapper = new com.fasterxml.jackson.databind.ObjectMapper();
                     Map<String, Object> parsedReport = objectMapper.readValue(analysisReport, Map.class);
-                    log.info("JSON解析成功: summary={}, strengths={}, suggestions={}, comment={}",
-                        parsedReport.get("summary"), parsedReport.get("strengths"), parsedReport.get("suggestions"), parsedReport.get("comment"));
+                    log.info("JSON 分析报告解析成功");
                     resultData.put("summary", parsedReport.get("summary"));
                     resultData.put("highlights", parsedReport.get("strengths"));
                     resultData.put("improvements", parsedReport.get("suggestions"));
@@ -312,8 +311,7 @@ public class CounselorAIAnalysisController {
                     // 如果不是 JSON，说明 analysisReport 存储的是原始 Markdown 文本
                     // 从 Markdown 中解析各部分
                     Map<String, Object> parsedMarkdown = parseMarkdownReport(analysisReport);
-                    log.info("Markdown解析结果: summary={}, strengths={}, suggestions={}, comment={}",
-                        parsedMarkdown.get("summary"), parsedMarkdown.get("strengths"), parsedMarkdown.get("suggestions"), parsedMarkdown.get("comment"));
+                    log.info("Markdown 分析报告解析成功");
                     resultData.put("summary", parsedMarkdown.get("summary"));
                     resultData.put("highlights", parsedMarkdown.get("strengths"));
                     resultData.put("improvements", parsedMarkdown.get("suggestions"));

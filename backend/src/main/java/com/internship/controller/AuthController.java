@@ -1,10 +1,8 @@
 package com.internship.controller;
 
 import com.internship.anno.Log;
-import com.internship.mapper.OperateLogMapper;
-import com.internship.mapper.LoginLogMapper;
-import com.internship.entity.OperateLog;
 import com.internship.entity.LoginLog;
+import com.internship.entity.SecurityEventLog;
 import com.internship.entity.User;
 import com.internship.entity.StudentUser;
 import com.internship.entity.TeacherUser;
@@ -13,6 +11,7 @@ import com.internship.entity.CompanyUser;
 import com.internship.entity.Permission;
 import com.internship.entity.Result;
 import com.internship.exception.BusinessException;
+import com.internship.service.AuditLogService;
 import com.internship.service.UserService;
 import com.internship.service.StudentUserService;
 import com.internship.service.TeacherUserService;
@@ -20,14 +19,12 @@ import com.internship.service.AdminUserService;
 import com.internship.service.CompanyUserService;
 import com.internship.service.ClassService;
 import com.internship.service.PermissionService;
-import com.internship.service.SmsService;
 import com.internship.service.AdminPermissionService;
 import com.internship.service.TeacherPermissionService;
 import com.internship.utils.IpUtils;
 import com.internship.utils.JwtUtils;
 import com.internship.utils.PasswordValidator;
 import com.internship.config.SystemSettingsConfig;
-import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationContext;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -69,11 +66,8 @@ public class AuthController {
     private ApplicationContext applicationContext;
     
     @Autowired
-    private OperateLogMapper operateLogMapper;
-    
-    @Autowired
-    private LoginLogMapper loginLogMapper;
-    
+    private AuditLogService auditLogService;
+
     @Autowired
     private TeacherUserService teacherUserService;
     
@@ -99,10 +93,10 @@ public class AuthController {
     private TeacherPermissionService teacherPermissionService;
 
     @Autowired
-    private SmsService smsService;
+    private LoginAttemptService loginAttemptService;
 
     @Autowired
-    private LoginAttemptService loginAttemptService;
+    private com.internship.service.PasswordResetService passwordResetService;
 
     /**
      * 获取密码修改规则（公开接口）
@@ -158,27 +152,17 @@ public class AuthController {
             // 原子递增失败计数（Redis INCR 或 synchronized 递增，仅保护计数器）
             int currentCount = loginAttemptService.recordFailure(username);
 
-            // 记录登录失败日志
-            try {
-                LoginLog loginLog = new LoginLog();
-                loginLog.setUserId(username);
-                loginLog.setUserType("UNKNOWN");
-                loginLog.setUserName(username);
-                loginLog.setLoginTime(new Date());
-                loginLog.setIpAddress(IpUtils.getClientIp(request));
-                loginLog.setDeviceInfo(request.getHeader("User-Agent"));
-                loginLog.setLoginStatus("FAILURE");
-                loginLogMapper.insert(loginLog);
-            } catch (Exception ex) {
-                log.error("记录用户登录失败日志失败: {}", ex.getMessage());
-            }
+            boolean locked = currentCount < 0 || loginAttemptService.isLocked(username);
+
+            // 记录登录失败日志与安全事件（锁定时事件等级提升为 HIGH）
+            recordLoginAudit(username, "UNKNOWN", username, request, "FAILURE", locked);
 
             String errorMessage = e.getMessage();
             if (errorMessage != null && errorMessage.contains("账号已被禁用")) {
                 return Result.error("您的账号已被禁用，请联系管理员");
             }
 
-            if (currentCount < 0 || loginAttemptService.isLocked(username)) {
+            if (locked) {
                 int lockTime = SystemSettingsConfig.getLockTime();
                 return Result.error("登录失败次数过多，账号已被锁定" + lockTime + "分钟");
             }
@@ -212,14 +196,11 @@ public class AuthController {
         }
 
         String teacherType = teacher.getTeacherType();
-        if (teacherType == null || teacherType.isEmpty()) {
-            teacherType = identifyTeacherType(teacher);
-            teacher.setTeacherType(teacherType);
-            teacherUserService.update(teacher);
-            log.info("自动识别教师类型: {} -> {}", username, teacherType);
-        }
-
         String role = getRoleByTeacherType(teacherType);
+        if (role == null) {
+            log.warn("教师登录失败: 教师身份未配置 - {}", username);
+            throw new AuthenticationException("教师身份未配置，请联系管理员") {};
+        }
         teacher.setRole(role);
 
         List<String> permissionCodes = teacherPermissionService.getPermissionCodesByRoleCode(teacherType);
@@ -234,6 +215,7 @@ public class AuthController {
         claims.put("teacherType", teacherType);
         claims.put("permissions", permissionCodes);
 
+        claims.put("sid", java.util.UUID.randomUUID().toString());
         String accessToken = jwtUtils.generateAccessToken(claims);
         String refreshToken = jwtUtils.generateRefreshToken(claims);
 
@@ -246,17 +228,7 @@ public class AuthController {
         log.info("教师登录成功: {}, 类型: {}, 权限数: {}", username, teacherType, permissionCodes.size());
         
         try {
-            LoginLog loginLog = new LoginLog();
-            loginLog.setUserId(String.valueOf(teacher.getId()));
-            loginLog.setUserType(role);
-            loginLog.setUserName(teacher.getTeacherUserId());
-            loginLog.setLoginTime(new Date());
-            loginLog.setIpAddress(IpUtils.getClientIp(request));
-            loginLog.setDeviceInfo(request.getHeader("User-Agent"));
-            loginLog.setLoginStatus("SUCCESS");
-            
-            loginLogMapper.insert(loginLog);
-            log.info("教师登录日志记录成功: {}", loginLog);
+            recordLoginAudit(String.valueOf(teacher.getId()), role, teacher.getTeacherUserId(), request, "SUCCESS", false);
         } catch (Exception e) {
             log.error("记录教师登录日志失败: {}", e.getMessage());
         }
@@ -340,6 +312,25 @@ public class AuthController {
         }
         claims.put("name", displayName);
 
+        String authenticatedTeacherType = null;
+        if (loginUser.getRole() != null && loginUser.getRole().startsWith("ROLE_TEACHER")) {
+            TeacherUser teacherUser = teacherUserService.findByTeacherUserId(username);
+            if (teacherUser != null) {
+                authenticatedTeacherType = teacherUser.getTeacherType();
+            }
+            if (!StringUtils.hasText(authenticatedTeacherType)) {
+                authenticatedTeacherType = switch (loginUser.getRole()) {
+                    case "ROLE_TEACHER_COLLEGE" -> "COLLEGE";
+                    case "ROLE_TEACHER_DEPARTMENT" -> "DEPARTMENT";
+                    case "ROLE_TEACHER_COUNSELOR" -> "COUNSELOR";
+                    default -> null;
+                };
+            }
+            if (StringUtils.hasText(authenticatedTeacherType)) {
+                claims.put("teacherType", authenticatedTeacherType);
+            }
+        }
+
         // 为学生用户添加必要的标识信息（PII字段不放入JWT，通过API获取）
         if ("ROLE_STUDENT".equals(loginUser.getRole())) {
             StudentUser studentUser = studentUserService.findByStudentId(username);
@@ -348,6 +339,7 @@ public class AuthController {
             }
         }
         
+        claims.put("sid", java.util.UUID.randomUUID().toString());
         String accessToken = jwtUtils.generateAccessToken(claims);
         String refreshToken = jwtUtils.generateRefreshToken(claims);
 
@@ -361,6 +353,9 @@ public class AuthController {
         safeUser.put("role", loginUser.getRole());
         safeUser.put("name", displayName);
         safeUser.put("createTime", loginUser.getCreateTime());
+        if (StringUtils.hasText(authenticatedTeacherType)) {
+            safeUser.put("teacherType", authenticatedTeacherType);
+        }
 
         // 为学生用户添加额外的字段
         if ("ROLE_STUDENT".equals(loginUser.getRole())) {
@@ -425,212 +420,27 @@ public class AuthController {
         log.info("用户登录成功: {}", username);
         
         try {
-            LoginLog loginLog = new LoginLog();
             String userId = loginUser.getId() != null ? String.valueOf(loginUser.getId()) : loginUser.getUsername();
-            loginLog.setUserId(userId);
-            loginLog.setUserType(loginUser.getRole());
-            loginLog.setUserName(loginUser.getUsername());
-            loginLog.setLoginTime(new Date());
-            loginLog.setIpAddress(IpUtils.getClientIp(request));
-            loginLog.setDeviceInfo(request.getHeader("User-Agent"));
-            loginLog.setLoginStatus("SUCCESS");
-            
-            loginLogMapper.insert(loginLog);
-            log.info("用户登录日志记录成功: {}", loginLog);
+            recordLoginAudit(userId, loginUser.getRole(), loginUser.getUsername(), request, "SUCCESS", false);
         } catch (Exception e) {
             log.error("记录用户登录日志失败: {}", e.getMessage());
-        }
-        
-        if ("ROLE_ADMIN".equals(loginUser.getRole())) {
-            try {
-                OperateLog operateLog = new OperateLog();
-                operateLog.setOperateAdminId(loginUser.getId());
-                operateLog.setOperatorName(loginUser.getUsername());
-                operateLog.setOperatorUsername(loginUser.getUsername());
-                operateLog.setOperatorRole("ADMIN");
-                operateLog.setIpAddress(IpUtils.getClientIp(request));
-                operateLog.setOperationType("LOGIN");
-                operateLog.setModule("USER_MANAGEMENT");
-                operateLog.setDescription("管理员登录系统: " + loginUser.getUsername());
-                operateLog.setOperationResult("SUCCESS");
-                operateLog.setOperateTime(new Date());
-                
-                operateLogMapper.insert(operateLog);
-                log.info("管理员操作日志记录成功: {}", operateLog);
-            } catch (Exception e) {
-                log.error("记录管理员操作日志失败: {}", e.getMessage());
-            }
         }
         
         return result;
     }
     
     private String getRoleByTeacherType(String teacherType) {
+        if (teacherType == null) {
+            return null;
+        }
         return switch (teacherType) {
             case "COLLEGE" -> "ROLE_TEACHER_COLLEGE";
             case "DEPARTMENT" -> "ROLE_TEACHER_DEPARTMENT";
             case "COUNSELOR" -> "ROLE_TEACHER_COUNSELOR";
-            default -> "ROLE_TEACHER";
+            default -> null;
         };
     }
-    
-    private String identifyTeacherType(TeacherUser teacher) {
-        String name = teacher.getName();
-        if (name == null) {
-            return "DEPARTMENT";
-        }
-        
-        if (name.contains("院长") || name.contains("书记") || name.contains("主任")) {
-            return "COLLEGE";
-        } else if (name.contains("辅导员") || name.contains("导员")) {
-            return "COUNSELOR";
-        } else {
-            return "DEPARTMENT";
-        }
-    }
 
-    @PostMapping("/register")
-    public Result register(@RequestBody Map<String, Object> requestData) {
-        log.info("用户注册请求: {}", requestData.get("username"));
-        try {
-            String password = (String) requestData.get("password");
-            
-            PasswordValidator.ValidationResult validationResult = PasswordValidator.validatePassword(password);
-            if (!validationResult.isValid()) {
-                log.warn("用户注册失败：密码不符合复杂度要求 - {}", validationResult.getMessage());
-                return Result.error(validationResult.getMessage());
-            }
-            
-            User user = new User();
-            user.setUsername((String) requestData.get("username"));
-            user.setPassword(password);
-            user.setName((String) requestData.get("name"));
-            
-            // 设置默认角色为学生
-            String role = (String) requestData.get("role");
-            if (role == null) {
-                role = "ROLE_STUDENT";
-            }
-            user.setRole(role);
-
-            // 根据角色将用户注册到不同的表中
-            if ("ROLE_STUDENT".equals(role)) {
-                // 使用StudentUserService检查学号是否已存在
-                StudentUserService studentUserService = applicationContext.getBean(StudentUserService.class);
-                String studentId = (String) requestData.get("username");
-                if (studentUserService.findByStudentId(studentId) != null) {
-                    log.warn("学生用户注册失败: 学号已存在 - {}", studentId);
-                    return Result.error("用户名已存在");
-                }
-
-                // 处理手机号验证
-                String phone = (String) requestData.get("phone");
-                String verifyCode = (String) requestData.get("verifyCode");
-                if (phone != null && !phone.isEmpty()) {
-                    if (verifyCode == null || verifyCode.isEmpty()) {
-                        return Result.error("验证码不能为空");
-                    }
-                    if (!smsService.verifyCode(phone, verifyCode)) {
-                        log.warn("学生用户注册失败: 验证码错误 - 手机号={}", phone);
-                        return Result.error("验证码错误或已过期");
-                    }
-                    log.info("手机号验证成功: {}", phone);
-                }
-
-                StudentUser studentUser = new StudentUser();
-                // 复制公共字段
-                BeanUtils.copyProperties(user, studentUser);
-                // 显式设置学号字段
-                studentUser.setUsername(studentId);
-                studentUser.setStudentId(studentId);
-
-                // 直接从请求数据中获取学生特有字段
-                try {
-                    if (requestData.containsKey("grade")) {
-                        studentUser.setGrade(Integer.valueOf(requestData.get("grade").toString()));
-                    }
-                    if (requestData.containsKey("majorId")) {
-                        studentUser.setMajorId(Long.valueOf(requestData.get("majorId").toString()));
-                    }
-                    if (requestData.containsKey("classId")) {
-                        studentUser.setClassId(Long.valueOf(requestData.get("classId").toString()));
-                    }
-                    log.debug("成功设置学生特有字段 - 年级: {}, 专业ID: {}, 班级ID: {}",
-                              studentUser.getGrade(), studentUser.getMajorId(), studentUser.getClassId());
-                } catch (Exception e) {
-                    log.warn("设置学生特有字段时出错: {}", e.getMessage());
-                }
-
-                // 设置手机号
-                if (phone != null && !phone.isEmpty()) {
-                    studentUser.setPhone(phone);
-                }
-
-                // 注册学生用户
-                studentUserService.register(studentUser);
-            } else if ("ROLE_TEACHER".equals(role)) {
-                // 使用TeacherUserService检查用户名是否已存在
-                TeacherUserService teacherUserService = applicationContext.getBean(TeacherUserService.class);
-                String teacherId = (String) requestData.get("username");
-                try {
-                    teacherUserService.findByTeacherUserId(teacherId);
-                    log.warn("教师用户注册失败: 教师编号已存在 - {}", teacherId);
-                    return Result.error("教师编号已存在");
-                } catch (Exception e) {
-                    // 如果抛出异常，说明教师编号不存在，可以继续注册
-                    log.debug("教师编号未存在，可以注册: {}", teacherId);
-                }
-                
-                TeacherUser teacherUser = new TeacherUser();
-                // 复制公共字段
-                BeanUtils.copyProperties(user, teacherUser);
-                // 显式设置教师编号
-                teacherUser.setUsername(teacherId);
-                teacherUser.setTeacherUserId(teacherId);
-                
-                // 设置院系ID
-                if (requestData.containsKey("departmentId")) {
-                    try {
-                        String departmentIdStr = requestData.get("departmentId").toString();
-                        if (departmentIdStr != null && !departmentIdStr.isEmpty()) {
-                            teacherUser.setDepartmentId(departmentIdStr);
-                            log.debug("成功设置教师院系ID: {}", teacherUser.getDepartmentId());
-                        }
-                    } catch (Exception e) {
-                        log.warn("设置教师院系ID时出错: {}", e.getMessage());
-                    }
-                }
-                
-                // 注册教师用户
-                teacherUserService.register(teacherUser);
-            } else if ("ROLE_ADMIN".equals(role)) {
-                // 使用AdminUserService检查用户名是否已存在
-                AdminUserService adminUserService = applicationContext.getBean(AdminUserService.class);
-                String username = (String) requestData.get("username");
-                if (adminUserService.findByUsername(username) != null) {
-                    log.warn("管理员用户注册失败: 用户名已存在 - {}", username);
-                    return Result.error("用户名已存在");
-                }
-                
-                AdminUser adminUser = new AdminUser();
-                // 复制公共字段
-                BeanUtils.copyProperties(user, adminUser);
-                
-                // 注册管理员用户
-                adminUserService.register(adminUser);
-            } else {
-                log.warn("用户注册失败: 无效的角色 - {}", role);
-                return Result.error("无效的角色");
-            }
-            
-            log.info("用户注册成功: {}", requestData.get("username"));
-            return Result.success();
-        } catch (Exception e) {
-            log.error("用户注册失败: {}, 错误信息: {}", requestData.get("username"), e.getMessage());
-            return Result.error("注册失败，请稍后再试");
-        }
-    }
-    
     /**
      * 获取当前登录用户信息
      */
@@ -676,6 +486,20 @@ public class AuthController {
             // 验证刷新令牌
             Map<String, Object> claims = jwtUtils.parseToken(refreshToken);
             
+            // Only refresh tokens with an explicit read-only marker may be refreshed.
+            // Legacy tokens omitted it, including tokens issued while viewing another role.
+            if (!"refresh".equals(claims.get("typ")) || !(claims.get("isReadOnly") instanceof Boolean)
+                    || !(claims.get("sid") instanceof String sid) || sid.isBlank()) {
+                return Result.error("刷新令牌无效，请重新登录");
+            }
+            boolean readOnly = Boolean.TRUE.equals(claims.get("isReadOnly"));
+            Object originalAdminId = claims.get("originalAdminId");
+            String originalAdminUsername = (String) claims.get("originalAdminUsername");
+            if ((readOnly && (!(originalAdminId instanceof Number) || !StringUtils.hasText(originalAdminUsername)))
+                    || (!readOnly && (originalAdminId != null || originalAdminUsername != null))) {
+                return Result.error("刷新令牌无效，请重新登录");
+            }
+
             // 从刷新令牌中获取用户信息
             String username = (String) claims.get("username");
             String role = (String) claims.get("role");
@@ -693,6 +517,9 @@ public class AuthController {
             if (username == null || role == null || userId == null) {
                 return Result.error("刷新令牌无效");
             }
+            if ("ROLE_TEACHER".equals(role)) {
+                return Result.error("教师身份需重新验证");
+            }
 
             // 从刷新令牌中获取其他信息
             String name = (String) claims.get("name");
@@ -700,10 +527,16 @@ public class AuthController {
 
             // 生成新的访问令牌
             Map<String, Object> newClaims = new HashMap<>();
+            newClaims.put("sid", claims.get("sid"));
             newClaims.put("userId", userId);
             newClaims.put("username", username);
             newClaims.put("name", name);
             newClaims.put("role", role);
+            newClaims.put("isReadOnly", readOnly);
+            if (readOnly) {
+                newClaims.put("originalAdminId", originalAdminId);
+                newClaims.put("originalAdminUsername", originalAdminUsername);
+            }
             if (teacherType != null) {
                 newClaims.put("teacherType", teacherType);
             }
@@ -737,7 +570,7 @@ public class AuthController {
      * 将访问令牌加入黑名单
      */
     @PostMapping("/logout")
-    @Log(operationType = "LOGOUT", module = "AUTH", description = "管理员登出系统")
+    @Log(operationType = "LOGOUT", module = "AUTH", description = "用户登出系统")
     public Result logout(HttpServletRequest request, Authentication authentication) {
         try {
             Long adminId = null;
@@ -759,11 +592,24 @@ public class AuthController {
                 String authorizationHeader = request.getHeader("Authorization");
                 if (StringUtils.hasText(authorizationHeader) && authorizationHeader.startsWith("Bearer ")) {
                     String accessToken = authorizationHeader.substring(7);
-                    jwtUtils.blacklistToken(accessToken);
+                    jwtUtils.revokeSession(accessToken);
                     log.info("管理员 {} (ID: {}) 登出成功，访问令牌已加入黑名单", username, adminId);
                 }
+
+                // 记录登出安全事件（P1）
+                SecurityEventLog logoutEvent = new SecurityEventLog();
+                logoutEvent.setEventType("LOGOUT");
+                logoutEvent.setUserId(adminId != null ? String.valueOf(adminId) : username);
+                logoutEvent.setUsername(username);
+                logoutEvent.setRiskLevel(AuditLogService.RISK_LOW);
+                logoutEvent.setResult("SUCCESS");
+                logoutEvent.setIpAddress(IpUtils.getClientIp(request));
+                logoutEvent.setHttpMethod(request.getMethod());
+                logoutEvent.setRequestPath(request.getRequestURI());
+                logoutEvent.setDescription("用户登出系统");
+                auditLogService.recordSecurityEvent(logoutEvent);
             }
-            
+
             return Result.success("登出成功");
         } catch (Exception e) {
             log.error("用户登出失败: {}", e.getMessage());
@@ -776,7 +622,7 @@ public class AuthController {
      * 允许管理员切换到教师、学生或企业端账号进行测试
      */
     @PostMapping("/switch-role")
-    @Log(operationType = "SWITCH_ROLE", module = "AUTH", description = "管理员切换角色")
+    @Log(operationType = "SWITCH_ROLE", module = "AUTH", description = "管理员切换角色", riskLevel = "MEDIUM", targetType = "ROLE", critical = true)
     public Result switchRole(@RequestBody Map<String, String> switchRequest, Authentication authentication, HttpServletRequest request) {
         try {
             if (authentication == null || !(authentication.getPrincipal() instanceof UserDetails)) {
@@ -821,13 +667,10 @@ public class AuthController {
                 }
                 
                 String teacherType = teacher.getTeacherType();
-                if (teacherType == null || teacherType.isEmpty()) {
-                    teacherType = identifyTeacherType(teacher);
-                    teacher.setTeacherType(teacherType);
-                    teacherUserService.update(teacher);
-                }
-                
                 String role = getRoleByTeacherType(teacherType);
+                if (role == null) {
+                    return Result.error("教师身份未配置，请联系管理员");
+                }
                 List<String> permissionCodes = teacherPermissionService.getPermissionCodesByRoleCode(teacherType);
 
                 Map<String, Object> claims = new HashMap<>();
@@ -841,6 +684,7 @@ public class AuthController {
                 claims.put("originalAdminId", adminUser.getId());
                 claims.put("originalAdminUsername", adminUser.getUsername());
                 
+                claims.put("sid", java.util.UUID.randomUUID().toString());
                 String accessToken = jwtUtils.generateAccessToken(claims);
                 String refreshToken = jwtUtils.generateRefreshToken(claims);
                 
@@ -878,6 +722,7 @@ public class AuthController {
                 claims.put("originalAdminId", adminUser.getId());
                 claims.put("originalAdminUsername", adminUser.getUsername());
                 
+                claims.put("sid", java.util.UUID.randomUUID().toString());
                 String accessToken = jwtUtils.generateAccessToken(claims);
                 String refreshToken = jwtUtils.generateRefreshToken(claims);
                 
@@ -924,6 +769,7 @@ public class AuthController {
                 claims.put("originalAdminId", adminUser.getId());
                 claims.put("originalAdminUsername", adminUser.getUsername());
                 
+                claims.put("sid", java.util.UUID.randomUUID().toString());
                 String accessToken = jwtUtils.generateAccessToken(claims);
                 String refreshToken = jwtUtils.generateRefreshToken(claims);
                 
@@ -958,6 +804,7 @@ public class AuthController {
      * 用于清除数据等危险操作前的安全验证
      */
     @PostMapping("/verify-password")
+    @Log(operationType = "VERIFY", module = "AUTH", description = "验证密码（敏感读取）", riskLevel = "MEDIUM")
     public Result verifyPassword(@RequestBody Map<String, String> passwordData, Authentication authentication) {
         if (authentication == null) {
             return Result.error("未登录");
@@ -1006,6 +853,7 @@ public class AuthController {
      * 修改密码
      */
     @PutMapping("/change-password")
+    @Log(operationType = "RESET_PASSWORD", module = "AUTH", description = "修改密码", riskLevel = "HIGH", targetType = "USER", critical = true)
     public Result changePassword(@RequestBody Map<String, String> passwordData, Authentication authentication, HttpServletRequest request) {
         if (authentication == null) {
             return Result.error("未登录");
@@ -1047,6 +895,12 @@ public class AuthController {
             if (currentUser == null) {
                 return Result.error("用户不存在");
             }
+
+            // 新密码不能与当前密码相同
+            if (currentUser.getPassword() != null && passwordEncoder.matches(newPassword, currentUser.getPassword())) {
+                log.warn("用户 {} 修改密码失败：新密码与当前密码相同", username);
+                return Result.error("新密码不能与当前密码相同。");
+            }
             
             // 直接比较密码（系统使用NoOpPasswordEncoder，密码是明文存储）
             if (!passwordEncoder.matches(oldPassword, currentUser.getPassword())) {
@@ -1054,18 +908,9 @@ public class AuthController {
                 return Result.error("旧密码错误");
             }
             
-            // 修改密码
-            userService.updatePassword(username, newPassword);
-            
             // 增加用户令牌版本号，使之前的令牌失效（安全措施）
             jwtUtils.incrementUserTokenVersion(username);
-            
-            // 从请求头获取访问令牌并加入黑名单
-            String authorizationHeader = request.getHeader("Authorization");
-            if (StringUtils.hasText(authorizationHeader) && authorizationHeader.startsWith("Bearer ")) {
-                String accessToken = authorizationHeader.substring(7);
-                jwtUtils.blacklistToken(accessToken);
-            }
+            userService.updatePassword(username, newPassword);
             
             log.info("用户 {} 修改密码成功，已增加令牌版本号使旧令牌失效", username);
             return Result.success("密码修改成功，请重新登录");
@@ -1177,8 +1022,9 @@ public class AuthController {
      * 修改用户名
      */
     @PutMapping("/update-username")
+    @Log(operationType = "UPDATE", module = "AUTH", description = "修改用户名", riskLevel = "MEDIUM")
     public Result updateUsername(@RequestBody Map<String, String> usernameData, Authentication authentication) {
-        if (authentication == null) {
+        if (authentication == null || !authentication.isAuthenticated()) {
             return Result.error("未登录");
         }
         
@@ -1187,6 +1033,12 @@ public class AuthController {
         
         if (!StringUtils.hasText(oldUsername) || !StringUtils.hasText(newUsername)) {
             return Result.error("用户名不能为空");
+        }
+
+        // The old name is supplied by the client only for display/consistency. It must
+        // never select the account to update; the authenticated principal owns it.
+        if (!authentication.getName().equals(oldUsername)) {
+            throw new org.springframework.security.access.AccessDeniedException("无权修改其他账号");
         }
         
         if (newUsername.length() < 3 || newUsername.length() > 20) {
@@ -1198,7 +1050,7 @@ public class AuthController {
         }
         
         try {
-            int result = userService.updateUsername(oldUsername, newUsername);
+            int result = userService.updateUsername(authentication.getName(), newUsername);
             if (result > 0) {
                 log.info("用户名修改成功: {} -> {}", oldUsername, newUsername);
                 return Result.success("用户名修改成功");
@@ -1215,21 +1067,114 @@ public class AuthController {
     }
 
 
-    private void recordLoginLog(String userId, String userType, String userName, HttpServletRequest request, String status) {
+    /**
+     * 忘记密码：发送邮箱验证码（公开接口）
+     * 覆盖学生 / 教师 / 企业账号，管理员暂不支持自助找回。
+     * 身份校验失败统一提示，防止账号枚举。
+     */
+    @PostMapping("/forgot-password/send-code")
+    public Result sendPasswordResetCode(@RequestBody Map<String, String> requestData, HttpServletRequest request) {
         try {
-            LoginLog loginLog = new LoginLog();
-            loginLog.setUserId(userId);
-            loginLog.setUserType(userType);
-            loginLog.setUserName(userName);
-            loginLog.setLoginTime(new Date());
-            loginLog.setIpAddress(IpUtils.getClientIp(request));
-            loginLog.setDeviceInfo(request.getHeader("User-Agent"));
-            loginLog.setLoginStatus(status);
-            
-            loginLogMapper.insert(loginLog);
-            log.info("登录日志记录成功: {}", loginLog);
+            passwordResetService.sendResetCode(
+                    requestData.get("username"),
+                    requestData.get("email"),
+                    IpUtils.getClientIp(request));
+            return Result.success("验证码已发送，请查收邮件");
+        } catch (BusinessException e) {
+            log.warn("忘记密码发码失败: {}", e.getMessage());
+            return Result.error(e.getMessage());
         } catch (Exception e) {
-            log.error("记录登录日志失败: {}", e.getMessage());
+            log.error("忘记密码发码异常: {}", e.getMessage(), e);
+            return Result.error("发送验证码失败，请稍后再试");
         }
+    }
+
+    /**
+     * 忘记密码：第一步身份确认（账号 + 邮箱 + 验证码预校验，不消费验证码）
+     */
+    @PostMapping("/forgot-password/verify-code")
+    public Result verifyPasswordResetCode(@RequestBody Map<String, String> requestData, HttpServletRequest request) {
+        try {
+            passwordResetService.verifyResetCode(
+                    requestData.get("username"),
+                    requestData.get("email"),
+                    requestData.get("code"),
+                    IpUtils.getClientIp(request));
+            return Result.success("身份验证通过");
+        } catch (BusinessException e) {
+            log.warn("忘记密码身份确认失败: {}", e.getMessage());
+            return Result.error(e.getMessage());
+        } catch (Exception e) {
+            log.error("忘记密码身份确认异常: {}", e.getMessage(), e);
+            return Result.error("身份验证失败，请稍后再试");
+        }
+    }
+
+    /**
+     * 忘记密码：验证码重置密码（公开接口）
+     */
+    @PostMapping("/forgot-password/reset")
+    @Log(operationType = "RESET_PASSWORD", module = "AUTH", description = "邮箱验证重置密码", riskLevel = "HIGH", targetType = "USER", critical = true)
+    public Result resetPasswordByEmail(@RequestBody Map<String, String> requestData, HttpServletRequest request) {
+        try {
+            passwordResetService.resetPassword(
+                    requestData.get("username"),
+                    requestData.get("email"),
+                    requestData.get("code"),
+                    requestData.get("newPassword"),
+                    IpUtils.getClientIp(request));
+            return Result.success("密码重置成功，请使用新密码登录");
+        } catch (BusinessException e) {
+            log.warn("忘记密码重置失败: {}", e.getMessage());
+            return Result.error(e.getMessage());
+        } catch (Exception e) {
+            log.error("忘记密码重置异常: {}", e.getMessage(), e);
+            return Result.error("密码重置失败，请稍后再试");
+        }
+    }
+
+
+    /**
+     * 统一登录审计入口（P1）：写登录日志 + 安全事件
+     * locked=true 表示本次失败触发了账号锁定（事件类型 ACCOUNT_LOCK，等级 HIGH）
+     */
+    private void recordLoginAudit(String userId, String userType, String userName, HttpServletRequest request, String status, boolean locked) {
+        boolean failure = "FAILURE".equalsIgnoreCase(status);
+
+        LoginLog loginLog = new LoginLog();
+        loginLog.setUserId(userId);
+        loginLog.setUserType(userType);
+        loginLog.setUserName(userName);
+        loginLog.setIpAddress(IpUtils.getClientIp(request));
+        loginLog.setDeviceInfo(request.getHeader("User-Agent"));
+        loginLog.setLoginStatus(status);
+        loginLog.setRiskLevel(failure ? AuditLogService.RISK_MEDIUM : AuditLogService.RISK_LOW);
+        loginLog.setDeviceType(resolveDeviceType(request));
+        loginLog.setErrorCode(failure ? "AUTH_FAILED" : null);
+        auditLogService.recordLoginLog(loginLog);
+
+        SecurityEventLog event = new SecurityEventLog();
+        event.setEventType(locked ? "ACCOUNT_LOCK" : (failure ? "LOGIN_FAILURE" : "LOGIN_SUCCESS"));
+        event.setUserId(userId);
+        event.setUsername(userName);
+        event.setUserRole(userType);
+        event.setRiskLevel(locked ? AuditLogService.RISK_HIGH : (failure ? AuditLogService.RISK_MEDIUM : AuditLogService.RISK_LOW));
+        event.setResult(failure ? "FAILURE" : "SUCCESS");
+        event.setErrorCode(failure ? "AUTH_FAILED" : null);
+        event.setIpAddress(IpUtils.getClientIp(request));
+        event.setHttpMethod(request.getMethod());
+        event.setRequestPath(request.getRequestURI());
+        event.setDeviceType(loginLog.getDeviceType());
+        event.setDescription(locked ? "登录失败次数过多，账号已锁定"
+                : (failure ? "登录失败" : "登录成功"));
+        auditLogService.recordSecurityEvent(event);
+    }
+
+    private String resolveDeviceType(HttpServletRequest request) {
+        String userAgent = request.getHeader("User-Agent");
+        if (userAgent == null || userAgent.isEmpty()) {
+            return "UNKNOWN";
+        }
+        return userAgent.contains("Mobile") || userAgent.contains("Android") || userAgent.contains("iPhone") ? "MOBILE_WEB" : "WEB";
     }
 }

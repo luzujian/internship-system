@@ -28,7 +28,7 @@
             <el-button type="warning" @click="handleReset" class="reset-btn">
               <el-icon><Refresh /></el-icon>&nbsp;重置
             </el-button>
-            <el-button type="primary" @click="handleAdd" class="action-btn primary">
+            <el-button type="primary" data-agent-open @click="handleAdd" class="action-btn primary">
               <el-icon><Plus /></el-icon>&nbsp;新增关键词
             </el-button>
           </el-form-item>
@@ -114,7 +114,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, nextTick, computed } from 'vue'
+import { useAuthStore } from '@/store/auth'
+const authStore = useAuthStore()
+import { ref, onMounted, onUnmounted, nextTick, computed, watch } from 'vue'
+import type { FormFieldDescriptor } from '@/agent/types'
+import { useFormContext } from '@/agent/formContext'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Edit, Delete, Search, Refresh, Document, CircleCheck, CircleClose } from '@element-plus/icons-vue'
 import request from '../../utils/request'
@@ -123,9 +127,34 @@ const loading = ref(false)
 const saving = ref(false)
 const dialogVisible = ref(false)
 const dialogTitle = ref('')
-const keywordList = ref<any[]>([])
+interface CounselorKeywordRow {
+  id: number
+  keyword?: string
+  status: number
+}
+const keywordList = ref<CounselorKeywordRow[]>([])
 const filterStatus = ref('')
 const formRef = ref<any>(null)
+
+// ===== 智能填表：关键词弹窗注册到 AI 侧栏（只写响应式 form，不触发提交） =====
+const formContext = useFormContext()
+const keywordFillFields: FormFieldDescriptor[] = [
+  { prop: 'keyword', label: '关键词', type: 'input', required: true },
+  { prop: 'status', label: '状态', type: 'radio', valueType: 'number', options: [{ label: '启用', value: 1 }, { label: '禁用', value: 0 }] }
+]
+const registerKeywordForm = (title: string) => {
+  formContext.register({
+    formId: 'teacher:keyword',
+    title,
+    fields: keywordFillFields,
+    getModel: () => form.value,
+    getFormEl: () => formRef.value
+  })
+}
+watch(dialogVisible, (open) => {
+  if (!open) formContext.unregister('teacher:keyword')
+})
+onUnmounted(() => formContext.unregister('teacher:keyword'))
 
 const counselorId = ref<number>(0)
 
@@ -159,9 +188,9 @@ const rules = {
 const fetchKeywords = async () => {
   loading.value = true
   try {
-    const response = await request.get(`/counselor/keyword-library/${counselorId.value}`)
+    const response = await request.get<CounselorKeywordRow[]>(`/counselor/keyword-library/${counselorId.value}`)
     if (response.code === 200) {
-      keywordList.value = response.data || []
+      keywordList.value = Array.isArray(response.data) ? response.data : []
     } else {
       ElMessage.error(response.msg || '获取关键词列表失败')
     }
@@ -177,7 +206,9 @@ const handleFilter = () => {
   if (filterStatus.value === '') {
     fetchKeywords()
   } else {
-    keywordList.value = keywordList.value.filter(k => k.status === filterStatus.value)
+    // number 与 string 的严格比较恒为 false，与原运行时一致；用精确断言收敛类型以通过 vue-tsc
+    const statusFilter = filterStatus.value as unknown as number
+    keywordList.value = keywordList.value.filter(k => k.status === statusFilter)
   }
 }
 
@@ -194,6 +225,7 @@ const handleAdd = () => {
     status: 1
   }
   dialogVisible.value = true
+  registerKeywordForm('新增关键词')
   
   nextTick(() => {
     if (formRef.value) {
@@ -210,6 +242,7 @@ const handleEdit = (row: any) => {
     status: row.status
   }
   dialogVisible.value = true
+  registerKeywordForm('编辑关键词')
   
   nextTick(() => {
     if (formRef.value) {
@@ -273,6 +306,7 @@ const handleSave = async () => {
   
   saving.value = true
   try {
+    const operation = formContext.beginFormOperation('teacher:keyword')
     let response
     if (form.value.id) {
       response = await request.put(`/counselor/keyword-library/${form.value.id}`, {
@@ -288,6 +322,7 @@ const handleSave = async () => {
     
     if (response.code === 200) {
       ElMessage.success('保存成功')
+      operation.complete({ status: 'saved', label: '关键词已保存', url: '/teacher/keyword-library' })
       dialogVisible.value = false
       fetchKeywords()
     } else {
@@ -309,9 +344,7 @@ const handleDialogClose = () => {
 }
 
 onMounted(() => {
-  const currentRole = localStorage.getItem('current_role') || 'ROLE_TEACHER'
-  const rolePrefix = currentRole === 'ROLE_TEACHER' ? 'teacher_' : ''
-  const id = localStorage.getItem(rolePrefix + 'userId_' + currentRole) || localStorage.getItem('teacherId')
+  const id = authStore.user?.id
   if (id) {
     counselorId.value = parseInt(id)
   }
@@ -552,5 +585,50 @@ onMounted(() => {
   justify-content: center;
   width: 16px;
   height: 16px;
+}
+
+@media (max-width: 768px) {
+  .page-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .page-title {
+    font-size: 22px;
+  }
+
+  .header-illustration {
+    display: none;
+  }
+
+  .search-card {
+    padding: 16px 18px;
+  }
+
+  .search-row :deep(.el-form-item) {
+    width: 100%;
+    margin-right: 0;
+  }
+
+  .search-actions {
+    margin-left: 0;
+  }
+
+  .search-actions :deep(.el-button) {
+    width: 100%;
+    margin-left: 0;
+    margin-right: 0;
+  }
+
+  .stats-summary {
+    flex-direction: column;
+    gap: 12px;
+    padding: 16px 18px;
+  }
+
+  .keywords-grid {
+    grid-template-columns: 1fr;
+    padding: 16px;
+  }
 }
 </style>

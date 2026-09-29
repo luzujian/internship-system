@@ -1,0 +1,56 @@
+# 白名单：只提交系统运行必需文件
+/*
+!/README.md
+!/.gitignore
+!/AGENTS.md
+!/backend/
+!/frontend/
+!/必须四人都拉取过最新代码才能开始修改项目
+
+# 依赖
+**/node_modules/
+**/__pycache__/
+
+# Local runtime data
+backend/backups/
+backend/.env
+**/.my.cnf
+
+# 编译产物
+backend/target/
+frontend/dist/
+frontend/dist.tar.gz
+
+# 非运行必需的一次性脚本与容器配置
+backend/Dockerfile
+frontend/Dockerfile
+**/.dockerignore
+backend/package.json
+backend/package-lock.json
+backend/.env.example
+backend/.env.local
+frontend/compress*.mjs
+frontend/optimize-images.js
+frontend/update-imports.js
+frontend/scripts/
+backend/src/main/resources/sql/
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# 测试结果
+frontend/test-results/
+frontend/playwright-report/
+frontend/playwright-test-output.txt
+frontend/output/
+frontend/ai-verify/
+frontend/.playwright-cli/
+
+# 本地运行参数
+backend/*.args
+
+# 日志
+*.log
+*.log.err

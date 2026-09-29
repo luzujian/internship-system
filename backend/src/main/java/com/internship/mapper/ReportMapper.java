@@ -31,6 +31,10 @@ public interface ReportMapper {
      * @return 企业详情列表
      */
     List<CompanyDetailDTO> getCompanyDetails(@Param("offset") Integer offset, @Param("pageSize") Integer pageSize);
+
+    /** Company metadata remains schoolwide; admittedCount is restricted to these students. */
+    List<CompanyDetailDTO> getScopedCompanyDetails(@Param("offset") Integer offset,
+            @Param("pageSize") Integer pageSize, @Param("studentIds") List<Long> studentIds);
     
     /**
      * 获取企业入驻详情总数
@@ -45,12 +49,17 @@ public interface ReportMapper {
      * @return 学生实习详情列表
      */
     List<StudentInternshipDetailDTO> getStudentInternshipDetails(@Param("offset") Integer offset, @Param("pageSize") Integer pageSize);
+
+    List<StudentInternshipDetailDTO> getScopedStudentInternshipDetails(@Param("offset") Integer offset,
+            @Param("pageSize") Integer pageSize, @Param("studentIds") List<Long> studentIds);
     
     /**
      * 获取学生实习详情总数
      * @return 总数
      */
     Long getStudentInternshipDetailsCount();
+
+    Long getScopedStudentInternshipDetailsCount(@Param("studentIds") List<Long> studentIds);
     
     /**
      * 获取申请审核详情列表
@@ -59,6 +68,19 @@ public interface ReportMapper {
      * @return 申请审核详情列表
      */
     List<ApprovalDetailDTO> getApprovalDetails(@Param("offset") Integer offset, @Param("pageSize") Integer pageSize);
+
+    List<ApprovalDetailDTO> getScopedApprovalDetails(@Param("offset") Integer offset,
+            @Param("pageSize") Integer pageSize, @Param("studentIds") List<Long> studentIds,
+            @Param("includeCompany") boolean includeCompany);
+
+    Long getScopedApprovalDetailsCount(@Param("studentIds") List<Long> studentIds,
+            @Param("includeCompany") boolean includeCompany);
+
+    Long countScopedStudents(@Param("studentIds") List<Long> studentIds);
+
+    Long countScopedInternshipStudents(@Param("studentIds") List<Long> studentIds);
+
+    Long countScopedApplications(@Param("studentIds") List<Long> studentIds);
     
     /**
      * 获取申请审核详情总数

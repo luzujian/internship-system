@@ -38,7 +38,7 @@
     </resultMap>
     
     <select id="getCompanyTrendByQuarter" resultMap="CompanyTrendDTOResultMap">
-        SELECT 
+        SELECT
             CASE QUARTER(audit_time)
                 WHEN 1 THEN '第一季度'
                 WHEN 2 THEN '第二季度'
@@ -65,7 +65,7 @@
             cu.id,
             cu.company_name,
             cu.audit_time,
-            COALESCE(COUNT(p.id), 0) as position_count,
+            COALESCE(SUM(p.planned_recruit), 0) as position_count,
             COALESCE(SUM(p.recruited_count), 0) as admitted_count,
             CASE cu.status
                 WHEN 1 THEN '正常'
@@ -73,6 +73,29 @@
                 ELSE '未知'
             END as status,
             cu.company_tag
+        FROM company_users cu
+        LEFT JOIN position p ON cu.id = p.company_id
+        WHERE cu.audit_status = 1
+        GROUP BY cu.id, cu.company_name, cu.audit_time, cu.status, cu.company_tag
+        ORDER BY cu.audit_time DESC
+        LIMIT #{offset}, #{pageSize}
+    </select>
+
+    <select id="getScopedCompanyDetails" resultMap="CompanyDetailDTOResultMap">
+        SELECT cu.id, cu.company_name, cu.audit_time,
+               COALESCE(SUM(p.planned_recruit), 0) AS position_count,
+               COALESCE((SELECT COUNT(DISTINCT a.student_id)
+                         FROM internship_stage_assignment a
+                         WHERE a.company_id = cu.id AND a.status = 'CONFIRMED' AND a.current_flag = 1
+                         <choose>
+                             <when test="studentIds != null and studentIds.size() > 0">
+                                 AND a.student_id IN
+                                 <foreach collection="studentIds" item="sid" open="(" separator="," close=")">#{sid}</foreach>
+                             </when>
+                             <otherwise>AND 1 = 0</otherwise>
+                         </choose>), 0) AS admitted_count,
+               CASE cu.status WHEN 1 THEN '正常' WHEN 0 THEN '已禁用' ELSE '未知' END AS status,
+               cu.company_tag
         FROM company_users cu
         LEFT JOIN position p ON cu.id = p.company_id
         WHERE cu.audit_status = 1
@@ -107,25 +130,84 @@
         ORDER BY m.id
         LIMIT #{offset}, #{pageSize}
     </select>
+
+    <select id="getScopedStudentInternshipDetails" resultMap="StudentInternshipDetailDTOResultMap">
+        SELECT m.id, d.name AS college, m.name AS major_name,
+               COUNT(DISTINCT su.id) AS total_count,
+               COUNT(DISTINCT CASE WHEN sis.status IN (2, 3, 4) THEN su.id END) AS internship_count,
+               ROUND(COUNT(DISTINCT CASE WHEN sis.status IN (2, 3, 4) THEN su.id END) * 100.0
+                     / COUNT(DISTINCT su.id), 1) AS internship_rate
+        FROM major m
+        LEFT JOIN department d ON m.department_id = d.id
+        JOIN student_users su ON m.id = su.major_id
+        <choose>
+            <when test="studentIds != null and studentIds.size() > 0">
+                AND su.id IN
+                <foreach collection="studentIds" item="sid" open="(" separator="," close=")">#{sid}</foreach>
+            </when>
+            <otherwise>AND 1 = 0</otherwise>
+        </choose>
+        LEFT JOIN student_internship_status sis ON su.id = sis.student_id
+        GROUP BY m.id, d.name, m.name
+        ORDER BY m.id
+        LIMIT #{offset}, #{pageSize}
+    </select>
     
     <select id="getStudentInternshipDetailsCount" resultType="java.lang.Long">
         SELECT COUNT(DISTINCT m.id)
         FROM major m
     </select>
+
+    <select id="getScopedStudentInternshipDetailsCount" resultType="java.lang.Long">
+        SELECT COUNT(DISTINCT su.major_id) FROM student_users su
+        <where>
+            <choose>
+                <when test="studentIds != null and studentIds.size() > 0">
+                    su.id IN
+                    <foreach collection="studentIds" item="sid" open="(" separator="," close=")">#{sid}</foreach>
+                </when>
+                <otherwise>1 = 0</otherwise>
+            </choose>
+        </where>
+    </select>
+
+    <select id="countScopedStudents" resultType="java.lang.Long">
+        SELECT COUNT(*) FROM student_users su
+        <where>
+            <choose>
+                <when test="studentIds != null and studentIds.size() > 0">
+                    su.id IN
+                    <foreach collection="studentIds" item="sid" open="(" separator="," close=")">#{sid}</foreach>
+                </when>
+                <otherwise>1 = 0</otherwise>
+            </choose>
+        </where>
+    </select>
+
+    <select id="countScopedInternshipStudents" resultType="java.lang.Long">
+        SELECT COUNT(DISTINCT sis.student_id) FROM student_internship_status sis
+        WHERE sis.status IN (2, 3, 4)
+        <choose>
+            <when test="studentIds != null and studentIds.size() > 0">
+                AND sis.student_id IN
+                <foreach collection="studentIds" item="sid" open="(" separator="," close=")">#{sid}</foreach>
+            </when>
+            <otherwise>AND 1 = 0</otherwise>
+        </choose>
+    </select>
+
+    <select id="countScopedApplications" resultType="java.lang.Long">
+        SELECT COUNT(*) FROM student_application sa WHERE 1 = 1
+        <choose>
+            <when test="studentIds != null and studentIds.size() > 0">
+                AND sa.student_id IN
+                <foreach collection="studentIds" item="sid" open="(" separator="," close=")">#{sid}</foreach>
+            </when>
+            <otherwise>AND 1 = 0</otherwise>
+        </choose>
+    </select>
     
-    <select id="getApprovalDetails" resultMap="ApprovalDetailDTOResultMap">
-        SELECT 
-            id,
-            type,
-            total_count,
-            COALESCE(approved_count, 0) as approved_count,
-            COALESCE(rejected_count, 0) as rejected_count,
-            CASE 
-                WHEN total_count > 0 
-                THEN ROUND(COALESCE(approved_count, 0) * 100.0 / total_count, 1)
-                ELSE 0 
-            END as approval_rate
-        FROM (
+    <sql id="globalApprovalDetailRows">
             SELECT 
                 1 as id,
                 '自主实习申请' as type,
@@ -165,13 +247,96 @@
                 SUM(CASE WHEN audit_status = 1 THEN 1 ELSE 0 END) as approved_count,
                 SUM(CASE WHEN audit_status = 2 THEN 1 ELSE 0 END) as rejected_count
             FROM company_users
+    </sql>
+
+    <select id="getApprovalDetails" resultMap="ApprovalDetailDTOResultMap">
+        SELECT
+            id,
+            type,
+            total_count,
+            COALESCE(approved_count, 0) as approved_count,
+            COALESCE(rejected_count, 0) as rejected_count,
+            CASE
+                WHEN total_count > 0
+                THEN ROUND(COALESCE(approved_count, 0) * 100.0 / total_count, 1)
+                ELSE 0
+            END as approval_rate
+        FROM (
+            <include refid="globalApprovalDetailRows"/>
         ) as approval_data
         ORDER BY id
         LIMIT #{offset}, #{pageSize}
     </select>
 
+    <sql id="reportStudentScope">
+        <choose>
+            <when test="studentIds != null and studentIds.size() > 0">
+                AND sa.student_id IN
+                <foreach collection="studentIds" item="sid" open="(" separator="," close=")">#{sid}</foreach>
+            </when>
+            <otherwise>AND 1 = 0</otherwise>
+        </choose>
+    </sql>
+
+    <sql id="scopedApprovalDetailRows">
+            SELECT 1 AS id, '自主实习申请' AS type, COUNT(*) AS total_count,
+                   SUM(CASE WHEN sa.status = 'approved' THEN 1 ELSE 0 END) AS approved_count,
+                   SUM(CASE WHEN sa.status = 'rejected' THEN 1 ELSE 0 END) AS rejected_count
+            FROM student_application sa
+            WHERE sa.application_type IN ('selfPractice', '自主实习')
+            <include refid="reportStudentScope"/>
+
+            UNION ALL
+
+            SELECT 2 AS id, '单位变更申请' AS type, COUNT(*) AS total_count,
+                   SUM(CASE WHEN sa.status = 'approved' THEN 1 ELSE 0 END) AS approved_count,
+                   SUM(CASE WHEN sa.status = 'rejected' THEN 1 ELSE 0 END) AS rejected_count
+            FROM student_application sa
+            WHERE sa.application_type IN ('unitChange', '岗位变更')
+            <include refid="reportStudentScope"/>
+
+            UNION ALL
+
+            SELECT 3 AS id, '考研延迟申请' AS type, COUNT(*) AS total_count,
+                   SUM(CASE WHEN sa.status = 'approved' THEN 1 ELSE 0 END) AS approved_count,
+                   SUM(CASE WHEN sa.status = 'rejected' THEN 1 ELSE 0 END) AS rejected_count
+            FROM student_application sa
+            WHERE sa.application_type = 'delay'
+            <include refid="reportStudentScope"/>
+
+            <if test="includeCompany">
+                UNION ALL
+                SELECT 4 AS id, '企业注册审核' AS type, COUNT(*) AS total_count,
+                       SUM(CASE WHEN audit_status = 1 THEN 1 ELSE 0 END) AS approved_count,
+                       SUM(CASE WHEN audit_status = 2 THEN 1 ELSE 0 END) AS rejected_count
+                FROM company_users
+            </if>
+    </sql>
+
+    <select id="getScopedApprovalDetails" resultMap="ApprovalDetailDTOResultMap">
+        SELECT id, type, total_count,
+               COALESCE(approved_count, 0) AS approved_count,
+               COALESCE(rejected_count, 0) AS rejected_count,
+               CASE WHEN total_count > 0
+                    THEN ROUND(COALESCE(approved_count, 0) * 100.0 / total_count, 1)
+                    ELSE 0 END AS approval_rate
+        FROM (
+            <include refid="scopedApprovalDetailRows"/>
+        ) AS approval_data
+        ORDER BY id
+        LIMIT #{offset}, #{pageSize}
+    </select>
+
     <select id="getApprovalDetailsCount" resultType="java.lang.Long">
-        SELECT 4
+        SELECT COUNT(*) FROM (
+            <include refid="globalApprovalDetailRows"/>
+        ) AS approval_data
+    </select>
+
+    <select id="getScopedApprovalDetailsCount" resultType="java.lang.Long">
+        SELECT COUNT(*) FROM (
+            <include refid="scopedApprovalDetailRows"/>
+        ) AS approval_data
     </select>
     
     <select id="getResourceDownloads" resultType="java.lang.Integer">

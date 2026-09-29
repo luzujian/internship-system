@@ -1,6 +1,7 @@
 package com.internship.controller;
 
 
+import com.internship.agent.business.AgentResponseStandard;
 import com.internship.config.DynamicChatClientFactory;
 import com.internship.service.JobRecommendationAgentService;
 import org.springframework.ai.chat.client.ChatClient;
@@ -26,6 +27,22 @@ import org.slf4j.LoggerFactory;
 @RestController
 @RequestMapping("/api/ai")
 public class AIChatController {
+    @Autowired private com.internship.agent.business.LegacyAiAccessPolicy legacyAccess;
+    @Autowired private com.internship.agent.business.LegacyAiRequestLimiter requestLimiter;
+    private final java.util.concurrent.ExecutorService recommendationExecutor = java.util.concurrent.Executors.newFixedThreadPool(8, task -> {
+        Thread thread = new Thread(task, "legacy-ai-recommendation"); thread.setDaemon(true); return thread;
+    });
+    @jakarta.annotation.PreDestroy public void shutdown() { recommendationExecutor.shutdownNow(); }
+
+    private void validateRequest(Map<String, Object> request) {
+        if (!(request.get("message") instanceof String message) || message.isBlank() || message.length() > 4000
+                || request.toString().length() > 20000) {
+            throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.BAD_REQUEST, "AI 请求内容过长或为空");
+        }
+    }
+    private String actorRole(String role) {
+        return role.startsWith("ROLE_TEACHER") ? "teacher" : role.replace("ROLE_", "").toLowerCase(java.util.Locale.ROOT);
+    }
 
     private final DynamicChatClientFactory chatClientFactory;
     private final JobRecommendationAgentService jobRecommendationAgentService;
@@ -52,13 +69,13 @@ public class AIChatController {
         if (role == null) role = "admin";
         switch (role) {
             case "student":
-                return securityConstraints + " 你的服务对象是学生，帮助解答实习申请、岗位搜索、实习记录相关问题。";
+                return securityConstraints + " 你的服务对象是学生，帮助解答实习申请、岗位搜索、实习记录相关问题。" + AgentResponseStandard.PROMPT;
             case "teacher":
-                return securityConstraints + " 你的服务对象是教师，帮助解答学生管理、审核流程、数据统计相关问题。";
+                return securityConstraints + " 你的服务对象是教师，帮助解答学生管理、审核流程、数据统计相关问题。" + AgentResponseStandard.PROMPT;
             case "company":
-                return securityConstraints + " 你的服务对象是企业用户，帮助解答岗位发布、申请管理、实习生管理相关问题。";
+                return securityConstraints + " 你的服务对象是企业用户，帮助解答岗位发布、申请管理、实习生管理相关问题。" + AgentResponseStandard.PROMPT;
             default:
-                return securityConstraints + " 你的服务对象是系统管理员，帮助解答系统管理、数据导出、配置管理相关问题。";
+                return securityConstraints + " 你的服务对象是系统管理员，帮助解答系统管理、数据导出、配置管理相关问题。" + AgentResponseStandard.PROMPT;
         }
     }
 
@@ -66,12 +83,13 @@ public class AIChatController {
         String modelCode;
         if (model != null && model.equals("deepseek-reasoner")) {
             modelCode = "deepseek-reasoner";
-        } else if (model != null && model.equals("deepseek-v4-flash")) {
-            modelCode = "deepseek-v4-flash";
+        } else if (model != null && (model.equals("deepseek-v4-flash") || model.equals("deepseek-flash"))) {
+            // deepseek-v4-flash 已下线，统一使用 v4.1 (deepseek-flash)，旧配置值作为别名兼容
+            modelCode = "deepseek-flash";
         } else if (model != null && model.equals("deepseek-v4-pro")) {
             modelCode = "deepseek-v4-pro";
         } else {
-            modelCode = "deepseek-chat";
+            modelCode = "deepseek-flash";
         }
         String systemPrompt = getSystemPromptByRole(role);
         return chatClientFactory.createChatClient(modelCode, systemPrompt);
@@ -90,16 +108,20 @@ public class AIChatController {
 
     @PostMapping("/chat")
     public ResponseEntity<Map<String, Object>> chat(@RequestBody Map<String, Object> request) {
+        var actor = legacyAccess.require();
+        validateRequest(request);
+        String authenticatedUsername = com.internship.utils.CurrentHolder.getUser().getUsername();
+        var lease = requestLimiter.acquire(actor.role() + ":" + actor.id());
         try {
             String userMessage = (String) request.get("message");
             List<Map<String, String>> context = (List<Map<String, String>>) request.get("context");
             String model = (String) request.get("model");
-            String role = (String) request.get("role");
+            String role = actorRole(actor.role());
 
             if (isJobRecommendationRequest(userMessage, role)) {
                 Map<String, Object> result = jobRecommendationAgentService.processJobRecommendation(
                     userMessage,
-                    (String) request.get("username"),
+                    authenticatedUsername,
                     model
                 );
                 return ResponseEntity.ok(result);
@@ -126,31 +148,38 @@ public class AIChatController {
             errorResponse.put("timestamp", System.currentTimeMillis());
 
             return ResponseEntity.status(500).body(errorResponse);
-        }
+        } finally { com.internship.agent.business.LegacyAiRequestLimiter.release(lease); }
     }
 
     @PostMapping(value = "/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter streamChat(@RequestBody Map<String, Object> request) {
+        var actor = legacyAccess.require();
+        validateRequest(request);
+        String authenticatedUsername = com.internship.utils.CurrentHolder.getUser().getUsername();
+        var lease = requestLimiter.acquire(actor.role() + ":" + actor.id());
+        var subscription = reactor.core.Disposables.swap();
         SseEmitter emitter = new SseEmitter(120_000L);
 
         emitters.add(emitter);
 
-        emitter.onCompletion(() -> emitters.remove(emitter));
+        emitter.onCompletion(() -> { emitters.remove(emitter); subscription.dispose(); });
+        emitter.onError(error -> subscription.dispose());
         emitter.onTimeout(() -> {
+            subscription.dispose();
             emitter.complete();
             emitters.remove(emitter);
         });
 
         try {
             String userMessage = (String) request.get("message");
-            String role = (String) request.get("role");
+            String role = actorRole(actor.role());
 
             if (isJobRecommendationRequest(userMessage, role)) {
-                new Thread(() -> {
+                recommendationExecutor.execute(() -> {
                     try {
                         Map<String, Object> result = jobRecommendationAgentService.processJobRecommendation(
                             userMessage,
-                            (String) request.get("username"),
+                            authenticatedUsername,
                             (String) request.get("model")
                         );
 
@@ -182,8 +211,9 @@ public class AIChatController {
                         }
                     } finally {
                         emitter.complete();
+                        com.internship.agent.business.LegacyAiRequestLimiter.release(lease);
                     }
-                }).start();
+                });
                 return emitter;
             }
 
@@ -196,7 +226,7 @@ public class AIChatController {
                     .stream()
                     .content();
 
-            aiResponseStream.subscribe(
+            subscription.update(aiResponseStream.doFinally(signal -> com.internship.agent.business.LegacyAiRequestLimiter.release(lease)).subscribe(
                     chunk -> {
                         try {
                             Map<String, Object> data = new HashMap<>();
@@ -237,9 +267,10 @@ public class AIChatController {
                             emitter.complete();
                         }
                     }
-            );
+            ));
 
         } catch (Exception e) {
+            com.internship.agent.business.LegacyAiRequestLimiter.release(lease);
             try {
                 Map<String, Object> errorData = new HashMap<>();
                 errorData.put("type", "error");

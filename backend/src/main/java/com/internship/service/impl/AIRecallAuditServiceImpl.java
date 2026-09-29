@@ -4,7 +4,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.internship.config.DynamicChatClientFactory;
 import com.internship.entity.AiAuditRecord;
-import com.internship.entity.CompanyUser;
 import com.internship.entity.StudentInternshipStatus;
 import com.internship.enums.AuditDecision;
 import com.internship.enums.AuditType;
@@ -12,7 +11,6 @@ import com.internship.enums.RiskLevel;
 import com.internship.enums.TargetType;
 import com.internship.exception.BusinessException;
 import com.internship.mapper.AiAuditRecordMapper;
-import com.internship.mapper.CompanyUserMapper;
 import com.internship.mapper.StudentInternshipStatusMapper;
 import com.internship.service.AIRecallAuditService;
 import com.internship.service.SystemConfigService;
@@ -30,40 +28,6 @@ import java.util.regex.Pattern;
 @Slf4j
 @Service
 public class AIRecallAuditServiceImpl implements AIRecallAuditService {
-
-    private static final String AI_AUDIT_SYSTEM_PROMPT = 
-        "你是实习管理系统的AI审核助手，负责审核企业提交的撤回申请。\n\n" +
-        "你的任务是判断撤回申请是否合理，并给出审核决策。\n\n" +
-        "审核标准（严格）：\n" +
-        "1. 以下撤回原因直接批准（无需人工审核）：\n" +
-        "   - 联系人姓名填写错误\n" +
-        "   - 联系电话填写错误\n" +
-        "   - 联系邮箱填写错误\n" +
-        "   - 手机号填写错误\n" +
-        "   - 企业地址填写错误\n" +
-        "   - 企业介绍内容不完整\n" +
-        "   - 营业执照图片不清晰，需要重新上传\n" +
-        "   - 法人身份证照片缺失，需要补充上传\n" +
-        "   - 实习基地牌匾照片未上传，需要补充\n\n" +
-        "2. 以下撤回原因需要人工审核（转管理员审核）：\n" +
-        "   - 等待时间太长\n" +
-        "   - 不想要了、放弃申请\n" +
-        "   - 系统问题、系统错误\n" +
-        "   - 其他原因（需要人工判断）\n\n" +
-        "3. 高风险撤回（如：重新注册、换个账号）→ 拒绝，转人工审核\n\n" +
-        "审核原则：\n" +
-        "- 对于标准化的撤回原因（如：联系人姓名填写错误、联系电话填写错误等），直接批准\n" +
-        "- 对于其他原因或模糊不清的原因，转人工审核\n" +
-        "- 拒绝高风险撤回申请\n\n" +
-        "请以JSON格式返回审核结果，格式如下：\n" +
-        "{\n" +
-        "  \"approved\": true/false,\n" +
-        "  \"reason\": \"审核理由\",\n" +
-        "  \"riskLevel\": \"LOW/MEDIUM/HIGH\",\n" +
-        "  \"needManualReview\": true/false,\n" +
-        "  \"aiRemark\": \"AI审核备注\"\n" +
-        "}\n\n" +
-        "请保持客观、公正的审核态度，确保审核决策的准确性。";
 
     private static final String AI_STUDENT_AUDIT_SYSTEM_PROMPT = 
         "你是实习管理系统的AI审核助手，负责审核学生提交的实习确认表撤回申请。\n\n" +
@@ -89,7 +53,6 @@ public class AIRecallAuditServiceImpl implements AIRecallAuditService {
         "请保持客观、公正的审核态度，对学生的撤回申请给予更多理解和支持。";
 
     private final DynamicChatClientFactory chatClientFactory;
-    private final CompanyUserMapper companyUserMapper;
     private final StudentInternshipStatusMapper studentInternshipStatusMapper;
     private final AiAuditRecordMapper aiAuditRecordMapper;
     private final SystemConfigService systemConfigService;
@@ -98,68 +61,14 @@ public class AIRecallAuditServiceImpl implements AIRecallAuditService {
     @Autowired
     public AIRecallAuditServiceImpl(
             DynamicChatClientFactory chatClientFactory,
-            CompanyUserMapper companyUserMapper,
             StudentInternshipStatusMapper studentInternshipStatusMapper,
             AiAuditRecordMapper aiAuditRecordMapper,
             SystemConfigService systemConfigService) {
         this.chatClientFactory = chatClientFactory;
-        this.companyUserMapper = companyUserMapper;
         this.studentInternshipStatusMapper = studentInternshipStatusMapper;
         this.aiAuditRecordMapper = aiAuditRecordMapper;
         this.systemConfigService = systemConfigService;
         this.objectMapper = new ObjectMapper();
-    }
-
-    @Override
-    public Map<String, Object> autoAuditRecall(Long companyId, String recallReason) {
-        log.info("开始AI自动审核撤回申请，企业ID: {}, 撤回原因: {}", companyId, recallReason);
-
-        try {
-            CompanyUser companyUser = companyUserMapper.findById(companyId);
-            if (companyUser == null) {
-                throw new BusinessException("企业不存在");
-            }
-
-            Map<String, Object> result = new HashMap<>();
-            long startTime = System.currentTimeMillis();
-
-            try {
-                Map<String, Object> auditDecision = performAIAudit(recallReason, companyUser);
-                long duration = System.currentTimeMillis() - startTime;
-
-                result.putAll(auditDecision);
-                result.put("auditMethod", "AI");
-                result.put("modelUsed", "deepseek-reasoner");
-                result.put("auditDuration", duration);
-
-                recordAuditResult(result, companyId, "COMPANY", "deepseek-reasoner", duration);
-
-                log.info("AI审核完成，企业ID: {}, 审核结果: {}, 耗时: {}ms", 
-                    companyId, auditDecision.get("auditDecision"), duration);
-
-            } catch (Exception e) {
-                long duration = System.currentTimeMillis() - startTime;
-                log.error("AI审核失败，转人工审核，企业ID: {}, 错误: {}", companyId, e.getMessage(), e);
-
-                result.put("approved", false);
-                result.put("needManualReview", true);
-                result.put("auditDecision", "MANUAL");
-                result.put("reason", "AI审核失败，转人工审核");
-                result.put("riskLevel", "MEDIUM");
-                result.put("aiRemark", "AI审核异常: " + e.getMessage());
-                result.put("auditMethod", "AI_FAILED");
-                result.put("modelUsed", "deepseek-reasoner");
-                result.put("auditDuration", duration);
-
-                recordAuditResult(result, companyId, "COMPANY", "deepseek-reasoner", duration);
-            }
-
-            return result;
-
-        } catch (Exception e) {
-            log.error("AI审核撤回申请失败: {}", e.getMessage(), e);
-            throw new BusinessException("AI审核失败: " + e.getMessage());
-        }
     }
 
     @Override
@@ -181,10 +90,10 @@ public class AIRecallAuditServiceImpl implements AIRecallAuditService {
 
                 result.putAll(auditDecision);
                 result.put("auditMethod", "AI");
-                result.put("modelUsed", "deepseek-reasoner");
+                result.put("modelUsed", chatClientFactory.resolveModelCode("deepseek-reasoner"));
                 result.put("auditDuration", duration);
 
-                recordAuditResult(result, studentInternshipStatusId, "STUDENT", "deepseek-reasoner", duration);
+                recordAuditResult(result, studentInternshipStatusId, "STUDENT", chatClientFactory.resolveModelCode("deepseek-reasoner"), duration);
 
                 log.info("AI审核完成，实习状态ID: {}, 审核结果: {}, 耗时: {}ms", 
                     studentInternshipStatusId, auditDecision.get("auditDecision"), duration);
@@ -200,10 +109,10 @@ public class AIRecallAuditServiceImpl implements AIRecallAuditService {
                 result.put("riskLevel", "MEDIUM");
                 result.put("aiRemark", "AI审核异常: " + e.getMessage());
                 result.put("auditMethod", "AI_FAILED");
-                result.put("modelUsed", "deepseek-reasoner");
+                result.put("modelUsed", chatClientFactory.resolveModelCode("deepseek-reasoner"));
                 result.put("auditDuration", duration);
 
-                recordAuditResult(result, studentInternshipStatusId, "STUDENT", "deepseek-reasoner", duration);
+                recordAuditResult(result, studentInternshipStatusId, "STUDENT", chatClientFactory.resolveModelCode("deepseek-reasoner"), duration);
             }
 
             return result;
@@ -211,17 +120,6 @@ public class AIRecallAuditServiceImpl implements AIRecallAuditService {
         } catch (Exception e) {
             log.error("AI审核学生撤回申请失败: {}", e.getMessage(), e);
             throw new BusinessException("AI审核失败: " + e.getMessage());
-        }
-    }
-
-    @Override
-    public boolean isAIRecallAuditEnabled() {
-        try {
-            String enabled = systemConfigService.getConfigValue("ai_recall_audit_enabled");
-            return "true".equalsIgnoreCase(enabled);
-        } catch (Exception e) {
-            log.error("获取AI审核配置失败: {}", e.getMessage(), e);
-            return false;
         }
     }
 
@@ -269,45 +167,6 @@ public class AIRecallAuditServiceImpl implements AIRecallAuditService {
             log.error("获取AI审核统计失败: {}", e.getMessage(), e);
             return new HashMap<>();
         }
-    }
-
-    private Map<String, Object> performAIAudit(String recallReason, CompanyUser companyUser) {
-        Map<String, Object> result = new HashMap<>();
-        result.put("recallReason", recallReason);
-
-        try {
-            int timeout = getAuditTimeout();
-            int maxRetry = getMaxRetry();
-
-            for (int i = 0; i < maxRetry; i++) {
-                try {
-                    Map<String, Object> aiResult = callAIWithTimeout(recallReason, companyUser, timeout);
-                    result.putAll(aiResult);
-                    break;
-                } catch (TimeoutException e) {
-                    log.warn("AI审核超时（第{}次尝试），转人工审核", i + 1);
-                    if (i == maxRetry - 1) {
-                        result.put("approved", false);
-                        result.put("needManualReview", true);
-                        result.put("auditDecision", "MANUAL");
-                        result.put("reason", "AI审核超时，转人工审核");
-                        result.put("riskLevel", "MEDIUM");
-                        result.put("aiRemark", "AI审核超时");
-                    }
-                } catch (Exception e) {
-                    log.warn("AI审核失败（第{}次尝试）: {}", i + 1, e.getMessage());
-                    if (i == maxRetry - 1) {
-                        throw e;
-                    }
-                    Thread.sleep(1000);
-                }
-            }
-
-        } catch (Exception e) {
-            throw new BusinessException("AI审核失败: " + e.getMessage());
-        }
-
-        return result;
     }
 
     private Map<String, Object> performStudentAIAudit(String recallReason, StudentInternshipStatus status) {
@@ -365,7 +224,7 @@ public class AIRecallAuditServiceImpl implements AIRecallAuditService {
 
     private Map<String, Object> callStudentAIModel(String recallReason, StudentInternshipStatus status) {
         try {
-            ChatClient client = chatClientFactory.createChatClient("deepseek-reasoner", AI_STUDENT_AUDIT_SYSTEM_PROMPT);
+            ChatClient client = chatClientFactory.createChatClient(chatClientFactory.resolveModelCode("deepseek-reasoner"), AI_STUDENT_AUDIT_SYSTEM_PROMPT);
 
             String userPrompt = buildStudentUserPrompt(recallReason, status);
 
@@ -374,7 +233,8 @@ public class AIRecallAuditServiceImpl implements AIRecallAuditService {
                     .call()
                     .content();
 
-            log.debug("AI学生审核响应: {}", aiResponse);
+            log.debug("AI 学生审核响应已返回：length={}",
+                    aiResponse != null ? aiResponse.length() : 0);
 
             return parseAIResponse(aiResponse);
 
@@ -402,61 +262,6 @@ public class AIRecallAuditServiceImpl implements AIRecallAuditService {
             status.getPositionId(),
             status.getStatus() == 2 ? "已确认" : "其他",
             status.getUpdateTime(),
-            recallReason
-        );
-    }
-
-    private Map<String, Object> callAIWithTimeout(String recallReason, CompanyUser companyUser, int timeout) 
-            throws Exception {
-        CompletableFuture<Map<String, Object>> future = CompletableFuture.supplyAsync(() -> {
-            return callAIModel(recallReason, companyUser);
-        });
-
-        try {
-            return future.get(timeout, TimeUnit.SECONDS);
-        } catch (TimeoutException e) {
-            future.cancel(true);
-            throw e;
-        }
-    }
-
-    private Map<String, Object> callAIModel(String recallReason, CompanyUser companyUser) {
-        try {
-            ChatClient client = chatClientFactory.createChatClient("deepseek-reasoner", AI_AUDIT_SYSTEM_PROMPT);
-
-            String userPrompt = buildUserPrompt(recallReason, companyUser);
-
-            String aiResponse = client.prompt()
-                    .user(userPrompt)
-                    .call()
-                    .content();
-
-            log.debug("AI审核响应: {}", aiResponse);
-
-            return parseAIResponse(aiResponse);
-
-        } catch (Exception e) {
-            log.error("调用AI模型失败: {}", e.getMessage(), e);
-            throw new BusinessException("调用AI模型失败: " + e.getMessage());
-        }
-    }
-
-    private String buildUserPrompt(String recallReason, CompanyUser companyInfo) {
-        return String.format(
-            "请审核以下撤回申请：\n\n" +
-            "企业信息：\n" +
-            "- 企业名称：%s\n" +
-            "- 联系人：%s\n" +
-            "- 联系电话：%s\n" +
-            "- 联系邮箱：%s\n" +
-            "- 申请时间：%s\n\n" +
-            "撤回原因：%s\n\n" +
-            "请根据撤回原因和企业信息，判断是否批准撤回申请。",
-            companyInfo.getCompanyName(),
-            companyInfo.getContactPerson(),
-            companyInfo.getContactPhone(),
-            companyInfo.getContactEmail(),
-            companyInfo.getApplyTime(),
             recallReason
         );
     }

@@ -5,6 +5,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
+import lombok.ToString;
 import java.util.Date;
 
 /**
@@ -19,6 +20,7 @@ public class User {
     private String username;
     
     // 密码字段在DTO中验证，实体类不需要验证注解，防止密码被序列化
+    @ToString.Exclude
     private String password;
     
     @NotBlank(message = "角色不能为空")

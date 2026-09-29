@@ -18,7 +18,6 @@ export interface Company {
   hasReceivedInterns?: number
   currentEmployeesCount?: number
   acceptBackup?: number
-  maxBackupStudents?: number
   companyTag?: string
   registerTime?: string
   applyTime?: string
@@ -77,6 +76,7 @@ const companyService = {
     companyName?: string
     status?: number
     companyTag?: string
+    industry?: string
   }) => {
     return request.get<Company[]>('/teacher/companies', { params }) as unknown as AxiosResponseWithMeta<Company[]>
   },
@@ -199,8 +199,12 @@ const companyService = {
   /**
    * 重置企业密码
    */
-  resetCompanyPassword: (id: number, password: string) => {
-    return request.post(`/admin/companies/${id}/reset-password`, { password })
+  resetCompanyPassword: (id: number) => {
+    return request.post(`/admin/companies/${id}/reset-password`, {})
+  },
+
+  resetAllCompanyPasswords: () => {
+    return request.post('/admin/companies/reset-password/all', {})
   },
 
   /**

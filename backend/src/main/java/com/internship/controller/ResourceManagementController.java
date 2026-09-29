@@ -1,5 +1,6 @@
 package com.internship.controller;
 
+import com.internship.anno.Log;
 import com.internship.entity.Resource;
 import com.internship.entity.Result;
 import com.internship.service.ResourceManagementService;
@@ -61,6 +62,7 @@ public class ResourceManagementController {
     }
     
     @PostMapping("/upload")
+    @Log(operationType = "UPLOAD", module = "RESOURCE_MANAGEMENT", description = "上传资源", riskLevel = "MEDIUM")
     public Result uploadResource(
             @RequestParam("file") MultipartFile file,
             @RequestParam("name") String name,
@@ -88,6 +90,7 @@ public class ResourceManagementController {
     }
     
     @PutMapping("/update")
+    @Log(operationType = "UPDATE", module = "RESOURCE_MANAGEMENT", description = "更新资源", riskLevel = "LOW")
     public Result updateResource(@RequestBody Resource resource) {
         try {
             resourceManagementService.updateResource(resource);
@@ -99,6 +102,7 @@ public class ResourceManagementController {
     }
     
     @DeleteMapping("/delete/{id}")
+    @Log(operationType = "DELETE", module = "RESOURCE_MANAGEMENT", description = "删除资源", riskLevel = "MEDIUM")
     public Result deleteResource(@PathVariable Long id) {
         try {
             resourceManagementService.deleteResource(id);
@@ -109,6 +113,7 @@ public class ResourceManagementController {
         }
     }
     
+    @Log(operationType = "DOWNLOAD", module = "RESOURCE_MANAGEMENT", description = "下载资源", riskLevel = "MEDIUM")
     @GetMapping("/download/{id}")
     public ResponseEntity<org.springframework.core.io.Resource> downloadResource(@PathVariable Long id) {
         try {
@@ -144,6 +149,7 @@ public class ResourceManagementController {
         }
     }
     
+    @Log(operationType = "READ", module = "RESOURCE_MANAGEMENT", description = "预览资源（敏感读取）", riskLevel = "MEDIUM")
     @GetMapping("/preview/{id}")
     public Result previewResource(@PathVariable Long id) {
         try {

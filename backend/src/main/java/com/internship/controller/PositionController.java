@@ -129,7 +129,7 @@ public class PositionController {
     @Log(operationType = "UPDATE", module = "POSITION_MANAGEMENT", description = "更新招聘岗位")
     @PutMapping("/{id}")
     @PreAuthorize("hasAnyRole('ADMIN', 'COMPANY') or hasAuthority('recruitment:edit')")
-    public Result updatePosition(@PathVariable Long id, @RequestBody Position position) {
+    public Result updatePosition(@PathVariable Long id, @RequestBody @Validated Position position) {
         log.info("更新岗位，ID: {}", id);
         try {
             // 安全校验：非管理员只能更新自己公司的岗位
@@ -142,7 +142,8 @@ public class PositionController {
                 .anyMatch(auth -> auth.getAuthority().equals("ROLE_ADMIN"));
             if (!isAdmin) {
                 Long currentCompanyId = CurrentHolder.getUserId();
-                if (currentCompanyId == null || !currentCompanyId.equals(existingPosition.getCompanyId())) {
+                if (!"ROLE_COMPANY".equals(CurrentHolder.getUserRole())
+                        || currentCompanyId == null || !currentCompanyId.equals(existingPosition.getCompanyId())) {
                     log.warn("企业用户尝试修改其他企业的岗位: companyId={}, positionId={}", currentCompanyId, id);
                     return Result.error("无权修改其他企业的岗位");
                 }
@@ -153,7 +154,11 @@ public class PositionController {
                 Integer recruitedCount = position.getRecruitedCount() != null ? position.getRecruitedCount() : 0;
                 position.setRemainingQuota(position.getPlannedRecruit() - recruitedCount);
             }
-            positionService.update(position);
+            if (isAdmin) {
+                positionService.update(position);
+            } else {
+                positionService.updateForCompany(position, CurrentHolder.getUserId());
+            }
             // 清除职位列表缓存
             positionCacheService.clearPositionsCache();
             // 推送更新到所有学生端
@@ -185,12 +190,17 @@ public class PositionController {
                 .anyMatch(auth -> auth.getAuthority().equals("ROLE_ADMIN"));
             if (!isAdmin) {
                 Long currentCompanyId = CurrentHolder.getUserId();
-                if (currentCompanyId == null || !currentCompanyId.equals(existingPosition.getCompanyId())) {
+                if (!"ROLE_COMPANY".equals(CurrentHolder.getUserRole())
+                        || currentCompanyId == null || !currentCompanyId.equals(existingPosition.getCompanyId())) {
                     log.warn("企业用户尝试删除其他企业的岗位: companyId={}, positionId={}", currentCompanyId, id);
                     return Result.error("无权删除其他企业的岗位");
                 }
             }
-            positionService.delete(id);
+            if (isAdmin) {
+                positionService.delete(id);
+            } else {
+                positionService.deleteForCompany(id, CurrentHolder.getUserId());
+            }
             // 清除职位列表缓存
             positionCacheService.clearPositionsCache();
             // 推送删除消息到所有学生端
@@ -217,7 +227,7 @@ public class PositionController {
     /**
      * 批量删除岗位
      */
-    @Log(operationType = "DELETE", module = "POSITION_MANAGEMENT", description = "批量删除招聘岗位")
+    @Log(operationType = "DELETE", module = "POSITION_MANAGEMENT", description = "批量删除招聘岗位", riskLevel = "HIGH", critical = true)
     @DeleteMapping("/batch")
     @PreAuthorize("hasAnyRole('ADMIN', 'COMPANY') or hasAuthority('recruitment:delete')")
     public Result batchDeletePositions(@RequestBody List<Long> ids) {
@@ -226,7 +236,17 @@ public class PositionController {
             if (ids == null || ids.isEmpty()) {
                 return Result.error("请选择要删除的岗位");
             }
-            int count = positionService.batchDelete(ids);
+            Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+            boolean isAdmin = authentication != null && authentication.getAuthorities().stream()
+                    .anyMatch(auth -> auth.getAuthority().equals("ROLE_ADMIN"));
+            int count;
+            if (isAdmin) {
+                count = positionService.batchDelete(ids);
+            } else if ("ROLE_COMPANY".equals(CurrentHolder.getUserRole()) && CurrentHolder.getUserId() != null) {
+                count = positionService.batchDeleteForCompany(ids, CurrentHolder.getUserId());
+            } else {
+                return Result.error("无权删除该岗位");
+            }
             // 清除职位列表缓存
             positionCacheService.clearPositionsCache();
             for (Long id : ids) {
@@ -292,6 +312,7 @@ public class PositionController {
 
     @PutMapping("/{id}/pause")
     @PreAuthorize("hasAnyRole('ADMIN', 'COMPANY') or hasAuthority('recruitment:edit')")
+    @Log(operationType = "UPDATE", module = "POSITION_MANAGEMENT", description = "暂停岗位招聘", riskLevel = "MEDIUM")
     public Result pausePosition(@PathVariable Long id) {
         log.info("暂停岗位招聘，岗位 ID: {}", id);
         try {
@@ -327,6 +348,7 @@ public class PositionController {
 
     @PutMapping("/{id}/resume")
     @PreAuthorize("hasAnyRole('ADMIN', 'COMPANY') or hasAuthority('recruitment:edit')")
+    @Log(operationType = "UPDATE", module = "POSITION_MANAGEMENT", description = "恢复岗位招聘", riskLevel = "MEDIUM")
     public Result resumePosition(@PathVariable Long id) {
         log.info("恢复岗位招聘，岗位 ID: {}", id);
         try {

@@ -66,7 +66,8 @@ public interface AnnouncementMapper {
                            @Param("status") String status,
                            @Param("publisher") String publisher,
                            @Param("excludePublisherRole") String excludePublisherRole,
-                           @Param("userId") String userId);
+                           @Param("userId") String userId,
+                           @Param("userType") String userType);
     
     /**
      * 根据ID列表查询通知公告
@@ -103,7 +104,10 @@ public interface AnnouncementMapper {
      * @param userId 当前用户ID，用于判断已读状态
      * @return 公告列表
      */
-    List<Announcement> getAnnouncementsForUser(@Param("userType") String userType, @Param("userInfo") String userInfo, @Param("userId") String userId);
+    List<Announcement> getAnnouncementsForUser(@Param("userType") String userType,
+                                              @Param("userInfo") String userInfo,
+                                              @Param("userId") String userId,
+                                              @Param("readerType") String readerType);
     
     /**
      * 增加公告阅读次数

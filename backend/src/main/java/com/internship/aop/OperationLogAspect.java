@@ -1,7 +1,6 @@
 package com.internship.aop;
 
 import com.internship.anno.Log;
-import com.internship.mapper.OperateLogMapper;
 import com.internship.entity.OperateLog;
 import com.internship.entity.AdminUser;
 import com.internship.entity.Result;
@@ -9,10 +8,12 @@ import com.internship.entity.StudentUser;
 import com.internship.entity.TeacherUser;
 import com.internship.entity.CompanyUser;
 import com.internship.service.AdminUserService;
+import com.internship.service.AuditLogService;
 import com.internship.service.StudentUserService;
 import com.internship.service.TeacherUserService;
 import com.internship.service.CompanyUserService;
 import com.internship.utils.CurrentHolder;
+import com.internship.utils.IpUtils;
 import com.internship.utils.JwtUtils;
 import io.jsonwebtoken.Claims;
 import lombok.extern.slf4j.Slf4j;
@@ -21,6 +22,7 @@ import org.aspectj.lang.annotation.Around;
 import org.aspectj.lang.annotation.Aspect;
 import org.aspectj.lang.reflect.MethodSignature;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
@@ -28,7 +30,6 @@ import org.springframework.web.context.request.ServletRequestAttributes;
 import jakarta.servlet.http.HttpServletRequest;
 
 import java.lang.reflect.Method;
-import java.util.Date;
 
 @Slf4j
 @Aspect
@@ -36,7 +37,7 @@ import java.util.Date;
 public class OperationLogAspect {
 
     @Autowired
-    private OperateLogMapper operateLogMapper;
+    private AuditLogService auditLogService;
 
     @Autowired
     private AdminUserService adminUserService;
@@ -51,20 +52,31 @@ public class OperationLogAspect {
     private CompanyUserService companyUserService;
 
     @Autowired
+    private com.internship.service.PasswordResetService passwordResetService;
+
+    @Autowired
     private JwtUtils jwtUtils;
 
     @Around("@annotation(com.internship.anno.Log)")
     public Object logOperation(ProceedingJoinPoint joinPoint) throws Throwable {
         Long userId = getCurrentUserId();
         String userRole = getCurrentUserRole();
-        String username = null;
+        String operatorName = null;
+        String operatorUsername = null;
         String ipAddress = getIpAddress();
 
         String originalAdminUsername = getOriginalAdminUsername();
         Boolean isReadOnly = isReadOnly();
 
         if (userId != null && originalAdminUsername != null) {
-            username = originalAdminUsername + " (切换角色)";
+            AdminUser originalAdmin = null;
+            try {
+                originalAdmin = adminUserService.findByUsername(originalAdminUsername);
+            } catch (Exception e) {
+                log.warn("获取原管理员信息失败：{}", e.getMessage());
+            }
+            operatorName = (originalAdmin != null ? originalAdmin.getName() : originalAdminUsername) + " (切换角色)";
+            operatorUsername = originalAdminUsername + " (切换角色)";
             userRole = "ADMIN";
         } else if (userId != null) {
             try {
@@ -72,32 +84,51 @@ public class OperationLogAspect {
                     if (userRole.equals("ROLE_STUDENT") || userRole.equals("STUDENT")) {
                         StudentUser studentUser = studentUserService.findById(userId);
                         if (studentUser != null) {
-                            username = studentUser.getName();
+                            operatorName = studentUser.getName();
+                            operatorUsername = studentUser.getUsername();
                         }
                     } else if (userRole.equals("ROLE_TEACHER") || userRole.startsWith("ROLE_TEACHER_") || userRole.equals("TEACHER")) {
                         TeacherUser teacherUser = teacherUserService.findById(userId);
                         if (teacherUser != null) {
-                            username = teacherUser.getName();
+                            operatorName = teacherUser.getName();
+                            operatorUsername = teacherUser.getUsername();
                         }
                     } else if (userRole.equals("ROLE_COMPANY") || userRole.equals("COMPANY")) {
                         CompanyUser companyUser = companyUserService.findById(userId);
                         if (companyUser != null) {
-                            username = companyUser.getCompanyName();
+                            operatorName = companyUser.getCompanyName();
+                            operatorUsername = companyUser.getUsername();
                         }
                     } else {
                         AdminUser adminUser = adminUserService.findById(userId);
                         if (adminUser != null) {
-                            username = adminUser.getUsername();
+                            operatorName = adminUser.getName();
+                            operatorUsername = adminUser.getUsername();
                         }
                     }
                 } else {
-                    AdminUser adminUser = adminUserService.findById(userId);
-                    if (adminUser != null) {
-                        username = adminUser.getUsername();
-                    }
+                        AdminUser adminUser = adminUserService.findById(userId);
+                        if (adminUser != null) {
+                            operatorName = adminUser.getName();
+                            operatorUsername = adminUser.getUsername();
+                        }
                 }
             } catch (Exception e) {
                 log.warn("获取操作人信息失败：{}", e.getMessage());
+            }
+        }
+
+        // 匿名自助操作兜底：无登录态（如忘记密码重置）时，以请求体中的账号标识作为操作人，避免操作人为空
+        if (operatorUsername == null) {
+            String claimedUsername = extractClaimedUsername(joinPoint);
+            if (claimedUsername != null) {
+                operatorUsername = claimedUsername;
+                operatorName = claimedUsername;
+                // 能归属到具体账号时补上角色（学生 / 教师 / 企业），归属失败则角色仍未知
+                String claimedRole = resolveClaimedRole(joinPoint, claimedUsername);
+                if (claimedRole != null) {
+                    userRole = claimedRole;
+                }
             }
         }
 
@@ -107,6 +138,9 @@ public class OperationLogAspect {
         String operationType = logAnnotation.operationType();
         String module = logAnnotation.module();
         String baseDescription = logAnnotation.description();
+        String riskLevel = logAnnotation.riskLevel();
+        String targetType = logAnnotation.targetType();
+        boolean critical = logAnnotation.critical();
 
         // 构建详细的操作描述
         String description = buildDetailedDescription(baseDescription, joinPoint, operationType);
@@ -115,46 +149,209 @@ public class OperationLogAspect {
             description = "[只读模式] " + description;
         }
 
+        // 目标对象ID：提取第一个数值型参数
+        String targetId = extractTargetId(joinPoint);
+
+        OperateLog attemptLog = new OperateLog();
+        attemptLog.setOperateAdminId(userId);
+        attemptLog.setOperatorName(operatorName);
+        attemptLog.setOperatorUsername(operatorUsername);
+        attemptLog.setOperatorRole(userRole != null && userRole.startsWith("ROLE_") ? userRole.substring(5) : userRole);
+        attemptLog.setIpAddress(ipAddress);
+        attemptLog.setOperationType(operationType);
+        attemptLog.setModule(module);
+        attemptLog.setDescription(description);
+        attemptLog.setRiskLevel(riskLevel);
+        attemptLog.setTargetType(targetType);
+        attemptLog.setTargetId(targetId);
+        attemptLog.setRealOperatorName(originalAdminUsername);
+        applyRequestContext(attemptLog);
+        applyClassTargets(attemptLog, joinPoint);
+
+        // 关键操作：审计不可用则禁止执行（ATTEMPTED 写入失败会抛异常）
+        if (critical) {
+            auditLogService.recordCriticalAttempt(attemptLog);
+        }
+
         Object result = null;
         String operationResult = "SUCCESS";
+        Throwable operationFailure = null;
+        long startMillis = System.currentTimeMillis();
 
         try {
             result = joinPoint.proceed();
 
-            if (result instanceof Result) {
-                Result resultObj = (Result) result;
+            if (result instanceof Result resultObj) {
                 if (resultObj.getCode() != null && resultObj.getCode() != 200) {
                     operationResult = "FAILURE";
-                    log.warn("操作返回失败结果：code={}, message={}", resultObj.getCode(), resultObj.getMessage());
+                    log.warn("操作返回失败结果：module={}, operationType={}, code={}",
+                            module, operationType, resultObj.getCode());
                 }
+            } else if (result instanceof ResponseEntity<?> responseEntity
+                    && !responseEntity.getStatusCode().is2xxSuccessful()) {
+                operationResult = "FAILURE";
+                log.warn("操作返回失败状态：module={}, operationType={}, status={}",
+                        module, operationType, responseEntity.getStatusCode().value());
             }
-        } catch (Exception e) {
+        } catch (Throwable e) {
             operationResult = "FAILURE";
-            log.error("操作执行失败：{}", e.getMessage(), e);
-            throw e;
+            operationFailure = e;
+            log.warn("操作执行失败：module={}, operationType={}, exceptionType={}",
+                    module, operationType, e.getClass().getSimpleName());
         }
 
         OperateLog olog = new OperateLog();
-        olog.setOperateAdminId(userId);
-        olog.setOperatorName(username);
-        olog.setOperatorUsername(username);
-        olog.setOperatorRole(userRole != null && userRole.startsWith("ROLE_") ? userRole.substring(5) : userRole);
-        olog.setIpAddress(ipAddress);
+        olog.setOperateAdminId(attemptLog.getOperateAdminId());
+        olog.setOperatorName(attemptLog.getOperatorName());
+        olog.setOperatorUsername(attemptLog.getOperatorUsername());
+        olog.setOperatorRole(attemptLog.getOperatorRole());
+        olog.setIpAddress(attemptLog.getIpAddress());
         olog.setOperationType(operationType);
         olog.setModule(module);
         olog.setDescription(description);
         olog.setOperationResult(operationResult);
-        olog.setOperateTime(new Date());
+        olog.setRiskLevel(riskLevel);
+        olog.setTargetType(targetType);
+        olog.setTargetId(attemptLog.getTargetId());
+        olog.setDetailJson(attemptLog.getDetailJson());
+        olog.setRealOperatorName(originalAdminUsername);
+        olog.setDurationMs((int) (System.currentTimeMillis() - startMillis));
+        applyRequestContext(olog);
 
-        try {
-            log.info("记录操作日志：{}", olog);
-            operateLogMapper.insert(olog);
-        } catch (Exception e) {
-            log.error("记录操作日志失败：{}", e.getMessage());
-            // 日志记录失败不影响业务操作
+        // 统一经由审计服务写入；写入失败由服务内部告警，不影响业务结果
+        auditLogService.record(olog);
+
+        if (operationFailure != null) {
+            throw operationFailure;
         }
 
         return result;
+    }
+
+    /**
+     * 补充请求上下文字段（requestId 由审计服务统一补全，这里填充 HTTP 方法/路径/设备类别）
+     */
+    private void applyRequestContext(OperateLog olog) {
+        try {
+            ServletRequestAttributes attributes = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
+            if (attributes == null) {
+                return;
+            }
+            HttpServletRequest request = attributes.getRequest();
+            if (request == null) {
+                return;
+            }
+            olog.setHttpMethod(request.getMethod());
+            olog.setRequestPath(truncate(request.getRequestURI(), 250));
+            olog.setDeviceType(resolveDeviceType(request));
+        } catch (Exception e) {
+            log.debug("补充审计请求上下文失败：{}", e.getMessage());
+        }
+    }
+
+    private String resolveDeviceType(HttpServletRequest request) {
+        String userAgent = request.getHeader("User-Agent");
+        if (userAgent == null || userAgent.isEmpty()) {
+            return "UNKNOWN";
+        }
+        // 当前系统仅提供 Web 端；移动端 App 预留
+        return userAgent.contains("Mobile") || userAgent.contains("Android") || userAgent.contains("iPhone") ? "MOBILE_WEB" : "WEB";
+    }
+
+    private String truncate(String value, int maxLength) {
+        if (value == null) {
+            return null;
+        }
+        return value.length() <= maxLength ? value : value.substring(0, maxLength);
+    }
+
+    /**
+     * 按账号+邮箱归属查询角色（TEACHER / STUDENT / COMPANY），查不到返回 null。
+     * 最佳努力性质：异常或归属失败都不影响主流程，调用处按角色未知处理。
+     */
+    private String resolveClaimedRole(ProceedingJoinPoint joinPoint, String claimedUsername) {
+        try {
+            String email = extractMapValue(joinPoint, "email");
+            if (email == null) {
+                return null;
+            }
+            return passwordResetService.resolveAccountRole(claimedUsername, email);
+        } catch (Exception e) {
+            log.debug("归属查询匿名操作角色失败：{}", e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * 提取匿名请求中的账号标识：遍历参数中的 Map，取 username 键的非空字符串。
+     * 仅用于无登录态的自助操作（如忘记密码重置），此时操作人无法从 JWT 解析；
+     * 有登录态的请求不受影响（操作人已从登录态解析，不会走到这里）。
+     */
+    private String extractClaimedUsername(ProceedingJoinPoint joinPoint) {
+        return extractMapValue(joinPoint, "username");
+    }
+
+    /**
+     * 从切点参数的 Map 中提取指定键的非空字符串（去首尾空格），没有返回 null。
+     */
+    private String extractMapValue(ProceedingJoinPoint joinPoint, String key) {
+        try {
+            Object[] args = joinPoint.getArgs();
+            if (args == null) {
+                return null;
+            }
+            for (Object arg : args) {
+                if (arg instanceof java.util.Map) {
+                    Object value = ((java.util.Map<?, ?>) arg).get(key);
+                    if (value instanceof String) {
+                        String text = ((String) value).trim();
+                        if (!text.isEmpty()) {
+                            return text;
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.debug("提取匿名操作请求字段失败：{}", e.getMessage());
+        }
+        return null;
+    }
+
+    /**
+     * 提取第一个数值型参数作为目标对象ID
+     */
+    private void applyClassTargets(OperateLog entry, ProceedingJoinPoint joinPoint) {
+        if (joinPoint.getSignature().getDeclaringType() != com.internship.controller.TeacherClassController.class) return;
+        java.util.List<Long> ids = new java.util.ArrayList<>();
+        for (Object arg : joinPoint.getArgs()) {
+            if (arg instanceof com.internship.controller.TeacherClassController.ClaimClassesRequest request
+                    && request.classIds() != null) {
+                request.classIds().stream().filter(id -> id != null && id > 0).distinct().limit(100).forEach(ids::add);
+            } else if (arg instanceof java.util.Map<?, ?> map && map.get("classId") != null) {
+                try {
+                    long id = Long.parseLong(map.get("classId").toString());
+                    if (id > 0) ids.add(id);
+                } catch (NumberFormatException ignored) { }
+            }
+        }
+        if (!ids.isEmpty()) {
+            entry.setTargetId(String.valueOf(ids.get(0)));
+            entry.setDetailJson("{\"classIds\":" + ids + "}");
+        }
+    }
+
+    private String extractTargetId(ProceedingJoinPoint joinPoint) {
+        try {
+            Object[] args = joinPoint.getArgs();
+            for (Object arg : args) {
+                if (arg instanceof Long || arg instanceof Integer) {
+                    return String.valueOf(arg);
+                }
+            }
+        } catch (Exception e) {
+            log.debug("提取目标对象ID失败：{}", e.getMessage());
+        }
+        return null;
     }
 
     private Long getCurrentUserId() {
@@ -223,23 +420,8 @@ public class OperationLogAspect {
             if (request == null) {
                 return "未知";
             }
-            String ip = request.getHeader("X-Forwarded-For");
-            if (ip == null || ip.length() == 0 || "unknown".equalsIgnoreCase(ip)) {
-                ip = request.getHeader("Proxy-Client-IP");
-            }
-            if (ip == null || ip.length() == 0 || "unknown".equalsIgnoreCase(ip)) {
-                ip = request.getHeader("WL-Proxy-Client-IP");
-            }
-            if (ip == null || ip.length() == 0 || "unknown".equalsIgnoreCase(ip)) {
-                ip = request.getHeader("HTTP_CLIENT_IP");
-            }
-            if (ip == null || ip.length() == 0 || "unknown".equalsIgnoreCase(ip)) {
-                ip = request.getHeader("HTTP_X_FORWARDED_FOR");
-            }
-            if (ip == null || ip.length() == 0 || "unknown".equalsIgnoreCase(ip)) {
-                ip = request.getRemoteAddr();
-            }
-            return ip != null ? ip : "未知";
+            // 统一走 IpUtils：只有可信反向代理的转发头才会被采信
+            return IpUtils.getClientIp(request);
         } catch (Exception e) {
             log.error("获取 IP 地址失败：{}", e.getMessage());
             return "未知";
@@ -253,7 +435,6 @@ public class OperationLogAspect {
         StringBuilder detailedDesc = new StringBuilder(baseDescription);
 
         try {
-            MethodSignature signature = (MethodSignature) joinPoint.getSignature();
             Object[] args = joinPoint.getArgs();
 
             StringBuilder paramsInfo = new StringBuilder();
@@ -269,21 +450,12 @@ public class OperationLogAspect {
                     continue;
                 }
 
-                // 简单处理：只记录 ID 和名称
+                // 只记录明确的数值型资源 ID；字符串可能包含搜索词、备注或隐私数据
                 if (arg instanceof Long || arg instanceof Integer) {
                     if (paramsInfo.length() > 0) {
                         paramsInfo.append(", ");
                     }
                     paramsInfo.append("id=").append(arg);
-                } else if (arg instanceof String) {
-                    // 字符串参数太长就不记录了
-                    String strArg = (String) arg;
-                    if (strArg.length() <= 50) {
-                        if (paramsInfo.length() > 0) {
-                            paramsInfo.append(", ");
-                        }
-                        paramsInfo.append(strArg.length() > 20 ? strArg.substring(0, 20) + "..." : strArg);
-                    }
                 }
             }
 

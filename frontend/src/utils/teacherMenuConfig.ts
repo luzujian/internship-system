@@ -80,7 +80,7 @@ export const COLLEGE_TEACHER_MENUS: MenuItem[] = [
   },
   {
     index: '/teacher/company-list',
-    title: '企业列表',
+    title: '企业信息',
     icon: 'OfficeBuilding',
     routeName: 'teacherCompanyList',
     roles: ['ROLE_TEACHER_COLLEGE'],
@@ -241,7 +241,7 @@ export const DEPARTMENT_TEACHER_MENUS: MenuItem[] = [
   },
   {
     index: '/teacher/company-list',
-    title: '企业列表',
+    title: '企业信息',
     icon: 'OfficeBuilding',
     routeName: 'teacherCompanyList',
     roles: ['ROLE_TEACHER_DEPARTMENT'],
@@ -402,7 +402,7 @@ export const COUNSELOR_TEACHER_MENUS: MenuItem[] = [
   },
   {
     index: '/teacher/company-list',
-    title: '企业列表',
+    title: '企业信息',
     icon: 'OfficeBuilding',
     routeName: 'teacherCompanyList',
     roles: ['ROLE_TEACHER_COUNSELOR'],

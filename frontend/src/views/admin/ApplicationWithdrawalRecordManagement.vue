@@ -122,7 +122,18 @@
           <el-table-column prop="recallApplyTime" label="撤回申请时间" width="170" align="center">
             <template #default="scope">{{ formatDateTime(scope.row.recallApplyTime) }}</template>
           </el-table-column>
-          <el-table-column label="注册审核状态" width="110" align="center">
+                    <el-table-column label="撤回处理状态" width="140" align="center">
+            <template #default="scope">
+              <el-tag :type="getRecallStatusType()" size="small" class="status-tag">
+                {{ getRecallStatusText(scope.row.recallStatus) }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column prop="recallAuditTime" label="允许修改时间" width="170" align="center">
+            <template #default="scope">{{ formatDateTime(scope.row.recallAuditTime) }}</template>
+          </el-table-column>
+          <el-table-column prop="recallAuditRemark" label="处理备注" min-width="150" show-overflow-tooltip></el-table-column>
+<el-table-column label="注册审核状态" width="110" align="center">
             <template #default="scope">
               <el-tag :type="getAuditStatusType(scope.row.auditStatus)" size="small" class="status-tag">
                 {{ getAuditStatusText(scope.row.auditStatus) }}
@@ -232,6 +243,21 @@
               <span class="meta-label">撤回申请时间:</span>
               <span class="meta-value">{{ formatDateTime(selectedRecord.recallApplyTime) }}</span>
             </div>
+
+            <div class="meta-item">
+              <span class="meta-label">撤回处理状态:</span>
+              <el-tag :type="getRecallStatusType()" size="small" class="status-tag">
+                {{ getRecallStatusText(selectedRecord.recallStatus) }}
+              </el-tag>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">允许修改时间:</span>
+              <span class="meta-value">{{ formatDateTime(selectedRecord.recallAuditTime) }}</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">处理备注:</span>
+              <span class="meta-value">{{ selectedRecord.recallAuditRemark || '自动允许修改' }}</span>
+            </div>
             <div class="meta-item">
               <span class="meta-label">注册审核时间:</span>
               <span class="meta-value">{{ formatDateTime(selectedRecord.auditTime) }}</span>
@@ -281,7 +307,41 @@ const currentPage = ref<number>(1)
 const pageSize = ref<number>(10)
 const total = ref<number>(0)
 const loading = ref(false)
-const tableData = ref<unknown[]>([])
+interface WithdrawalRow {
+  id?: number | string
+  studentName?: string
+  student?: { id?: number | string; name?: string; studentUserId?: number | string; [key: string]: unknown }
+  studentId?: number | string
+  student_user_id?: number | string
+  status?: number | string
+  recallApplyTime?: string
+  recall_apply_time?: string
+  companyName?: string
+  company_name?: string
+  company?: { companyName?: string; [key: string]: unknown }
+  positionName?: string
+  position_name?: string
+  position?: { positionName?: string; [key: string]: unknown }
+  recallReason?: string
+  contactPerson?: string
+  contactPhone?: string
+  auditStatus?: number | string
+  recallStatus?: number | string
+  recallAuditTime?: string
+  recallAuditRemark?: string
+  auditTime?: string
+  address?: string
+  contactEmail?: string
+  auditRemark?: string
+  [key: string]: unknown
+}
+interface WithdrawalPage {
+  rows?: WithdrawalRow[]
+  list?: WithdrawalRow[]
+  total?: number
+  [key: string]: unknown
+}
+const tableData = ref<WithdrawalRow[]>([])
 
 const searchForm = reactive({
   applicantName: '',
@@ -291,8 +351,8 @@ const searchForm = reactive({
   recallStatus: ''
 })
 
-const selectedRecords = ref<unknown[]>([])
-const selectedRecord = ref<unknown>(null)
+const selectedRecords = ref<WithdrawalRow[]>([])
+const selectedRecord = ref<WithdrawalRow | null>(null)
 const detailDialogVisible = ref(false)
 
 watch(activeTab, () => {
@@ -304,17 +364,17 @@ const handleTabChange = (): void => {
   fetchData()
 }
 
-const fetchStudentData = async (): Promise<unknown> => {
+const fetchStudentData = async (): Promise<{ code?: number; message?: string; msg?: string; data?: WithdrawalPage }> => {
   const params = {
     page: currentPage.value,
     pageSize: pageSize.value,
     name: searchForm.applicantName || null
   }
-  const response = await request.get('/admin/internship-status/recall/pending', { params })
+  const response = await request.get<WithdrawalPage>('/admin/internship-status/recall/pending', { params })
   return response
 }
 
-const fetchCompanyData = async (): Promise<unknown> => {
+const fetchCompanyData = async (): Promise<{ code?: number; message?: string; msg?: string; data?: WithdrawalPage }> => {
   const params = {
     page: currentPage.value,
     pageSize: pageSize.value,
@@ -323,33 +383,33 @@ const fetchCompanyData = async (): Promise<unknown> => {
     startTime: searchForm.withdrawalTimeRange && searchForm.withdrawalTimeRange[0] || null,
     endTime: searchForm.withdrawalTimeRange && searchForm.withdrawalTimeRange[1] || null
   }
-  const response = await request.get('/admin/companies/recall-records', { params })
+  const response = await request.get<WithdrawalPage>('/admin/companies/recall-records', { params })
   return response
 }
 
-const fetchConfirmationData = async (): Promise<unknown> => {
+const fetchConfirmationData = async (): Promise<{ code?: number; message?: string; msg?: string; data?: WithdrawalPage }> => {
   const params = {
     page: currentPage.value,
     pageSize: pageSize.value,
     name: searchForm.applicantName || null
   }
-  const response = await request.get('/student/internship-confirmation/recall/pending', { params })
+  const response = await request.get<WithdrawalPage>('/student/internship-confirmation/recall/pending', { params })
   return response
 }
 
 const fetchData = async (): Promise<void> => {
   loading.value = true
   try {
-    let response
+    let response: { code?: number; message?: string; msg?: string; data?: WithdrawalPage | WithdrawalRow[] } | undefined
     if (activeTab.value === 'student') {
       // 同时获取学生撤回记录和实习确认表撤回记录，合并展示
       const [studentRes, confirmationRes] = await Promise.all([
         fetchStudentData(),
         fetchConfirmationData()
       ])
-      const studentData = (studentRes as any)?.data?.rows || []
-      const confirmationData = (confirmationRes as any)?.data?.rows || []
-      tableData.value = [...studentData, ...confirmationData]
+      const studentRows = Array.isArray(studentRes.data) ? studentRes.data : (studentRes.data?.rows ?? [])
+      const confirmationRows = Array.isArray(confirmationRes.data) ? confirmationRes.data : (confirmationRes.data?.rows ?? [])
+      tableData.value = [...studentRows, ...confirmationRows]
       total.value = tableData.value.length
       response = { code: 200, data: { rows: tableData.value, total: total.value } }
     } else {
@@ -359,14 +419,15 @@ const fetchData = async (): Promise<void> => {
     logger.log('获取撤回记录响应:', response)
 
     if (response && response.code === 200) {
-      const data = response.data || response
+      const pageData: unknown = response.data
+      const rows = Array.isArray(pageData) ? pageData : ((pageData as WithdrawalPage)?.rows ?? (pageData as WithdrawalPage)?.list ?? [])
       if (activeTab.value === 'company') {
-        tableData.value = data.rows || data.list || []
-        total.value = data.total || 0
+        tableData.value = rows
+        total.value = (pageData as WithdrawalPage)?.total ?? 0
       }
       logger.log('撤回记录数据:', { tableData: tableData.value.length, total: total.value })
     } else {
-      ElMessage.error(response?.message || '获取数据失败')
+      ElMessage.error(response?.message ?? response?.msg ?? '获取数据失败')
     }
   } catch (error) {
     logger.error('获取数据失败:', error)
@@ -402,23 +463,23 @@ const handleSizeChange = (size: number): void => {
   fetchData()
 }
 
-const handleSelectionChange = (selection: unknown[]): void => {
+const handleSelectionChange = (selection: WithdrawalRow[]): void => {
   selectedRecords.value = selection
 }
 
-const handleViewDetail = (row: unknown): void => {
+const handleViewDetail = (row: WithdrawalRow): void => {
   selectedRecord.value = row
   detailDialogVisible.value = true
 }
 
-const handleDelete = (row: unknown): Promise<void> => {
+const handleDelete = (row: WithdrawalRow): void => {
   ElMessageBox.confirm('确定要删除这条撤回申请记录吗？', '提示', {
     confirmButtonText: '确定',
     cancelButtonText: '取消',
     type: 'warning'
   }).then(async () => {
     try {
-      let response
+      let response: { code?: number; message?: string; msg?: string; data?: unknown } | undefined
       if (activeTab.value === 'student') {
         response = await request.delete(`/application-withdrawal-records/${row.id}`)
       } else {
@@ -428,7 +489,7 @@ const handleDelete = (row: unknown): Promise<void> => {
         ElMessage.success('删除成功')
         fetchData()
       } else {
-        ElMessage.error(response.message || '删除失败')
+        ElMessage.error(response.message ?? response.msg ?? '删除失败')
       }
     } catch (error) {
       logger.error('删除失败:', error)
@@ -437,7 +498,7 @@ const handleDelete = (row: unknown): Promise<void> => {
   }).catch(() => {})
 }
 
-const handleBatchDelete = (): Promise<void> => {
+const handleBatchDelete = (): void => {
   if (selectedRecords.value.length === 0) {
     ElMessage.warning('请选择要删除的记录')
     return
@@ -450,7 +511,7 @@ const handleBatchDelete = (): Promise<void> => {
   }).then(async () => {
     try {
       const ids = selectedRecords.value.map(r => r.id)
-      let response
+      let response: { code?: number; message?: string; msg?: string; data?: unknown } | undefined
       if (activeTab.value === 'student') {
         response = await request.delete('/application-withdrawal-records/batch', { data: { ids } })
       } else {
@@ -460,7 +521,7 @@ const handleBatchDelete = (): Promise<void> => {
         ElMessage.success('批量删除成功')
         fetchData()
       } else {
-        ElMessage.error(response.message || '批量删除失败')
+        ElMessage.error(response.message ?? response.msg ?? '批量删除失败')
       }
     } catch (error) {
       logger.error('批量删除失败:', error)
@@ -582,29 +643,22 @@ const getStatusType = (status: number | string): string => {
 
 const getRecallStatusText = (status: number | string): string => {
   const statusMap = {
-    0: '未申请',
-    1: '待审核',
-    2: '已批准',
-    3: '已拒绝'
+    0: '已自动允许修改',
+    1: '已自动允许修改',
+    2: '已自动允许修改',
+    3: '已自动允许修改'
   }
   return statusMap[status] || '未知'
 }
 
-const getRecallStatusType = (status: number | string): string => {
-  const typeMap = {
-    0: 'info',
-    1: 'warning',
-    2: 'success',
-    3: 'danger'
-  }
-  return typeMap[status] || 'info'
-}
+const getRecallStatusType = (): string => 'success'
 
 const getAuditStatusText = (status: number | string): string => {
   const statusMap = {
     0: '待审核',
     1: '已通过',
-    2: '已拒绝'
+    2: '已拒绝',
+    3: '已撤回'
   }
   return statusMap[status] || '未知'
 }

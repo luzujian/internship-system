@@ -1,6 +1,9 @@
 package com.internship.controller;
 
+import com.internship.anno.Log;
 import com.internship.entity.*;
+import com.internship.entity.dto.InternshipCalendar;
+import com.internship.exception.BusinessException;
 import com.internship.service.*;
 import com.internship.utils.CurrentHolder;
 import com.internship.websocket.AnnouncementWebSocketHandler;
@@ -9,10 +12,11 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Date;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -21,6 +25,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
+
+import static com.internship.service.InternshipProgressEvents.append;
 
 @Slf4j
 @RestController
@@ -43,25 +49,16 @@ public class EvaluationManagementController {
     private ClassService classService;
     
     @Autowired
-    private SystemSettingsService systemSettingsService;
-    
-    @Autowired
     private MajorService majorService;
     
     @Autowired
     private DepartmentService departmentService;
     
     @Autowired
-    private ClassCounselorRelationService classCounselorRelationService;
-    
-    @Autowired
     private InternshipEvaluationDetailService internshipEvaluationDetailService;
     
     @Autowired
     private CounselorAISettingsService counselorAISettingsService;
-
-    @Autowired
-    private TeacherUserService teacherUserService;
 
     @Autowired
     private StudentReflectionAIAnalysisService studentReflectionAIAnalysisService;
@@ -73,13 +70,16 @@ public class EvaluationManagementController {
     private InternshipReflectionService internshipReflectionService;
 
     @Autowired
-    private InternshipTimeSettingsService internshipTimeSettingsService;
+    private InternshipCalendarService internshipCalendarService;
 
     @Autowired
     private InternshipProgressRecordService progressRecordService;
 
     @Autowired
     private AnnouncementWebSocketHandler webSocketHandler;
+
+    @Autowired
+    private EvaluationAccessPolicy evaluationAccessPolicy;
 
     @Data
     public static class StudentEvaluationInfo {
@@ -107,7 +107,7 @@ public class EvaluationManagementController {
         private Long id;
         private String date;
         private String content;
-        private Integer periodNumber;  // 阶段编号
+        private Integer periodNumber;  // 全局实习期次编号
         private Boolean isDraft;  // 是否为草稿状态
         private String aiComment;  // AI生成的综合评语（comment）
         private String aiImprovements;  // AI生成的改进建议（improvements）
@@ -158,76 +158,34 @@ public class EvaluationManagementController {
     
     @GetMapping("/periods")
     public Result getInternshipPeriods() {
-        log.info("获取实习时间阶段列表");
+        log.info("获取全局心得期次列表");
 
         try {
-            // 优先使用 InternshipTimeSettings（系室教师设置），如果不存在则回退到 SystemSettings
-            InternshipTimeSettings timeSettings = internshipTimeSettingsService.findLatest();
-            SystemSettings systemSettings = systemSettingsService.findLatest();
-
-            if (timeSettings == null && systemSettings == null) {
-                return Result.error("系统设置未配置");
+            InternshipCalendar calendar = internshipCalendarService.getCalendar();
+            if (calendar == null || calendar.getStartDate() == null || calendar.getEndDate() == null
+                    || calendar.getReportCycle() == null || calendar.getReportCycle() <= 0) {
+                return Result.error("全局实习日历或心得周期未配置");
             }
-
-            String startDateStr;
-            String endDateStr;
-            Integer cycle;
-
-            if (timeSettings != null && timeSettings.getStartDate() != null && timeSettings.getEndDate() != null) {
-                // 使用 InternshipTimeSettings（系室教师设置）
-                startDateStr = timeSettings.getStartDate();
-                endDateStr = timeSettings.getEndDate();
-                cycle = timeSettings.getReportCycle();
-                log.info("使用系室教师设置的实习时间: {} 至 {}, 周期: {} 天", startDateStr, endDateStr, cycle);
-            } else if (systemSettings != null && systemSettings.getInternshipStartDate() != null && systemSettings.getInternshipEndDate() != null) {
-                // 回退到 SystemSettings
-                java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("yyyy-MM-dd");
-                startDateStr = sdf.format(systemSettings.getInternshipStartDate());
-                endDateStr = sdf.format(systemSettings.getInternshipEndDate());
-                cycle = systemSettings.getReportSubmissionCycle();
-                log.info("使用系统设置的实习时间: {} 至 {}, 周期: {} 天", startDateStr, endDateStr, cycle);
-            } else {
-                return Result.error("实习起止日期未配置");
-            }
-
-            if (cycle == null || cycle <= 0) {
-                cycle = 7;
-            }
-
-            java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("yyyy-MM-dd");
-            java.util.Date startDate = sdf.parse(startDateStr);
-            java.util.Date endDate = sdf.parse(endDateStr);
-            
-            long diffDays = (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24);
-            int totalPeriods = (int) Math.ceil((double) diffDays / cycle);
-
             List<PeriodInfo> periods = new ArrayList<>();
-
-            for (int i = 0; i < totalPeriods; i++) {
+            LocalDate cursor = LocalDate.parse(calendar.getStartDate());
+            LocalDate internshipEnd = LocalDate.parse(calendar.getEndDate());
+            int periodNumber = 1;
+            while (!cursor.isAfter(internshipEnd)) {
+                LocalDate periodEnd = cursor.plusDays(calendar.getReportCycle() - 1L);
+                if (periodEnd.isAfter(internshipEnd)) periodEnd = internshipEnd;
                 PeriodInfo periodInfo = new PeriodInfo();
-                periodInfo.setPeriod(i + 1);
-                periodInfo.setPeriodName("第" + (i + 1) + "阶段");
-                
-                java.util.Calendar cal = java.util.Calendar.getInstance();
-                cal.setTime(startDate);
-                cal.add(java.util.Calendar.DAY_OF_MONTH, i * cycle);
-                String periodStart = sdf.format(cal.getTime());
-                
-                cal.add(java.util.Calendar.DAY_OF_MONTH, cycle - 1);
-                if (cal.getTime().after(endDate)) {
-                    cal.setTime(endDate);
-                }
-                String periodEnd = sdf.format(cal.getTime());
-                
-                periodInfo.setStartDate(periodStart);
-                periodInfo.setEndDate(periodEnd);
+                periodInfo.setPeriod(periodNumber);
+                periodInfo.setPeriodName("第" + periodNumber + "期");
+                periodInfo.setStartDate(cursor.toString());
+                periodInfo.setEndDate(periodEnd.toString());
                 periods.add(periodInfo);
+                periodNumber++;
+                cursor = periodEnd.plusDays(1);
             }
-            
             return Result.success(periods);
         } catch (Exception e) {
-            log.error("获取实习时间阶段失败", e);
-            return Result.error("获取实习时间阶段失败：" + e.getMessage());
+            log.error("获取全局心得期次失败", e);
+            return Result.error("获取全局心得期次失败：" + e.getMessage());
         }
     }
     
@@ -244,34 +202,13 @@ public class EvaluationManagementController {
             @RequestParam(required = false) String isEvaluated,
             @RequestParam(required = false) String department,
             @RequestParam(required = false) String majorName) {
-        log.info("获取评分管理学生列表，周期: {}, 姓名: {}, 学号: {}, 公司ID: {}, 状态: {}, 班级: {}, 是否提交心得: {}, 是否评分: {}, 院系: {}, 专业: {}", 
-            period, name, studentId, companyId, status, className, hasReport, isEvaluated, department, majorName);
+        log.info("获取评分管理学生列表：period={}, hasFilters={}", period,
+                name != null || studentId != null || companyId != null || status != null
+                        || className != null || hasReport != null || isEvaluated != null
+                        || department != null || majorName != null);
         
+        Set<Long> readableStudentIds = evaluationAccessPolicy.readableStudentIds();
         Long currentUserId = CurrentHolder.getUserId();
-        String currentUserRole = CurrentHolder.getUserRole();
-        log.info("获取评分管理学生列表，当前登录用户 ID: {}, 角色：{}", currentUserId, currentUserRole);
-
-        List<Long> counselorClassIds = null;
-        if (currentUserId != null) {
-            List<com.internship.entity.Class> counselorClasses = classCounselorRelationService.findClassesByCounselorId(currentUserId);
-            if (counselorClasses != null && !counselorClasses.isEmpty()) {
-                counselorClassIds = counselorClasses.stream()
-                        .map(com.internship.entity.Class::getId)
-                        .collect(Collectors.toList());
-                log.info("辅导员 {} 管理的班级 ID：{}, 数量：{}", currentUserId, counselorClassIds, counselorClassIds.size());
-            } else {
-                // 检查该用户是否是辅导员（有班级关系的才是辅导员）
-                // 无班级的辅导员不返回任何学生；管理员和系室教师返回全部
-                TeacherUser teacher = teacherUserService.findById(currentUserId);
-                if (teacher != null && "COUNSELOR".equals(teacher.getTeacherType())) {
-                    log.info("辅导员 {} 没有关联的班级，返回空列表", currentUserId);
-                    return Result.success(Collections.emptyList());
-                }
-                log.info("用户 {} 是管理员或其他角色，返回所有学生", currentUserId);
-            }
-        } else {
-            log.warn("当前登录用户 ID 为空");
-        }
         
         List<StudentInternshipStatus> statusList = studentInternshipStatusService.list(
                 null, name, null, status, companyId, null, null, null, className, studentId);
@@ -284,11 +221,9 @@ public class EvaluationManagementController {
             }
             
             StudentUser student = sis.getStudent();
-            
-            if (counselorClassIds != null && student.getClassId() != null) {
-                if (!counselorClassIds.contains(student.getClassId())) {
-                    continue;
-                }
+
+            if (readableStudentIds != null && !readableStudentIds.contains(student.getId())) {
+                continue;
             }
             
             StudentEvaluationInfo info = new StudentEvaluationInfo();
@@ -304,11 +239,11 @@ public class EvaluationManagementController {
             if (sis.getCompany() != null && sis.getCompany().getCompanyName() != null) {
                 companyName = sis.getCompany().getCompanyName();
             } else if (sis.getCompanyId() != null) {
-                log.warn("学生 {} (ID: {}) 的company_id为 {}，但company对象为null", student.getName(), student.getId(), sis.getCompanyId());
+                log.warn("学生企业关联缺失：studentId={}, companyId={}", student.getId(), sis.getCompanyId());
             }
             info.setCompany(companyName);
 
-            // 检查实习心得 - 获取学生所有阶段的心得（排除草稿状态）
+            // 检查学生所有期次的心得（排除草稿状态）
             List<InternshipReflection> allReflections = internshipReflectionService.list(student.getId(), null, null, null);
             // 过滤掉草稿状态（remark = "0"）的心得
             List<InternshipReflection> reflections = new ArrayList<>();
@@ -330,7 +265,7 @@ public class EvaluationManagementController {
             boolean hasCurrentPeriodReport = false;
             Integer effectivePeriod = selectedPeriod;
 
-            // 如果没有选择阶段，使用当前阶段
+            // 如果没有选择期次，使用当前全局期次
             if (effectivePeriod == null) {
                 effectivePeriod = internshipReflectionService.calculatePeriodNumber(new Date());
             }
@@ -338,13 +273,13 @@ public class EvaluationManagementController {
             // 检查AI评分开关状态
             boolean aiScoringEnabled = counselorAISettingsService.isAiScoringEnabled(currentUserId);
 
-            // 检查学生是否有指定阶段（当前阶段）的非草稿心得
+            // 检查学生是否有指定期次的非草稿心得
             // 如果开启了AI评分，必须等AI分析完成才能显示；如果未开启，有心得就显示
             if (effectivePeriod != null && reflections != null) {
                 for (InternshipReflection r : reflections) {
                     if (r.getPeriodNumber() != null && effectivePeriod.equals(r.getPeriodNumber())) {
                         if (aiScoringEnabled) {
-                            // AI评分开启时，必须AI分析完成才算有当前阶段心得
+                            // AI评分开启时，必须AI分析完成才算有当前期次心得
                             StudentReflectionAIAnalysis aiResult = studentReflectionAIAnalysisService.findByReflectionId(r.getId());
                             if (aiResult != null) {
                                 hasCurrentPeriodReport = true;
@@ -370,7 +305,7 @@ public class EvaluationManagementController {
             InternshipAIAnalysis aiAnalysis = internshipAIAnalysisService.findByStudentId(student.getId());
             info.setAiAnalysis(aiAnalysis != null);
 
-            // 检查评价状态 - 需要按阶段检查
+            // 检查当前期次评价状态
             Long currentPeriodReflectionId = null;
             if (effectivePeriod != null && reflections != null) {
                 for (InternshipReflection r : reflections) {
@@ -384,12 +319,12 @@ public class EvaluationManagementController {
             boolean evaluated = false;
             boolean gradePublished = false;
             if (currentPeriodReflectionId != null) {
-                // 按当前阶段检查 - 使用StudentReflectionEvaluation（每阶段评价）
+                // 按当前期次检查对应的心得评价
                 StudentReflectionEvaluation periodEvaluation = studentReflectionEvaluationService.findByReflectionId(currentPeriodReflectionId);
                 // 只有评分了（totalScore不为空且大于0）才算已评分，评语不是必填项
                 evaluated = periodEvaluation != null && periodEvaluation.getTotalScore() != null && periodEvaluation.getTotalScore().doubleValue() > 0;
             } else {
-                // 当前阶段没有非草稿心得时，设为未评分
+                // 当前期次没有非草稿心得时，设为未评分
                 evaluated = false;
             }
             // gradePublished从InternshipEvaluation获取（因为一键上传操作的是这个表的gradePublished字段）
@@ -428,9 +363,11 @@ public class EvaluationManagementController {
     }
     
     @GetMapping("/student/{studentId}")
+    @PreAuthorize("hasAnyRole('TEACHER_COUNSELOR', 'ADMIN')")
     public Result getStudentEvaluationInfo(@PathVariable Long studentId,
                                           @RequestParam(required = false) String period) {
         log.info("获取学生评分详情，学生ID: {}, 周期: {}", studentId, period);
+        evaluationAccessPolicy.requireStudent(studentId, false);
 
         // 解析周期参数
         final Integer selectedPeriod = (period != null && !period.isEmpty()) ? Integer.parseInt(period) : null;
@@ -455,14 +392,14 @@ public class EvaluationManagementController {
         if (status != null && status.getCompany() != null && status.getCompany().getCompanyName() != null) {
             companyName = status.getCompany().getCompanyName();
         } else if (status != null && status.getCompanyId() != null) {
-            log.warn("学生 {} (ID: {}) 的company_id为 {}，但company对象为null", student.getName(), student.getId(), status.getCompanyId());
+            log.warn("学生企业关联缺失：studentId={}, companyId={}", student.getId(), status.getCompanyId());
         }
         info.setCompany(companyName);
 
-        // 获取学生所有阶段的心得（使用list方法而不是findByStudentId）
+        // 获取学生所有期次的心得（使用list方法而不是findByStudentId）
         List<InternshipReflection> allReflections = internshipReflectionService.list(studentId, null, null, null);
 
-        // 计算有效的阶段（如果没选择阶段，使用当前阶段）
+        // 计算有效期次（如果没选择则使用当前全局期次）
         Integer effectivePeriod = selectedPeriod;
         if (effectivePeriod == null) {
             effectivePeriod = internshipReflectionService.calculatePeriodNumber(new Date());
@@ -560,18 +497,18 @@ public class EvaluationManagementController {
             // 尝试从 scoreDetails 获取评分
             if (aiAnalysis.getScoreDetails() != null) {
                 Object scoreDetailsObj = aiAnalysis.getScoreDetails();
-                log.info("scoreDetailsObj type: {}, value: {}", scoreDetailsObj.getClass().getName(), scoreDetailsObj);
+                log.debug("scoreDetailsObj type: {}", scoreDetailsObj.getClass().getName());
                 if (scoreDetailsObj instanceof Map) {
                     @SuppressWarnings("unchecked")
                     Map<String, Object> scoreDetails = (Map<String, Object>) scoreDetailsObj;
-                    log.info("scoreDetails content: {}", scoreDetails);
+                    log.debug("scoreDetails 已加载：dimensionCount={}", scoreDetails.size());
                     // 计算各维度得分（取等级中的最高分）
                     calculateDimensionScores(scoreDetails, scores);
                 }
             } else {
                 log.info("aiAnalysis.getScoreDetails() is null");
             }
-            log.info("Final scores map: {}", scores);
+            log.debug("AI 建议评分已计算：dimensionCount={}", scores.size());
             suggestedScores.setScores(scores);
 
             // 保持向后兼容
@@ -584,7 +521,7 @@ public class EvaluationManagementController {
             info.setAiAnalysisData(aiInfo);
         }
 
-        // 获取当前阶段心得的评价（使用StudentReflectionEvaluation）
+        // 获取当前期次心得的评价
         StudentReflectionEvaluation periodEval = null;
         if (currentPeriodReflectionId != null) {
             periodEval = studentReflectionEvaluationService.findByReflectionId(currentPeriodReflectionId);
@@ -625,8 +562,11 @@ public class EvaluationManagementController {
     }
     
     @PostMapping("/submit")
+    @PreAuthorize("hasAnyRole('TEACHER_COUNSELOR', 'ADMIN')")
+    @Transactional(rollbackFor = Exception.class)
+    @Log(operationType = "CREATE", module = "COUNSELOR_EVALUATION", description = "提交学生评价", riskLevel = "MEDIUM")
     public Result submitEvaluation(@RequestBody Map<String, Object> params) {
-        log.info("提交学生评价，参数: {}", params);
+        log.info("收到学生评价提交请求");
         
         Object studentIdObj = params.get("studentId");
         Object commentObj = params.get("comment");
@@ -635,6 +575,8 @@ public class EvaluationManagementController {
         }
         Long studentId = Long.valueOf(studentIdObj.toString());
         String comment = commentObj.toString();
+
+        evaluationAccessPolicy.requireStudent(studentId, false);
         
         Long teacherId = CurrentHolder.getUserId();
         if (teacherId == null) {
@@ -667,7 +609,7 @@ public class EvaluationManagementController {
                     totalWeightedScore += score * weight;
                     totalWeight += weight;
                 } catch (NumberFormatException e) {
-                    log.warn("评分项 {} 的值不是有效数字: {}", key, entry.getValue());
+                    log.warn("评分项 {} 的值不是有效数字", key);
                 }
             }
         }
@@ -748,22 +690,6 @@ public class EvaluationManagementController {
         }
         
         if (result > 0) {
-            // 更新实习进展记录状态为已评分（success）
-            try {
-                Integer currentPeriod = internshipReflectionService.calculatePeriodNumber(new Date());
-                List<InternshipReflection> reflections = internshipReflectionService.list(studentId, null, null, null);
-                if (reflections != null && currentPeriod != null) {
-                    for (InternshipReflection r : reflections) {
-                        if (currentPeriod.equals(r.getPeriodNumber())) {
-                            progressRecordService.updateStatusByRelatedId(r.getId(), "reflection_submit", "success");
-                            break;
-                        }
-                    }
-                }
-            } catch (Exception e) {
-                log.error("更新实习进展记录状态失败: {}", e.getMessage(), e);
-            }
-
             // 保存类别评分详情
             try {
                 List<InternshipEvaluationDetail> details = new ArrayList<>();
@@ -791,7 +717,7 @@ public class EvaluationManagementController {
             // 注意：不再在此处设置实习心得remark为"已批阅"
             // remark的设置应该在"一键上传学生成绩"时统一处理
 
-            // 同时保存到StudentReflectionEvaluation（按阶段评价）
+            // 同时保存到StudentReflectionEvaluation（每篇心得一条评价）
             try {
                 Integer currentPeriod = internshipReflectionService.calculatePeriodNumber(new Date());
                 List<InternshipReflection> reflections = internshipReflectionService.list(studentId, null, null, null);
@@ -816,6 +742,7 @@ public class EvaluationManagementController {
 
                     // 创建或更新StudentReflectionEvaluation
                     StudentReflectionEvaluation reflectionEval = studentReflectionEvaluationService.findByReflectionId(currentReflectionId);
+                    boolean firstEvaluation = reflectionEval == null;
                     if (reflectionEval == null) {
                         reflectionEval = new StudentReflectionEvaluation();
                         reflectionEval.setReflectionId(currentReflectionId);
@@ -830,12 +757,27 @@ public class EvaluationManagementController {
                     reflectionEval.setUpdateTime(new Date());
 
                     studentReflectionEvaluationService.saveEvaluation(reflectionEval);
-                    log.info("保存学生阶段评价到StudentReflectionEvaluation，reflectionId: {}, 总分: {}", currentReflectionId, totalScore);
+                    if (firstEvaluation) {
+                        InternshipReflection currentReflection = internshipReflectionService.findById(currentReflectionId);
+                        StringBuilder description = new StringBuilder();
+                        description.append("第").append(currentPeriod).append("期实习心得 · ")
+                                .append(totalScore).append("分");
+                        append(progressRecordService,
+                                studentId,
+                                "reflection_scored",
+                                "实习心得已评分",
+                                description.toString(),
+                                "success",
+                                currentReflectionId,
+                                reflectionEval.getEvaluateTime());
+                    }
+                    log.info("保存学生心得评价，reflectionId: {}, 总分: {}", currentReflectionId, totalScore);
                 } else {
-                    log.warn("未找到学生ID: {} 当前阶段: {} 的实习心得，跳过保存StudentReflectionEvaluation", studentId, currentPeriod);
+                    log.warn("未找到学生ID: {} 当前期次: {} 的实习心得，跳过保存StudentReflectionEvaluation", studentId, currentPeriod);
                 }
             } catch (Exception e) {
                 log.error("保存StudentReflectionEvaluation失败: {}", e.getMessage(), e);
+                throw new BusinessException("保存实习心得评分失败: " + e.getMessage());
             }
 
             return Result.success("评价提交成功");
@@ -849,8 +791,10 @@ public class EvaluationManagementController {
      * @return 上传结果
      */
     @PostMapping("/batch-upload")
+    @PreAuthorize("hasAnyRole('TEACHER_COUNSELOR', 'ADMIN')")
+    @Log(operationType = "IMPORT", module = "COUNSELOR_EVALUATION", description = "批量上传学生成绩", riskLevel = "MEDIUM")
     public Result batchUploadGrades(@RequestBody Map<String, Object> params) {
-        log.info("批量上传学生成绩，参数: {}", params);
+        log.info("收到批量上传学生成绩请求");
 
         try {
             @SuppressWarnings("unchecked")
@@ -871,6 +815,11 @@ public class EvaluationManagementController {
                 return Result.error("学生ID列表不能为空");
             }
 
+            // Validate the entire batch before publishing any grade or notification.
+            for (Long studentId : studentIds) {
+                evaluationAccessPolicy.requireStudent(studentId, false);
+            }
+
             // 调用批量发布成绩方法
             try {
                 int publishedCount = internshipEvaluationService.publishGrades(studentIds);
@@ -886,7 +835,7 @@ public class EvaluationManagementController {
                                     r.setRemark("1");
                                     r.setUpdateTime(new Date());
                                     internshipReflectionService.updateById(r);
-                                    log.info("批量上传成绩时更新实习心得remark为已批阅，学生ID: {}, 阶段: {}", studentId, currentPeriod);
+                                    log.info("批量上传成绩时更新实习心得remark为已批阅，学生ID: {}, 期次: {}", studentId, currentPeriod);
                                     break;
                                 }
                             }
@@ -912,6 +861,8 @@ public class EvaluationManagementController {
                 log.error("批量发布成绩失败: {}", e.getMessage(), e);
                 return Result.error("批量上传成绩失败：" + e.getMessage());
             }
+        } catch (org.springframework.security.access.AccessDeniedException e) {
+            throw e;
         } catch (Exception e) {
             log.error("批量上传成绩失败: {}", e.getMessage(), e);
             return Result.error("批量上传成绩失败：" + e.getMessage());
@@ -940,32 +891,18 @@ public class EvaluationManagementController {
     }
     
     @GetMapping("/statistics")
+    @PreAuthorize("hasAnyRole('TEACHER_COUNSELOR', 'ADMIN')")
     public Result getEvaluationStatistics() {
         log.info("获取评分统计信息");
 
-        Set<Long> counselorClassIdSet = null;
-        Long currentUserId = CurrentHolder.getUserId();
-        String currentUserRole = CurrentHolder.getUserRole();
-        if (currentUserId != null) {
-            TeacherUser teacher = teacherUserService.findById(currentUserId);
-            if (teacher != null && "COUNSELOR".equals(teacher.getTeacherType())) {
-                List<com.internship.entity.Class> counselorClasses = classCounselorRelationService.findClassesByCounselorId(currentUserId);
-                if (counselorClasses == null || counselorClasses.isEmpty()) {
-                    return Result.success(Map.of("total", 0, "excellent", 0, "good", 0, "medium", 0, "pass", 0, "fail", 0));
-                }
-                counselorClassIdSet = counselorClasses.stream()
-                    .map(com.internship.entity.Class::getId).collect(Collectors.toSet());
-            }
-        }
+        Set<Long> readableStudentIds = evaluationAccessPolicy.readableStudentIds();
 
         List<InternshipEvaluation> allEvaluations = internshipEvaluationService.findAll();
         Map<String, Long> gradeStats;
-        if (counselorClassIdSet != null) {
+        if (readableStudentIds != null) {
             gradeStats = new HashMap<>();
             for (InternshipEvaluation e : allEvaluations) {
-                if (e.getStudentId() == null) continue;
-                StudentUser student = studentUserService.findById(e.getStudentId());
-                if (student != null && student.getClassId() != null && counselorClassIdSet.contains(student.getClassId())) {
+                if (e.getStudentId() != null && readableStudentIds.contains(e.getStudentId())) {
                     String grade = e.getGrade() != null ? e.getGrade() : "未评级";
                     gradeStats.merge(grade, 1L, Long::sum);
                 }
@@ -1087,6 +1024,6 @@ public class EvaluationManagementController {
             }
         }
 
-        log.info("Final scores output: {}", scores);
+        log.debug("最终评分计算完成：dimensionCount={}", scores.size());
     }
 }

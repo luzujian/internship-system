@@ -4,14 +4,15 @@ import com.internship.entity.Result;
 import com.internship.entity.StudentInternshipStatus;
 import com.internship.entity.PageResult;
 import com.internship.entity.InternshipConfirmationRecord;
-import com.internship.entity.InternshipTimeSettings;
-import com.internship.entity.Position;
-import com.internship.mapper.PositionMapper;
+import com.internship.entity.TeacherUser;
+import com.internship.entity.User;
+import com.internship.mapper.TeacherAutomationScopeMapper;
 import com.internship.service.StudentInternshipStatusService;
+import com.internship.service.TeacherAutomationScopeService;
+import com.internship.service.TeacherUserService;
 import com.internship.service.UserService;
 import com.internship.service.InternshipConfirmationRecordService;
-import com.internship.service.InternshipProgressRecordService;
-import com.internship.service.InternshipTimeSettingsService;
+import com.internship.service.InternshipConfirmationWorkflowService;
 import com.internship.service.StudentJobApplicationService;
 import com.internship.websocket.AnnouncementWebSocketHandler;
 import com.internship.anno.Log;
@@ -20,9 +21,15 @@ import com.internship.utils.CurrentHolder;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.NoTransactionException;
+import org.springframework.transaction.interceptor.TransactionAspectSupport;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import jakarta.servlet.http.HttpServletResponse;
 import org.apache.poi.xwpf.usermodel.*;
@@ -53,13 +60,16 @@ public class StudentInternshipStatusController {
     private StudentInternshipStatusService studentInternshipStatusService;
 
     @Autowired
+    private TeacherUserService teacherUserService;
+
+    @Autowired
+    private TeacherAutomationScopeMapper teacherScopeMapper;
+
+    @Autowired
     private UserService userService;
 
     @Autowired
     private InternshipConfirmationRecordService confirmationRecordService;
-
-    @Autowired
-    private InternshipProgressRecordService progressRecordService;
 
     @Autowired
     private StudentJobApplicationService studentJobApplicationService;
@@ -68,10 +78,7 @@ public class StudentInternshipStatusController {
     private AnnouncementWebSocketHandler webSocketHandler;
 
     @Autowired
-    private PositionMapper positionMapper;
-
-    @Autowired
-    private InternshipTimeSettingsService internshipTimeSettingsService;
+    private InternshipConfirmationWorkflowService confirmationWorkflowService;
 
     /**
      * 推送企业待办数据更新
@@ -84,84 +91,13 @@ public class StudentInternshipStatusController {
                     .filter(a -> "pending".equals(a.getStatus()))
                     .count();
 
-            // 待确认实习表数 - 从学生实习状态表查询（company_confirm_status=0表示待确认）
-            List<StudentInternshipStatus> allStatuses = studentInternshipStatusService.list(null, null, null, null, companyId, null, null, null, null, null);
-            long pendingConfirmations = allStatuses.stream()
-                    .filter(s -> s.getCompanyConfirmStatus() != null && s.getCompanyConfirmStatus() == 0)
-                    .count();
+            // 待确认数以正式提交的确认记录为准；pending 不再覆盖当前实习状态投影。
+            long pendingConfirmations = confirmationRecordService
+                    .findByCompanyIdAndStatus(companyId, 0).size();
 
             webSocketHandler.sendCompanyTodoUpdate(companyId, pendingApplications, pendingConfirmations);
         } catch (Exception e) {
             log.error("推送待办数据失败: {}", e.getMessage());
-        }
-    }
-
-    /**
-     * 计算并设置学生实习的开始和结束时间
-     * 开始时间 = max(岗位的 internshipStartDate, 当前时刻)，岗位无日期时用教师 startDate 兜底
-     * 结束时间 = 教师设置的 endDate 作为上界
-     * 若该生有前一段实习（同 studentId，status ≥ 2，不同 id），则将其结束时间截断为本段开始时间
-     */
-    private void calculateAndSetInternshipTimes(StudentInternshipStatus status) {
-        try {
-            // 1. 查询岗位信息
-            Position position = positionMapper.findById(status.getPositionId());
-
-            // 2. 查询教师时间设置
-            InternshipTimeSettings settings = internshipTimeSettingsService.findLatest();
-
-            java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("yyyy-MM-dd");
-            Date now = new Date();
-
-            // 3. 计算开始时间：max(岗位开始日期, 当前时刻)，岗位无日期时用教师 startDate 兜底
-            Date startTime;
-            if (position != null && position.getInternshipStartDate() != null) {
-                Date positionStart = position.getInternshipStartDate();
-                startTime = positionStart.after(now) ? positionStart : now;
-                log.info("使用岗位开始日期计算: positionStart={}, now={}, result={}", positionStart, now, startTime);
-            } else if (settings != null && settings.getStartDate() != null && !settings.getStartDate().isEmpty()) {
-                Date teacherStartDate = sdf.parse(settings.getStartDate());
-                startTime = teacherStartDate.after(now) ? teacherStartDate : now;
-                log.info("岗位无开始日期，使用教师 startDate 兜底: teacherStartDate={}, now={}, result={}", teacherStartDate, now, startTime);
-            } else {
-                startTime = now;
-                log.info("无岗位日期也无教师设置，使用当前时间: {}", now);
-            }
-            status.setInternshipStartTime(startTime);
-
-            // 4. 计算结束时间（上界）：教师设置的 endDate
-            Date teacherEndDate = null;
-            if (settings != null && settings.getEndDate() != null && !settings.getEndDate().isEmpty()) {
-                teacherEndDate = sdf.parse(settings.getEndDate());
-                status.setInternshipEndTime(teacherEndDate);
-                log.info("设置实习结束时间上界: {}", teacherEndDate);
-            }
-
-            // 5. 查询该生是否有前一段实习（同 studentId，status ≥ 2，不同 id），若有则截断其结束时间
-            if (teacherEndDate != null) {
-                List<StudentInternshipStatus> allStatuses = studentInternshipStatusService.list(
-                    status.getStudentId(), null, null, null, null, null, null, null, null, null);
-                if (allStatuses != null) {
-                    for (StudentInternshipStatus prev : allStatuses) {
-                        if (!prev.getId().equals(status.getId())
-                            && prev.getStatus() != null && prev.getStatus() >= 2) {
-                            // 前一段 endTime = min(本段 startTime, 教师 endDate)
-                            Date prevEndTime = startTime.before(teacherEndDate) ? startTime : teacherEndDate;
-                            prev.setInternshipEndTime(prevEndTime);
-                            studentInternshipStatusService.update(prev);
-                            log.info("截断前一段实习 {} 的结束时间为 {}（本段开始={}, 教师上界={}）",
-                                prev.getId(), prevEndTime, startTime, teacherEndDate);
-                        }
-                    }
-                }
-            }
-
-            // 6. 保存本段实习的时间
-            studentInternshipStatusService.update(status);
-            log.info("实习时间计算完成: statusId={}, studentId={}, startTime={}, endTime={}",
-                status.getId(), status.getStudentId(), status.getInternshipStartTime(), status.getInternshipEndTime());
-        } catch (Exception e) {
-            log.error("计算实习时间失败: {}", e.getMessage(), e);
         }
     }
 
@@ -209,6 +145,7 @@ public class StudentInternshipStatusController {
      */
     @PostMapping
     @PreAuthorize("hasRole('ROLE_ADMIN')")
+    @Log(operationType = "CREATE", module = "STUDENT_INTERNSHIP", description = "新增实习状态", riskLevel = "LOW")
     public Result addInternshipStatus(@RequestBody StudentInternshipStatus status) {
         log.info("添加学生实习状态，学生 ID: {}", status.getStudentId());
         int result = studentInternshipStatusService.insert(status);
@@ -223,6 +160,7 @@ public class StudentInternshipStatusController {
      */
     @PutMapping("/{id}")
     @PreAuthorize("hasRole('ROLE_ADMIN')")
+    @Log(operationType = "UPDATE", module = "STUDENT_INTERNSHIP", description = "更新实习状态", riskLevel = "MEDIUM")
     public Result updateInternshipStatus(@PathVariable Long id, @RequestBody StudentInternshipStatus status) {
         log.info("更新学生实习状态，ID: {}", id);
         status.setId(id);
@@ -238,6 +176,7 @@ public class StudentInternshipStatusController {
      */
     @DeleteMapping("/{id}")
     @PreAuthorize("hasRole('ROLE_ADMIN')")
+    @Log(operationType = "DELETE", module = "STUDENT_INTERNSHIP", description = "删除实习状态", riskLevel = "MEDIUM")
     public Result deleteInternshipStatus(@PathVariable Long id) {
         log.info("删除学生实习状态，ID: {}", id);
         int result = studentInternshipStatusService.delete(id);
@@ -252,6 +191,7 @@ public class StudentInternshipStatusController {
      */
     @DeleteMapping("/batch")
     @PreAuthorize("hasRole('ROLE_ADMIN')")
+    @Log(operationType = "DELETE", module = "STUDENT_INTERNSHIP", description = "批量删除实习状态", riskLevel = "HIGH", critical = true)
     public Result batchDeleteInternshipStatus(@RequestBody List<Long> ids) {
         log.info("批量删除学生实习状态，IDs: {}", ids);
         int result = studentInternshipStatusService.batchDelete(ids);
@@ -264,6 +204,7 @@ public class StudentInternshipStatusController {
     /**
      * 导出实习状态数据（Excel格式）
      */
+    @Log(operationType = "EXPORT", module = "STUDENT_INTERNSHIP", description = "导出实习状态数据", riskLevel = "MEDIUM", critical = true)
     @GetMapping("/export")
     @PreAuthorize("hasRole('ADMIN')")
     public void exportInternshipStatus(
@@ -341,6 +282,7 @@ public class StudentInternshipStatusController {
     /**
      * 批量导出实习状态数据（Excel格式）
      */
+    @Log(operationType = "EXPORT", module = "STUDENT_INTERNSHIP", description = "批量导出实习状态数据", riskLevel = "MEDIUM", critical = true)
     @GetMapping("/export/batch")
     @PreAuthorize("hasRole('ADMIN')")
     public void exportBatchInternshipStatus(
@@ -427,6 +369,7 @@ public class StudentInternshipStatusController {
     /**
      * 下载实习确认申请表（Word 表格格式）
      */
+    @Log(operationType = "DOWNLOAD", module = "STUDENT_INTERNSHIP", description = "下载实习申请表", riskLevel = "MEDIUM")
     @GetMapping("/download-application/{id}")
     @PreAuthorize("hasAnyRole('ADMIN', 'TEACHER', 'TEACHER_COLLEGE', 'TEACHER_DEPARTMENT', 'TEACHER_COUNSELOR')")
     public void downloadInternshipApplication(@PathVariable Long id, HttpServletResponse response) throws IOException {
@@ -436,6 +379,7 @@ public class StudentInternshipStatusController {
             response.setStatus(HttpServletResponse.SC_NOT_FOUND);
             return;
         }
+        requireInternshipApplicationAccess(status);
 
         XWPFDocument document = new XWPFDocument();
 
@@ -483,6 +427,31 @@ public class StudentInternshipStatusController {
         document.close();
 
         log.info("实习确认申请表下载成功，ID: {}", id);
+    }
+
+    private void requireInternshipApplicationAccess(StudentInternshipStatus status) {
+        User actor = CurrentHolder.getUser();
+        if (actor == null || actor.getId() == null || actor.getRole() == null) {
+            throw new AccessDeniedException("登录身份不可用");
+        }
+        if ("ROLE_ADMIN".equals(actor.getRole())) return;
+        TeacherUser teacher;
+        try {
+            teacher = teacherUserService.findById(actor.getId());
+            TeacherAutomationScopeService.requireTeacher(teacher);
+        } catch (Exception e) {
+            throw new AccessDeniedException("教师身份或管辖范围不可用", e);
+        }
+        if (actor.getUsername() == null || !actor.getUsername().equals(teacher.getTeacherUserId())
+                || !("ROLE_TEACHER_" + teacher.getTeacherType()).equals(actor.getRole())) {
+            throw new AccessDeniedException("教师身份不匹配");
+        }
+        try {
+            if (status.getStudentId() != null && teacherScopeMapper.contains(teacher, status.getStudentId()) > 0) return;
+        } catch (Exception e) {
+            throw new AccessDeniedException("教师管辖范围不可用", e);
+        }
+        throw new AccessDeniedException("无权下载该学生的实习申请表");
     }
 
     private void setTableRow(XWPFTable table, int rowNum, String label, String value) {
@@ -548,6 +517,7 @@ public class StudentInternshipStatusController {
      */
     @DeleteMapping("/student/{studentId}")
     @PreAuthorize("hasRole('ROLE_ADMIN')")
+    @Log(operationType = "DELETE", module = "STUDENT_INTERNSHIP", description = "按学生删除实习状态", riskLevel = "MEDIUM")
     public Result deleteInternshipStatusByStudentId(@PathVariable Long studentId) {
         log.info("根据学生 ID 删除实习状态，学生 ID: {}", studentId);
         StudentInternshipStatus status = studentInternshipStatusService.findByStudentId(studentId);
@@ -566,6 +536,7 @@ public class StudentInternshipStatusController {
      */
     @DeleteMapping("/student/batch")
     @PreAuthorize("hasRole('ROLE_ADMIN')")
+    @Log(operationType = "DELETE", module = "STUDENT_INTERNSHIP", description = "批量按学生删除实习状态", riskLevel = "HIGH", critical = true)
     public Result batchDeleteInternshipStatusByStudentIds(@RequestBody List<Long> studentIds) {
         log.info("批量解绑学生实习状态，学生 IDs: {}", studentIds);
         int successCount = 0;
@@ -597,6 +568,7 @@ public class StudentInternshipStatusController {
      */
     @PostMapping("/bind")
     @PreAuthorize("hasRole('ROLE_ADMIN')")
+    @Log(operationType = "UPDATE", module = "STUDENT_INTERNSHIP", description = "绑定或更新实习状态", riskLevel = "MEDIUM")
     public Result bindOrUpdateInternshipStatus(@RequestBody StudentInternshipStatus status) {
         log.info("绑定或更新学生实习状态，学生 ID: {}, 企业 ID: {}, 岗位 ID: {}",
                 status.getStudentId(), status.getCompanyId(), status.getPositionId());
@@ -646,7 +618,7 @@ public class StudentInternshipStatusController {
     @PutMapping("/{id}/recall-audit")
     @PreAuthorize("hasRole('ADMIN')")
     public Result auditRecallApplication(@PathVariable Long id, @RequestBody Map<String, Object> params) {
-        log.info("审核实习确认撤回申请，ID: {}, 审核参数：{}", id, params);
+        log.info("审核实习确认撤回申请：id={}", id);
         try {
             Integer recallStatus = Integer.valueOf(params.get("recallStatus").toString());
             String recallAuditRemark = params.get("recallAuditRemark") != null ?
@@ -699,6 +671,7 @@ public class StudentInternshipStatusController {
     /**
      * 导出学生撤回申请记录到 Excel
      */
+    @Log(operationType = "EXPORT", module = "STUDENT_INTERNSHIP", description = "导出学生撤回申请记录", riskLevel = "MEDIUM", critical = true)
     @GetMapping("/recall/export")
     @PreAuthorize("hasRole('ADMIN')")
     public void exportRecallRecords(HttpServletResponse response,
@@ -829,7 +802,7 @@ public class StudentInternshipStatusController {
                 
                 if (!currentCompanyId.equals(companyId)) {
                     log.warn("企业用户尝试访问其他企业的数据，当前企业 ID: {}, 请求企业 ID: {}", currentCompanyId, companyId);
-                    return Result.error("无权访问该企业的数据");
+                    throw new org.springframework.security.access.AccessDeniedException("无权访问该企业的数据");
                 }
                 
                 log.info("企业用户身份验证通过，企业 ID: {}", currentCompanyId);
@@ -840,169 +813,145 @@ public class StudentInternshipStatusController {
             statusList = statusList.stream()
                 .filter(s -> s.getRecallStatus() == null || s.getRecallStatus() != 2)
                 .collect(java.util.stream.Collectors.toList());
+            // 企业确认前 remark 尚未同步到本表，从待确认确认记录中补充学生填写的补充说明
+            List<InternshipConfirmationRecord> pendingRecords = confirmationRecordService.findByCompanyIdAndStatus(companyId, 0);
+            if (!pendingRecords.isEmpty()) {
+                for (StudentInternshipStatus status : statusList) {
+                    if (status.getRemark() == null || status.getRemark().isBlank()) {
+                        pendingRecords.stream()
+                                .filter(record -> status.getStudentId().equals(record.getStudentId())
+                                        && status.getCompanyId().equals(record.getCompanyId())
+                                        && status.getPositionId().equals(record.getPositionId()))
+                                .findFirst()
+                                .ifPresent(record -> status.setRemark(record.getRemark()));
+                    }
+                }
+            }
             return Result.success(statusList);
+        } catch (org.springframework.security.access.AccessDeniedException e) {
+            throw e;
         } catch (Exception e) {
             log.error("获取企业实习状态列表失败：{}", e.getMessage(), e);
             return Result.error("获取实习状态列表失败：" + e.getMessage());
         }
     }
-
     /**
-     * 企业确认实习状态
+     * 兼容旧客户端：路径参数仍是旧 student_internship_status.id，实际处理统一委托确认工作流。
      */
     @PutMapping("/{id}/approve")
     @PreAuthorize("hasAnyRole('ADMIN', 'COMPANY')")
     @Log(operationType = "UPDATE", module = "INTERNSHIP_MANAGEMENT", description = "企业确认实习状态")
+    @Transactional(rollbackFor = Exception.class)
     public Result approveInternshipStatus(@PathVariable Long id) {
-        log.info("企业确认实习状态，ID: {}", id);
+        log.info("兼容端点确认实习状态，statusId={}", id);
         try {
-            StudentInternshipStatus status = studentInternshipStatusService.findById(id);
-            if (status == null) {
-                return Result.error("实习状态不存在");
+            StudentInternshipStatus legacyStatus = studentInternshipStatusService.findById(id);
+            if (legacyStatus == null) return Result.error("实习状态不存在");
+            if (!Integer.valueOf(0).equals(legacyStatus.getCompanyConfirmStatus())) {
+                return Result.error("该实习确认不是待处理状态");
             }
+            Result authorization = authorizeLegacyConfirmation(legacyStatus);
+            if (authorization != null) return authorization;
+            InternshipConfirmationRecord confirmationRecord = findPendingConfirmation(legacyStatus);
+            if (confirmationRecord == null) return Result.error("未找到待处理的实习确认记录");
 
-            Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-            if (authentication == null) {
-                log.error("未获取到认证信息");
-                return Result.error("未获取到认证信息");
-            }
-            
-            boolean isAdmin = authentication.getAuthorities().stream()
-                .anyMatch(auth -> auth.getAuthority().equals("ROLE_ADMIN"));
-            
-            if (!isAdmin) {
-                Long currentCompanyId = CurrentHolder.getUserId();
-                if (currentCompanyId == null) {
-                    log.error("未获取到当前登录企业 ID");
-                    return Result.error("未获取到当前登录企业 ID");
-                }
-                
-                if (!currentCompanyId.equals(status.getCompanyId())) {
-                    log.warn("企业用户尝试操作其他企业的实习状态，当前企业 ID: {}, 实习状态所属企业 ID: {}", currentCompanyId, status.getCompanyId());
-                    return Result.error("无权操作该实习状态");
-                }
-                
-                log.info("企业用户身份验证通过，企业 ID: {}", currentCompanyId);
-            }
-
-            status.setCompanyConfirmStatus(1);
-            status.setStatus(2);
-            int result = studentInternshipStatusService.update(status);
-
-            // 同时更新 internship_confirmation_record 表中的记录
-            if (result > 0 && status.getStudentId() != null && status.getCompanyId() != null) {
-                try {
-                    List<InternshipConfirmationRecord> records = confirmationRecordService.findByCompanyIdAndStatus(status.getCompanyId(), 0);
-                    for (InternshipConfirmationRecord record : records) {
-                        if (record.getStudentId().equals(status.getStudentId())) {
-                            record.setStatus(1); // 更新为已确认
-                            confirmationRecordService.update(record);
-                            log.info("更新确认记录 ID: {} 为已确认", record.getId());
-                            // 同步更新实习进展记录状态
-                            progressRecordService.updateStatusByRelatedId(record.getId(), "internship_confirmation", "success");
-                            break;
-                        }
-                    }
-                } catch (Exception e) {
-                    log.warn("更新确认记录失败: {}", e.getMessage());
-                }
-            }
-
-            if (result > 0) {
-                // 计算并设置实习开始/结束时间
-                calculateAndSetInternshipTimes(status);
-
-                // 推送待办数据更新
-                pushTodoUpdate(status.getCompanyId());
-
-                // 推送实习确认结果给学生
-                log.info("准备向学生推送确认结果, studentId={}, company={}, position={}",
-                    status.getStudentId(),
-                    status.getCompany() != null ? status.getCompany().getCompanyName() : "",
-                    status.getPosition() != null ? status.getPosition().getPositionName() : "");
+            InternshipConfirmationWorkflowService.ConfirmationOutcome outcome =
+                    confirmationWorkflowService.confirm(
+                            legacyStatus.getCompanyId(), confirmationRecord.getId(), new Date());
+            InternshipConfirmationRecord resolved = outcome.record();
+            runAfterCommit(() -> {
+                pushTodoUpdate(resolved.getCompanyId());
                 webSocketHandler.sendConfirmationResultToStudent(
-                    status.getStudentId(),
-                    1, // 1=已确认
-                    status.getCompany() != null ? status.getCompany().getCompanyName() : "",
-                    status.getPosition() != null ? status.getPosition().getPositionName() : ""
-                );
-                log.info("已调用sendConfirmationResultToStudent");
-
-                return Result.success("确认成功");
-            }
-            return Result.error("确认失败");
+                        resolved.getStudentId(), 1,
+                        resolved.getCompanyName(), resolved.getPositionName());
+            });
+            return Result.success("确认成功");
         } catch (Exception e) {
+            rollbackCurrentTransaction();
             log.error("确认实习状态失败：{}", e.getMessage(), e);
             return Result.error("确认失败：" + e.getMessage());
         }
     }
-
-    /**
-     * 企业拒绝实习状态
-     */
+    /** 兼容旧客户端的拒绝入口，状态变更统一委托确认工作流。 */
     @PutMapping("/{id}/reject")
     @PreAuthorize("hasAnyRole('ADMIN', 'COMPANY')")
     @Log(operationType = "UPDATE", module = "INTERNSHIP_MANAGEMENT", description = "企业拒绝实习状态")
-    public Result rejectInternshipStatus(@PathVariable Long id, @RequestBody(required = false) Map<String, String> body) {
-        log.info("企业拒绝实习状态，ID: {}", id);
+    @Transactional(rollbackFor = Exception.class)
+    public Result rejectInternshipStatus(@PathVariable Long id,
+                                         @RequestBody(required = false) Map<String, String> body) {
+        log.info("兼容端点拒绝实习状态，statusId={}", id);
         try {
-            String rejectReason = body != null ? body.get("rejectReason") : null;
-            log.info("拒绝原因: {}", rejectReason);
-
-            StudentInternshipStatus status = studentInternshipStatusService.findById(id);
-            if (status == null) {
-                return Result.error("实习状态不存在");
+            StudentInternshipStatus legacyStatus = studentInternshipStatusService.findById(id);
+            if (legacyStatus == null) return Result.error("实习状态不存在");
+            if (!Integer.valueOf(0).equals(legacyStatus.getCompanyConfirmStatus())) {
+                return Result.error("该实习确认不是待处理状态");
             }
+            Result authorization = authorizeLegacyConfirmation(legacyStatus);
+            if (authorization != null) return authorization;
+            InternshipConfirmationRecord confirmationRecord = findPendingConfirmation(legacyStatus);
+            if (confirmationRecord == null) return Result.error("未找到待处理的实习确认记录");
+            String reason = body == null || body.get("rejectReason") == null
+                    ? "" : body.get("rejectReason").trim();
 
-            Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-            if (authentication == null) {
-                log.error("未获取到认证信息");
-                return Result.error("未获取到认证信息");
-            }
-
-            boolean isAdmin = authentication.getAuthorities().stream()
-                .anyMatch(auth -> auth.getAuthority().equals("ROLE_ADMIN"));
-
-            if (!isAdmin) {
-                Long currentCompanyId = CurrentHolder.getUserId();
-                if (currentCompanyId == null) {
-                    log.error("未获取到当前登录企业 ID");
-                    return Result.error("未获取到当前登录企业 ID");
-                }
-
-                if (!currentCompanyId.equals(status.getCompanyId())) {
-                    log.warn("企业用户尝试操作其他企业的实习状态，当前企业 ID: {}, 实习状态所属企业 ID: {}", currentCompanyId, status.getCompanyId());
-                    return Result.error("无权操作该实习状态");
-                }
-
-                log.info("企业用户身份验证通过，企业 ID: {}", currentCompanyId);
-            }
-
-            status.setCompanyConfirmStatus(2);
-            // 将拒绝原因存入 remark 字段
-            if (rejectReason != null && !rejectReason.isEmpty()) {
-                status.setRemark(rejectReason);
-            }
-            int result = studentInternshipStatusService.update(status);
-
-            if (result > 0) {
-                // 推送待办数据更新
-                pushTodoUpdate(status.getCompanyId());
-
-                // 推送实习确认拒绝结果给学生
+            InternshipConfirmationWorkflowService.ConfirmationOutcome outcome =
+                    confirmationWorkflowService.reject(
+                            legacyStatus.getCompanyId(), confirmationRecord.getId(), reason);
+            InternshipConfirmationRecord resolved = outcome.record();
+            runAfterCommit(() -> {
+                pushTodoUpdate(resolved.getCompanyId());
                 webSocketHandler.sendConfirmationResultToStudent(
-                    status.getStudentId(),
-                    2, // 2=已拒绝
-                    status.getCompany() != null ? status.getCompany().getCompanyName() : "",
-                    status.getPosition() != null ? status.getPosition().getPositionName() : ""
-                );
-
-                return Result.success("拒绝成功");
-            }
-            return Result.error("拒绝失败");
+                        resolved.getStudentId(), 2,
+                        resolved.getCompanyName(), resolved.getPositionName());
+            });
+            return Result.success("拒绝成功");
         } catch (Exception e) {
+            rollbackCurrentTransaction();
             log.error("拒绝实习状态失败：{}", e.getMessage(), e);
             return Result.error("拒绝失败：" + e.getMessage());
+        }
+    }
+
+    private Result authorizeLegacyConfirmation(StudentInternshipStatus status) {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null) return Result.error("未获取到认证信息");
+        boolean isAdmin = authentication.getAuthorities().stream()
+                .anyMatch(authority -> "ROLE_ADMIN".equals(authority.getAuthority()));
+        if (isAdmin) return null;
+        Long currentCompanyId = CurrentHolder.getUserId();
+        if (currentCompanyId == null) return Result.error("未获取到当前登录企业 ID");
+        if (!currentCompanyId.equals(status.getCompanyId())) {
+            return Result.error("无权操作该实习状态");
+        }
+        return null;
+    }
+
+    private InternshipConfirmationRecord findPendingConfirmation(StudentInternshipStatus status) {
+        return confirmationRecordService.findByCompanyIdAndStatus(status.getCompanyId(), 0).stream()
+                .filter(record -> status.getStudentId().equals(record.getStudentId())
+                        && status.getCompanyId().equals(record.getCompanyId())
+                        && status.getPositionId().equals(record.getPositionId()))
+                .findFirst()
+                .orElse(null);
+    }
+
+    private void runAfterCommit(Runnable action) {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    action.run();
+                }
+            });
+        } else {
+            action.run();
+        }
+    }
+
+    private void rollbackCurrentTransaction() {
+        try {
+            TransactionAspectSupport.currentTransactionStatus().setRollbackOnly();
+        } catch (NoTransactionException ignored) {
+            // Direct controller unit tests do not run through a transactional proxy.
         }
     }
 }

@@ -13,6 +13,7 @@ import com.internship.mapper.TeacherUserMapper;
 import com.internship.service.TeacherDashboardService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -62,9 +63,11 @@ public class TeacherDashboardServiceImpl implements TeacherDashboardService {
                 return buildCollegeStats(userId, startDate, endDate);
             }
 
-            // 管理员或其他：全量统计
-            return buildGlobalStats(startDate, endDate);
+            // 教师接口不能在档案类型缺失时回退到全校统计。
+            throw new AccessDeniedException("教师负责范围不可用");
 
+        } catch (AccessDeniedException e) {
+            throw e;
         } catch (Exception e) {
             log.error("获取教师端看板统计数据失败", e);
             return buildEmptyResult();

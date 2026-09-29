@@ -3,6 +3,7 @@ package com.internship.mapper;
 import com.internship.entity.Major;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
+import org.apache.ibatis.annotations.Update;
 
 import java.util.List;
 
@@ -55,4 +56,8 @@ public interface MajorMapper {
     
     // 查询专业总数
     Long count();
+
+    // 删除专业前解除学生对专业的直接引用；班级由 ClassService 逐个删除。
+    @Update("UPDATE student_users SET major_id = NULL WHERE major_id = #{majorId}")
+    int clearMajorIdOnStudents(@Param("majorId") Long majorId);
 }

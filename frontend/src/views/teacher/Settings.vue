@@ -1,76 +1,48 @@
 <template>
-  <div class="settings-container">
-    <!-- 设置页面头部 -->
-    <div v-if="showSettings" class="page-header fade-in" style="animation-delay: 0.1s">
+  <div v-if="showSettings" class="settings-container">
+    <div class="page-header fade-in" style="animation-delay: 0.1s">
       <h2>重要设置</h2>
-      <p class="page-subtitle" v-if="activeTab === 'preNode'">配置下点前实习时间节点</p>
-      <p class="page-subtitle" v-else-if="activeTab === 'postNode'">配置下点后实习时间节点</p>
+      <p class="page-subtitle">配置全局教学日历；学生申请和更换岗位不受该日历限制</p>
     </div>
 
-    <!-- 设置选项卡 -->
-    <div class="settings-tabs fade-in" style="animation-delay: 0.2s">
-      <button
-        v-for="tab in settingsTabs"
-        :key="tab.key"
-        :class="['tab-btn', { active: activeTab === tab.key }]"
-        @click="activeTab = tab.key"
-      >
-        {{ tab.name }}
-      </button>
-    </div>
-
-    <!-- 下点前时间节点设置 -->
-    <div v-show="activeTab === 'preNode'" class="settings-section card fade-in" style="animation-delay: 0.3s">
-      <h3>下点前时间节点设置</h3>
-      <div class="settings-form">
-        <div class="form-group fade-in" :style="{ animationDelay: `${0.3 + index * 0.1}s`, '--item-color': item.color }" v-for="(item, index) in preInternshipNodesItems" :key="item.key">
-          <label>{{ item.label }}：</label>
-          <div class="form-control" :style="{ borderColor: item.color }">
-            <input :type="item.type" v-model.number="internshipSettings[item.key]" :min="item.min" :max="item.max" v-if="item.type === 'number'" />
-            <input :type="item.type" v-model="internshipSettings[item.key]" v-else-if="item.type === 'date'" />
-            <span class="form-unit" v-if="item.unit">{{ item.unit }}</span>
-          </div>
-          <p class="form-desc">{{ item.desc }}</p>
-          <p class="form-overdue">⏰ {{ item.overdue }}</p>
-        </div>
-      </div>
-
-      <!-- 设置操作按钮 -->
-      <div class="settings-actions-card card fade-in" style="animation-delay: 0.6s">
-        <div class="settings-actions-content">
-          <button type="button" class="save-btn btn btn-primary" @click="saveSettings" id="saveSettingsBtn">保存设置</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- 下点后时间节点设置 -->
-    <div v-show="activeTab === 'postNode'" class="settings-section card fade-in" style="animation-delay: 0.3s">
-      <h3>下点后时间节点设置</h3>
+    <div class="settings-section card fade-in" style="animation-delay: 0.2s">
+      <h3>实习教学日历</h3>
       <div class="hint-banner">
-        💡 每个学生的实际实习起止时间由系统根据岗位日期和企业确认时刻自动计算，此处的日期仅作备用和上限，不再一刀切。
+        开始、结束日期仅用于教学安排和统计默认范围，不限制学生申请岗位、确认实习或更换公司。
       </div>
-      <div class="settings-form">
-        <div class="form-group fade-in" :style="{ animationDelay: `${0.3 + index * 0.1}s`, '--item-color': item.color }" v-for="(item, index) in postInternshipNodesItems" :key="item.key">
-          <label>{{ item.label }}：</label>
-          <div class="form-control" :style="{ borderColor: item.color }">
-            <input :type="item.type" v-model.number="internshipSettings[item.key]" :min="item.min" :max="item.max" v-if="item.type === 'number'" />
-            <input :type="item.type" v-model="internshipSettings[item.key]" v-else-if="item.type === 'date'" />
-            <span class="form-unit" v-if="item.unit">{{ item.unit }}</span>
-          </div>
-          <p class="form-desc">{{ item.desc }}</p>
-          <p class="form-overdue">⏰ {{ item.overdue }}</p>
+      <div class="calendar-settings-grid">
+        <div class="calendar-setting-panel">
+          <h4>全局参考周期</h4>
+          <label>参考开始日期</label>
+          <input v-model="calendar.startDate" type="date" :disabled="!canEditCalendar" />
+          <label>参考结束日期</label>
+          <input v-model="calendar.endDate" type="date" :disabled="!canEditCalendar" />
+        </div>
+        <div class="calendar-setting-panel">
+          <h4>教学任务</h4>
+          <template v-if="reportCycleVisible">
+            <label>心得周期（天）</label>
+            <input v-model.number="calendar.reportCycle" type="number" min="1" max="90" :disabled="!canEditCalendar" />
+          </template>
+          <template v-if="canEditAppraisalDeadline">
+            <label>鉴定表截止日期</label>
+            <input v-model="calendar.appraisalDeadline" type="date" />
+          </template>
+          <template v-else-if="calendar.appraisalDeadline">
+            <label>鉴定表截止日期</label>
+            <input :value="calendar.appraisalDeadline" type="date" disabled />
+          </template>
         </div>
       </div>
-
-      <!-- 设置操作按钮 -->
-      <div class="settings-actions-card card fade-in" style="animation-delay: 0.6s">
+      <div v-if="canEditCalendar" class="settings-actions-card card fade-in">
         <div class="settings-actions-content">
-          <button type="button" class="save-btn btn btn-primary" id="saveSettingsBtn">保存设置</button>
+          <button type="button" class="save-btn btn btn-primary" :disabled="saving" @click="saveCalendar">
+            {{ saving ? '保存中...' : '保存教学日历' }}
+          </button>
         </div>
       </div>
     </div>
 
-    <!-- 操作反馈提示 -->
     <div v-if="showFeedback" :class="['feedback-toast', feedbackType]">
       <span>{{ feedbackMessage }}</span>
     </div>
@@ -78,114 +50,30 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch, nextTick } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
-import { getInternshipNodes, updateInternshipNodes } from '../../api/teacherSettings'
-
-const router = useRouter()
-const route = useRoute()
+import { computed, onMounted, ref } from 'vue'
+import {
+  getInternshipCalendar,
+  getReportCycleVisible,
+  updateInternshipCalendar,
+  type InternshipCalendar
+} from '../../api/teacherSettings'
 
 const teacherType = localStorage.getItem('teacherType') || ''
+const showSettings = computed(() => ['COUNSELOR', 'DEPARTMENT', 'COLLEGE'].includes(teacherType))
+const canEditCalendar = computed(() => teacherType === 'DEPARTMENT')
+const canEditAppraisalDeadline = computed(() => teacherType === 'DEPARTMENT')
+const saving = ref(false)
+// 心得周期配置项是否可见：仅当管理员已将智慧评分菜单权限授予至少一类教师角色时显示
+const reportCycleVisible = ref(false)
 
-// 设置选项卡
-// - 所有教师类型都显示下点前/下点后时间节点设置
-// - AI分析配置在独立的 /teacher/ai-scoring-config 页面
-const activeTab = ref('preNode')
-const settingsTabs = computed(() => {
-  // 辅导员、系室教师和学院教师都显示下点前/下点后设置
-  if (teacherType === 'COUNSELOR' || teacherType === 'DEPARTMENT' || teacherType === 'COLLEGE') {
-    return [
-      { key: 'preNode', name: '下点前设置' },
-      { key: 'postNode', name: '下点后设置' }
-    ]
-  }
-  return []
+const calendar = ref<InternshipCalendar>({
+  startDate: '',
+  endDate: '',
+  reportCycle: 7,
+  appraisalDeadline: '',
+  version: null
 })
 
-// 是否显示设置页面
-const showSettings = computed(() => {
-  return settingsTabs.value.length > 0
-})
-
-// 下点前时间节点设置项 - 系室教师
-const preInternshipNodesItems = ref([
-  {
-    key: 'applicationStartTime',
-    label: '实习应聘开始时间',
-    type: 'date',
-    desc: '学生能开始投简历、提交实习确认的最早日期。早于此日期，应聘入口不开。',
-    overdue: '早于此日期：应聘入口关闭，无法投简历和提交确认。',
-    color: '#1890ff'
-  },
-  {
-    key: 'applicationEndTime',
-    label: '实习应聘截止时间',
-    type: 'date',
-    desc: '投递简历的最后期限。过期后仍可面试、收Offer、提交实习确认，直到确认截止日。',
-    overdue: '过期后：不能投新简历，已投的可继续面试。',
-    color: '#1890ff'
-  },
-  {
-    key: 'companyConfirmationDeadline',
-    label: '实习单位确认截止日期',
-    type: 'date',
-    desc: '学生提交实习确认的最后期限。此日期和实习开始时间无关，过期后已确认的学生仍可按岗位约定的时间开始实习。',
-    overdue: '过期后：不能再提交新的实习确认，已确认的不受影响。',
-    color: '#52c41a'
-  },
-  {
-    key: 'delayApplicationDeadline',
-    label: '延迟实习申请截止日期',
-    type: 'date',
-    desc: '考研、考公、出国的学生，在此日期前提交延迟申请。',
-    overdue: '过期后：不能再提交延迟申请，必须正常实习。',
-    color: '#faad14'
-  }
-])
-
-// 下点后时间节点设置项 - 学院教师
-const postInternshipNodesItems = ref([
-  {
-    key: 'startDate',
-    label: '实习开始日期（兜底值）',
-    type: 'date',
-    desc: '备用日期。只有岗位没设置开始时间时才用这个。每个学生的实际开始时间 = 岗位日期和确认时刻中较晚的那个，由系统自动算。',
-    overdue: '仅在岗位没日期时起作用，不影响学生端入口开放。',
-    color: '#1890ff'
-  },
-  {
-    key: 'endDate',
-    label: '实习结束日期（上界）',
-    type: 'date',
-    desc: '所有学生实习结束的最晚时间。只有一段实习就用这个；中途换单位的，前一段会自动截断到第二段开始前。',
-    overdue: '最晚结束时间，系统配合换单位机制自动决定每个学生的实际结束时间。',
-    color: '#52c41a'
-  },
-  {
-    key: 'reportCycle',
-    label: '实习心得提交周期',
-    type: 'number',
-    unit: '天',
-    desc: '将实习期按固定天数划分为多个阶段。例如设为7天，则每7天为一期，系统自动生成待提交的心得任务并判断是否需要提醒。范围 1~90 天。',
-    overdue: '周期太短：学生频繁被催交心得。周期太长：学生长时间不交心得，教师无法及时了解实习情况。',
-    color: '#722ed1'
-  }
-])
-
-// 实习设置
-const internshipSettings = ref({
-  applicationStartTime: '2026-03-01', // 实习应聘开始时间
-  applicationEndTime: '2026-05-31', // 实习应聘截止时间
-  companyConfirmationDeadline: '2026-06-15', // 实习单位确认截止日期
-  delayApplicationDeadline: '2026-06-30', // 延迟实习申请截止日期
-  reportCycle: 7, // 实习心得提交周期（天）
-  startDate: '2026-07-01', // 实习开始日期
-  endDate: '2026-12-31' // 实习结束日期
-})
-
-
-
-// 操作反馈
 const showFeedback = ref(false)
 const feedbackMessage = ref('')
 const feedbackType = ref('success') // success or error
@@ -200,91 +88,60 @@ const showOperationFeedback = (message: string, type: 'success' | 'error' = 'suc
   }, 5000)
 }
 
-// 日期校验
-const validateDates = (): string | null => {
-  const s = internshipSettings.value
-
-  // 基础格式校验：确保日期不为空
-  if (!s.applicationStartTime) return '请设置应聘开始时间'
-  if (!s.applicationEndTime) return '请设置应聘截止时间'
-  if (!s.startDate) return '请设置实习开始日期'
-  if (!s.endDate) return '请设置实习结束日期'
-
-  // 日期顺序校验
-  // 1. 应聘开始 < 应聘截止
-  if (s.applicationStartTime > s.applicationEndTime) {
-    return `应聘开始时间（${s.applicationStartTime}）不能晚于应聘截止时间（${s.applicationEndTime}）`
+const validateCalendar = (): string | null => {
+  if (!calendar.value.startDate || !calendar.value.endDate) return '请完整设置参考开始和结束日期'
+  if (calendar.value.startDate > calendar.value.endDate) return '参考结束日期不能早于开始日期'
+  if (!Number.isInteger(calendar.value.reportCycle)
+      || calendar.value.reportCycle < 1 || calendar.value.reportCycle > 90) {
+    return '心得周期必须为1至90天'
   }
-
-  // 2. 应聘截止 < 确认截止（如果设置了确认截止）
-  if (s.companyConfirmationDeadline && s.applicationEndTime > s.companyConfirmationDeadline) {
-    return `应聘截止时间（${s.applicationEndTime}）不能晚于单位确认截止日期（${s.companyConfirmationDeadline}）`
-  }
-
-  // 3. 实习开始 < 实习结束
-  if (s.startDate > s.endDate) {
-    return `实习开始日期（${s.startDate}）不能晚于实习结束日期（${s.endDate}）`
-  }
-
-  // 4. 延迟申请截止应在实习结束前（如果设置了）
-  if (s.delayApplicationDeadline && s.delayApplicationDeadline > s.endDate) {
-    return `延迟实习申请截止日期（${s.delayApplicationDeadline}）不能晚于实习结束日期（${s.endDate}）`
-  }
-
+  if (!calendar.value.appraisalDeadline) return '请设置鉴定表截止日期'
+  if (calendar.value.appraisalDeadline <= calendar.value.endDate) return '鉴定表截止日期必须晚于参考结束日期'
   return null
 }
 
-// 保存设置
-const saveSettings = async () => {
+const saveCalendar = async () => {
+  const error = validateCalendar()
+  if (error) {
+    showOperationFeedback(error, 'error')
+    return
+  }
   try {
-    const error = validateDates()
-    if (error) {
-      showOperationFeedback(error, 'error')
-      return
-    }
-    if (activeTab.value === 'preNode' || activeTab.value === 'postNode') {
-      await updateInternshipNodes(internshipSettings.value)
-      showOperationFeedback('实习时间节点设置保存成功！')
-    }
+    saving.value = true
+    await updateInternshipCalendar({ ...calendar.value })
+    await loadSettings()
+    showOperationFeedback('实习教学日历保存成功')
   } catch (error: any) {
-    console.error('保存设置失败:', error)
-    showOperationFeedback(error.message || '保存设置失败', 'error')
+    showOperationFeedback(error?.message || '实习教学日历保存失败', 'error')
+  } finally {
+    saving.value = false
   }
 }
 
-// 初始化加载设置
 const loadSettings = async () => {
   try {
-    // 所有教师类型都加载下点前/下点后时间节点设置
-    const internshipResponse = await getInternshipNodes()
-    if (internshipResponse && internshipResponse.data) {
-      Object.assign(internshipSettings.value, internshipResponse.data)
+    const [calendarResponse, visibleResponse] = await Promise.all([
+      getInternshipCalendar(),
+      getReportCycleVisible().catch(() => null)
+    ]) as any[]
+    if (calendarResponse?.code === 200 && calendarResponse.data) {
+      calendar.value = {
+        ...calendar.value,
+        ...calendarResponse.data,
+        reportCycle: Number(calendarResponse.data.reportCycle || 7)
+      }
     }
-
-    console.log('从后端加载设置成功')
+    if (visibleResponse?.code === 200 && visibleResponse.data) {
+      reportCycleVisible.value = visibleResponse.data.visible === true
+    }
   } catch (error: any) {
-    console.error('从后端加载设置失败:', error)
+    console.error('加载实习教学日历失败:', error)
     showOperationFeedback('加载设置失败，请稍后重试', 'error')
   }
 }
 
-// 手动绑定按钮事件
-function bindSaveButtons() {
-  document.querySelectorAll('#saveSettingsBtn').forEach(btn => {
-    btn.onclick = saveSettings
-  })
-}
-
-// 监听 tab 切换，重新绑定保存按钮事件
-watch(activeTab, () => {
-  nextTick(() => bindSaveButtons())
-})
-
-// 页面加载时加载设置
-onMounted(() => {
-  loadSettings()
-  nextTick(() => bindSaveButtons())
-})
+// 普通设置页不注册 AI 填表；教学日历由教师在页面中手动调整并保存。
+onMounted(loadSettings)
 </script>
 
 <style scoped>
@@ -387,6 +244,47 @@ onMounted(() => {
   font-weight: 600;
   color: var(--color-primary);
   margin: 0 0 16px 0;
+}
+
+ .calendar-settings-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.calendar-setting-panel {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px 12px;
+  padding: 18px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.calendar-setting-panel h4 {
+  grid-column: 1 / -1;
+  margin: 0 0 4px;
+  color: #1e293b;
+}
+
+.calendar-setting-panel label {
+  color: #64748b;
+  font-size: 13px;
+}
+
+.calendar-setting-panel input[type="text"],
+.calendar-setting-panel input[type="date"],
+.calendar-setting-panel input[type="number"] {
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid #dbe3ef;
+  border-radius: 6px;
+}
+
+.calendar-setting-panel .calendar-enabled {
+  grid-column: 1 / -1;
 }
 
 /* 设置表单 */

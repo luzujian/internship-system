@@ -1,15 +1,18 @@
 package com.internship.controller;
 
 import com.internship.anno.Log;
-import com.internship.entity.InternshipProgressRecord;
+import com.internship.entity.Position;
 import com.internship.entity.Result;
 import com.internship.entity.StudentJobApplication;
+import com.internship.entity.StudentUser;
 import com.internship.entity.User;
-import com.internship.service.InternshipProgressRecordService;
+import com.internship.service.DirectHireService;
+import com.internship.service.PositionService;
 import com.internship.service.StudentJobApplicationService;
 import com.internship.service.UserService;
+import com.internship.service.StudentUserService;
+import com.internship.utils.StudentProfileCompleteness;
 
-import java.util.Date;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -28,10 +31,16 @@ public class StudentJobApplicationController {
     private UserService userService;
 
     @Autowired
+    private StudentUserService studentUserService;
+
+    @Autowired
     private StudentJobApplicationService applicationService;
 
     @Autowired
-    private InternshipProgressRecordService progressRecordService;
+    private PositionService positionService;
+
+    @Autowired
+    private DirectHireService directHireService;
 
     @Autowired
     private com.internship.websocket.AnnouncementWebSocketHandler webSocketHandler;
@@ -56,6 +65,7 @@ public class StudentJobApplicationController {
                 if (app.getIndustryName() != null) {
                     app.setIndustryName(convertIndustryToChinese(app.getIndustryName()));
                 }
+                app.setDirectHire(directHireService.isDirectHire(app.getStudentId(), app.getPositionId()));
             }
             return Result.success(applications);
         } catch (Exception e) {
@@ -64,26 +74,56 @@ public class StudentJobApplicationController {
         }
     }
 
+    /** Return one application only when owned by the authenticated student. */
+    @GetMapping("/{id}")
+    public Result getById(@PathVariable Long id) {
+        User user = getCurrentUser();
+        if (user == null) return Result.error("未登录");
+        try {
+            StudentJobApplication application = applicationService.findById(id);
+            if (application == null) return Result.error("申请不存在");
+            if (!user.getId().equals(application.getStudentId())) {
+                throw new org.springframework.security.access.AccessDeniedException("无权查看此申请");
+            }
+            if (application.getIndustryName() != null) {
+                application.setIndustryName(convertIndustryToChinese(application.getIndustryName()));
+            }
+            application.setDirectHire(directHireService.isDirectHire(
+                    application.getStudentId(), application.getPositionId()));
+            return Result.success(application);
+        } catch (org.springframework.security.access.AccessDeniedException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("获取申请详情失败: {}", e.getMessage(), e);
+            return Result.error("获取申请详情失败");
+        }
+    }
     @PostMapping
     @Log(operationType = "ADD", module = "APPLICATION_MANAGEMENT", description = "申请职位")
     public Result create(@RequestBody StudentJobApplication application) {
         try {
             User user = getCurrentUser();
             if (user == null) return Result.error("未登录");
+            // 岗位申请前置校验：姓名、学号、电话、邮箱必须全部完善
+            StudentUser studentUser = studentUserService.findById(user.getId());
+            List<String> profileMissing = StudentProfileCompleteness.missingRequiredFields(studentUser);
+            if (!profileMissing.isEmpty()) {
+                return Result.error(StudentProfileCompleteness.incompleteMessage(profileMissing));
+            }
             // 强制使用JWT中的studentId，不信任前端传入值
             application.setStudentId(user.getId());
+            Position position = positionService.findById(application.getPositionId());
+            if (position == null) {
+                return Result.error("职位不存在");
+            }
+            if (!"active".equalsIgnoreCase(position.getStatus())) {
+                return Result.error("该岗位已暂停招聘，无法申请");
+            }
+            if (position.getInternshipEndDate() != null
+                    && position.getInternshipEndDate().before(new java.sql.Date(System.currentTimeMillis()))) {
+                return Result.error("该岗位实习期已结束,无法申请");
+            }
             applicationService.create(application);
-
-            // 同步写入进度记录
-            InternshipProgressRecord record = new InternshipProgressRecord();
-            record.setStudentId(user.getId());
-            record.setEventType("job_application");
-            record.setEventTitle("投递申请");
-            record.setDescription(application.getPositionName() + " @ " + application.getCompanyName());
-            record.setStatus("pending");
-            record.setRelatedId(application.getId());
-            record.setEventTime(new Date());
-            progressRecordService.saveRecord(record);
 
             // 推送给企业端静默更新最新动态
             if (application.getCompanyId() != null) {

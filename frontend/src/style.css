@@ -270,8 +270,13 @@ img {
 }
 
 /* 修复 Element Plus 虚拟列表 wheel 事件 passive 警告 */
+/* 表格容器允许横滑（pan-x pan-y），其余滚动容器仅纵向 */
 .el-table__body-wrapper,
-.el-table__body,
+.el-table__body {
+  touch-action: pan-x pan-y;
+  overscroll-behavior: contain;
+}
+
 .el-scrollbar__wrap,
 .el-scrollbar__bar,
 .el-virtual-scrollbar,
@@ -401,9 +406,15 @@ p, span, div, li, td, th {
 }
 
 /* Element Plus el-scrollbar 全局滚动条样式 - 与管理员端一致 */
+/* 仅约束页面级滚动容器：表格内部滚动容器由下方规则恢复横滚 */
 .el-scrollbar__wrap {
   overflow-x: hidden;
   overflow-y: auto;
+}
+
+/* el-table 内部滚动容器恢复横向滚动（页面级容器仍禁止横滚） */
+.el-table .el-scrollbar__wrap {
+  overflow-x: auto;
 }
 
 /* 全局统一滚动条样式 - 覆盖所有滚动条 */

@@ -7,6 +7,9 @@ import java.util.List;
 import java.util.Map;
 
 public interface ClassCounselorRelationService {
+    List<Class> findClaimableClasses(Long counselorId);
+
+    int claimClasses(Long counselorId, List<Long> classIds);
     
     int assignClassToCounselor(Long classId, Long counselorId, String className, String counselorName);
     

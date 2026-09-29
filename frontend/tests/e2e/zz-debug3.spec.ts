@@ -1,0 +1,40 @@
+import { test, expect } from '@playwright/test'
+
+test('debug admin announcement', async ({ page, request }) => {
+  page.on('pageerror', e => console.log('PAGE-ERR=', String(e).slice(0, 300)))
+  page.on('console', m => { if (m.text().includes('[DEBUG]')) console.log('DBG=', m.text().slice(0, 200)) })
+  const login = await (await request.post('http://localhost:8080/api/auth/login', {
+    data: { username: 'admin2', password: '123456' }
+  })).json()
+  const auth = login.data
+  await page.addInitScript((a: any) => {
+    localStorage.setItem('current_role', 'ROLE_ADMIN')
+    localStorage.setItem('admin_token_ROLE_ADMIN', a.accessToken)
+    localStorage.setItem('admin_accessToken_ROLE_ADMIN', a.accessToken)
+    localStorage.setItem('admin_refreshToken_ROLE_ADMIN', a.refreshToken)
+    localStorage.setItem('admin_role_ROLE_ADMIN', 'ROLE_ADMIN')
+    localStorage.setItem('admin_userId_ROLE_ADMIN', String(a.user.id))
+    localStorage.setItem('admin_username_ROLE_ADMIN', a.user.username)
+    localStorage.setItem('admin_name_ROLE_ADMIN', a.user.name)
+    localStorage.setItem('admin_isReadOnly_ROLE_ADMIN', 'false')
+  }, auth)
+  await page.goto('/admin/announcements', { waitUntil: 'networkidle', timeout: 60000 })
+  const btns = await page.locator('button.action-btn.primary').allTextContents()
+  console.log('PRIMARY-BTNS=', JSON.stringify(btns).slice(0, 300))
+  const btns2 = await page.getByRole('button', { name: /新增|发布/ }).allTextContents()
+  console.log('ADD-BTNS=', JSON.stringify(btns2).slice(0, 200))
+  await page.getByRole('button', { name: /新增|发布/ }).first().click()
+  await page.waitForTimeout(1500)
+  console.log('DIALOGS=', await page.locator('.el-dialog').count())
+  console.log('DLG-TITLE=', ((await page.locator('.el-dialog').last().textContent()) || '').slice(0, 120))
+  console.log('HEADER=', ((await page.locator('.el-dialog__title').allTextContents()) || []).join('|').slice(0, 100))
+  await page.screenshot({ path: 'test-results/zz-dbg3.png' })
+  await page.locator('button.agent-entry').evaluate((el) => el.click())
+  await page.waitForTimeout(2500)
+  console.log('FORM-LINK=', await page.locator('.agent-form-link').count())
+  await page.locator('#agent-input').fill('公告标题写系统维护通知')
+  await page.locator('.agent-composer .send-button:not(.stop-button)').click()
+  await page.waitForTimeout(45000)
+  console.log('FILL-EVENTS=', await page.locator('.fill-event').count())
+  console.log('TASKS=', await page.locator('.agent-turn[data-task-id]').count())
+})

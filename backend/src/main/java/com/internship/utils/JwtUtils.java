@@ -16,7 +16,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 import com.internship.service.JwtRedisService;
-import java.util.Arrays;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
@@ -129,8 +128,17 @@ public class JwtUtils {
         // 为刷新令牌创建一个新的 claims 副本，移除不必要的信息
         Map<String, Object> refreshClaims = new HashMap<>(claims);
 
-        // 只保留必要的用户标识信息
-        refreshClaims.keySet().retainAll(Arrays.asList("username", "role", "userId"));
+        // Always encode the read-only state explicitly. Previously-issued refresh tokens
+        // without this marker cannot safely be distinguished from impersonation tokens.
+        refreshClaims.keySet().retainAll(java.util.Set.of("username", "role", "userId", "teacherType",
+                "isReadOnly", "originalAdminId", "originalAdminUsername", "sid"));
+        boolean readOnly = Boolean.TRUE.equals(claims.get("isReadOnly"))
+                || claims.containsKey("originalAdminId") || claims.containsKey("originalAdminUsername");
+        refreshClaims.put("isReadOnly", readOnly);
+        if (!readOnly) {
+            refreshClaims.remove("originalAdminId");
+            refreshClaims.remove("originalAdminUsername");
+        }
 
         // 生成唯一的刷新令牌 ID
         String refreshTokenId = generateTokenId();
@@ -175,16 +183,12 @@ public class JwtUtils {
         Objects.requireNonNull(token, "JWT token cannot be null");
 
         // 检查令牌是否在黑名单中
-        try {
-            // 先快速解析不验证签名，获取 jti 进行黑名单检查
-            String jwtId = getJwtIdWithoutVerification(token);
-            if (StringUtils.hasText(jwtId) && jwtRedisService.isInBlacklist(jwtId)) {
-                log.warn("令牌已在黑名单中：{}", jwtId);
-                throw new JwtException("Token has been revoked", JwtErrorCode.SIGNATURE_INVALID);
-            }
-        } catch (Exception e) {
-            // 如果无法解析 jti，则继续进行完整验证
-            log.debug("无法解析令牌 ID 进行黑名单检查：{}", e.getMessage());
+        // 先快速解析不验证签名，获取 jti 进行黑名单检查。
+        // 该步骤的解析失败应忽略，但黑名单命中必须继续抛出。
+        String jwtId = getJwtIdWithoutVerification(token);
+        if (StringUtils.hasText(jwtId) && jwtRedisService.isInBlacklist(jwtId)) {
+            log.warn("令牌已在黑名单中：{}", jwtId);
+            throw new JwtException("Token has been revoked", JwtErrorCode.SIGNATURE_INVALID);
         }
 
         try {
@@ -193,6 +197,11 @@ public class JwtUtils {
                     .build()
                     .parseSignedClaims(token)
                     .getPayload();
+
+            String sessionId = claims.get("sid", String.class);
+            if (StringUtils.hasText(sessionId) && jwtRedisService.isInBlacklist("session:" + sessionId)) {
+                throw new JwtException("Session has been revoked", JwtErrorCode.SIGNATURE_INVALID);
+            }
 
             // 验证令牌版本号
             String username = (String) claims.get("username");
@@ -316,6 +325,18 @@ public class JwtUtils {
      * 将令牌加入黑名单（使其失效）
      * @param token JWT 令牌
      */
+    public void revokeSession(String token) {
+        Claims claims = parseToken(token);
+        String sessionId = claims.get("sid", String.class);
+        if (StringUtils.hasText(sessionId)) {
+            // Covers every token already issued in this family, including refresh rotation.
+            jwtRedisService.blacklistToken("session:" + sessionId,
+                    System.currentTimeMillis() + Math.max(expirationTime, refreshExpirationTime));
+        } else {
+            blacklistToken(token);
+        }
+    }
+
     public void blacklistToken(String token) {
         try {
             Claims claims = parseToken(token);

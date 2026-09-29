@@ -93,32 +93,21 @@
         <el-descriptions-item label="企业介绍" :span="2">{{ currentCompany.introduction || '暂无介绍' }}</el-descriptions-item>
         <el-descriptions-item label="营业执照" :span="2">
           <div v-if="currentCompany.businessLicense" class="image-preview">
-            <el-image
-              :src="getImageUrl(currentCompany.businessLicense)"
-              :preview-src-list="[getImageUrl(currentCompany.businessLicense)]"
-              fit="cover"
-              class="material-image"
-              :preview-teleported="true"
-            />
+            <el-button link type="primary" @click="downloadCompanyMaterial('businessLicense', 0, '营业执照')">下载营业执照</el-button>
           </div>
           <div v-else>未上传</div>
         </el-descriptions-item>
         <el-descriptions-item label="法人身份证" :span="2">
           <div v-if="currentCompany.legalIdCard" class="image-preview">
-            <el-image
-              v-for="(url, index) in getImageUrls(currentCompany.legalIdCard)"
-              :key="index"
-              :src="url"
-              :preview-src-list="getImageUrls(currentCompany.legalIdCard)"
-              fit="cover"
-              class="material-image"
-              :preview-teleported="true"
-              :initial-index="index"
-            />
+            <el-button v-for="index in legalCardIndices" :key="index" link type="primary"
+              @click="downloadCompanyMaterial('legalIdCard', index, `法人身份证${index === 0 ? '正面' : '反面'}`)">
+              下载{{ index === 0 ? '正面' : '反面' }}
+            </el-button>
           </div>
           <div v-else>未上传</div>
         </el-descriptions-item>
         <el-descriptions-item label="是否实习基地">{{ currentCompany.isInternshipBase === 1 ? '是' : '否' }}</el-descriptions-item>
+        <el-descriptions-item label="签署实训基地协议">{{ currentCompany.hasTrainingBaseAgreement === 1 ? '是' : '否' }}</el-descriptions-item>
         <el-descriptions-item label="申请时间">{{ formatDate(currentCompany.applyTime) }}</el-descriptions-item>
       </el-descriptions>
 
@@ -152,10 +141,14 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, onUnmounted, watch } from 'vue'
+import { useFormContext } from '@/agent/formContext'
 import { ElMessage } from 'element-plus'
 import { Search, Refresh, View } from '@element-plus/icons-vue'
 import request from '../../utils/request'
+import { computed } from 'vue'
+import { companyQualificationMaterialByteUrl } from '@/utils/authorizedFileUrl'
+import { downloadAuthorizedFile } from '@/utils/authorizedFileDownload'
 
 const searchForm = reactive({
   companyName: '',
@@ -177,12 +170,39 @@ const statistics = reactive({
 
 const auditDialogVisible = ref(false)
 const currentCompany = ref(null)
+const legalCardIndices = computed(() => String(currentCompany.value?.legalIdCard || '')
+  .split(',').slice(0, 2).map((value, index) => value.trim() ? index : -1).filter(index => index >= 0))
+
+const downloadCompanyMaterial = async (kind, index, label) => {
+  const company = currentCompany.value
+  const url = companyQualificationMaterialByteUrl(company?.id, kind, index)
+  if (!url) return ElMessage.error('企业材料记录不可用')
+  const stored = kind === 'legalIdCard' ? String(company?.legalIdCard || '').split(',')[index] : company?.[kind]
+  const extension = typeof stored === 'string' ? /\.([a-z0-9]{1,8})(?:$|[?#])/i.exec(stored)?.[1] : ''
+  try {
+    await downloadAuthorizedFile(url, extension ? `${label}.${extension}` : label)
+  } catch {
+    ElMessage.error('企业材料下载失败，请检查权限或联系管理员')
+  }
+}
 const auditForm = reactive({
   id: null,
   auditStatus: 1,
   auditRemark: ''
 })
 const submitLoading = ref(false)
+
+// ===== 智能填表：审核弹窗注册到 AI 侧栏（只写响应式 auditForm，不触发提交，无 el-form 实例） =====
+// 未覆盖字段说明：企业信息均为只读展示（descriptions），无需填写
+const formContext = useFormContext()
+const auditFillFields = [
+  { prop: 'auditStatus', label: '审核结果', type: 'radio', required: true, valueType: 'number', options: [{ label: '通过', value: 1 }, { label: '拒绝', value: 2 }] },
+  { prop: 'auditRemark', label: '审核备注', type: 'textarea' }
+]
+watch(auditDialogVisible, (open) => {
+  if (!open) formContext.unregister('teacher:company-audit')
+})
+onUnmounted(() => formContext.unregister('teacher:company-audit'))
 
 const fetchData = async () => {
   loading.value = true
@@ -265,6 +285,13 @@ const handleAudit = (row) => {
   auditForm.auditStatus = 1
   auditForm.auditRemark = ''
   auditDialogVisible.value = true
+  formContext.register({
+    formId: 'teacher:company-audit',
+    title: '企业注册审核',
+    fields: auditFillFields,
+    getModel: () => auditForm,
+    getValidationSummary: () => ({ missingFields: [], validationErrors: [1, 2].includes(auditForm.auditStatus) ? [] : ['请选择审核结果'] })
+  })
 }
 
 const submitAudit = async () => {
@@ -275,12 +302,15 @@ const submitAudit = async () => {
   
   submitLoading.value = true
   try {
+    const operation = formContext.beginFormOperation('teacher:company-audit')
+    const resultLabel = auditForm.auditStatus === 1 ? '企业注册审核已通过' : '企业注册审核已拒绝'
     const response = await request.put(`/teacher/companies/${auditForm.id}/audit`, {
       auditStatus: auditForm.auditStatus,
       auditRemark: auditForm.auditRemark
     })
     
     if (response.code === 200) {
+      operation.complete({ status: 'submitted', label: resultLabel, url: '/teacher/company-audit' })
       ElMessage.success(auditForm.auditStatus === 1 ? '审核通过' : '审核拒绝')
       auditDialogVisible.value = false
       fetchData()
@@ -306,21 +336,6 @@ const formatDate = (date) => {
   const minutes = String(d.getMinutes()).padStart(2, '0')
   const seconds = String(d.getSeconds()).padStart(2, '0')
   return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`
-}
-
-const getImageUrl = (url) => {
-  if (!url) return ''
-  if (url.startsWith('data:')) return url
-  if (url.startsWith('http://') || url.startsWith('https://')) return url
-  if (url.startsWith('/api/')) return url
-  if (url.startsWith('/')) return '/api' + url
-  return '/api/' + url
-}
-
-const getImageUrls = (urls) => {
-  if (!urls) return []
-  const urlList = urls.split(',').map(url => url.trim()).filter(url => url)
-  return urlList.map(url => getImageUrl(url))
 }
 
 onMounted(() => {
@@ -406,5 +421,16 @@ onMounted(() => {
   display: flex;
   justify-content: flex-end;
   gap: 10px;
+}
+
+@media (max-width: 768px) {
+  .search-form :deep(.el-form-item) {
+    width: 100%;
+    margin-right: 0;
+  }
+
+  .search-form :deep(.el-input) {
+    width: 100% !important;
+  }
 }
 </style>

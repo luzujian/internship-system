@@ -42,7 +42,7 @@ public class DataExportServiceImpl implements DataExportService {
     public byte[] exportMajorProgress() {
         List<Map<String, Object>> data = internshipStatusMapper.getMajorProgressForExport();
         
-        String[] headers = {"专业名称", "学生总数", "已确定", "有Offer", "未找到", "实习结束", "完成率(%)"};
+        String[] headers = {"专业名称", "学生总数", "已确定", "有Offer", "尚无 Offer", "实习结束", "完成率(%)"};
         String[] fields = {"majorName", "totalStudents", "confirmedCount", "hasOfferCount", "notFoundCount", "completedCount", "progressRate"};
         
         return createExcel("各专业实习进度", headers, fields, data);
@@ -72,7 +72,7 @@ public class DataExportServiceImpl implements DataExportService {
     public byte[] exportClassStatistics() {
         List<Map<String, Object>> data = internshipStatusMapper.getClassStatisticsForExport();
         
-        String[] headers = {"班级名称", "专业", "学生总数", "已确定", "有Offer", "未找到", "完成率(%)"};
+        String[] headers = {"班级名称", "专业", "学生总数", "已确定", "有Offer", "尚无 Offer", "完成率(%)"};
         String[] fields = {"className", "majorName", "totalStudents", "confirmedCount", "hasOfferCount", "notFoundCount", "progressRate"};
         
         return createExcel("班级实习统计", headers, fields, data);

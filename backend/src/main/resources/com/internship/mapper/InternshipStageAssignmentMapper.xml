@@ -1,0 +1,178 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.internship.mapper.InternshipStageAssignmentMapper">
+    <resultMap id="StageAssignmentMap" type="com.internship.entity.InternshipStageAssignment">
+        <id property="id" column="id"/>
+        <result property="studentId" column="student_id"/>
+        <result property="stageNo" column="stage_no"/>
+        <result property="sequenceNo" column="sequence_no"/>
+        <result property="sourceType" column="source_type"/>
+        <result property="sourceAssignmentId" column="source_assignment_id"/>
+        <result property="applicationId" column="application_id"/>
+        <result property="confirmationRecordId" column="confirmation_record_id"/>
+        <result property="companyId" column="company_id"/>
+        <result property="companyName" column="company_name"/>
+        <result property="positionId" column="position_id"/>
+        <result property="positionName" column="position_name"/>
+        <result property="internshipStartTime" column="internship_start_time"/>
+        <result property="internshipEndTime" column="internship_end_time"/>
+        <result property="status" column="status"/>
+        <result property="currentFlag" column="current_flag"/>
+        <result property="quotaReleased" column="quota_released"/>
+        <result property="quotaReleasedAt" column="quota_released_at"/>
+        <result property="quotaReleaseReason" column="quota_release_reason"/>
+        <result property="remark" column="remark"/>
+        <result property="createTime" column="create_time"/>
+        <result property="updateTime" column="update_time"/>
+    </resultMap>
+
+    <select id="findById" resultMap="StageAssignmentMap">
+        select * from internship_stage_assignment where id = #{id}
+    </select>
+
+    <select id="findByApplicationId" resultMap="StageAssignmentMap">
+        select * from internship_stage_assignment
+        where application_id = #{applicationId}
+        order by id desc limit 1
+    </select>
+
+    <select id="findBySource" resultMap="StageAssignmentMap">
+        select * from internship_stage_assignment
+        where source_type = #{sourceType} and source_assignment_id = #{sourceId}
+        order by id desc limit 1
+    </select>
+
+    <select id="findByConfirmationRecordId" resultMap="StageAssignmentMap">
+        select * from internship_stage_assignment
+        where confirmation_record_id = #{confirmationRecordId}
+        order by current_flag desc, id desc limit 1
+    </select>
+
+    <select id="findByConfirmationRecordIdForUpdate" resultMap="StageAssignmentMap">
+        select * from internship_stage_assignment
+        where confirmation_record_id = #{confirmationRecordId}
+        order by current_flag desc, id desc limit 1
+        for update
+    </select>
+
+    <select id="findAll" resultMap="StageAssignmentMap">
+        select * from internship_stage_assignment order by student_id asc, stage_no asc, sequence_no asc
+    </select>
+
+    <select id="findByStudentId" resultMap="StageAssignmentMap">
+        select * from internship_stage_assignment
+        where student_id = #{studentId}
+        order by stage_no asc, sequence_no asc, id asc
+    </select>
+
+    <select id="findCurrentByStudentForUpdate" resultMap="StageAssignmentMap">
+        select * from internship_stage_assignment
+        where student_id = #{studentId} and current_flag = 1
+        order by id asc
+        for update
+    </select>
+
+    <select id="findPendingByStudentAndPosition" resultMap="StageAssignmentMap">
+        select * from internship_stage_assignment
+        where student_id = #{studentId}
+          and company_id = #{companyId}
+          and position_id = #{positionId}
+          and status = 'PENDING_CONFIRMATION'
+          and current_flag = 0
+        order by id desc limit 1
+    </select>
+
+    <select id="findCurrentByStudentAndStage" resultMap="StageAssignmentMap">
+        select * from internship_stage_assignment
+        where student_id = #{studentId} and stage_no = #{stageNo} and current_flag = 1
+        order by id desc limit 1
+    </select>
+
+    <select id="findCurrentByStudentAndStageForUpdate" resultMap="StageAssignmentMap">
+        select * from internship_stage_assignment
+        where student_id = #{studentId} and stage_no = #{stageNo} and current_flag = 1
+        order by id desc limit 1
+        for update
+    </select>
+
+    <select id="findStudentsAwaitingStageTwoDecision" resultType="long">
+        select distinct first_stage.student_id
+        from internship_stage_assignment first_stage
+        where first_stage.stage_no = 1
+          and first_stage.current_flag = 1
+          and first_stage.status not in ('PENDING_CONFIRMATION', 'REPLACED', 'INTERRUPTED')
+          and not exists (
+              select 1
+              from internship_stage_assignment second_stage
+              where second_stage.student_id = first_stage.student_id
+                and second_stage.stage_no = 2
+                and second_stage.current_flag = 1
+          )
+        order by first_stage.student_id
+    </select>
+
+    <select id="countByStudentAndStage" resultType="int">
+        select count(*) from internship_stage_assignment
+        where student_id = #{studentId} and stage_no = #{stageNo}
+    </select>
+
+    <select id="countByStudent" resultType="int">
+        select count(*) from internship_stage_assignment where student_id = #{studentId}
+    </select>
+
+    <insert id="insert" parameterType="com.internship.entity.InternshipStageAssignment"
+            useGeneratedKeys="true" keyProperty="id">
+        insert into internship_stage_assignment (
+            student_id, stage_no, sequence_no, source_type, source_assignment_id,
+            application_id, confirmation_record_id, company_id, company_name,
+            position_id, position_name, internship_start_time, internship_end_time,
+            status, current_flag, quota_released, quota_released_at,
+            quota_release_reason, remark, create_time, update_time
+        ) values (
+            #{studentId}, #{stageNo}, #{sequenceNo}, #{sourceType}, #{sourceAssignmentId},
+            #{applicationId}, #{confirmationRecordId}, #{companyId}, #{companyName},
+            #{positionId}, #{positionName}, #{internshipStartTime}, #{internshipEndTime},
+            #{status}, coalesce(#{currentFlag}, 1), coalesce(#{quotaReleased}, 0),
+            #{quotaReleasedAt}, #{quotaReleaseReason}, #{remark}, now(), now()
+        )
+    </insert>
+
+    <update id="update" parameterType="com.internship.entity.InternshipStageAssignment">
+        update internship_stage_assignment
+        <set>
+            <if test="sourceType != null">source_type = #{sourceType},</if>
+            <if test="sourceAssignmentId != null">source_assignment_id = #{sourceAssignmentId},</if>
+            <if test="applicationId != null">application_id = #{applicationId},</if>
+            <if test="confirmationRecordId != null">confirmation_record_id = #{confirmationRecordId},</if>
+            <if test="companyId != null">company_id = #{companyId},</if>
+            <if test="companyName != null">company_name = #{companyName},</if>
+            <if test="positionId != null">position_id = #{positionId},</if>
+            <if test="positionName != null">position_name = #{positionName},</if>
+            <if test="internshipStartTime != null">internship_start_time = #{internshipStartTime},</if>
+            <if test="internshipEndTime != null">internship_end_time = #{internshipEndTime},</if>
+            <if test="status != null">status = #{status},</if>
+            <if test="currentFlag != null">current_flag = #{currentFlag},</if>
+            <if test="remark != null">remark = #{remark},</if>
+            update_time = now()
+        </set>
+        where id = #{id}
+    </update>
+
+    <update id="clearConfirmationRecordId">
+        update internship_stage_assignment
+        set confirmation_record_id = null,
+            update_time = now()
+        where id = #{id}
+    </update>
+
+    <update id="markQuotaReleased">
+        update internship_stage_assignment
+        set quota_released = 1,
+            quota_released_at = now(),
+            quota_release_reason = #{reason},
+            update_time = now()
+        where id = #{id} and quota_released = 0
+    </update>
+</mapper>

@@ -113,7 +113,7 @@ public class ResourceServiceImpl implements ResourceService {
             if ("STUDENT".equals(uploaderRole)) {
                 resource.setStatus("PENDING");
             } else {
-                resource.setStatus("PUBLISHED");
+                resource.setStatus("APPROVED");
             }
             
             // 设置创建时间
@@ -156,7 +156,7 @@ public class ResourceServiceImpl implements ResourceService {
                 throw new RuntimeException("资源不存在");
             }
             
-            resource.setStatus(approved ? "PUBLISHED" : "REJECTED");
+            resource.setStatus(approved ? "APPROVED" : "REJECTED");
             resource.setReviewerId(reviewerId);
             
             learningResourceMapper.updateById(resource);
@@ -266,7 +266,7 @@ public class ResourceServiceImpl implements ResourceService {
             if (pageSize == null || pageSize < 1 || pageSize > 100) pageSize = 10;
             
             // 获取所有已发布资源
-            List<LearningResource> allResources = learningResourceMapper.selectByStatus("PUBLISHED");
+            List<LearningResource> allResources = learningResourceMapper.selectByStatus("APPROVED");
             
             // 处理资源类型
             allResources = processResourceTypes(allResources);
@@ -448,7 +448,7 @@ public class ResourceServiceImpl implements ResourceService {
             } else {
                 // 如果没有查询条件，获取所有资源（可选类型过滤）
                 logger.debug("无查询条件，获取所有已发布资源");
-                List<LearningResource> publishedResources = learningResourceMapper.selectByStatus("PUBLISHED");
+                List<LearningResource> publishedResources = learningResourceMapper.selectByStatus("APPROVED");
                 List<LearningResource> allResources;
                 
                 if (fileType != null && !fileType.isEmpty()) {
@@ -670,7 +670,7 @@ public class ResourceServiceImpl implements ResourceService {
             logger.info("执行备选搜索方案");
             
             // 获取所有已发布资源
-            List<LearningResource> allPublished = learningResourceMapper.selectByStatus("PUBLISHED");
+            List<LearningResource> allPublished = learningResourceMapper.selectByStatus("APPROVED");
             
             // 关键词搜索
             List<LearningResource> results = allPublished.stream()

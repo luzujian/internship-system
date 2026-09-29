@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.internship.mapper.CompanyAlumniMemberMapper">
+    <resultMap id="AlumniMemberResultMap" type="com.internship.entity.CompanyAlumniMember">
+        <id property="id" column="id"/>
+        <result property="companyId" column="company_id"/>
+        <result property="name" column="name"/>
+        <result property="phone" column="phone"/>
+        <result property="position" column="position"/>
+        <result property="createTime" column="create_time"/>
+        <result property="updateTime" column="update_time"/>
+    </resultMap>
+
+    <select id="findByCompanyId" resultMap="AlumniMemberResultMap">
+        SELECT id, company_id, name, phone, position, create_time, update_time
+        FROM company_alumni_member
+        WHERE company_id = #{companyId}
+        ORDER BY id ASC
+    </select>
+
+    <select id="findByCompanyIds" resultMap="AlumniMemberResultMap">
+        SELECT id, company_id, name, phone, position, create_time, update_time
+        FROM company_alumni_member
+        WHERE company_id IN
+        <foreach collection="companyIds" item="companyId" open="(" separator="," close=")">
+            #{companyId}
+        </foreach>
+        ORDER BY company_id ASC, id ASC
+    </select>
+
+    <insert id="batchInsert">
+        INSERT INTO company_alumni_member
+            (company_id, name, phone, position, create_time, update_time)
+        VALUES
+        <foreach collection="members" item="member" separator=",">
+            (#{member.companyId}, #{member.name}, #{member.phone}, #{member.position},
+             #{member.createTime}, #{member.updateTime})
+        </foreach>
+    </insert>
+
+    <delete id="deleteByCompanyId">
+        DELETE FROM company_alumni_member WHERE company_id = #{companyId}
+    </delete>
+</mapper>

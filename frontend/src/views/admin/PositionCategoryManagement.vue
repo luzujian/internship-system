@@ -53,7 +53,7 @@
   <el-card class="actions-card" shadow="never">
     <div class="actions-container">
       <div class="primary-actions">
-        <el-button v-if="authStore.hasPermission('position-category:add')" type="primary" @click="handleAddCategory()" class="action-btn primary">
+        <el-button v-if="authStore.hasPermission('position-category:add')" type="primary" data-agent-open @click="handleAddCategory()" class="action-btn primary">
           <el-icon><Plus /></el-icon>&nbsp;新增类别
         </el-button>
         <el-button 
@@ -306,7 +306,7 @@
           如果类别不存在，系统将自动创建新类别。
         </p>
       </div>
-      
+
       <div class="file-select-section">
         <el-button 
           type="primary" 
@@ -316,7 +316,7 @@
         >
           选择Excel文件
         </el-button>
-        
+
         <div v-if="selectedFile" class="selected-file-info">
           <span class="file-icon">📁</span>
           <span class="file-name">{{ selectedFile.name }}</span>
@@ -325,13 +325,13 @@
           未选择文件
         </div>
       </div>
-      
+
       <div class="import-note">
         <p>支持的文件格式：.xlsx、.xls</p>
         <p>文件大小上限：5MB</p>
       </div>
     </div>
-    
+
     <template #footer>
       <div class="dialog-footer">
         <el-button @click="closeImportDialog" class="cancel-btn">取消</el-button>
@@ -352,8 +352,54 @@
 
 <script setup lang="ts">
 import logger from '@/utils/logger'
-import { onMounted, ref, computed, nextTick } from 'vue'
+import { onMounted, onUnmounted, ref, computed, nextTick, watch } from 'vue'
+import { useFormContext } from '@/agent/formContext'
 import type { Position, PositionCategory } from '@/types/admin'
+// 岗位行精确局部接口：覆盖后端驼峰/snake两种形态，模板与脚本实际使用的全部字段，均可选
+interface PositionRow {
+  id?: string | number
+  positionName?: string
+  position_name?: string
+  categoryId?: string | number
+  category_id?: string | number
+  requirements?: string
+  plannedRecruit?: number
+  planned_recruit?: number
+  recruitedCount?: number
+  recruited_count?: number
+  remainingQuota?: number
+  remaining_quota?: number
+  createTime?: string
+  create_time?: string
+  updateTime?: string
+  update_time?: string
+}
+// 类别行精确局部接口：含模板使用的 positionCount
+interface CategoryRow {
+  id?: string | number
+  name?: string
+  description?: string
+  positionCount?: number
+  createTime?: string
+  create_time?: string
+  updateTime?: string
+  update_time?: string
+}
+// 双层包装（缓存命中形如 { data: { code, data } }）的精确形态，用于 narrowing
+interface NestedList<T> {
+  code: number
+  data: T
+  msg?: string
+  message?: string
+}
+// 导入处理结果：与原返回对象形态一致
+interface ImportResult {
+  success: boolean
+  successCount?: number
+  errorCount?: number
+  errorMessages?: string[]
+  errorMessage?: string
+}
 
 import PositionCategoryService from '../../api/positionCategory'
 import PositionService from '../../api/position'
@@ -367,8 +413,8 @@ const authStore = useAuthStore()
 
 let searchCategory = ref({ name: '', positionId: null })
 let loading = ref<boolean>(false)
-let categories = ref<unknown[]>([])
-let positionList = ref<unknown[]>([])
+let categories = ref<CategoryRow[]>([])
+let positionList = ref<PositionRow[]>([])
 let hoveredCategoryId = ref(null)
 let fixedCategoryId = ref(null)
 let categoryPositions = ref(new Map())
@@ -410,6 +456,30 @@ const positionRules = ref({
     { min: 2, max: 100, message: '岗位名称长度为2-100个字', trigger: 'blur' }
   ]
 })
+
+// ===== 智能填表：岗位类别/岗位新增与编辑注册到 AI 侧栏 =====
+// Excel 导入文件选择需手动操作，不声明
+const formContext = useFormContext()
+watch([dialogFormVisible, formTitle], ([open, title]) => {
+  if (!open) { formContext.unregister('admin:position-category'); return }
+  const isCategory = String(title).includes('类别')
+  formContext.register({
+    formId: 'admin:position-category',
+    title: String(title) || '岗位类别维护',
+    fields: isCategory
+      ? [
+        { prop: 'name', label: '类别名称', type: 'input', required: true },
+        { prop: 'description', label: '类别描述', type: 'textarea' }
+      ]
+      : [
+        { prop: 'positionName', label: '岗位名称', type: 'input', required: true },
+        { prop: 'requirements', label: '任职要求', type: 'textarea' }
+      ],
+    getModel: () => (isCategory ? categoryForm.value : positionForm.value),
+    getFormEl: () => (isCategory ? categoryFormRef.value : positionFormRef.value)
+  })
+})
+onUnmounted(() => formContext.unregister('admin:position-category'))
 
 const pagination = ref({ currentPage: 1, pageSize: 10, total: 0 })
 const searchPositionPagination = ref({ currentPage: 1, total: 0, departments: [] })
@@ -517,15 +587,25 @@ const queryCategories = async (): Promise<void> => {
     const result = await PositionCategoryService.getCategories(searchCategory.value.name)
     logger.log('岗位类别列表查询结果:', result)
 
-    if (result && (result.code === 200 || result.data)) {
-      const categoryData = result.data.code === 200 ? result.data.data : result.data
-      const allCategories = Array.isArray(categoryData) ? categoryData : []
+    // getCategories 声明返回 AxiosResponseWithMeta（双层 { data: { code, data } }），
+    // 运行时拦截器已解包为单层 ApiResult { code, data }；用精确接口收窄兼容双层，可达路径与原分支语义等价
+    const res = result as unknown as { code?: unknown; data?: unknown; msg?: unknown; message?: unknown }
+    const hasCode200 = res.code === 200
+    const hasData = res.data !== undefined && res.data !== null
+    if (result && (hasCode200 || hasData)) {
+      const rawData: unknown = res.data
+      const categoryData: unknown =
+        rawData !== null && typeof rawData === 'object' && 'code' in rawData &&
+        (rawData as NestedList<unknown>).code === 200
+          ? (rawData as NestedList<CategoryRow[]>).data
+          : rawData
+      const allCategories: CategoryRow[] = Array.isArray(categoryData) ? (categoryData as CategoryRow[]) : []
 
       pagination.value.total = allCategories.length
 
       const startIndex = (pagination.value.currentPage - 1) * pagination.value.pageSize
       const endIndex = startIndex + pagination.value.pageSize
-      
+
       categories.value = allCategories.slice(startIndex, endIndex).map(category => {
         const categoryId = category.id
         const positionCount = categoryPositions.value.get(categoryId)?.length || 0
@@ -538,10 +618,13 @@ const queryCategories = async (): Promise<void> => {
       logger.log('处理后的岗位类别数据:', categories.value)
       logger.log('分页信息:', pagination.value)
     } else {
-      logger.error('查询岗位类别失败:', result?.msg)
+      // 保持原 `result?.msg || '未知错误'` 语义（仅读 msg），收窄后使用
+      const failPick: unknown = res.msg
+      const failMsg: string = typeof failPick === 'string' && failPick ? failPick : '未知错误'
+      logger.error('查询岗位类别失败:', failPick)
       categories.value = []
       pagination.value.total = 0
-      ElMessage.error('查询岗位类别失败: ' + (result?.msg || '未知错误'))
+      ElMessage.error('查询岗位类别失败: ' + failMsg)
     }
   } catch (error) {
     logger.error('查询岗位类别列表时发生异常:', error)
@@ -657,11 +740,13 @@ const handleUpdateCategory = async (id): Promise<void> => {
   try {
     const response = await PositionCategoryService.getCategoryById(id)
     if (response && response.data) {
-      const categoryData = response.code === 200 ? response.data : response.data
+      // getCategoryById 可能是缓存形 { data } 或网络 ApiResult { code, data }；
+      // 原三元两分支同为 response.data，直接取 data 与运行时等价
+      const categoryData = response.data as unknown as CategoryRow
       categoryForm.value = {
-        id: categoryData.id,
-        name: categoryData.name,
-        description: categoryData.description
+        id: categoryData.id === undefined || categoryData.id === null ? '' : String(categoryData.id),
+        name: categoryData.name ?? '',
+        description: categoryData.description ?? ''
       }
       formTitle.value = '编辑岗位类别'
       dialogFormVisible.value = true
@@ -705,7 +790,8 @@ const handleDeletePosition = async (position): Promise<void> => {
     )
 
     const response = await PositionService.deletePosition(position.id)
-    if (response && (response.data?.code === 200 || response.code === 200)) {
+    // ApiResult 单层形态：data 为实体/null，从无 numeric code，`response.data?.code === 200` 恒假，删去后与运行时等价
+    if (response && response.code === 200) {
       ElMessage.success('删除成功')
       await getPositionList()
       await queryCategories()
@@ -739,11 +825,15 @@ const handleAddCategorySubmit = async (): Promise<void> => {
     if (valid) {
       try {
         submitting.value = true
-        const response = await PositionCategoryService.addCategory({
+        const operation = formContext.beginFormOperation('admin:position-category')
+    const response = await PositionCategoryService.addCategory({
           name: categoryForm.value.name,
           description: categoryForm.value.description
         })
-        if (response && (response.data?.code === 200 || response.code === 200)) {
+        // 同上：data 为新建实体恒无 numeric code，恒假分支删去后等价
+        if (response && response.code === 200) {
+          operation.complete({ status: 'saved', label: '岗位类别已保存', url: '/admin/position-categories' })
+
           ElMessage.success('添加成功')
           dialogFormVisible.value = false
           await queryCategories()
@@ -767,11 +857,15 @@ const handleEditCategorySubmit = async (): Promise<void> => {
     if (valid) {
       try {
         submitting.value = true
-        const response = await PositionCategoryService.updateCategory(categoryForm.value.id, {
+        const operation = formContext.beginFormOperation('admin:position-category')
+    const response = await PositionCategoryService.updateCategory(Number(categoryForm.value.id), {
           name: categoryForm.value.name,
           description: categoryForm.value.description
         })
-        if (response && (response.data?.code === 200 || response.code === 200)) {
+        // 同上：恒假分支删去后等价；id 转 Number 后 URL 与运行时一致（后端 Long 接受数字）
+        if (response && response.code === 200) {
+          operation.complete({ status: 'saved', label: '岗位类别已更新', url: '/admin/position-categories' })
+
           ElMessage.success('更新成功')
           dialogFormVisible.value = false
           await queryCategories()
@@ -795,12 +889,16 @@ const handleAddPositionSubmit = async (): Promise<void> => {
     if (valid) {
       try {
         submitting.value = true
-        const response = await PositionService.addPosition({
-          categoryId: positionForm.value.categoryId,
+        const operation = formContext.beginFormOperation('admin:position-category')
+    const response = await PositionService.addPosition({
+          categoryId: Number(positionForm.value.categoryId),
           positionName: positionForm.value.positionName,
           requirements: positionForm.value.requirements
-        })
-        if (response && (response.data?.code === 200 || response.code === 200)) {
+        } as unknown as Parameters<typeof PositionService.addPosition>[0])
+        // 同上：恒假分支删去后等价
+        if (response && response.code === 200) {
+          operation.complete({ status: 'saved', label: '岗位已保存', url: '/admin/position-categories' })
+
           ElMessage.success('添加成功')
           dialogFormVisible.value = false
           await getPositionList()
@@ -825,12 +923,16 @@ const handleEditPositionSubmit = async (): Promise<void> => {
     if (valid) {
       try {
         submitting.value = true
-        const response = await PositionService.updatePosition(positionForm.value.id, {
-          categoryId: positionForm.value.categoryId,
+        const operation = formContext.beginFormOperation('admin:position-category')
+    const response = await PositionService.updatePosition(Number(positionForm.value.id), {
+          categoryId: Number(positionForm.value.categoryId),
           positionName: positionForm.value.positionName,
           requirements: positionForm.value.requirements
-        })
-        if (response && (response.data?.code === 200 || response.code === 200)) {
+        } as unknown as Parameters<typeof PositionService.updatePosition>[1])
+        // 同上：恒假分支删去后等价；id/categoryId 转 Number 后 URL 与 JSON 数值与运行时一致
+        if (response && response.code === 200) {
+          operation.complete({ status: 'saved', label: '岗位已更新', url: '/admin/position-categories' })
+
           ElMessage.success('更新成功')
           dialogFormVisible.value = false
           await getPositionList()
@@ -860,12 +962,12 @@ const delById = async (id): Promise<void> => {
   try {
     const category = categories.value.find(c => c.id === id)
     const positionCount = category?.positionCount || 0
-    
+
     let confirmMessage = '确定要删除该岗位类别吗？'
     if (positionCount > 0) {
       confirmMessage = `该类别下还有${positionCount}个岗位，删除类别将同时删除这些岗位，确定要删除吗？`
     }
-    
+
     await ElMessageBox.confirm(
       confirmMessage,
       '删除确认',
@@ -877,7 +979,8 @@ const delById = async (id): Promise<void> => {
     )
 
     const response = await PositionCategoryService.deleteCategory(id)
-    if (response && (response.data?.code === 200 || response.code === 200)) {
+    // 同上：恒假分支删去后等价
+    if (response && response.code === 200) {
       ElMessage.success('删除成功')
       if (fixedCategoryId.value === id) {
         fixedCategoryId.value = null
@@ -926,11 +1029,18 @@ const searchBothCategoryAndPosition = async (): Promise<void> => {
     logger.log('同时搜索类别和岗位')
     try {
       const categoryResponse = await PositionCategoryService.getCategories(searchCategory.value.name)
-      let categoryIds = []
-      if (categoryResponse && categoryResponse.data) {
-        const categoryData = categoryResponse.data.code === 200 ? categoryResponse.data.data : categoryResponse.data
-        const allCategories = Array.isArray(categoryData) ? categoryData : []
-        categoryIds = allCategories.map(c => c.id)
+      const categoryIds: Array<string | number | undefined> = []
+      // 双层/单层兼容收窄：运行时单层 data 即数组，`data.code === 200` 恒假分支收窄后等价
+      const catRes = categoryResponse as unknown as { data?: unknown }
+      if (categoryResponse && catRes.data !== undefined && catRes.data !== null) {
+        const rawCat: unknown = catRes.data
+        const categoryData: unknown =
+          rawCat !== null && typeof rawCat === 'object' && 'code' in rawCat &&
+          (rawCat as NestedList<unknown>).code === 200
+            ? (rawCat as NestedList<CategoryRow[]>).data
+            : rawCat
+        const allCategories: CategoryRow[] = Array.isArray(categoryData) ? (categoryData as CategoryRow[]) : []
+        categoryIds.push(...allCategories.map(c => c.id))
       }
 
       logger.log('搜索到的类别ID列表:', categoryIds)
@@ -1018,17 +1128,17 @@ const handleChooseFile = () => {
 
 const handleNativeFileChange = (e) => {
   logger.log('handleNativeFileChange called with:', e)
-  
+
   if (e.target && e.target.files && e.target.files.length > 0) {
     const file = e.target.files[0]
     const fileName = file.name.toLowerCase()
-    
+
     if (!fileName.endsWith('.xlsx') && !fileName.endsWith('.xls')) {
       ElMessage.error('请选择Excel文件(.xlsx或.xls格式)')
       e.target.value = ''
       return
     }
-    
+
     selectedFile.value = file
   }
 }
@@ -1038,34 +1148,34 @@ const importExcel = async (): Promise<void> => {
     ElMessage.warning('请先选择Excel文件')
     return
   }
-  
+
   importLoading.value = true
-  
+
   try {
     const jsonData = await readExcelFile(selectedFile.value)
-    
+
     if (jsonData.length === 0) {
       ElMessage.warning('Excel文件中没有数据')
       return
     }
-    
+
     logger.log('读取到的Excel数据:', jsonData)
-    
+
     const importResult = await processImportData(jsonData)
-    
+
     if (importResult.success) {
       let message = `导入完成，成功: ${importResult.successCount} 条`
-      
+
       if (importResult.errorCount > 0) {
         message += `，失败: ${importResult.errorCount} 条`
       }
-      
+
       if (importResult.errorMessages && importResult.errorMessages.length > 0) {
         let errorDetails = '\n失败详情:\n'
         importResult.errorMessages.forEach((errorMsg, index) => {
           errorDetails += `${index + 1}. ${errorMsg}\n`
         })
-        
+
         ElMessageBox.alert(message + errorDetails, '导入结果', {
           type: importResult.errorCount > 0 ? 'warning' : 'success',
           confirmButtonText: '确定',
@@ -1104,10 +1214,10 @@ const closeImportDialog = () => {
 // 下载导入模板
 const downloadTemplate = async (): Promise<void> => {
   try {
-    // 响应拦截器已返回 Blob
-    const blob = await request.get('/admin/position-categories/import-template', {
+    // 响应拦截器已返回 Blob（类型声明为 ApiResult，运行时为 Blob，用断言保持运行时一致）
+    const blob = await request.get<Blob>('/admin/position-categories/import-template', {
       responseType: 'blob'
-    })
+    }) as unknown as Blob
 
     // 创建下载链接
     const url = window.URL.createObjectURL(blob)
@@ -1126,42 +1236,70 @@ const downloadTemplate = async (): Promise<void> => {
   }
 }
 
-const processImportData = async (data): Promise<void> => {
+const processImportData = async (data: Record<string, unknown>[]): Promise<ImportResult> => {
   try {
     let successCount = 0
     let errorCount = 0
-    let errorMessages = []
-    
-    const categoryMap = new Map()
-    
+    const errorMessages: string[] = []
+
+    const categoryMap = new Map<string, string | number>()
+
     const allCategories = await PositionCategoryService.getCategories()
-    if (allCategories && (allCategories.code === 200 || allCategories.data)) {
-      const categoryData = allCategories.data.code === 200 ? allCategories.data.data : allCategories.data
-      const categoriesList = Array.isArray(categoryData) ? categoryData : []
-      
+    // 双层/单层兼容收窄，保持原分支语义
+    const allCatRes = allCategories as unknown as { code?: unknown; data?: unknown }
+    const allCatHasCode = allCatRes.code === 200
+    const allCatHasData = allCatRes.data !== undefined && allCatRes.data !== null
+    if (allCategories && (allCatHasCode || allCatHasData)) {
+      const allCatRaw: unknown = allCatRes.data
+      const categoryData: unknown =
+        allCatRaw !== null && typeof allCatRaw === 'object' && 'code' in allCatRaw &&
+        (allCatRaw as NestedList<unknown>).code === 200
+          ? (allCatRaw as NestedList<CategoryRow[]>).data
+          : allCatRaw
+      const categoriesList: CategoryRow[] = Array.isArray(categoryData) ? (categoryData as CategoryRow[]) : []
+
       categoriesList.forEach(cat => {
-        categoryMap.set(cat.name, cat.id)
+        if (cat.name !== undefined && cat.id !== undefined) {
+          categoryMap.set(String(cat.name), cat.id)
+        }
       })
     }
-    
+
     const allPositionsResponse = await PositionService.getAllPositions()
-    const allPositionsData = allPositionsResponse && (allPositionsResponse.code === 200 || allPositionsResponse.data) 
-      ? (allPositionsResponse.data.code === 200 ? allPositionsResponse.data.data : allPositionsResponse.data) 
-      : []
-    const allPositionsList = Array.isArray(allPositionsData) ? allPositionsData : []
-    
+    const allPosRes = allPositionsResponse as unknown as { code?: unknown; data?: unknown }
+    const allPosHasCode = allPosRes.code === 200
+    const allPosHasData = allPosRes.data !== undefined && allPosRes.data !== null
+    const allPosRaw: unknown =
+      allPositionsResponse && (allPosHasCode || allPosHasData)
+        ? (() => {
+            const d: unknown = allPosRes.data
+            return d !== null && typeof d === 'object' && 'code' in d &&
+              (d as NestedList<unknown>).code === 200
+              ? (d as NestedList<unknown>).data
+              : d
+          })()
+        : []
+    const allPositionsList: PositionRow[] = Array.isArray(allPosRaw) ? (allPosRaw as PositionRow[]) : []
+
     let currentCategoryName = ''
-    let currentCategoryId = ''
-    
+    let currentCategoryId: string | number = ''
+
     for (let i = 0; i < data.length; i++) {
       const row = data[i]
       const rowNum = i + 1
-      
+
       try {
-        let categoryName = row['类别名称'] || row['类别']
-        const positionName = row['岗位名称'] || row['岗位']
-        const requirements = row['岗位要求'] || row['要求'] || ''
-        
+        // 保持原 `||` 回退语义（假值回退），再收窄为 string
+        const catPicked: unknown = row['类别名称'] ? row['类别名称'] : row['类别']
+        const posPicked: unknown = row['岗位名称'] ? row['岗位名称'] : row['岗位']
+        const reqPicked: unknown = row['岗位要求'] ? row['岗位要求'] : row['要求']
+        let categoryName: string =
+          typeof catPicked === 'string' ? catPicked : catPicked == null ? '' : String(catPicked)
+        const positionName: string =
+          typeof posPicked === 'string' ? posPicked : posPicked == null ? '' : String(posPicked)
+        const requirements: string =
+          typeof reqPicked === 'string' ? reqPicked : reqPicked == null ? '' : String(reqPicked)
+
         if (!categoryName && positionName) {
           if (currentCategoryName) {
             categoryName = currentCategoryName
@@ -1171,31 +1309,41 @@ const processImportData = async (data): Promise<void> => {
             continue
           }
         }
-        
+
         if (!categoryName || !positionName) {
           errorCount++
           errorMessages.push(`第${rowNum}行: 类别名称或岗位名称为空`)
           continue
         }
-        
+
         currentCategoryName = categoryName
-        
+
         let categoryId = categoryMap.get(categoryName)
-        
+
         if (!categoryId) {
           const catResult = await PositionCategoryService.addCategory({ name: categoryName, description: '' })
-          if (catResult && (catResult.code === 200 || catResult.data?.code === 200)) {
-            const newCatId = catResult.data?.id || catResult.data?.data?.id
+          // data 为新建实体恒无 numeric code，恒假分支删去后等价
+          const catRes = catResult as unknown as { code?: unknown; data?: unknown; msg?: unknown }
+          if (catResult && catRes.code === 200) {
+            // 保持原 `||` 回退语义：data.id 优先，其次 data.data.id
+            const catDataObj = (catRes.data ?? {}) as { id?: unknown; data?: { id?: unknown } }
+            const innerId: unknown = catDataObj.data?.id
+            const newCatId: unknown = catDataObj.id ? catDataObj.id : innerId
             if (newCatId) {
-              categoryMap.set(categoryName, newCatId)
-              categoryId = newCatId
+              categoryMap.set(categoryName, newCatId as string | number)
+              categoryId = newCatId as string | number
             } else {
               errorCount++
               errorMessages.push(`第${rowNum}行: 创建类别失败 - 无法获取新类别ID`)
               continue
             }
           } else {
-            const errorMsg = catResult?.msg || catResult?.data?.msg || '未知错误'
+            const catDataRec: Record<string, unknown> | null =
+              catRes.data !== null && typeof catRes.data === 'object'
+                ? (catRes.data as Record<string, unknown>)
+                : null
+            const errRaw: unknown = catRes.msg ? catRes.msg : catDataRec?.['msg']
+            const errorMsg: string = typeof errRaw === 'string' && errRaw ? errRaw : '未知错误'
             if (errorMsg.includes('已存在') || errorMsg.includes('Duplicate') || errorMsg.includes('重复')) {
               errorCount++
               errorMessages.push(`第${rowNum}行: 类别"${categoryName}"已存在，跳过导入`)
@@ -1207,24 +1355,25 @@ const processImportData = async (data): Promise<void> => {
             }
           }
         }
-        
+
         currentCategoryId = categoryId
-        
+
         const existingPosition = allPositionsList.find(p => p.positionName === positionName && p.categoryId === categoryId)
-        
+
         if (existingPosition) {
           errorCount++
           errorMessages.push(`第${rowNum}行: 岗位"${positionName}"已存在，跳过导入`)
           continue
         }
-        
+
         const positionResult = await PositionService.addPosition({
-          categoryId: categoryId,
+          categoryId: Number(categoryId),
           positionName: positionName,
           requirements: requirements
-        })
-        
-        if (positionResult && (positionResult.data?.code === 200 || positionResult.code === 200)) {
+        } as unknown as Parameters<typeof PositionService.addPosition>[0])
+
+        // 同上：恒假分支删去后等价；categoryId 转 Number 后 JSON 数值与运行时一致（后端 Long 接受数字）
+        if (positionResult && positionResult.code === 200) {
           successCount++
         } else {
           errorCount++
@@ -1235,7 +1384,7 @@ const processImportData = async (data): Promise<void> => {
         errorMessages.push(`第${rowNum}行: 处理失败 - ${error.message}`)
       }
     }
-    
+
     return {
       success: true,
       successCount,
@@ -1674,17 +1823,17 @@ const handleExportToExcel = async (): Promise<void> => {
   .tables-container {
     flex-direction: column;
   }
-  
+
   .left-table,
   .right-table {
     flex: 1;
     min-width: 100%;
   }
-  
+
   .search-row {
     flex-wrap: wrap;
   }
-  
+
   .search-actions {
     margin-left: 0;
     width: 100%;
@@ -1696,55 +1845,55 @@ const handleExportToExcel = async (): Promise<void> => {
   .position-category-management-container {
     padding: 15px;
   }
-  
+
   .page-header {
     flex-direction: column;
     text-align: center;
     padding: 20px;
   }
-  
+
   .header-illustration {
     margin-top: 15px;
   }
-  
+
   .actions-container {
     flex-direction: column;
     gap: 12px;
     align-items: stretch;
   }
-  
+
   .primary-actions,
   .secondary-actions {
     justify-content: center;
   }
-  
+
   .action-buttons {
     flex-wrap: wrap;
     justify-content: center;
   }
-  
+
   .search-row {
     flex-direction: column;
     gap: 12px;
   }
-  
+
   .search-actions {
     width: 100%;
     justify-content: center;
   }
-  
+
   .data-table {
     font-size: 12px;
   }
-  
+
   .action-buttons {
     gap: 4px;
   }
-  
+
   .table-btn {
     padding: 4px 6px;
   }
-  
+
   .table-header {
     flex-direction: column;
     gap: 10px;

@@ -14,6 +14,11 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.RejectedExecutionException;
+import jakarta.annotation.PreDestroy;
 
 /**
  * 资源查询AI代理控制器
@@ -22,10 +27,22 @@ import java.util.concurrent.CopyOnWriteArrayList;
 @RestController
 @RequestMapping("/api/ai/resource/advanced")
 public class ResourceQueryAgentController {
+    @Autowired private com.internship.agent.business.LegacyAiAccessPolicy legacyAccess;
     private static final Logger log = LoggerFactory.getLogger(ResourceQueryAgentController.class);
     
     private final ResourceQueryAgentService resourceQueryAgentService;
     private final CopyOnWriteArrayList<SseEmitter> emitters = new CopyOnWriteArrayList<>();
+    private final Semaphore querySlots = new Semaphore(8);
+    private final ExecutorService streamExecutor = Executors.newFixedThreadPool(8, task -> {
+        Thread thread = new Thread(task, "resource-query-stream");
+        thread.setDaemon(true);
+        return thread;
+    });
+
+    @PreDestroy
+    public void closeStreams() {
+        streamExecutor.shutdownNow();
+    }
     
     @Autowired
     public ResourceQueryAgentController(ResourceQueryAgentService resourceQueryAgentService) {
@@ -39,13 +56,15 @@ public class ResourceQueryAgentController {
      */
     @PostMapping("/query")
     public ResponseEntity<Map<String, Object>> queryResources(@RequestBody Map<String, Object> request) {
+        legacyAccess.require();
         try {
             String query = (String) request.get("query");
             Object contextObj = request.get("context");
             String context = processContext(contextObj);
             String model = (String) request.get("model");
             
-            log.info("收到资源查询请求: query={}, model={}", query, model);
+            log.info("收到资源查询请求: queryLength={}, model={}",
+                    query != null ? query.length() : 0, model);
             
             // 参数验证
             if (query == null || query.trim().isEmpty()) {
@@ -56,9 +75,23 @@ public class ResourceQueryAgentController {
                 errorResponse.put("timestamp", System.currentTimeMillis());
                 return ResponseEntity.badRequest().body(errorResponse);
             }
+            if (query.length() > 2000 || context.length() > 4000
+                    || (model != null && model.length() > 100)) {
+                return ResponseEntity.badRequest().body(Map.of("success", false,
+                        "message", "查询参数超出长度限制"));
+            }
+            if (!querySlots.tryAcquire()) {
+                return ResponseEntity.status(429).body(Map.of("success", false,
+                        "message", "查询服务繁忙，请稍后再试"));
+            }
             
             // 调用服务处理查询
-            Map<String, Object> result = resourceQueryAgentService.processResourceQuery(query, context, model);
+            Map<String, Object> result;
+            try {
+                result = resourceQueryAgentService.processResourceQuery(query, context, model);
+            } finally {
+                querySlots.release();
+            }
             
             // 封装响应
             Map<String, Object> response = new HashMap<>();
@@ -71,7 +104,7 @@ public class ResourceQueryAgentController {
             log.error("资源查询处理失败", e);
             Map<String, Object> errorResponse = new HashMap<>();
             errorResponse.put("success", false);
-            errorResponse.put("message", "资源查询服务暂时不可用: " + e.getMessage());
+            errorResponse.put("message", "资源查询服务暂时不可用");
             errorResponse.put("timestamp", System.currentTimeMillis());
             return ResponseEntity.status(500).body(errorResponse);
         }
@@ -113,6 +146,7 @@ public class ResourceQueryAgentController {
      */
     @PostMapping(value = "/query/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter queryResourcesStream(@RequestBody Map<String, Object> request) {
+        legacyAccess.require();
         SseEmitter emitter = new SseEmitter(120_000L); // 2分钟超时
         
         emitters.add(emitter);
@@ -129,7 +163,8 @@ public class ResourceQueryAgentController {
             String context = processContext(contextObj);
             String model = (String) request.get("model");
             
-            log.info("收到资源查询流式请求: query={}, model={}", query, model);
+            log.info("收到资源查询流式请求: queryLength={}, model={}",
+                    query != null ? query.length() : 0, model);
             
             if (query == null || query.trim().isEmpty()) {
                 Map<String, Object> errorData = new HashMap<>();
@@ -139,9 +174,23 @@ public class ResourceQueryAgentController {
                 emitter.complete();
                 return emitter;
             }
+            if (query.length() > 2000 || context.length() > 4000
+                    || (model != null && model.length() > 100)) {
+                emitter.send(SseEmitter.event().data(Map.of("type", "error",
+                        "message", "查询参数超出长度限制")));
+                emitter.complete();
+                return emitter;
+            }
+            if (!querySlots.tryAcquire()) {
+                emitter.send(SseEmitter.event().data(Map.of("type", "error",
+                        "message", "查询服务繁忙，请稍后再试")));
+                emitter.complete();
+                return emitter;
+            }
             
             // 异步处理查询
-            new Thread(() -> {
+            try {
+                streamExecutor.execute(() -> {
                 try {
                     // 通知客户端开始处理
                     Map<String, Object> startData = new HashMap<>();
@@ -172,7 +221,7 @@ public class ResourceQueryAgentController {
                     try {
                         Map<String, Object> errorData = new HashMap<>();
                         errorData.put("type", "error");
-                        errorData.put("message", "处理查询时发生错误：" + e.getMessage());
+                        errorData.put("message", "处理查询时发生错误");
                         emitter.send(SseEmitter.event().data(errorData));
                     } catch (IOException ex) {
                         // 忽略发送错误
@@ -180,15 +229,20 @@ public class ResourceQueryAgentController {
                         emitter.complete();
                     }
                 } finally {
+                    querySlots.release();
                     emitter.complete();
                 }
-            }).start();
+                });
+            } catch (RejectedExecutionException rejected) {
+                querySlots.release();
+                throw rejected;
+            }
             
         } catch (Exception e) {
             try {
                 Map<String, Object> errorData = new HashMap<>();
                 errorData.put("type", "error");
-                errorData.put("message", "服务暂时不可用：" + e.getMessage());
+                errorData.put("message", "服务暂时不可用");
                 emitter.send(SseEmitter.event().data(errorData));
             } catch (IOException ex) {
                 // 忽略发送错误

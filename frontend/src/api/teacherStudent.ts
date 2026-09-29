@@ -36,6 +36,9 @@ export interface StudentUser {
   phone?: string
   email?: string
   status?: number
+  internshipStatus?: number | string
+  jobSearchStatus?: string
+  jobSearchStatusText?: string
   companyId?: number
   company?: string
   progress?: number
@@ -239,7 +242,7 @@ export const studentApi = {
   getCompanies: async () => {
     try {
       console.log('getCompanies 开始请求 /teacher/companies')
-      const response = await request.get<{ code: number; message: string; data: { rows: any[]; total: number } }>('/teacher/companies')
+      const response = await request.get<{ rows: any[]; total: number }>('/teacher/companies')
       console.log('getCompanies 响应:', response)
 
       if (response === null || response === undefined) {
@@ -262,6 +265,18 @@ export const studentApi = {
     } catch (error) {
       console.error('getCompanies 错误:', error)
       throw new Error(`Failed to fetch companies: ${error}`)
+    }
+  },
+
+  getInternshipCompanyOptions: async (): Promise<string[]> => {
+    try {
+      const response = await request.get<{ code: number; message: string; data: string[] }>(
+        '/teacher/internship-status/company-options'
+      )
+      return Array.isArray(response.data) ? response.data : []
+    } catch (error) {
+      console.error('getInternshipCompanyOptions 错误:', error)
+      throw new Error(`Failed to fetch internship company options: ${error}`)
     }
   }
 }

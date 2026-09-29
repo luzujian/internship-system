@@ -1,6 +1,7 @@
 package com.internship.entity.dto;
 
 import lombok.Data;
+import java.math.BigDecimal;
 import java.util.Date;
 import java.util.List;
 
@@ -23,6 +24,12 @@ public class PositionVO {
     // 薪资范围 -> salary
     private String salary;
 
+    private BigDecimal salaryMin;
+
+    private BigDecimal salaryMax;
+
+    private String salaryUnit;
+
     // 实习时长 -> duration
     private String duration;
 
@@ -37,6 +44,21 @@ public class PositionVO {
 
     // 实习基地级别 -> internshipBase (national/provincial/null)
     private String internshipBase;
+
+    // 是否校友单位 -> isAlumniUnit (company.is_alumni_unit)
+    private Integer isAlumniUnit;
+
+    // 合作模式 -> cooperationMode (company.cooperation_mode，逗号分隔兼容新旧格式)
+    private String cooperationMode;
+
+    // 企业Logo -> logo (company.logo)
+    private String logo;
+
+    // 企业照片 -> photos (company.photos，JSON数组字符串)
+    private String photos;
+
+    // 企业视频 -> videos (company.videos，JSON数组字符串)
+    private String videos;
 
     // 行业ID -> industry
     private Long industry;
@@ -86,14 +108,12 @@ public class PositionVO {
     // 剩余名额
     private Integer remainingQuota;
 
+    // 仅供服务端兼容历史岗位到期判断，不属于公开岗位日期配置。
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    private Date internshipEndDate;
+
     // 职位状态
     private String status;
-
-    // 实习开始日期
-    private Date internshipStartDate;
-
-    // 实习结束日期
-    private Date internshipEndDate;
 
     // 创建时间
     private Date createTime;
@@ -106,4 +126,10 @@ public class PositionVO {
 
     // 公司ID
     private Long companyId;
+
+    // 企业推荐指数（仅包含已提交的最终材料评分，保留一位小数）
+    private BigDecimal companyRatingAverage;
+
+    // 企业有效评分人数
+    private Integer companyRatingCount = 0;
 }

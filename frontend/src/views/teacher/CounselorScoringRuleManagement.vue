@@ -40,7 +40,7 @@
             <el-button type="warning" @click="handleReset" class="reset-btn">
               <el-icon><Refresh /></el-icon>&nbsp;重置
             </el-button>
-            <el-button type="primary" @click="handleAdd" class="action-btn primary">
+            <el-button type="primary" data-agent-open @click="handleAdd" class="action-btn primary">
               <el-icon><Plus /></el-icon>&nbsp;新增评分规则
             </el-button>
           </el-form-item>
@@ -216,7 +216,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, nextTick, computed } from 'vue'
+import { useAuthStore } from '@/store/auth'
+const authStore = useAuthStore()
+import { ref, onMounted, onUnmounted, nextTick, computed, watch } from 'vue'
+import type { FormFieldDescriptor } from '@/agent/types'
+import { useFormContext } from '@/agent/formContext'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Edit, Delete, Document, Search, Refresh, Loading } from '@element-plus/icons-vue'
 import {
@@ -273,6 +277,51 @@ const form = ref({
 
 const weightForm = ref({
   weights: {} as Record<string, number>
+})
+
+// ===== 智能填表：规则弹窗/权重弹窗注册到 AI 侧栏（只写响应式 form，不触发提交） =====
+const formContext = useFormContext()
+const buildRuleFillFields = (): FormFieldDescriptor[] => [
+  { prop: 'ruleName', label: '等级', type: 'select', required: true, options: ['优秀', '良好', '中等', '及格', '不及格'].map((v) => ({ label: v, value: v })) },
+  { prop: 'category', label: '分类', type: 'select', required: true, allowCustom: true, options: allCategories.map((c) => ({ label: c.label, value: c.value })) },
+  { prop: 'minScore', label: '最低分', type: 'number', valueType: 'number' },
+  { prop: 'maxScore', label: '最高分', type: 'number', valueType: 'number' },
+  { prop: 'status', label: '状态', type: 'radio', valueType: 'number', options: [{ label: '启用', value: 1 }, { label: '禁用', value: 0 }] },
+  { prop: 'description', label: '描述', type: 'textarea' }
+]
+// 权重表单 model 即 weights 记录本身（动态 key），打开时按当前 key 快照生成 number 字段
+const buildWeightFillFields = (): FormFieldDescriptor[] => Object.keys(weightForm.value.weights).map((code) => ({
+  prop: code, label: getCategoryName(code), type: 'number', valueType: 'number'
+}))
+const registerRuleForm = (title: string) => {
+  formContext.register({
+    formId: 'teacher:scoring-rule',
+    title,
+    fields: buildRuleFillFields(),
+    getFields: buildRuleFillFields,
+    getModel: () => form.value,
+    getFormEl: () => formRef.value
+  })
+}
+const registerWeightForm = () => {
+  formContext.register({
+    formId: 'teacher:score-weights',
+    title: '调整类别权重',
+    fields: buildWeightFillFields(),
+    getFields: buildWeightFillFields,
+    getModel: () => weightForm.value.weights,
+    getValidationSummary: () => ({ missingFields: [], validationErrors: totalWeight.value === 100 ? [] : ['总权重必须为100'] })
+  })
+}
+watch(dialogVisible, (open) => {
+  if (!open) formContext.unregister('teacher:scoring-rule')
+})
+watch(weightDialogVisible, (open) => {
+  if (!open) formContext.unregister('teacher:score-weights')
+})
+onUnmounted(() => {
+  formContext.unregister('teacher:scoring-rule')
+  formContext.unregister('teacher:score-weights')
 })
 
 const rules = {
@@ -349,11 +398,26 @@ const getScoreLevelClass = (rule: any) => {
 const fetchRules = async () => {
   loading.value = true
   try {
-    const response = await getScoringRules(counselorId.value)
+    interface ScoringRuleRow {
+      id?: number
+      ruleName?: string
+      category?: string
+      minScore?: number
+      maxScore?: number
+      status?: number
+      description?: string
+      [key: string]: unknown
+    }
+    const response = await getScoringRules(counselorId.value) as unknown as {
+      code?: number
+      message?: string
+      msg?: string
+      data?: ScoringRuleRow[]
+    }
     if (response.code === 200) {
-      ruleList.value = response.data || []
+      ruleList.value = Array.isArray(response.data) ? response.data : []
     } else {
-      ElMessage.error(response.message || '获取评分规则列表失败')
+      ElMessage.error(response.message || response.msg || '获取评分规则列表失败')
     }
   } catch (error) {
     ElMessage.error('获取评分规则列表失败')
@@ -364,12 +428,27 @@ const fetchRules = async () => {
 
 const fetchCategoryWeights = async () => {
   try {
-    const response = await getActiveCategoryWeights(counselorId.value)
+    interface CategoryWeightItem {
+      categoryCode?: string
+      category_code?: string
+      weight?: number
+      [key: string]: unknown
+    }
+    const response = await getActiveCategoryWeights(counselorId.value) as unknown as {
+      code?: number
+      data?: { weights?: CategoryWeightItem[] } | CategoryWeightItem[]
+    }
     if (response.code === 200) {
-      const weights = response.data?.weights || []
+      const weightData: unknown = response.data
+      const weights = Array.isArray(weightData)
+        ? weightData
+        : (Array.isArray((weightData as { weights?: CategoryWeightItem[] } | null | undefined)?.weights)
+          ? (weightData as { weights: CategoryWeightItem[] }).weights
+          : [])
       const weightMap: Record<string, number> = {}
-      weights.forEach((item: any) => {
-        weightMap[item.categoryCode] = item.weight
+      weights.forEach((item: CategoryWeightItem) => {
+        const code = item.categoryCode ?? item.category_code
+        if (code !== undefined) weightMap[code] = item.weight ?? 0
       })
       categoryWeights.value = weightMap
     }
@@ -419,6 +498,7 @@ const handleAdd = () => {
     applicableScenarios: ''
   }
   dialogVisible.value = true
+  registerRuleForm('新增评分规则')
 
   nextTick(() => {
     if (formRef.value) {
@@ -441,6 +521,7 @@ const handleEdit = (row: any) => {
     applicableScenarios: row.applicableScenarios || ''
   }
   dialogVisible.value = true
+  registerRuleForm('编辑评分规则')
 
   nextTick(() => {
     if (formRef.value) {
@@ -514,6 +595,8 @@ const handleSave = async () => {
 
   saving.value = true
   try {
+    const editing = Boolean(form.value.id)
+    const operation = formContext.beginFormOperation('teacher:scoring-rule', editing ? undefined : ['category'])
     let response
     if (form.value.id) {
       response = await updateScoringRule(form.value.id, form.value)
@@ -523,6 +606,7 @@ const handleSave = async () => {
 
     if (response.code === 200) {
       ElMessage.success('保存成功')
+      operation.complete({ status: 'saved', label: editing ? '评分规则已保存' : '该分类评分规则已生成，分数与描述以生成结果为准', url: '/teacher/scoring-rules' })
       dialogVisible.value = false
       await fetchRules()
       await nextTick()
@@ -591,6 +675,7 @@ const handleEditAllWeights = () => {
 
   weightForm.value.weights = weights
   weightDialogVisible.value = true
+  registerWeightForm()
 }
 
 const handleSaveAllWeights = async () => {
@@ -609,8 +694,10 @@ const handleSaveAllWeights = async () => {
       status: 1
     }))
 
+    const operation = formContext.beginFormOperation('teacher:score-weights')
     const response = await batchUpdateCategoryWeights(weightList)
     if (response.code === 200) {
+      operation.complete({ status: 'saved', label: '评分权重已保存', url: '/teacher/scoring-rules' })
       ElMessage.success('权重更新成功')
       weightDialogVisible.value = false
       await fetchCategoryWeights()
@@ -625,9 +712,7 @@ const handleSaveAllWeights = async () => {
 }
 
 onMounted(() => {
-  const currentRole = localStorage.getItem('current_role') || 'ROLE_TEACHER'
-  const rolePrefix = currentRole === 'ROLE_TEACHER' ? 'teacher_' : ''
-  const id = localStorage.getItem(rolePrefix + 'userId_' + currentRole) || localStorage.getItem('teacherId')
+  const id = authStore.user?.id
   if (id) {
     counselorId.value = parseInt(id)
   }
@@ -1021,5 +1106,64 @@ onMounted(() => {
 
 .ai-loading-tip .el-icon {
   font-size: 18px;
+}
+
+@media (max-width: 768px) {
+  .page-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .page-title {
+    font-size: 22px;
+  }
+
+  .header-illustration {
+    display: none;
+  }
+
+  .search-card {
+    padding: 16px 18px;
+  }
+
+  .search-row :deep(.el-form-item) {
+    width: 100%;
+    margin-right: 0;
+  }
+
+  .search-row :deep(.el-select) {
+    width: 100% !important;
+  }
+
+  .search-actions {
+    margin-left: 0;
+  }
+
+  .search-actions :deep(.el-button) {
+    width: 100%;
+    margin-left: 0;
+    margin-right: 0;
+  }
+
+  .summary-content {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .rules-collapse :deep(.el-collapse-item__header) {
+    height: auto;
+    min-height: 56px;
+    line-height: 1.4;
+    padding: 10px 12px;
+  }
+
+  .collapse-title {
+    flex-wrap: wrap;
+    row-gap: 6px;
+  }
+
+  .rules-grid {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

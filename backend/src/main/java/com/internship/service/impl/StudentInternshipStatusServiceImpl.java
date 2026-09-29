@@ -9,8 +9,11 @@ import com.internship.enums.InternshipStatusEnum;
 import com.internship.enums.RecallStatusEnum;
 import com.internship.exception.BusinessException;
 import com.internship.mapper.StudentInternshipStatusMapper;
+import com.internship.entity.dto.InternshipCalendar;
 import com.internship.service.CompanyUserService;
+import com.internship.service.InternshipCalendarService;
 import com.internship.service.InterviewInvitationService;
+import com.internship.service.JobSearchStatusService;
 import com.internship.service.PositionService;
 import com.internship.service.StudentInternshipStatusService;
 import com.internship.util.StudentInternshipStatusCache;
@@ -36,6 +39,9 @@ import java.util.Map;
 @Service
 public class StudentInternshipStatusServiceImpl implements StudentInternshipStatusService {
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.internship.agent.business.StudentPlanRefreshService planRefresh;
+
     private final StudentInternshipStatusMapper studentInternshipStatusMapper;
     private final PositionService positionService;
     private final StateTransitionValidator stateTransitionValidator;
@@ -43,6 +49,10 @@ public class StudentInternshipStatusServiceImpl implements StudentInternshipStat
     private final AnnouncementWebSocketHandler webSocketHandler;
     private final InterviewInvitationService interviewService;
     private final CompanyUserService companyUserService;
+    private final InternshipCalendarService internshipCalendarService;
+
+    @Autowired
+    private JobSearchStatusService jobSearchStatusService;
 
     @Autowired
     public StudentInternshipStatusServiceImpl(StudentInternshipStatusMapper studentInternshipStatusMapper,
@@ -51,7 +61,8 @@ public class StudentInternshipStatusServiceImpl implements StudentInternshipStat
                                            StudentInternshipStatusCache statusCache,
                                            AnnouncementWebSocketHandler webSocketHandler,
                                            InterviewInvitationService interviewService,
-                                           CompanyUserService companyUserService) {
+                                           CompanyUserService companyUserService,
+                                           InternshipCalendarService internshipCalendarService) {
         this.studentInternshipStatusMapper = studentInternshipStatusMapper;
         this.positionService = positionService;
         this.stateTransitionValidator = stateTransitionValidator;
@@ -59,6 +70,7 @@ public class StudentInternshipStatusServiceImpl implements StudentInternshipStat
         this.webSocketHandler = webSocketHandler;
         this.interviewService = interviewService;
         this.companyUserService = companyUserService;
+        this.internshipCalendarService = internshipCalendarService;
     }
     
     @Override
@@ -68,17 +80,20 @@ public class StudentInternshipStatusServiceImpl implements StudentInternshipStat
         
         // 参数校验
         validateStatusInfo(status);
-        
+
+        // status>=2 且起止时间为空时，按教师端"重要设置"的全局日历自动填充
+        populateGlobalInternshipTimesIfNeeded(status);
+
         // 设置创建和更新时间
         Date now = new Date();
         status.setCreateTime(now);
         status.setUpdateTime(now);
-        
+
         int result = studentInternshipStatusMapper.insert(status);
         log.info("学生实习状态插入成功，学生ID: {}", status.getStudentId());
         
-        // 更新岗位已招人数
-        if (status.getPositionId() != null && (status.getStatus() == 1 || status.getStatus() == 2)) {
+        // 更新岗位已招人数（仅在企业确认后(status=2)才更新，status=1为待确认不应扣减名额）
+        if (status.getPositionId() != null && status.getStatus() == 2) {
             try {
                 positionService.updateRecruitedCount(status.getPositionId());
                 log.debug("已更新岗位已招人数，岗位ID: {}", status.getPositionId());
@@ -142,7 +157,36 @@ public class StudentInternshipStatusServiceImpl implements StudentInternshipStat
                 log.warn("更新岗位已招人数失败，岗位ID: {}, 错误: {}", status.getPositionId(), e.getMessage());
             }
         }
-        
+
+        if (result > 0 && planRefresh != null) planRefresh.afterCommit(status.getStudentId());
+        // 推送实时状态更新到学生端
+        try {
+            webSocketHandler.sendInternshipStatusUpdateToStudent(status.getStudentId(), status.getStatus());
+        } catch (Exception e) {
+            log.warn("推送实习状态更新失败，学生ID: {}, 错误: {}", status.getStudentId(), e.getMessage());
+        }
+
+        return result;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public int rollbackPendingConfirmationForFailedApplication(Long studentId, Long positionId) {
+        if (studentId == null || studentId <= 0 || positionId == null || positionId <= 0) {
+            throw new BusinessException("学生ID或岗位ID无效");
+        }
+
+        int result = studentInternshipStatusMapper
+                .rollbackPendingConfirmationForFailedApplication(studentId, positionId);
+        if (result > 0) {
+            statusCache.evictCache(studentId);
+            try {
+                webSocketHandler.sendInternshipStatusUpdateToStudent(studentId, 0);
+            } catch (Exception e) {
+                log.warn("推送实习状态回退失败，学生ID: {}, 错误: {}", studentId, e.getMessage());
+            }
+            log.info("已回退旧审批遗留的待确认状态，学生ID: {}, 岗位ID: {}", studentId, positionId);
+        }
         return result;
     }
 
@@ -169,7 +213,9 @@ public class StudentInternshipStatusServiceImpl implements StudentInternshipStat
             throw new BusinessException("状态ID无效");
         }
         
-        return studentInternshipStatusMapper.findById(id);
+        StudentInternshipStatus status = studentInternshipStatusMapper.findById(id);
+        enrichJobSearchStatus(status);
+        return status;
     }
     
     @Override
@@ -185,6 +231,7 @@ public class StudentInternshipStatusServiceImpl implements StudentInternshipStat
         StudentInternshipStatus cached = (StudentInternshipStatus) statusCache.getCacheStatus(studentId);
         if (cached != null) {
             log.info("命中 Redis 缓存，学生 ID: {}", studentId);
+            enrichJobSearchStatus(cached);
             return cached;
         }
 
@@ -195,6 +242,8 @@ public class StudentInternshipStatusServiceImpl implements StudentInternshipStat
         if (status != null) {
             statusCache.cacheStatus(studentId, status);
         }
+
+        enrichJobSearchStatus(status);
 
         return status;
     }
@@ -224,20 +273,55 @@ public class StudentInternshipStatusServiceImpl implements StudentInternshipStat
                 InternshipStatusEnum.of(status.getStatus()).getDescription());
         }
 
+        // 合并生效状态后，按全局日历自动填充缺失的实习起止时间
+        StudentInternshipStatus mergeForTimeFill = new StudentInternshipStatus();
+        mergeForTimeFill.setStudentId(existingStatus.getStudentId());
+        mergeForTimeFill.setStatus(status.getStatus() != null ? status.getStatus() : existingStatus.getStatus());
+        mergeForTimeFill.setInternshipStartTime(status.getInternshipStartTime() != null
+                ? status.getInternshipStartTime() : existingStatus.getInternshipStartTime());
+        mergeForTimeFill.setInternshipEndTime(status.getInternshipEndTime() != null
+                ? status.getInternshipEndTime() : existingStatus.getInternshipEndTime());
+        mergeForTimeFill.setInternshipDuration(status.getInternshipDuration() != null
+                ? status.getInternshipDuration() : existingStatus.getInternshipDuration());
+        populateGlobalInternshipTimesIfNeeded(mergeForTimeFill);
+        // 如果辅助方法写入了新值，回填到待更新对象
+        if (status.getInternshipStartTime() == null
+                && !java.util.Objects.equals(mergeForTimeFill.getInternshipStartTime(), existingStatus.getInternshipStartTime())) {
+            status.setInternshipStartTime(mergeForTimeFill.getInternshipStartTime());
+        }
+        if (status.getInternshipEndTime() == null
+                && !java.util.Objects.equals(mergeForTimeFill.getInternshipEndTime(), existingStatus.getInternshipEndTime())) {
+            status.setInternshipEndTime(mergeForTimeFill.getInternshipEndTime());
+        }
+        if (status.getInternshipDuration() == null
+                && !java.util.Objects.equals(mergeForTimeFill.getInternshipDuration(), existingStatus.getInternshipDuration())) {
+            status.setInternshipDuration(mergeForTimeFill.getInternshipDuration());
+        }
+
         // 设置更新时间
         status.setUpdateTime(new Date());
         
         int result = studentInternshipStatusMapper.update(status);
         log.info("学生实习状态更新成功，学生ID: {}", status.getStudentId());
-        
+
         // 【Redis 缓存】状态变更时清除缓存
         statusCache.evictCache(existingStatus.getStudentId());
         // 更新岗位已招人数
         updatePositionRecruitedCount(existingStatus, status);
-        
+
+        if (result > 0 && planRefresh != null) planRefresh.afterCommit(existingStatus.getStudentId());
+        // 状态变更时推送实时更新到学生端
+        if (status.getStatus() != null && !status.getStatus().equals(existingStatus.getStatus())) {
+            try {
+                webSocketHandler.sendInternshipStatusUpdateToStudent(status.getStudentId(), status.getStatus());
+            } catch (Exception e) {
+                log.warn("推送实习状态更新失败，学生ID: {}, 错误: {}", status.getStudentId(), e.getMessage());
+            }
+        }
+
         return result;
     }
-    
+
     @Override
     @Transactional(rollbackFor = Exception.class)
     public int delete(Long id) {
@@ -278,14 +362,19 @@ public class StudentInternshipStatusServiceImpl implements StudentInternshipStat
     @Override
     public List<StudentInternshipStatus> findAll() {
         log.debug("查询所有学生实习状态");
-        return studentInternshipStatusMapper.findAll();
+        List<StudentInternshipStatus> statuses = studentInternshipStatusMapper.findAll();
+        enrichJobSearchStatuses(statuses);
+        return statuses;
     }
     
     @Override
     public List<StudentInternshipStatus> list(Long studentId, String name, Integer gender, Integer status, Long companyId, String companyName, String grade, String major, String className, String studentUserId) {
         log.debug("动态条件查询学生实习状态（扩展版），学生ID: {}, 学生姓名: {}, 性别: {}, 状态: {}, 企业ID: {}, 企业名称: {}, 年级: {}, 专业: {}, 班级: {}, 学号: {}", 
                 studentId, name, gender, status, companyId, companyName, grade, major, className, studentUserId);
-        return studentInternshipStatusMapper.list(studentId, name, gender, status, companyId, companyName, grade, major, className, studentUserId);
+        List<StudentInternshipStatus> statuses = studentInternshipStatusMapper.list(
+                studentId, name, gender, status, companyId, companyName, grade, major, className, studentUserId);
+        enrichJobSearchStatuses(statuses);
+        return statuses;
     }
     
     @Override
@@ -296,7 +385,9 @@ public class StudentInternshipStatusServiceImpl implements StudentInternshipStat
             return Collections.emptyList();
         }
         
-        return studentInternshipStatusMapper.selectByIds(ids);
+        List<StudentInternshipStatus> statuses = studentInternshipStatusMapper.selectByIds(ids);
+        enrichJobSearchStatuses(statuses);
+        return statuses;
     }
     
     @Override
@@ -323,6 +414,9 @@ public class StudentInternshipStatusServiceImpl implements StudentInternshipStat
     @Override
     public Integer countByStatus(Integer status) {
         log.debug("根据状态统计学生数量，状态: {}", status);
+        if (status != null && (status == 0 || status == 1) && jobSearchStatusService != null) {
+            return Math.toIntExact(jobSearchStatusService.countByDisplayFilter(status, null));
+        }
         return studentInternshipStatusMapper.countByStatus(status);
     }
 
@@ -346,6 +440,7 @@ public class StudentInternshipStatusServiceImpl implements StudentInternshipStat
         List<StudentInternshipStatus> statuses = studentInternshipStatusMapper.list(studentId, name, gender, status, companyId, companyName, grade, major, className, studentUserId);
 
         PageInfo<StudentInternshipStatus> pageInfo = new PageInfo<>(statuses);
+        enrichJobSearchStatuses(pageInfo.getList());
         return PageResult.build(pageInfo.getTotal(), pageInfo.getList(),
                 pageInfo.getPages(), pageInfo.getPageNum(), pageInfo.getPageSize());
     }
@@ -354,16 +449,17 @@ public class StudentInternshipStatusServiceImpl implements StudentInternshipStat
     public PageResult<StudentInternshipStatus> findPageByScope(Integer page, Integer pageSize, Long studentId, String name,
                                                                 Integer gender, Integer status, Long companyId, String companyName,
                                                                 String grade, String major, String className, String studentUserId,
-                                                                List<Long> divisionIds, List<Long> classIds) {
-        log.debug("按管辖范围分页查询，页码: {}, 每页: {}, divisionIds: {}, classIds: {}",
-                page, pageSize, divisionIds, classIds);
+                                                                List<Long> departmentIds, List<Long> divisionIds, List<Long> classIds) {
+        log.debug("按管辖范围分页查询，页码: {}, 每页: {}, departmentIds: {}, divisionIds: {}, classIds: {}",
+                page, pageSize, departmentIds, divisionIds, classIds);
 
         PageHelper.startPage(page, pageSize);
         List<StudentInternshipStatus> statuses = studentInternshipStatusMapper.listByScope(
                 studentId, name, gender, status, companyId, companyName, grade, major, className, studentUserId,
-                divisionIds, classIds);
+                departmentIds, divisionIds, classIds);
 
         PageInfo<StudentInternshipStatus> pageInfo = new PageInfo<>(statuses);
+        enrichJobSearchStatuses(pageInfo.getList());
         return PageResult.build(pageInfo.getTotal(), pageInfo.getList(),
                 pageInfo.getPages(), pageInfo.getPageNum(), pageInfo.getPageSize());
     }
@@ -377,6 +473,7 @@ public class StudentInternshipStatusServiceImpl implements StudentInternshipStat
         List<StudentInternshipStatus> statuses = studentInternshipStatusMapper.listByStatusList(studentId, name, gender, statusList, companyId, companyName, grade, major, className, studentUserId);
 
         PageInfo<StudentInternshipStatus> pageInfo = new PageInfo<>(statuses);
+        enrichJobSearchStatuses(pageInfo.getList());
         return PageResult.build(pageInfo.getTotal(), pageInfo.getList(),
                 pageInfo.getPages(), pageInfo.getPageNum(), pageInfo.getPageSize());
     }
@@ -388,13 +485,70 @@ public class StudentInternshipStatusServiceImpl implements StudentInternshipStat
         if (status == null) {
             throw new BusinessException("学生实习状态信息不能为空");
         }
-        
+
         if (status.getStudentId() == null || status.getStudentId() <= 0) {
             throw new BusinessException("学生ID不能为空");
         }
-        
+
         if (status.getStatus() == null || status.getStatus() < 0 || status.getStatus() > 2) {
             throw new BusinessException("实习状态值无效");
+        }
+    }
+
+    /**
+     * 当实习状态进入"已确认"或之后（status>=2），如果实习开始/结束时间为空，
+     * 自动用教师在「重要设置」中配置的全局实习日历填好，避免顶部栏状态退化为"已确认"。
+     */
+    private void populateGlobalInternshipTimesIfNeeded(StudentInternshipStatus status) {
+        if (status == null || status.getStatus() == null || status.getStatus() < 2) {
+            return;
+        }
+        boolean startMissing = status.getInternshipStartTime() == null;
+        boolean endMissing = status.getInternshipEndTime() == null;
+        boolean durationMissing = status.getInternshipDuration() == null || status.getInternshipDuration() <= 0;
+        if (!startMissing && !endMissing && !durationMissing) {
+            return;
+        }
+        InternshipCalendar cal = null;
+        try {
+            cal = internshipCalendarService.getCalendar();
+        } catch (Exception e) {
+            log.warn("读取全局实习日历失败，学生 {} 将跳过时间自动填充：{}", status.getStudentId(), e.getMessage());
+            return;
+        }
+        if (cal == null || cal.getStartDate() == null || cal.getEndDate() == null) {
+            log.warn("全局实习日历尚未配置（重要设置），学生 {} 的实习起止时间留空", status.getStudentId());
+            return;
+        }
+        try {
+            java.time.LocalDate s = java.time.LocalDate.parse(cal.getStartDate());
+            java.time.LocalDate e = java.time.LocalDate.parse(cal.getEndDate());
+            long days = java.time.temporal.ChronoUnit.DAYS.between(s, e);
+            if (startMissing) {
+                status.setInternshipStartTime(java.sql.Timestamp.valueOf(s.atStartOfDay()));
+            }
+            if (endMissing) {
+                status.setInternshipEndTime(java.sql.Timestamp.valueOf(e.atTime(23, 59, 59)));
+            }
+            if (durationMissing) {
+                status.setInternshipDuration((int) days);
+            }
+            log.info("学生 {} 状态变更为 {}，实习起止时间为空，已按全局日历自动填充：{} ~ {}（{}天）",
+                    status.getStudentId(), status.getStatus(), cal.getStartDate(), cal.getEndDate(), days);
+        } catch (Exception ex) {
+            log.warn("解析全局实习日历日期失败（start={}, end={}）：{}", cal.getStartDate(), cal.getEndDate(), ex.getMessage());
+        }
+    }
+
+    private void enrichJobSearchStatus(StudentInternshipStatus status) {
+        if (jobSearchStatusService != null) {
+            jobSearchStatusService.enrich(status);
+        }
+    }
+
+    private void enrichJobSearchStatuses(List<StudentInternshipStatus> statuses) {
+        if (jobSearchStatusService != null) {
+            jobSearchStatusService.enrich(statuses);
         }
     }
 
@@ -407,6 +561,7 @@ public class StudentInternshipStatusServiceImpl implements StudentInternshipStat
         List<StudentInternshipStatus> statuses = studentInternshipStatusMapper.findPendingRecallAuditList(studentId, name, gender, companyId, companyName);
 
         PageInfo<StudentInternshipStatus> pageInfo = new PageInfo<>(statuses);
+        enrichJobSearchStatuses(pageInfo.getList());
         return PageResult.build(pageInfo.getTotal(), pageInfo.getList(),
                 pageInfo.getPages(), pageInfo.getPageNum(), pageInfo.getPageSize());
     }
@@ -415,7 +570,10 @@ public class StudentInternshipStatusServiceImpl implements StudentInternshipStat
     public List<StudentInternshipStatus> findPendingRecallAuditList(Long studentId, String name, Integer gender, Long companyId, String companyName) {
         log.debug("查询待审核撤回申请列表（不分页），学生ID: {}, 学生姓名: {}, 性别: {}, 企业ID: {}, 企业名称: {}",
                 studentId, name, gender, companyId, companyName);
-        return studentInternshipStatusMapper.findPendingRecallAuditList(studentId, name, gender, companyId, companyName);
+        List<StudentInternshipStatus> statuses = studentInternshipStatusMapper.findPendingRecallAuditList(
+                studentId, name, gender, companyId, companyName);
+        enrichJobSearchStatuses(statuses);
+        return statuses;
     }
 
     @Override

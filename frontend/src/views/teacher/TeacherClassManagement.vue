@@ -39,7 +39,7 @@
               <el-icon><Refresh /></el-icon>&nbsp;重置
             </el-button>
             <el-button type="primary" @click="handleAssignClass" class="action-btn primary">
-              <el-icon><Plus /></el-icon>&nbsp;添加班级
+              <el-icon><Plus /></el-icon>&nbsp;{{ isCounselor ? '认领班级' : '添加班级' }}
             </el-button>
           </el-form-item>
         </div>
@@ -91,8 +91,13 @@
       </el-table>
     </el-card>
 
-    <el-dialog v-model="assignDialogVisible" title="添加负责班级" width="600px">
+    <el-dialog v-model="assignDialogVisible" :title="isCounselor ? '认领本院班级' : '添加负责班级'" width="600px">
+      <el-alert v-if="isCounselor" title="仅可认领本院未分配的班级。已有辅导员或跨学院的班级，请联系管理员分配。" type="info" :closable="false" style="margin-bottom: 16px" />
+      <el-alert v-if="classOptionsError" :title="classOptionsError" type="error" :closable="false" />
+      <el-empty v-else-if="!classOptionsLoading && allClassesData.length === 0" :description="isCounselor ? '暂无可认领的本院班级' : '暂无可添加的班级'" />
       <el-transfer
+        v-else
+        v-loading="classOptionsLoading"
         v-model="selectedClassIds"
         :data="allClassesData"
         :titles="['可选班级', '已选班级']"
@@ -105,7 +110,7 @@
       />
       <template #footer>
         <el-button @click="assignDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="confirmAssign" :loading="assignLoading">确定</el-button>
+        <el-button type="primary" @click="confirmAssign" :loading="assignLoading" :disabled="classOptionsLoading || !!classOptionsError || selectedClassIds.length === 0">{{ isCounselor ? '确认认领' : '确定' }}</el-button>
       </template>
     </el-dialog>
 
@@ -114,21 +119,12 @@
       <el-table :data="classStudents" border style="width: 100%" v-loading="studentsLoading" max-height="400">
         <el-table-column prop="studentUserId" label="学号" align="center" width="120" />
         <el-table-column prop="name" label="姓名" align="center" width="100" />
-        <el-table-column prop="gender" label="性别" align="center" width="80">
-          <template #default="scope">
-            <span>{{ scope.row.gender === 1 ? '男' : '女' }}</span>
-          </template>
-        </el-table-column>
         <el-table-column prop="grade" label="年级" align="center" width="80" />
         <el-table-column prop="internshipStatus" label="实习状态" align="center" width="100">
           <template #default="scope">
-            <el-tag v-if="scope.row.internshipStatus === 0" type="info">未找到</el-tag>
-            <el-tag v-else-if="scope.row.internshipStatus === 1" type="warning">已有Offer</el-tag>
-            <el-tag v-else-if="scope.row.internshipStatus === 2" type="success">已确认</el-tag>
-            <el-tag v-else-if="scope.row.internshipStatus === 3" type="primary">已结束</el-tag>
-            <el-tag v-else-if="scope.row.internshipStatus === 4" type="danger">已中断</el-tag>
-            <el-tag v-else-if="scope.row.internshipStatus === 5" type="warning">延期</el-tag>
-            <el-tag v-else type="info">未找到</el-tag>
+            <el-tag :type="getStatusTagType(scope.row.jobSearchStatus || scope.row.internshipStatus)" size="small">
+              {{ scope.row.jobSearchStatusText || getStatusText(scope.row.internshipStatus) }}
+            </el-tag>
           </template>
         </el-table-column>
         <el-table-column prop="companyName" label="实习单位" align="center" min-width="150">
@@ -155,11 +151,14 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { useAuthStore } from '@/store/auth'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Refresh, Plus, User, Delete } from '@element-plus/icons-vue'
 import {
   getTeacherClasses,
   getAllClasses,
+  getClaimableClasses,
+  claimClasses,
   assignClassesToCounselor,
   unassignClassFromCounselor,
   getClassStudents,
@@ -168,6 +167,10 @@ import {
 } from '@/api/teacherClass'
 
 const router = useRouter()
+const authStore = useAuthStore()
+const isCounselor = computed(() => authStore.role === 'ROLE_TEACHER_COUNSELOR' || authStore.user?.teacherType === 'COUNSELOR')
+const classOptionsLoading = ref(false)
+const classOptionsError = ref('')
 
 const loading = ref(false)
 const statsLoading = ref(false)
@@ -221,6 +224,56 @@ const formatDate = (dateStr: string) => {
   })
 }
 
+// 实习状态展示，与后端 JobSearchStatus 枚举及 fromEstablishedInternshipStatus 保持一致
+const getStatusText = (status: number | string | null | undefined): string => {
+  if (status === null || status === undefined) return '待核实'
+  if (typeof status === 'string') {
+    const derivedText: Record<string, string> = {
+      NOT_FOUND: '未投递',
+      NO_OFFER: '无 Offer',
+      PENDING_CONFIRMATION: '待确认',
+      CONFIRMED: '已确定',
+      IN_PROGRESS: '实习中',
+      ENDED: '已结束',
+      INTERRUPTED: '已中断',
+      DELAYED: '延期'
+    }
+    if (derivedText[status]) return derivedText[status]
+  }
+  const statusNum = typeof status === 'string' ? Number(status) : status
+  switch (statusNum) {
+    case 1: return '待确认'
+    case 2: return '已确定'
+    case 3: return '实习中'
+    case 4: return '已结束'
+    case 5: return '已中断'
+    case 6: return '延期'
+    case 0: return '尚无 Offer'
+    default: return '待核实'
+  }
+}
+
+const getStatusTagType = (status: number | string | null | undefined): string => {
+  if (typeof status === 'string') {
+    if (status === 'NOT_FOUND') return 'info'
+    if (status === 'NO_OFFER') return 'warning'
+    if (status === 'PENDING_CONFIRMATION') return 'warning'
+    if (status === 'CONFIRMED' || status === 'ENDED') return 'success'
+    if (status === 'IN_PROGRESS') return 'primary'
+    if (status === 'INTERRUPTED' || status === 'DELAYED') return 'warning'
+  }
+  const statusNum = typeof status === 'string' ? Number(status) : (status ?? 0)
+  switch (statusNum) {
+    case 1: return 'warning'   // 待确认
+    case 2: return 'success'    // 已确定
+    case 3: return 'primary'    // 实习中
+    case 4: return 'success'    // 已结束
+    case 5: return 'warning'    // 已中断
+    case 6: return 'warning'    // 延期
+    default: return 'info'      // 未找到
+  }
+}
+
 const loadMyClasses = async () => {
   loading.value = true
   try {
@@ -237,13 +290,19 @@ const loadMyClasses = async () => {
 }
 
 const loadAllClasses = async () => {
+  classOptionsLoading.value = true
+  classOptionsError.value = ''
+  allClasses.value = []
   try {
-    const response = await getAllClasses()
+    const response = await (isCounselor.value ? getClaimableClasses() : getAllClasses())
     if (response.data) {
       allClasses.value = response.data
     }
   } catch (error) {
     console.error('加载所有班级失败:', error)
+    classOptionsError.value = '可选班级加载失败，请关闭后重试'
+  } finally {
+    classOptionsLoading.value = false
   }
 }
 
@@ -272,6 +331,7 @@ const handleReset = () => {
 const handleAssignClass = () => {
   selectedClassIds.value = []
   assignDialogVisible.value = true
+  loadAllClasses()
 }
 
 const confirmAssign = async () => {
@@ -282,14 +342,20 @@ const confirmAssign = async () => {
 
   assignLoading.value = true
   try {
-    await assignClassesToCounselor(counselorId.value, selectedClassIds.value)
-    ElMessage.success('添加班级成功')
+    if (isCounselor.value) {
+      await claimClasses(selectedClassIds.value)
+    } else {
+      await assignClassesToCounselor(counselorId.value, selectedClassIds.value)
+    }
+    ElMessage.success(isCounselor.value ? '认领班级成功' : '添加班级成功')
     assignDialogVisible.value = false
     await loadMyClasses()
     await loadStatistics()
   } catch (error) {
     console.error('添加班级失败:', error)
-    ElMessage.error('添加班级失败')
+    ElMessage.error(isCounselor.value ? '认领失败，班级可能已被分配，请重新选择或联系管理员' : '添加班级失败')
+    selectedClassIds.value = []
+    await loadAllClasses()
   } finally {
     assignLoading.value = false
   }
@@ -298,7 +364,7 @@ const confirmAssign = async () => {
 const handleUnassign = async (classItem: TeacherClass) => {
   try {
     await ElMessageBox.confirm(
-      `确定要取消与班级"${classItem.name}"的关联吗？`,
+      `确定要取消与班级"${classItem.name}"的关联吗？取消后将失去该班级的管理权限；若无其他负责教师，该班级可被本院辅导员认领。`,
       '确认取消关联',
       {
         confirmButtonText: '确定',
@@ -337,15 +403,15 @@ const viewStudents = async (classItem: TeacherClass) => {
 }
 
 onMounted(() => {
-  const currentRole = localStorage.getItem('current_role') || 'ROLE_TEACHER'
-  const rolePrefix = currentRole === 'ROLE_TEACHER' ? 'teacher_' : ''
-  const id = localStorage.getItem(rolePrefix + 'userId_' + currentRole) || localStorage.getItem('teacherId')
-  if (id) {
-    counselorId.value = parseInt(id)
+  // 使用当前标签页的登录身份，避免其他标签页或旧的 teacherId 串用账号。
+  const id = Number(authStore.user?.id)
+  if (!Number.isSafeInteger(id) || id <= 0) {
+    ElMessage.error('无法获取当前教师身份，请重新登录')
+    return
   }
+  counselorId.value = id
   
   loadMyClasses()
-  loadAllClasses()
   loadStatistics()
 })
 </script>
@@ -525,5 +591,42 @@ onMounted(() => {
 .action-btn.warning {
   background-color: #e6a23c;
   border-color: #e6a23c;
+}
+
+@media (max-width: 768px) {
+  .stats-card {
+    position: static;
+  }
+
+  .search-card {
+    margin-top: 0;
+  }
+
+  .search-row {
+    flex-wrap: wrap;
+  }
+
+  .search-row :deep(.el-form-item) {
+    width: 100%;
+    margin-right: 0;
+  }
+
+  .search-actions {
+    margin-left: 0;
+  }
+
+  .search-actions :deep(.el-button) {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  :deep(.el-transfer) {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  :deep(.el-transfer-panel) {
+    width: 100%;
+  }
 }
 </style>

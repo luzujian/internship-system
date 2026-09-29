@@ -78,13 +78,14 @@
         <div
           v-for="application in filteredApplications"
           :key="application.id"
-          class="application-card"
+          :class="['application-card', { 'deep-link-target': String(application.id) === String(highlightedApplicationId) }]"
+          :data-activity-id="application.id"
           @click="viewApplicationDetail(application)"
         >
           <div class="card-header">
             <div class="card-title">{{ application.jobTitle }}</div>
             <div :class="['status-tag', application.status]">
-              {{ getStatusText(application.status) }}
+              {{ getStatusText(application.status, application.directHire) }}
             </div>
           </div>
           <div class="card-body">
@@ -110,9 +111,9 @@
               <span class="apply-time">{{ application.applyDate }}</span>
               <div class="card-actions">
                 <button
-                  v-if="application.status === 'pending' && application.applicationType === 'job'"
+                  v-if="application.status === 'pending' && (application.applicationType === 'job' || application.applicationType === 'delay')"
                   class="action-button withdraw"
-                  @click.stop="withdrawApplication(application.id)"
+                  @click.stop="withdrawApplication(application)"
                 >
                   撤回申请
                 </button>
@@ -158,17 +159,9 @@
           <div class="detail-header">
             <div class="detail-title">
               <h3>{{ currentApplication.jobTitle }}</h3>
-              <div v-if="currentApplication.internshipBase" class="internship-base-badges">
-                <el-tag v-if="currentApplication.internshipBase === 'national'" size="small" type="danger" class="base-badge national">
-                  国家级实习基地
-                </el-tag>
-                <el-tag v-else-if="currentApplication.internshipBase === 'provincial'" size="small" type="warning" class="base-badge provincial">
-                  省级实习基地
-                </el-tag>
-              </div>
             </div>
             <div :class="['detail-status', currentApplication.status]">
-              {{ getStatusText(currentApplication.status) }}
+              {{ getStatusText(currentApplication.status, currentApplication.directHire) }}
             </div>
           </div>
 
@@ -183,15 +176,27 @@
             <div class="info-grid">
               <div class="info-item">
                 <span class="info-label">公司：</span>
-                <span class="info-value">{{ currentApplication.company }}</span>
+                <span class="info-value">{{ currentApplication.company || '-' }}</span>
               </div>
               <div class="info-item">
-                <span class="info-label">地点：</span>
-                <span class="info-value">{{ currentApplication.location }}</span>
+                <span class="info-label">岗位：</span>
+                <span class="info-value">{{ currentApplication.positionName || currentApplication.jobTitle || '-' }}</span>
+              </div>
+              <div class="info-item">
+                <span class="info-label">{{ currentApplication.applicationType === 'selfPractice' ? '单位所在城市：' : '地点：' }}</span>
+                <span class="info-value">{{ currentApplication.location || '-' }}</span>
+              </div>
+              <div v-if="currentApplication.applicationType === 'selfPractice'" class="info-item">
+                <span class="info-label">人事经理姓名：</span>
+                <span class="info-value">{{ currentApplication.hrManagerName || '-' }}</span>
+              </div>
+              <div v-if="currentApplication.applicationType === 'selfPractice'" class="info-item">
+                <span class="info-label">联系电话：</span>
+                <span class="info-value">{{ currentApplication.hrManagerPhone || '-' }}</span>
               </div>
               <div class="info-item">
                 <span class="info-label">薪资：</span>
-                <span class="info-value">{{ currentApplication.salary }}</span>
+                <span class="info-value">{{ currentApplication.salary || '-' }}</span>
               </div>
               <div class="info-item">
                 <span class="info-label">时长：</span>
@@ -199,60 +204,44 @@
               </div>
               <div class="info-item">
                 <span class="info-label">行业：</span>
-                <span class="info-value">{{ currentApplication.industryName }}</span>
+                <span class="info-value">{{ currentApplication.industryName || '-' }}</span>
               </div>
               <div class="info-item">
                 <span class="info-label">申请时间：</span>
-                <span class="info-value">{{ currentApplication.applyDate }}</span>
+                <span class="info-value">{{ currentApplication.applyDateTime || currentApplication.applyDate || '-' }}</span>
               </div>
               <div class="info-item">
                 <span class="info-label">申请状态：</span>
-                <span class="info-value">{{ getStatusText(currentApplication.status) }}</span>
+                <span class="info-value">{{ getStatusText(currentApplication.status, currentApplication.directHire) }}</span>
+              </div>
+              <div
+                v-if="currentApplication.applicationType === 'job'
+                  && currentApplication.status === 'rejected'
+                  && currentApplication.rejectReason"
+                class="info-item delay-reason-item"
+              >
+                <span class="info-label">拒绝理由：</span>
+                <span class="info-value delay-reason">{{ currentApplication.rejectReason }}</span>
               </div>
             </div>
           </div>
 
-          <!-- 申请信息模块 -->
-          <div class="detail-module">
+          <!-- 考研延迟申请内容模块（仅延期申请） -->
+          <div v-if="currentApplication.applicationType === 'delay'" class="detail-module">
             <div class="module-header">
               <div class="module-icon-container">
-                <el-icon class="module-icon"><User /></el-icon>
+                <el-icon class="module-icon"><Document /></el-icon>
               </div>
-              <h2 class="module-title">申请信息</h2>
+              <h2 class="module-title">申请内容</h2>
             </div>
-            <div class="info-grid">
-              <div class="info-item">
-                <span class="info-label">学生姓名：</span>
-                <span class="info-value">{{ currentApplication.studentName }}</span>
-              </div>
-              <div class="info-item">
-                <span class="info-label">学号：</span>
-                <span class="info-value">{{ currentApplication.studentUserId || currentApplication.studentNo }}</span>
-              </div>
-              <div class="info-item" v-if="currentApplication.major">
-                <span class="info-label">专业：</span>
-                <span class="info-value">{{ currentApplication.major }}</span>
-              </div>
-              <div class="info-item" v-if="currentApplication.grade">
-                <span class="info-label">年级：</span>
-                <span class="info-value">{{ currentApplication.grade }}</span>
-              </div>
-              <div class="info-item" v-if="currentApplication.className">
-                <span class="info-label">班级：</span>
-                <span class="info-value">{{ currentApplication.className }}</span>
-              </div>
-              <div class="info-item" v-if="currentApplication.phone">
-                <span class="info-label">联系电话：</span>
-                <span class="info-value">{{ currentApplication.phone }}</span>
-              </div>
-              <div class="info-item" v-if="currentApplication.email">
-                <span class="info-label">邮箱：</span>
-                <span class="info-value">{{ currentApplication.email }}</span>
-              </div>
+            <div class="info-item delay-reason-item">
+              <span class="info-label">申请理由：</span>
+              <span class="info-value delay-reason">{{ currentApplication.reason || '-' }}</span>
             </div>
-            <div class="self-intro-section" v-if="currentApplication.selfIntroduction">
-              <div class="self-intro-label">自我简介：</div>
-              <div class="self-intro-content">{{ currentApplication.selfIntroduction }}</div>
+            <div class="info-item">
+              <span class="info-label">考研计划：</span>
+              <span v-if="hasDelayPlan" class="info-value">已上传，暂不可查看</span>
+              <span v-else class="info-value">-</span>
             </div>
           </div>
 
@@ -291,35 +280,15 @@
             <div class="contact-info">
               <div class="contact-item">
                 <span class="contact-label">联系人：</span>
-                <span class="contact-value">{{ currentApplication.contactPerson }}</span>
+                <span class="contact-value">{{ currentApplication.contactPerson || '-' }}</span>
               </div>
               <div class="contact-item">
                 <span class="contact-label">电话：</span>
-                <span class="contact-value">{{ currentApplication.contactPhone }}</span>
+                <span class="contact-value">{{ currentApplication.contactPhone || '-' }}</span>
               </div>
               <div class="contact-item">
                 <span class="contact-label">邮箱：</span>
-                <span class="contact-value">{{ currentApplication.contactEmail }}</span>
-              </div>
-            </div>
-          </div>
-
-          <!-- 职位统计模块（仅岗位申请） -->
-          <div v-if="currentApplication.applicationType === 'job'" class="detail-module">
-            <div class="module-header">
-              <div class="module-icon-container">
-                <el-icon class="module-icon"><TrendCharts /></el-icon>
-              </div>
-              <h2 class="module-title">职位统计</h2>
-            </div>
-            <div class="stats-grid">
-              <div class="stat-item">
-                <div class="stat-number">{{ currentApplication.viewCount }}</div>
-                <div class="stat-label">浏览次数</div>
-              </div>
-              <div class="stat-item">
-                <div class="stat-number">{{ currentApplication.applyCount }}</div>
-                <div class="stat-label">申请人数</div>
+                <span class="contact-value">{{ currentApplication.contactEmail || '-' }}</span>
               </div>
             </div>
           </div>
@@ -349,9 +318,9 @@
                       <span class="material-name">{{ item.label }}</span>
                     </div>
                     <div class="material-actions">
-                      <el-button type="primary" size="small" link @click="openMaterial(item.url)">
+                      <el-button type="primary" size="small" link @click="downloadApplicationMaterial(item.label)">
                         <el-icon><Download /></el-icon>
-                        查看
+                        下载
                       </el-button>
                     </div>
                   </div>
@@ -428,14 +397,14 @@
       </template>
     </el-dialog>
 
-
-
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from "vue";
-import { useRouter } from "vue-router";
+import { useAgentPageContext } from "@/agent/useAgentPageContext"
+
+import { ref, computed, onMounted, onUnmounted, watch } from "vue";
+import { useRouter, useRoute } from "vue-router";
 import { ElMessageBox, ElMessage } from "element-plus";
 import {
   Document,
@@ -446,7 +415,6 @@ import {
   Money,
   Clock,
   Message,
-  TrendCharts,
   InfoFilled,
   Download,
   Medal,
@@ -456,9 +424,13 @@ import {
 } from "@element-plus/icons-vue";
 
 import request from '@/utils/request';
+import { studentApplicationMaterialByteUrl, studentProfileByteUrl } from '@/utils/authorizedFileUrl'
+import { downloadAuthorizedFile } from '@/utils/authorizedFileDownload'
 import { useAuthStore } from '@/store/auth';
 import type { ApplicationStatusUpdateData } from '@/utils/websocket';
 import { onApplicationStatusUpdate, offApplicationStatusUpdate } from '@/utils/websocket';
+import { getApplicationStatusText } from '@/utils/directHire';
+import { getInternshipCalendar } from '@/api/teacherSettings';
 
 const authStore = useAuthStore()
 
@@ -468,6 +440,7 @@ const getStudentId = () => {
 };
 
 const router = useRouter();
+const route = useRoute();
 
 // 状态管理
 const showDetailDialog = ref(false);
@@ -501,7 +474,16 @@ const filterSummaryText = computed(() => {
 });
 
 // 申请详情中的简历和证书数据（带缓存）
-const applicationMaterials = ref({
+interface ApplicationMaterialRow {
+  id?: number | string
+  name?: string
+  url?: string
+  [key: string]: unknown
+}
+const applicationMaterials = ref<{
+  resumes: ApplicationMaterialRow[]
+  certificates: ApplicationMaterialRow[]
+}>({
   resumes: [],
   certificates: []
 });
@@ -509,7 +491,7 @@ const materialsLoading = ref(false);
 // 材料数据缓存标记，避免重复加载
 const materialsCacheLoaded = ref(false);
 
-// 系统默认实习时间设置
+// 全局教学日历（仅作岗位时长缺失时的参考展示）
 const systemInternshipTime = ref({
   startDate: '',
   endDate: ''
@@ -524,16 +506,16 @@ const filters = [
   { label: "已拒绝", value: "rejected" },
 ];
 
-// 申请类型选项
+// 申请类型选项（单位变更已停用，历史记录并入"全部"；考研延迟启用中，提供专属筛选）
 const applicationTypes = [
   { label: "全部", value: "all" },
   { label: "岗位申请", value: "job" },
   { label: "自主实习", value: "selfPractice" },
-  { label: "单位变更", value: "unitChange" },
   { label: "考研延迟", value: "delay" },
 ];
 
 const applications = ref([])
+const highlightedApplicationId = ref<string | number | null>(null)
 
 // 状态值转换：后端数字/字符串到前端字符串
 const statusMap = {
@@ -544,25 +526,79 @@ const statusMap = {
   'pending': 'pending',
   'approved': 'approved',
   'rejected': 'rejected',
+  'withdrawn': 'withdrawn',
   'hired': 'hired',
   'interview_passed': 'interview_passed',
   'interview_failed': 'interview_failed'
 };
 
+// 申请页只反映申请审批链：企业同意后无论面试结果如何都显示"已通过"，面试细节看面试管理页
+// 直录保留原始状态以显示"直接录取（免面试）"
+const normalizeApplicationStatus = (status, directHire) => {
+  if (directHire) return status;
+  if (status === 'interview_passed' || status === 'interview_failed') return 'approved';
+  return status;
+};
+
+// 申请时间格式化到分钟（yyyy-MM-dd HH:mm），直接解析字符串避免 UTC 转换偏移
+const formatDateTimeMinute = (time?: string | null) => {
+  if (!time) return ''
+  const m = String(time).match(/(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})/)
+  if (m) return `${m[1]} ${m[2]}`
+  const d = new Date(String(time))
+  if (isNaN(d.getTime())) return String(time)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
 // 从后端API获取申请数据
 const fetchApplications = async () => {
   try {
+    interface StudentApplicationRow {
+      id?: number | string
+      positionName?: string
+      position_name?: string
+      companyName?: string
+      company_name?: string
+      company?: string
+      applicationType?: string
+      application_type?: string
+      oldCompany?: string
+      newCompany?: string
+      companyCity?: string
+      location?: string
+      hrManagerName?: string
+      hrName?: string
+      contactPerson?: string
+      recruiterName?: string
+      hrManagerPhone?: string
+      hrPhone?: string
+      contactPhone?: string
+      recruiterPhone?: string
+      hrEmail?: string
+      contactEmail?: string
+      recruiterEmail?: string
+      status?: string | number
+      directHire?: boolean
+      direct_hire?: boolean
+      applyTime?: string
+      apply_time?: string
+      createTime?: string
+      jobTitle?: string
+      salary?: string
+      duration?: string
+      [key: string]: unknown
+    }
     // 并行获取学生申请(自主实习/单位变更/考研延迟)和岗位申请
     const [appResponse, jobResponse] = await Promise.all([
-      request.get(`/student/applications`),
-      request.get(`/student/job-applications`)
+      request.get<StudentApplicationRow[]>(`/student/applications`),
+      request.get<StudentApplicationRow[]>(`/student/job-applications`)
     ]);
 
     const allApplications = [];
 
     // 处理学生申请(自主实习/单位变更/考研延迟)
     if (appResponse.code === 200) {
-      const data = appResponse.data || [];
+      const data = Array.isArray(appResponse.data) ? appResponse.data : [];
       data.forEach(app => {
         let jobTitle = app.positionName || '';
         let company = app.companyName || app.company || '';
@@ -586,18 +622,20 @@ const fetchApplications = async () => {
           applicationType: app.applicationType,
           jobTitle,
           company,
-          contactPerson: app.hrName || app.contactPerson || app.recruiterName || '',
-          contactPhone: app.hrPhone || app.contactPhone || app.recruiterPhone || '',
+          location: app.companyCity || app.location || '',
+          contactPerson: app.hrManagerName || app.hrName || app.contactPerson || app.recruiterName || '',
+          contactPhone: app.hrManagerPhone || app.hrPhone || app.contactPhone || app.recruiterPhone || '',
           contactEmail: app.hrEmail || app.contactEmail || app.recruiterEmail || '',
-          status: statusMap[app.status] || 'pending',
-          applyDate: app.applyTime ? new Date(app.applyTime).toISOString().split('T')[0] : (app.createTime ? new Date(app.createTime).toISOString().split('T')[0] : '')
+          status: normalizeApplicationStatus(statusMap[String(app.status ?? '')] || 'pending', app.directHire),
+          applyDate: app.applyTime ? new Date(app.applyTime).toISOString().split('T')[0] : (app.createTime ? new Date(app.createTime).toISOString().split('T')[0] : ''),
+          applyDateTime: formatDateTimeMinute(app.applyTime || app.createTime)
         });
       });
     }
 
     // 处理岗位申请
     if (jobResponse.code === 200) {
-      const jobData = jobResponse.data || [];
+      const jobData = Array.isArray(jobResponse.data) ? jobResponse.data : [];
       jobData.forEach(app => {
         allApplications.push({
           ...app,
@@ -610,8 +648,9 @@ const fetchApplications = async () => {
           contactPerson: app.hrName || app.contactPerson || app.recruiterName || '',
           contactPhone: app.hrPhone || app.contactPhone || app.recruiterPhone || '',
           contactEmail: app.hrEmail || app.contactEmail || app.recruiterEmail || '',
-          status: statusMap[app.status] || 'pending',
-          applyDate: app.applyDate ? new Date(app.applyDate).toISOString().split('T')[0] : (app.createTime ? new Date(app.createTime).toISOString().split('T')[0] : '')
+          status: normalizeApplicationStatus(statusMap[String(app.status ?? '')] || 'pending', app.directHire),
+          applyDate: app.applyDate !== undefined && app.applyDate !== null && app.applyDate !== '' ? new Date(app.applyDate as string).toISOString().split('T')[0] : (app.createTime ? new Date(app.createTime as string).toISOString().split('T')[0] : ''),
+          applyDateTime: formatDateTimeMinute((app.applyDate as string) || app.createTime)
         });
       });
     }
@@ -638,14 +677,22 @@ const filteredApplications = computed(() => {
     );
   }
 
-  // 再按状态筛选
+  // 再按状态筛选：面试结果已归一为申请语义，直录记录仍为 interview_passed（同属企业同意录用）
   if (selectedFilter.value !== "all") {
-    result = result.filter(
-      (app) => app.status === selectedFilter.value,
-    );
+    result = result.filter((app) => {
+      if (selectedFilter.value === "approved") {
+        return app.status === "approved" || app.status === "interview_passed";
+      }
+      return app.status === selectedFilter.value;
+    });
   }
 
-  return result;
+  // 按申请时间从新到旧排序（最新的排第一张）
+  return [...result].sort((a, b) => {
+    const ta = new Date(a.applyTime || a.applyDate || a.createTime || 0).getTime() || 0;
+    const tb = new Date(b.applyTime || b.applyDate || b.createTime || 0).getTime() || 0;
+    return tb - ta;
+  });
 });
 
 // 方法：获取筛选标签文本
@@ -669,17 +716,19 @@ const getFilterLabel = () => {
 };
 
 // 方法：获取状态中文文本
-const getStatusText = (status) => {
-  const statusMap = {
-    'pending': '待审核',
-    'approved': '已通过',
-    'rejected': '已拒绝',
-    'hired': '已录用',
-    'interview_passed': '面试通过',
-    'interview_failed': '面试未通过'
-  };
-  return statusMap[status] || status;
-};
+const getStatusText = (status, directHire = false) => getApplicationStatusText(status, directHire);
+
+// 考研计划材料上传状态；在按申请记录授权下载前不暴露存储地址。
+const hasDelayPlan = computed(() => {
+  const materials = currentApplication.value?.materials
+  if (!materials) return false
+  try {
+    const parsed = typeof materials === 'string' ? JSON.parse(materials) : materials
+    return Boolean(parsed?.delayPlan)
+  } catch {
+    return false
+  }
+})
 
 // 方法：查看申请详情
 const viewApplicationDetail = async (application) => {
@@ -694,8 +743,8 @@ const viewApplicationDetail = async (application) => {
     requirements = []
   }
   // 处理联系人字段映射
-  const contactPerson = application.hrName || application.contactPerson || application.recruiterName || ''
-  const contactPhone = application.hrPhone || application.contactPhone || application.recruiterPhone || ''
+  const contactPerson = application.hrManagerName || application.hrName || application.contactPerson || application.recruiterName || ''
+  const contactPhone = application.hrManagerPhone || application.hrPhone || application.contactPhone || application.recruiterPhone || ''
   const contactEmail = application.hrEmail || application.contactEmail || application.recruiterEmail || ''
 
   currentApplication.value = {
@@ -713,6 +762,35 @@ const viewApplicationDetail = async (application) => {
   await loadApplicationMaterials();
 };
 
+const clearApplicationDeepLink = () => {
+  const query = { ...route.query }
+  delete query.applicationId
+  router.replace({ path: route.path, query })
+}
+
+const openApplicationFromQuery = async () => {
+  const targetId = route.query.applicationId
+  if (!targetId) return
+  const targetType = typeof route.query.applicationType === 'string'
+    ? route.query.applicationType
+    : 'job'
+
+  const target = applications.value.find((application) => (
+    String(application.id) === String(targetId) && application.applicationType === targetType
+  ))
+  if (!target) {
+    highlightedApplicationId.value = null
+    ElMessage.warning('未找到该申请记录，已为您显示申请列表')
+    clearApplicationDeepLink()
+    return
+  }
+
+  selectedType.value = target.applicationType
+  selectedFilter.value = 'all'
+  highlightedApplicationId.value = target.id
+  await viewApplicationDetail(target)
+}
+
 // 加载申请人的简历和证书材料（带缓存优化）
 const loadApplicationMaterials = async () => {
   // 如果已经加载过材料数据，直接使用缓存
@@ -724,16 +802,16 @@ const loadApplicationMaterials = async () => {
   try {
     // 并行加载简历、证书和系统实习时间设置
     const [resumeRes, certRes] = await Promise.all([
-      request.get('/student/profile/resumes'),
-      request.get('/student/profile/certificates')
+      request.get<ApplicationMaterialRow[]>('/student/profile/resumes'),
+      request.get<ApplicationMaterialRow[]>('/student/profile/certificates')
     ]);
 
     if (resumeRes.code === 200) {
-      applicationMaterials.value.resumes = resumeRes.data || [];
+      applicationMaterials.value.resumes = Array.isArray(resumeRes.data) ? resumeRes.data : [];
     }
 
     if (certRes.code === 200) {
-      applicationMaterials.value.certificates = certRes.data || [];
+      applicationMaterials.value.certificates = Array.isArray(certRes.data) ? certRes.data : [];
     }
 
     // 标记缓存已加载，后续不再重复请求
@@ -749,13 +827,39 @@ const loadApplicationMaterials = async () => {
 // 申请专属材料
 const appMaterials = computed(() => {
   const m = currentApplication.value?.materials
-  if (!m || typeof m !== 'object') return []
-  return Object.entries(m).filter(([, v]) => v).map(([k, v]) => ({ label: k, url: v }))
+  if (!m) return []
+  try {
+    const parsed = typeof m === 'string' ? JSON.parse(m) : m
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return []
+    return Object.entries(parsed).filter(([, v]) => v).map(([label]) => ({ label }))
+  } catch {
+    return []
+  }
 })
+
+const downloadApplicationMaterial = async (key) => {
+  if (!['selfPractice', 'delay'].includes(currentApplication.value?.applicationType)) {
+    ElMessage.error('该申请材料暂不可通过此入口下载')
+    return
+  }
+  const url = studentApplicationMaterialByteUrl(currentApplication.value?.id, key)
+  if (!url) return ElMessage.error('申请材料记录不可用')
+  const rawMaterials = currentApplication.value?.materials
+  let stored = rawMaterials?.[key]
+  if (typeof rawMaterials === 'string') {
+    try { stored = JSON.parse(rawMaterials)?.[key] } catch { stored = '' }
+  }
+  const extension = typeof stored === 'string' ? /\.([a-z0-9]{1,8})(?:$|[?#])/i.exec(stored)?.[1] : ''
+  try {
+    await downloadAuthorizedFile(url, extension ? `${key}.${extension}` : key)
+  } catch {
+    ElMessage.error('申请材料下载失败，请检查权限或联系管理员')
+  }
+}
 
 // 计算实习时长显示
 const getDurationDisplay = (duration) => {
-  // 如果企业没有设置时长（为空或"不限"），但系统设置了起止时间，显示系统的时间范围
+  // 如果岗位没有设置时长，显示全局教学日历的参考范围。
   if (!duration || duration.trim() === '' || duration === '不限') {
     if (systemInternshipTime.value.startDate && systemInternshipTime.value.endDate) {
       return `${systemInternshipTime.value.startDate} 至 ${systemInternshipTime.value.endDate}`;
@@ -765,52 +869,63 @@ const getDurationDisplay = (duration) => {
   return duration;
 };
 
-// 打开申请材料文件
-const openMaterial = (url) => {
-  window.open(url, '_blank')
-}
-
 // 下载简历
-const downloadResume = (resume) => {
-  if (!resume || !resume.url) {
+const downloadResume = async (resume) => {
+  const authorizedUrl = studentProfileByteUrl('resume', resume?.id)
+  if (!authorizedUrl) {
     ElMessage.error('简历信息不存在')
     return
   }
-  window.open(resume.url, '_blank')
+  try {
+    await downloadAuthorizedFile(authorizedUrl, resume.name || '简历')
+  } catch (error) {
+    ElMessage.error('简历下载失败，请检查权限')
+  }
 };
 
 // 下载证书
-const downloadCertificate = (cert) => {
-  if (!cert || !cert.url) {
+const downloadCertificate = async (cert) => {
+  const authorizedUrl = studentProfileByteUrl('certificate', cert?.id)
+  if (!authorizedUrl) {
     ElMessage.error('证书信息不存在')
     return
   }
-  window.open(cert.url, '_blank')
-};
-
-// 方法：撤回申请（仅岗位申请，后端物理删除）
-const withdrawApplication = async (id) => {
   try {
-    await ElMessageBox.confirm('确定要撤回这条申请吗？撤回后无法恢复。', '撤回申请', {
-      confirmButtonText: '确定',
-      cancelButtonText: '取消',
-      type: 'warning'
-    });
-    const response = await request.delete(`/student/job-applications/${id}`);
-    if (response.code === 200) {
-      const index = applications.value.findIndex((app) => app.id === id);
-      if (index !== -1) {
-        applications.value.splice(index, 1);
-      }
-      ElMessage.success('申请已撤回');
-    }
+    await downloadAuthorizedFile(authorizedUrl, cert.name || '证书')
   } catch (error) {
-    if (error !== 'cancel') {
-      ElMessage.error('撤回申请失败');
-    }
+    ElMessage.error('证书下载失败，请检查权限')
   }
 };
 
+// 方法：撤回申请（仅岗位申请，后端物理删除）
+const withdrawApplication = async (application) => {
+  const isDelay = application?.applicationType === 'delay';
+  try {
+    await ElMessageBox.confirm(
+      isDelay ? '撤回后教师将无法继续审核原申请，你可以重新填写并提交。' : '确定要撤回这条申请吗？撤回后无法恢复。',
+      isDelay ? '撤回考研延迟申请' : '撤回申请',
+      { confirmButtonText: '确定', cancelButtonText: '取消', type: 'warning' }
+    );
+    const response = isDelay
+      ? await request.post(`/student/applications/${application.id}/withdraw`)
+      : await request.delete(`/student/job-applications/${application.id}`);
+    if (response.code === 200) {
+      const index = applications.value.findIndex((app) => app.id === application.id);
+      if (index !== -1) {
+        if (isDelay) {
+          applications.value[index] = { ...applications.value[index], status: 'withdrawn' };
+        } else {
+          applications.value.splice(index, 1);
+        }
+      }
+      ElMessage.success(response.message || '申请已撤回');
+    }
+  } catch (error) {
+    if (error !== 'cancel') {
+      ElMessage.error(error?.response?.data?.message || error?.message || '撤回申请失败');
+    }
+  }
+};
 // 方法：跳转到职位浏览页
 const goToJobs = () => {
   router.push("/student/jobs");
@@ -827,9 +942,14 @@ onMounted(async () => {
     fetchApplications(),
     fetchSystemInternshipTime()
   ]);
+  await openApplicationFromQuery()
   // 注册申请状态更新监听器
   onApplicationStatusUpdate(handleApplicationStatusUpdate)
 });
+
+watch(() => [route.query.applicationId, route.query.applicationType], () => {
+  if (applications.value.length > 0) openApplicationFromQuery()
+})
 
 onUnmounted(() => {
   // 移除申请状态更新监听器
@@ -846,20 +966,38 @@ const handleApplicationStatusUpdate = (data: ApplicationStatusUpdateData) => {
   })
 }
 
-// 获取系统实习时间设置
+// 获取全局教学日历
 const fetchSystemInternshipTime = async () => {
   try {
-    const timeRes = await request.get('/settings/internship-time');
+    interface InternshipCalendarRow {
+      startDate?: string
+      start_date?: string
+      endDate?: string
+      end_date?: string
+      [key: string]: unknown
+    }
+    const timeRes = await getInternshipCalendar() as unknown as { code?: number; data?: InternshipCalendarRow };
     if (timeRes.code === 200) {
+      const calendarData = timeRes.data
       systemInternshipTime.value = {
-        startDate: timeRes.data?.startDate || '',
-        endDate: timeRes.data?.endDate || ''
+        startDate: calendarData?.startDate ?? calendarData?.start_date ?? '',
+        endDate: calendarData?.endDate ?? calendarData?.end_date ?? ''
       };
     }
   } catch (error) {
-    console.error('获取系统实习时间设置失败:', error);
+    console.error('获取实习教学日历失败:', error);
   }
 };
+
+useAgentPageContext(() => ({
+  title: '我的申请', view: showDetailDialog.value ? 'application-detail' : 'page',
+  object: showDetailDialog.value && currentApplication.value?.id ? {
+    type: currentApplication.value.applicationType === 'job' ? 'job_application' : 'student_application',
+    id: String(currentApplication.value.id)
+  } : null,
+  filters: { applicationType: selectedType.value, status: selectedFilter.value }
+}))
+
 </script>
 
 <style scoped>
@@ -1204,6 +1342,11 @@ const fetchSystemInternshipTime = async () => {
   background: linear-gradient(135deg, #ffffff 0%, #f0f9ff 100%);
 }
 
+.application-card.deep-link-target {
+  border-color: #409eff;
+  box-shadow: 0 0 0 3px rgba(64, 158, 255, 0.18), 0 12px 32px rgba(64, 158, 255, 0.16);
+}
+
 .application-card:hover .card-title {
   color: #409EFF;
 }
@@ -1300,6 +1443,15 @@ const fetchSystemInternshipTime = async () => {
   border: 1px solid #b7eb8f;
   box-shadow:
     0 2px 8px rgba(82, 196, 26, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+
+.status-tag.interview_failed {
+  background: linear-gradient(135deg, #fff1f0 0%, #ffccc7 100%);
+  color: #f5222d;
+  border: 1px solid #ffa39e;
+  box-shadow:
+    0 2px 8px rgba(245, 34, 45, 0.2),
     inset 0 1px 0 rgba(255, 255, 255, 0.6);
 }
 
@@ -1576,18 +1728,6 @@ const fetchSystemInternshipTime = async () => {
   margin: 0;
 }
 
-.internship-base-badges {
-  display: flex;
-  gap: 10px;
-  flex-shrink: 0;
-}
-
-.base-badge {
-  font-weight: 600;
-  padding: 6px 16px;
-  border-radius: 12px;
-}
-
 .detail-status {
   padding: 8px 20px;
   border-radius: 24px;
@@ -1606,6 +1746,12 @@ const fetchSystemInternshipTime = async () => {
   background: linear-gradient(135deg, #f6ffed 0%, #d9f7be 100%);
   color: #52c41a;
   border: 1px solid #b7eb8f;
+}
+
+.detail-status.withdrawn {
+  color: #8a7a55;
+  background: #f5f0e4;
+  border-color: #e5d9bd;
 }
 
 .detail-status.rejected {
@@ -1691,26 +1837,33 @@ const fetchSystemInternshipTime = async () => {
   color: #334155;
 }
 
-/* 自我简介 */
-.self-intro-section {
-  margin-top: 16px;
-  padding: 16px;
-  background: white;
-  border-radius: 10px;
-  border: 1px solid #e2e8f0;
+/* 考研延迟详情：申请理由整行展示 + 材料链接 */
+.delay-reason-item {
+  display: block;
 }
 
-.self-intro-label {
-  font-weight: 600;
-  color: #1e293b;
-  margin-bottom: 8px;
-  font-size: 14px;
-}
-
-.self-intro-content {
-  color: #64748b;
+.delay-reason {
+  display: block;
+  margin-top: 4px;
+  white-space: pre-wrap;
+  word-break: break-word;
   line-height: 1.8;
-  font-size: 14px;
+  font-weight: 400;
+  color: #64748b;
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 12px 16px;
+}
+
+.material-link {
+  color: #409eff;
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.material-link:hover {
+  text-decoration: underline;
 }
 
 /* 详情描述 */
@@ -1780,33 +1933,6 @@ const fetchSystemInternshipTime = async () => {
 .contact-value {
   font-weight: 500;
   color: #334155;
-}
-
-/* 统计网格 */
-.stats-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 24px;
-}
-
-.stat-item {
-  text-align: center;
-  padding: 16px;
-  background: white;
-  border-radius: 8px;
-  border: 1px solid #e8e8e8;
-}
-
-.stat-number {
-  font-size: 24px;
-  font-weight: 700;
-  color: #409eff;
-  margin-bottom: 4px;
-}
-
-.stat-label {
-  font-size: 14px;
-  color: #909399;
 }
 
 /* 申请材料样式 */
@@ -1949,7 +2075,7 @@ const fetchSystemInternshipTime = async () => {
 @media screen and (max-width: 768px) {
   .header-content {
     flex-direction: column;
-    text-align: center;
+    align-items: flex-start;
     gap: 16px;
   }
 
@@ -2019,4 +2145,8 @@ const fetchSystemInternshipTime = async () => {
     justify-content: center;
   }
 }
+
+
+.header-section{position:relative}
+.header-section .agent-context-action{position:absolute;right:20px;top:50%;transform:translateY(-50%)}
 </style>

@@ -1,0 +1,133 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.internship.mapper.JobSearchStatusMapper">
+
+    <sql id="hasPassedOffer">
+        (EXISTS (
+            SELECT 1 FROM student_job_application passed_application
+            WHERE passed_application.student_id = su.id
+              AND passed_application.status = 'interview_passed'
+              AND NOT EXISTS (SELECT 1 FROM internship_stage_assignment closed_stage
+                  WHERE closed_stage.application_id = passed_application.id
+                    AND closed_stage.status NOT IN ('PENDING_CONFIRMATION', 'CONFIRMED', 'IN_PROGRESS'))
+        ) OR EXISTS (
+            SELECT 1 FROM interview_invitation passed_invitation
+            WHERE passed_invitation.student_id = su.id
+              AND passed_invitation.status = 'interview_passed'
+              AND NOT EXISTS (SELECT 1 FROM internship_confirmation_record closed_confirmation
+                  WHERE closed_confirmation.student_id = su.id
+                    AND closed_confirmation.position_id = passed_invitation.position_id
+                    AND (closed_confirmation.status = 2 OR closed_confirmation.recall_status = 2)
+                    AND closed_confirmation.update_time >= passed_invitation.update_time)
+        ))
+    </sql>
+
+    <sql id="hasPendingConfirmation">
+        EXISTS (
+            SELECT 1 FROM internship_stage_assignment pending_stage
+            WHERE pending_stage.student_id = su.id
+              AND pending_stage.status = 'PENDING_CONFIRMATION'
+        )
+    </sql>
+
+    <sql id="hasInterviewOpportunity">
+        (EXISTS (
+            SELECT 1 FROM student_job_application opportunity_application
+            WHERE opportunity_application.student_id = su.id
+              AND opportunity_application.status IN ('pending', 'approved', 'interview', 'pending_interview')
+        ) OR EXISTS (
+            SELECT 1 FROM interview_invitation opportunity_invitation
+            WHERE opportunity_invitation.student_id = su.id
+              AND opportunity_invitation.status IN ('pending', 'approved', 'interview', 'pending_interview')
+              AND NOT EXISTS (SELECT 1 FROM student_job_application ended_application
+                  WHERE ended_application.student_id = su.id
+                    AND ended_application.position_id = opportunity_invitation.position_id
+                    AND ended_application.status IN ('rejected', 'interview_failed', 'withdrawn', 'cancelled', 'canceled')
+                    AND ended_application.update_time >= opportunity_invitation.update_time)
+        ))
+    </sql>
+
+    <sql id="persistentStatus">
+        COALESCE((
+            SELECT latest_status.status
+            FROM student_internship_status latest_status
+            WHERE latest_status.student_id = su.id
+            ORDER BY latest_status.create_time DESC, latest_status.id DESC
+            LIMIT 1
+        ), 0)
+    </sql>
+
+    <select id="findEvidenceByStudentIds" resultType="com.internship.entity.dto.JobSearchStatusEvidenceDTO">
+        SELECT
+            su.id AS studentId,
+            <include refid="com.internship.mapper.JobSearchStatusMapper.persistentStatus"/> AS internshipStatus,
+            <include refid="com.internship.mapper.JobSearchStatusMapper.hasInterviewOpportunity"/> AS hasInterviewOpportunity,
+            <include refid="com.internship.mapper.JobSearchStatusMapper.hasPassedOffer"/> AS hasPassedOffer,
+            <include refid="com.internship.mapper.JobSearchStatusMapper.hasPendingConfirmation"/> AS hasPendingConfirmation
+        FROM student_users su
+        WHERE su.id IN
+        <foreach collection="studentIds" item="studentId" open="(" separator="," close=")">
+            #{studentId}
+        </foreach>
+    </select>
+
+    <!-- Shared by lists, exports and aggregates. Numeric zero remains the two-state macro. -->
+    <sql id="effectiveNumericStatus">
+        (CASE WHEN <include refid="com.internship.mapper.JobSearchStatusMapper.persistentStatus"/> &gt;= 2 THEN <include refid="com.internship.mapper.JobSearchStatusMapper.persistentStatus"/>
+          WHEN <include refid="com.internship.mapper.JobSearchStatusMapper.hasPassedOffer"/> OR <include refid="com.internship.mapper.JobSearchStatusMapper.hasPendingConfirmation"/> THEN 1 ELSE 0 END)
+    </sql>
+    <sql id="effectiveStatusText">
+        CASE <include refid="com.internship.mapper.JobSearchStatusMapper.effectiveNumericStatus"/>
+          WHEN 0 THEN CASE WHEN <include refid="com.internship.mapper.JobSearchStatusMapper.hasInterviewOpportunity"/> THEN '无 Offer' ELSE '未投递' END
+          WHEN 1 THEN '待确认' WHEN 2 THEN '已确定' WHEN 3 THEN '实习中'
+          WHEN 4 THEN '已结束' WHEN 5 THEN '已中断' WHEN 6 THEN '延期' ELSE '未知' END
+    </sql>
+
+    <select id="countByDisplayFilter" resultType="long">
+        SELECT COUNT(*)
+        FROM student_users su
+        <where>
+            su.status = 1
+            <if test="classIds != null and classIds.size() > 0">
+                AND su.class_id IN
+                <foreach collection="classIds" item="classId" open="(" separator="," close=")">
+                    #{classId}
+                </foreach>
+            </if>
+            <choose>
+                <!-- 0 是宏观“尚无 Offer”，包含 NOT_FOUND 和 NO_OFFER。 -->
+                <when test="statusFilter == 0">
+                    AND <include refid="com.internship.mapper.JobSearchStatusMapper.persistentStatus"/> IN (0,1)
+                    AND NOT <include refid="com.internship.mapper.JobSearchStatusMapper.hasPassedOffer"/>
+                    AND NOT <include refid="com.internship.mapper.JobSearchStatusMapper.hasPendingConfirmation"/>
+                </when>
+                <when test="statusFilter == 1">
+                    AND (
+                            <include refid="com.internship.mapper.JobSearchStatusMapper.persistentStatus"/> IN (0,1)
+                            AND (
+                                <include refid="com.internship.mapper.JobSearchStatusMapper.hasPassedOffer"/>
+                                OR <include refid="com.internship.mapper.JobSearchStatusMapper.hasPendingConfirmation"/>
+                            )
+                    )
+                </when>
+                <otherwise>
+                    AND <include refid="com.internship.mapper.JobSearchStatusMapper.persistentStatus"/> = #{statusFilter}
+                </otherwise>
+            </choose>
+        </where>
+    </select>
+
+    <select id="countWithoutOfferByDepartmentId" resultType="long">
+        SELECT COUNT(*)
+        FROM student_users su
+        INNER JOIN major m ON m.id = su.major_id
+        LEFT JOIN division d ON d.id = m.division_id
+        WHERE su.status = 1
+          AND COALESCE(m.department_id, d.department_id) = #{departmentId}
+          AND <include refid="com.internship.mapper.JobSearchStatusMapper.persistentStatus"/> IN (0,1)
+          AND NOT <include refid="com.internship.mapper.JobSearchStatusMapper.hasPassedOffer"/>
+          AND NOT <include refid="com.internship.mapper.JobSearchStatusMapper.hasPendingConfirmation"/>
+    </select>
+</mapper>

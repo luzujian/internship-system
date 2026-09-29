@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.internship.mapper.CompanyRecommendationRatingMapper">
+    <resultMap id="RatingMap" type="com.internship.entity.CompanyRecommendationRating">
+        <id property="id" column="id"/>
+        <result property="submissionId" column="submission_id"/>
+        <result property="companyId" column="company_id"/>
+        <result property="stars" column="stars"/>
+        <result property="createTime" column="create_time"/>
+        <result property="updateTime" column="update_time"/>
+    </resultMap>
+
+    <resultMap id="RatingSummaryMap" type="com.internship.entity.dto.CompanyRatingSummary">
+        <id property="companyId" column="company_id"/>
+        <result property="averageStars" column="average_stars"/>
+        <result property="ratingCount" column="rating_count"/>
+    </resultMap>
+
+    <select id="findBySubmissionId" resultMap="RatingMap">
+        select id, submission_id, company_id, stars, create_time, update_time
+        from company_recommendation_rating
+        where submission_id = #{submissionId}
+        order by company_id asc
+    </select>
+
+    <delete id="deleteBySubmissionId">
+        delete from company_recommendation_rating where submission_id = #{submissionId}
+    </delete>
+
+    <insert id="insertBatch">
+        insert into company_recommendation_rating (
+            submission_id, company_id, stars, create_time, update_time
+        ) values
+        <foreach collection="ratings" item="rating" separator=",">
+            (#{rating.submissionId}, #{rating.companyId}, #{rating.stars}, now(), now())
+        </foreach>
+    </insert>
+
+    <select id="findSubmittedSummariesByCompanyIds"
+            resultMap="RatingSummaryMap">
+        select
+            rating.company_id,
+            avg(rating.stars) as average_stars,
+            count(*) as rating_count
+        from company_recommendation_rating rating
+        inner join internship_appraisal_submission submission
+            on submission.id = rating.submission_id
+           and submission.status = 'SUBMITTED'
+        where rating.company_id in
+        <foreach collection="companyIds" item="companyId" open="(" separator="," close=")">
+            #{companyId}
+        </foreach>
+        group by rating.company_id
+    </select>
+</mapper>

@@ -5,7 +5,9 @@ import com.internship.anno.Log;
 import com.internship.entity.PageResult;
 import com.internship.entity.Position;
 import com.internship.entity.Result;
+import com.internship.entity.CompanyUser;
 import com.internship.entity.StudentInternshipStatus;
+import com.internship.service.CompanyUserService;
 import com.internship.service.PositionService;
 import com.internship.service.StudentInternshipStatusService;
 import lombok.extern.slf4j.Slf4j;
@@ -16,6 +18,8 @@ import org.springframework.web.bind.annotation.*;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @Slf4j
 @RestController
@@ -27,6 +31,9 @@ public class RecruitmentController {
 
     @Autowired
     private StudentInternshipStatusService studentInternshipStatusService;
+
+    @Autowired
+    private CompanyUserService companyUserService;
 
     @GetMapping("/positions")
     @PreAuthorize("hasAuthority('recruitment:view')")
@@ -67,22 +74,36 @@ public class RecruitmentController {
         log.info("获取招聘统计数据");
         Map<String, Object> statistics = new HashMap<>();
         
-        List<Position> allPositions = positionService.findAll();
+        // 系统内现存企业ID集合：已招人数只统计这些企业名下的数据
+        Set<Long> existingCompanyIds = companyUserService.findAll().stream()
+                .map(CompanyUser::getId)
+                .filter(id -> id != null)
+                .collect(Collectors.toSet());
+
+        List<Position> allPositions = positionService.findAll().stream()
+                .filter(p -> p.getCompanyId() != null && existingCompanyIds.contains(p.getCompanyId()))
+                .toList();
         int totalPositions = allPositions.size();
         int totalPlannedRecruit = allPositions.stream().mapToInt(p -> p.getPlannedRecruit() != null ? p.getPlannedRecruit() : 0).sum();
-        
-        // 应聘申请数：状态1（待确认）+ 状态2（已确定）
+
+        // 应聘申请数：状态1（待确认）+ 状态2（已确定），仅统计关联岗位的申请（排除自主实习等未关联岗位的数据）
         List<StudentInternshipStatus> pendingStudents = studentInternshipStatusService.list(null, null, null, 1, null, null, null, null, null, null);
         List<StudentInternshipStatus> confirmedStudents = studentInternshipStatusService.list(null, null, null, 2, null, null, null, null, null, null);
-        int totalApplications = pendingStudents.size() + confirmedStudents.size();
-        
-        // 已招人数：状态2（已确定）+ 状态3（实习中）+ 状态4（已结束）
+        int totalApplications = (int) (pendingStudents.stream().filter(s -> s.getPositionId() != null).count()
+                + confirmedStudents.stream().filter(s -> s.getPositionId() != null).count());
+
+        // 已招人数：状态2（已确定）+ 状态3（实习中）+ 状态4（已结束），只统计系统内现存企业名下且已关联岗位的人数
         List<StudentInternshipStatus> inProgressStudents = studentInternshipStatusService.list(null, null, null, 3, null, null, null, null, null, null);
         List<StudentInternshipStatus> endedStudents = studentInternshipStatusService.list(null, null, null, 4, null, null, null, null, null, null);
-        int totalRecruitedCount = confirmedStudents.size() + inProgressStudents.size() + endedStudents.size();
-        
-        // 剩余名额 = 计划招聘人数 - 已招人数
-        int totalRemainingQuota = totalPlannedRecruit - totalRecruitedCount;
+        int totalRecruitedCount = (int) (confirmedStudents.stream()
+                        .filter(s -> s.getPositionId() != null && s.getCompanyId() != null && existingCompanyIds.contains(s.getCompanyId())).count()
+                + inProgressStudents.stream()
+                        .filter(s -> s.getPositionId() != null && s.getCompanyId() != null && existingCompanyIds.contains(s.getCompanyId())).count()
+                + endedStudents.stream()
+                        .filter(s -> s.getPositionId() != null && s.getCompanyId() != null && existingCompanyIds.contains(s.getCompanyId())).count());
+
+        // 剩余名额 = 计划招聘人数 - 已招人数，兜底不展示负数
+        int totalRemainingQuota = Math.max(0, totalPlannedRecruit - totalRecruitedCount);
         
         statistics.put("totalPositions", totalPositions);
         statistics.put("totalPlannedRecruit", totalPlannedRecruit);

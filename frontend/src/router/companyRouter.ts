@@ -1,3 +1,4 @@
+import { agentPage } from '@/agent/pageForms'
 import type { RouteRecordRaw } from 'vue-router'
 
 const companyRoutes: RouteRecordRaw[] = [
@@ -9,32 +10,32 @@ const companyRoutes: RouteRecordRaw[] = [
   {
     path: 'dashboard',
     name: 'companyDashboard',
-    component: () => import('../views/company/CompanyHome.vue')
+    component: agentPage('views/company/CompanyHome.vue', () => import('../views/company/CompanyHome.vue'))
   },
   {
     path: 'jobs',
     name: 'RecruitmentManagement',
-    component: () => import('../views/company/RecruitmentManagement.vue')
+    component: agentPage('views/company/RecruitmentManagement.vue', () => import('../views/company/RecruitmentManagement.vue'))
   },
   {
     path: 'internship-confirm',
     name: 'InternshipConfirm',
-    component: () => import('../views/company/InternshipConfirm.vue')
+    component: agentPage('views/company/InternshipConfirm.vue', () => import('../views/company/InternshipConfirm.vue'))
   },
   {
     path: 'application-view',
     name: 'ApplicationView',
-    component: () => import('../views/company/ApplicationView.vue')
+    component: agentPage('views/company/ApplicationView.vue', () => import('../views/company/ApplicationView.vue'))
   },
   {
     path: 'interviews',
     name: 'CompanyInfo',
-    component: () => import('../views/company/CompanyInfo.vue')
+    component: agentPage('views/company/CompanyInfo.vue', () => import('../views/company/CompanyInfo.vue'))
   },
   {
     path: 'settings',
     name: 'AccountSettings',
-    component: () => import('../views/company/AccountSettings.vue')
+    component: agentPage('views/company/AccountSettings.vue', () => import('../views/company/AccountSettings.vue'))
   }
 ]
 

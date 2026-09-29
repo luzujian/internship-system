@@ -170,7 +170,12 @@ public class MajorServiceImpl implements MajorService {
         if (major == null) {
             throw new RuntimeException("专业不存在");
         }
-        
+
+        // 先解除学生对专业的直接引用；班级必须统一交给 ClassService 删除，
+        // 这样班级-辅导员关联也会按同一套事务规则清理。
+        safeCleanupMajorRelations(id);
+
+        // ===== 级联删除：专业 → 班级。任一班级删除失败都中止整个事务，避免留下半套关联数据。 =====
         log.info("开始删除专业 {} 下的所有班级", id);
         List<Class> classes = classService.findByMajorId(id);
         if (classes != null && !classes.isEmpty()) {
@@ -179,10 +184,33 @@ public class MajorServiceImpl implements MajorService {
                 classService.delete(classEntity.getId());
             }
         }
-        log.info("成功删除专业 {} 下的 {} 个班级", id, classes != null ? classes.size() : 0);
+        log.info("成功处理专业 {} 下的 {} 个班级", id, classes != null ? classes.size() : 0);
         
         int result = majorMapper.delete(id);
         log.info("专业删除成功，专业ID: {}", id);
         return result;
+    }
+
+    /** 清理专业的直接外键引用。班级删除由上面的 ClassService 统一负责。 */
+    private void safeCleanupMajorRelations(Long majorId) {
+        try {
+            majorMapper.clearMajorIdOnStudents(majorId);
+        } catch (Exception e) { log.warn("跳过清理 major→student_users.major_id: {}", trimErr(e)); }
+    }
+
+    /** 提取精简错误信息，避免超长 SQL 堆栈刷屏 */
+    private String trimErr(Throwable e) {
+        Throwable c = e;
+        String lastMsg = (e.getMessage() == null ? "" : e.getMessage().split(";")[0].trim());
+        int depth = 0;
+        while (c.getCause() != null && depth < 5) {
+            c = c.getCause();
+            if (c.getMessage() != null) {
+                String m = c.getMessage().split(";")[0].trim();
+                if (m.length() < 160) lastMsg = m;
+            }
+            depth++;
+        }
+        return lastMsg.length() > 160 ? lastMsg.substring(0, 160) : lastMsg;
     }
 }

@@ -1,5 +1,6 @@
 package com.internship.controller;
 
+import com.internship.anno.Log;
 import com.internship.entity.Result;
 import com.internship.entity.TeacherPermission;
 import com.internship.entity.TeacherRole;
@@ -83,6 +84,8 @@ public class TeacherPermissionController {
     }
     
     @PostMapping
+    @PreAuthorize("hasRole('ADMIN')")
+    @Log(operationType = "CREATE", module = "PERMISSION_MANAGEMENT", description = "新增权限", riskLevel = "HIGH", critical = true)
     public Result createPermission(@RequestBody TeacherPermission teacherPermission) {
         log.info("创建教师权限: {}", teacherPermission.getPermissionName());
         try {
@@ -95,6 +98,8 @@ public class TeacherPermissionController {
     }
     
     @PutMapping("/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Log(operationType = "UPDATE", module = "PERMISSION_MANAGEMENT", description = "更新权限", riskLevel = "HIGH", critical = true)
     public Result updatePermission(@PathVariable Long id, @RequestBody TeacherPermission teacherPermission) {
         log.info("更新教师权限: {}", id);
         try {
@@ -108,6 +113,8 @@ public class TeacherPermissionController {
     }
     
     @DeleteMapping("/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Log(operationType = "DELETE", module = "PERMISSION_MANAGEMENT", description = "删除权限", riskLevel = "HIGH", critical = true)
     public Result deletePermission(@PathVariable Long id) {
         log.info("删除教师权限: {}", id);
         try {
@@ -146,6 +153,7 @@ public class TeacherPermissionController {
     
     @PostMapping("/roles/{roleId}/permissions")
     @PreAuthorize("hasRole('ADMIN')")
+    @Log(operationType = "UPDATE", module = "PERMISSION_MANAGEMENT", description = "分配教师权限", riskLevel = "HIGH", targetType = "ROLE", critical = true)
     public Result assignPermissions(@PathVariable Long roleId, @RequestBody Map<String, Object> data) {
         log.info("为教师角色分配权限: roleId={}, data={}", roleId, data);
         try {

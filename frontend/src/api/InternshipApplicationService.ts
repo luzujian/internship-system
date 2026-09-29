@@ -1,4 +1,5 @@
 import request from '@/utils/request'
+import type { Application } from '@/store/position'
 
 export interface InternshipApplication {
   id: number
@@ -10,6 +11,7 @@ export interface InternshipApplication {
   positionName: string
   applyTime: string
   status: string
+  directHire?: boolean
   viewed: boolean
   email: string
   gender: string
@@ -35,7 +37,7 @@ export default {
    */
   getCurrentCompanyApplications(params?: Record<string, unknown>) {
     console.log('[API] 调用 getCurrentCompanyApplications, URL: /company/applications')
-    return request({
+    return request<Record<string, unknown>[]>({
       url: '/company/applications',
       method: 'get',
       params: {
@@ -50,7 +52,7 @@ export default {
    */
   getJobApplications(params?: Record<string, unknown>) {
     console.log('[API] 调用 getJobApplications, URL: /company/job-applications')
-    return request({
+    return request<Record<string, unknown>[]>({
       url: '/company/job-applications',
       method: 'get',
       params: {
@@ -63,13 +65,20 @@ export default {
   /**
    * 更新学生快速申请状态（同意/拒绝）
    */
-  updateJobApplicationStatus(id: number, status: string) {
+  updateJobApplicationStatus(id: number, status: string, rejectReason?: string) {
     console.log('[API] 调用 updateJobApplicationStatus, ID:', id, '状态:', status)
     return request({
       url: `/company/job-applications/${id}/status`,
       method: 'put',
-      data: { status }
+      data: { status, ...(rejectReason ? { rejectReason } : {}) }
     })
+  },
+
+  directHire(id: number): Promise<any> {
+    return request({
+      url: `/company/job-applications/${id}/direct-hire`,
+      method: 'post'
+    }) as any
   },
 
   getApplicationById(id: number) {
@@ -79,7 +88,7 @@ export default {
     })
   },
 
-  addApplication(data: Partial<InternshipApplication>) {
+  addApplication(data: Partial<InternshipApplication> | Partial<Application>) {
     return request({
       url: '/admin/applications',
       method: 'post',
@@ -87,11 +96,11 @@ export default {
     })
   },
 
-  updateApplyStatus(id: number, status: string) {
+  updateApplyStatus(id: number, status: string, rejectReason?: string) {
     return request({
       url: `/company/applications/${id}/status`,
       method: 'put',
-      data: { status }
+      data: { status, ...(rejectReason ? { rejectReason } : {}) }
     })
   },
 

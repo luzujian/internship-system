@@ -31,6 +31,9 @@ public class InternshipReflection {
     // 关联的实习状态ID
     private Long internshipStatusId;
 
+    // 关联的阶段实习记录ID
+    private Long stageAssignmentId;
+
     // 第几期（如第1期、第2期）
     private Integer periodNumber;
 

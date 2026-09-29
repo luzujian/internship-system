@@ -24,8 +24,38 @@ public class InternshipConfirmationRecordServiceImpl implements InternshipConfir
     }
 
     @Override
+    public int submitPending(Long id, String remark) {
+        return confirmationRecordMapper.submitPending(id, remark);
+    }
+
+    @Override
+    public int resolvePending(Long id, Integer status, String remark) {
+        return confirmationRecordMapper.resolvePending(id, status, remark);
+    }
+
+    @Override
     public InternshipConfirmationRecord findById(Long id) {
         return confirmationRecordMapper.findById(id);
+    }
+
+    @Override
+    public InternshipConfirmationRecord findByIdForUpdate(Long id) {
+        return confirmationRecordMapper.findByIdForUpdate(id);
+    }
+
+    @Override
+    public Long lockStudent(Long studentId) {
+        return confirmationRecordMapper.lockStudent(studentId);
+    }
+
+    @Override
+    public InternshipConfirmationRecord findActiveByStudentForUpdate(Long studentId) {
+        return confirmationRecordMapper.findActiveByStudentForUpdate(studentId);
+    }
+
+    @Override
+    public InternshipConfirmationRecord findSubmittedPendingByStudentForUpdate(Long studentId) {
+        return confirmationRecordMapper.findSubmittedPendingByStudentForUpdate(studentId);
     }
 
     @Override
@@ -60,11 +90,6 @@ public class InternshipConfirmationRecordServiceImpl implements InternshipConfir
 
     @Override
     public int recall(Long id, String recallReason) {
-        InternshipConfirmationRecord record = findById(id);
-        if (record == null) return 0;
-        record.setRecallStatus(2);  // 直接设为已撤回（自动撤回，无需审核）
-        record.setRecallReason(recallReason);
-        record.setRecallApplyTime(java.time.LocalDateTime.now());
-        return update(record);
+        return confirmationRecordMapper.recallPending(id, recallReason);
     }
 }

@@ -1,0 +1,21 @@
+{
+  "code": 200,
+  "data": {
+    "items": [
+      {
+        "id": 10,
+        "eventType": "job_applied",
+        "category": "recruitment",
+        "title": "已投递岗位",
+        "description": "星河科技 · Java 实习生",
+        "status": "pending",
+        "statusText": "待企业处理",
+        "occurredAt": "2026-07-18T14:20:00+08:00",
+        "relatedId": 10,
+        "action": { "key": "VIEW_APPLICATION", "targetId": 10, "params": {} }
+      }
+    ],
+    "nextCursor": null,
+    "hasMore": false
+  }
+}

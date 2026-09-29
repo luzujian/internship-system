@@ -34,6 +34,13 @@ export function permissionGuard(
       redirectToDashboard(userRole, next)
       return
     }
+
+    const requiredPermission = to.meta.permission
+    if (typeof requiredPermission === 'string' && !authStore.hasPermission(requiredPermission)) {
+      logger.warn('功能权限不足 - 需要权限:', requiredPermission, '目标路由:', to.path)
+      redirectToDashboard(userRole, next)
+      return
+    }
   } else {
     // 不需要认证的页面
     // 已认证用户访问登录页时，根据角色重定向到对应首页

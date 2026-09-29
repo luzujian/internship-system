@@ -29,6 +29,7 @@ public class UserController {
      * @return 用户信息
      */
     @GetMapping("/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
     public Result getUserById(@PathVariable Long id) {
         User user = userService.findById(id);
         if (user == null) {

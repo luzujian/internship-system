@@ -2,100 +2,69 @@ package com.internship.service.impl;
 
 import com.internship.entity.CompanyUser;
 import com.internship.mapper.CompanyUserMapper;
-import com.internship.mapper.SystemSettingsMapper;
 import com.internship.service.CompanyTagService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 
-import java.time.LocalDate;
-import java.time.ZoneId;
 import java.util.Date;
 import java.util.List;
+import java.util.Objects;
 
 @Slf4j
 @Service
 public class CompanyTagServiceImpl implements CompanyTagService {
-    
+
+    /** 自动标签集合：重建时按字段重新生成；集合之外的标签视为手动标签，重建时保留 */
+    private static final java.util.Set<String> AUTO_TAGS =
+            java.util.Set.of("接受兜底", "校企双向选择", "学生自主联系", "实习基地");
+
     @Autowired
     private CompanyUserMapper companyUserMapper;
-    
-    @Lazy
-    @Autowired
-    private SystemSettingsMapper systemSettingsMapper;
-    
+
     @Override
     public String determineCompanyTag(Date registerTime, Integer acceptBackup) {
-        return null;
+        return determineCompanyTags(registerTime, acceptBackup, null, null);
     }
-    
+
     @Override
     public String determineCompanyTags(Date registerTime, Integer acceptBackup, Integer isInternshipBase, String cooperationMode) {
+        return rebuildTags(null, acceptBackup, isInternshipBase, cooperationMode);
+    }
+
+    /** 按字段重建自动标签，并保留现有标签中的手动标签（不属于 AUTO_TAGS 的） */
+    private String rebuildTags(String currentTag, Integer acceptBackup, Integer isInternshipBase, String cooperationMode) {
         java.util.List<String> tags = new java.util.ArrayList<>();
-        
+
         if (acceptBackup != null && acceptBackup == 1) {
             tags.add("接受兜底");
         }
-        
-        if (isInternshipBase != null) {
-            if (isInternshipBase == 1) {
-                tags.add("国家级");
-            } else if (isInternshipBase == 2) {
-                tags.add("省级");
-            }
+
+        if (isInternshipBase != null && isInternshipBase == 1) {
+            tags.add("实习基地");
         }
-        
+
         if (cooperationMode != null && !cooperationMode.trim().isEmpty()) {
             if ("mutual_choice".equals(cooperationMode)) {
-                tags.add("双向选择阶段");
+                tags.add("校企双向选择");
             } else if ("student_contact".equals(cooperationMode)) {
                 tags.add("学生自主联系");
             }
-        } else if (registerTime != null) {
-            try {
-                LocalDate registerDate = registerTime.toInstant().atZone(ZoneId.systemDefault()).toLocalDate();
-                
-                LocalDate startDate = getDualSelectionStartDate();
-                LocalDate endDate = getDualSelectionEndDate();
-                
-                if (startDate != null && endDate != null) {
-                    if (!registerDate.isBefore(startDate) && !registerDate.isAfter(endDate)) {
-                        tags.add("双向选择阶段");
-                    } else if (registerDate.isAfter(endDate)) {
-                        tags.add("学生自主联系");
+        }
+
+        if (currentTag != null && !currentTag.isBlank()) {
+            for (String t : currentTag.split(",")) {
+                String trim = t.trim();
+                // 保留手动标签；"校企双向选择"同时作为固定标签保留（管理员导入/贴上的不会因重建被冲掉）
+                if (!trim.isEmpty() && (!AUTO_TAGS.contains(trim) || "校企双向选择".equals(trim))) {
+                    if (!tags.contains(trim)) {
+                        tags.add(trim);
                     }
                 }
-            } catch (Exception e) {
-                log.error("判断企业标签失败: {}", e.getMessage(), e);
             }
         }
-        
+
         return tags.isEmpty() ? null : String.join(",", tags);
-    }
-    
-    private LocalDate getDualSelectionStartDate() {
-        try {
-            com.internship.entity.SystemSettings settings = systemSettingsMapper.getLatestSettings();
-            if (settings != null && settings.getDualSelectionStartDate() != null) {
-                return settings.getDualSelectionStartDate().toInstant().atZone(ZoneId.systemDefault()).toLocalDate();
-            }
-        } catch (Exception e) {
-            log.error("获取双向选择开始日期失败: {}", e.getMessage(), e);
-        }
-        return null;
-    }
-    
-    private LocalDate getDualSelectionEndDate() {
-        try {
-            com.internship.entity.SystemSettings settings = systemSettingsMapper.getLatestSettings();
-            if (settings != null && settings.getDualSelectionEndDate() != null) {
-                return settings.getDualSelectionEndDate().toInstant().atZone(ZoneId.systemDefault()).toLocalDate();
-            }
-        } catch (Exception e) {
-            log.error("获取双向选择结束日期失败: {}", e.getMessage(), e);
-        }
-        return null;
     }
     
     @Override
@@ -103,9 +72,11 @@ public class CompanyTagServiceImpl implements CompanyTagService {
         try {
             List<CompanyUser> companies = companyUserMapper.findAll();
             for (CompanyUser company : companies) {
-                String tag = determineCompanyTags(company.getRegisterTime(), company.getAcceptBackup(), company.getIsInternshipBase(), company.getCooperationMode());
-                if (tag != null && !tag.equals(company.getCompanyTag())) {
-                    company.setCompanyTag(tag);
+                String tag = rebuildTags(company);
+                String currentTag = company.getCompanyTag() == null || company.getCompanyTag().isBlank()
+                        ? null : company.getCompanyTag();
+                if (!Objects.equals(tag, currentTag)) {
+                    company.setCompanyTag(tag == null ? "" : tag);
                     companyUserMapper.update(company);
                     log.info("更新企业标签: {} -> {}", company.getCompanyName(), tag);
                 }
@@ -114,15 +85,27 @@ public class CompanyTagServiceImpl implements CompanyTagService {
             log.error("批量更新企业标签失败: {}", e.getMessage(), e);
         }
     }
-    
+
+    private String rebuildTags(CompanyUser company) {
+        String tags = rebuildTags(company.getCompanyTag(), company.getAcceptBackup(),
+                company.getIsInternshipBase(), company.getCooperationMode());
+        if (tags == null || Integer.valueOf(1).equals(company.getAuditStatus())) return tags;
+        String filtered = java.util.Arrays.stream(tags.split(","))
+                .filter(tag -> !"校企双向选择".equals(tag))
+                .collect(java.util.stream.Collectors.joining(","));
+        return filtered.isEmpty() ? null : filtered;
+    }
+
     @Override
     public void updateCompanyTag(Long companyId) {
         try {
             CompanyUser company = companyUserMapper.findById(companyId);
             if (company != null) {
-                String tag = determineCompanyTags(company.getRegisterTime(), company.getAcceptBackup(), company.getIsInternshipBase(), company.getCooperationMode());
-                if (tag != null && !tag.equals(company.getCompanyTag())) {
-                    company.setCompanyTag(tag);
+                String tag = rebuildTags(company);
+                String currentTag = company.getCompanyTag() == null || company.getCompanyTag().isBlank()
+                        ? null : company.getCompanyTag();
+                if (!Objects.equals(tag, currentTag)) {
+                    company.setCompanyTag(tag == null ? "" : tag);
                     companyUserMapper.update(company);
                     log.info("更新企业标签: {} -> {}", company.getCompanyName(), tag);
                 }

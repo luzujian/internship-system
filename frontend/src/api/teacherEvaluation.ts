@@ -31,7 +31,7 @@ export interface Report {
   id: number
   date: string
   content: string
-  periodNumber?: number  // 阶段编号
+  periodNumber?: number  // 心得期次编号
   isDraft?: boolean  // 是否为草稿状态
 }
 

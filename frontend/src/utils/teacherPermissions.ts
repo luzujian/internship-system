@@ -1,6 +1,7 @@
 /**
  * 教师端权限工具函数
- * 用于检查用户是否有特定权限
+ * 权限码由后端登录接口返回并存入 localStorage['teacherPermissions']
+ * 本模块不再维护硬编码权限矩阵，仅保留路由→权限码桥接映射
  */
 
 // 教师类型枚举
@@ -10,168 +11,76 @@ export enum TeacherType {
   COUNSELOR = 'COUNSELOR'     // 辅导员教师
 }
 
-// 权限枚举
-export enum Permission {
-  // 通用权限（所有教师都有）
-  VIEW_HOME = 'view:home',                    // 查看首页
-  VIEW_NOTIFICATION = 'view:notification',        // 查看通知
-  VIEW_DASHBOARD = 'view:dashboard',            // 查看实习状态看板
-  VIEW_RESOURCES = 'view:resources',            // 查看资源管理
-  VIEW_ACCOUNT_SETTINGS = 'view:account_settings', // 查看账号设置
-  
-  // 学院教师专属权限
-  VIEW_ALL_STUDENTS = 'view:all_students',     // 查看所有学生
-  VIEW_ALL_CLASSES = 'view:all_classes',       // 查看所有班级
-  VIEW_ALL_MAJORS = 'view:all_majors',       // 查看所有专业
-  VIEW_ALL_DEPARTMENTS = 'view:all_departments', // 查看所有系室
-  MANAGE_SETTINGS = 'manage:settings',          // 管理系统设置
-  VIEW_REPORTS = 'view:reports',              // 查看统计报表
-  
-  // 系室教师专属权限
-  VIEW_DEPARTMENT_STUDENTS = 'view:department_students', // 查看本系学生
-  VIEW_DEPARTMENT_CLASSES = 'view:department_classes',   // 查看本系班级
-  VIEW_DEPARTMENT_MAJORS = 'view:department_majors',   // 查看本系专业
-  EVALUATE_STUDENTS = 'evaluate:students',   // 评定学生成绩
-  VIEW_STUDENT_TRACKING = 'view:student_tracking', // 查看学生状态监控
-  
-  // 辅导员教师专属权限
-  VIEW_COUNSELOR_STUDENTS = 'view:counselor_students', // 查看辅导学生
-  VIEW_COUNSELOR_CLASSES = 'view:counselor_classes',   // 查看辅导班级
-  MANAGE_APPROVAL = 'manage:approval',       // 管理审核
-  VIEW_EVALUATION = 'view:evaluation',       // 查看评分管理
+/**
+ * 路由名 → 后端真实权限码(menu:xxx)映射
+ * 基于数据库 teacher_permission 表，由管理员在权限管理页面分配
+ * 这是结构性桥接（路由名↔权限码），不含权限策略
+ */
+const ROUTE_MENU_PERMISSIONS: Record<string, string> = {
+  'teacherHome': 'menu:home',
+  'teacherAnnouncements': 'menu:announcements',
+  'teacherDashboard': 'menu:dashboard',
+  'teacherStudentTracking': 'menu:student-tracking',
+  'teacherResources': 'menu:resources',
+  'teacherReports': 'menu:reports',
+  'teacherAccountSettings': 'menu:account-settings',
+  'teacherApproval': 'menu:approval',
+  'teacherEvaluation': 'menu:evaluation',
+  'teacherKeyTimelineConfig': 'menu:settings',
+  'teacherTimelineConfig': 'menu:settings',
+  'teacherAiSettings': 'menu:settings',
+  'teacherAiKeywordConfig': 'menu:settings',
+  'teacherCompanyList': 'menu:company-list',
+  'teacherClasses': 'menu:classes',
+  'teacherInternshipAppraisals': 'menu:appraisal-collection',
+  'teacherAiScoringConfig': 'menu:teacherAiScoringConfig',
+  'teacherGradeFinalize': 'menu:evaluation',
+  'teacherStudentApplicationAudit': 'menu:approval',
+  'teacherCompanyAudit': 'menu:approval',
+  'teacherScoringRules': 'menu:teacherAiScoringConfig',
+  'teacherKeywordLibrary': 'menu:teacherAiScoringConfig',
 }
 
-// 教师类型与权限映射
-const TEACHER_PERMISSIONS: Record<TeacherType, Permission[]> = {
-  [TeacherType.COLLEGE]: [
-    // 通用权限
-    Permission.VIEW_HOME,
-    Permission.VIEW_NOTIFICATION,
-    Permission.VIEW_DASHBOARD,
-    Permission.VIEW_RESOURCES,
-    Permission.VIEW_ACCOUNT_SETTINGS,
-    // 学院教师专属权限
-    Permission.VIEW_ALL_STUDENTS,
-    Permission.VIEW_ALL_CLASSES,
-    Permission.VIEW_ALL_MAJORS,
-    Permission.VIEW_ALL_DEPARTMENTS,
-    Permission.MANAGE_SETTINGS,
-    Permission.VIEW_REPORTS,
-    // 也包含系室和辅导员的部分权限
-    Permission.VIEW_DEPARTMENT_STUDENTS,
-    Permission.VIEW_DEPARTMENT_CLASSES,
-    Permission.VIEW_DEPARTMENT_MAJORS,
-    Permission.EVALUATE_STUDENTS,
-    Permission.VIEW_STUDENT_TRACKING,
-    Permission.MANAGE_APPROVAL,
-    Permission.VIEW_EVALUATION,
-  ],
-  [TeacherType.DEPARTMENT]: [
-    // 通用权限
-    Permission.VIEW_HOME,
-    Permission.VIEW_NOTIFICATION,
-    Permission.VIEW_DASHBOARD,
-    Permission.VIEW_RESOURCES,
-    Permission.VIEW_ACCOUNT_SETTINGS,
-    // 系室教师专属权限
-    Permission.VIEW_DEPARTMENT_STUDENTS,
-    Permission.VIEW_DEPARTMENT_CLASSES,
-    Permission.VIEW_DEPARTMENT_MAJORS,
-    Permission.EVALUATE_STUDENTS,
-    Permission.VIEW_STUDENT_TRACKING,
-    Permission.MANAGE_APPROVAL,
-    Permission.VIEW_EVALUATION,
-  ],
-  [TeacherType.COUNSELOR]: [
-    // 通用权限
-    Permission.VIEW_HOME,
-    Permission.VIEW_NOTIFICATION,
-    Permission.VIEW_DASHBOARD,
-    Permission.VIEW_RESOURCES,
-    Permission.VIEW_ACCOUNT_SETTINGS,
-    // 辅导员教师专属权限
-    Permission.VIEW_COUNSELOR_STUDENTS,
-    Permission.VIEW_COUNSELOR_CLASSES,
-    Permission.MANAGE_APPROVAL,
-    Permission.VIEW_EVALUATION,
-    Permission.VIEW_STUDENT_TRACKING,
-  ],
-}
-
-// 路由与权限映射
-// 注意：路由没有在 ROUTE_PERMISSIONS 中定义时，默认允许所有教师访问
-// 权限由管理员端的权限分配进行管控
-export const ROUTE_PERMISSIONS: Record<string, Permission[]> = {
-  'teacherHome': [Permission.VIEW_HOME],
-  'teacherDashboard': [Permission.VIEW_DASHBOARD],
-  'teacherStudentTracking': [Permission.VIEW_STUDENT_TRACKING],
-  'teacherApproval': [Permission.MANAGE_APPROVAL],
-  'teacherEvaluation': [Permission.VIEW_EVALUATION, Permission.EVALUATE_STUDENTS],
-  'teacherAnnouncements': [Permission.VIEW_NOTIFICATION],
-  'teacherInternshipStatus': [Permission.VIEW_DASHBOARD],
-  'teacherCompanyList': [Permission.VIEW_DASHBOARD],
-  'teacherStudents': [Permission.VIEW_ALL_STUDENTS, Permission.VIEW_DEPARTMENT_STUDENTS, Permission.VIEW_COUNSELOR_STUDENTS],
-  'teacherResources': [Permission.VIEW_RESOURCES],
-  // 'teacherReports': [Permission.VIEW_REPORTS],  // 已移除，统计报表默认允许所有教师访问
-  'teacherSettings': [Permission.MANAGE_SETTINGS],
-  'teacherAccountSettings': [Permission.VIEW_ACCOUNT_SETTINGS],
-  'teacherClasses': [Permission.VIEW_ALL_CLASSES, Permission.VIEW_DEPARTMENT_CLASSES, Permission.VIEW_COUNSELOR_CLASSES],
-}
+/** 始终放行的路由（基础功能，不依赖权限分配） */
+const ALWAYS_ACCESSIBLE_ROUTES = new Set<string>([
+  'teacherHome',
+  'teacherAccountSettings',
+  'teacherProfile',
+])
 
 /**
- * 获取用户权限列表
- * @param teacherType 教师类型
- * @returns 权限列表
+ * 从 localStorage 获取后端返回的教师权限码列表
+ * 登录时由 store/auth 存入，来源为 teacher_role_permission 表
  */
-export function getUserPermissions(teacherType: TeacherType): Permission[] {
-  return TEACHER_PERMISSIONS[teacherType] || []
-}
-
-/**
- * 检查用户是否有指定权限
- * @param teacherType 教师类型
- * @param permission 权限
- * @returns 是否有权限
- */
-export function hasPermission(teacherType: TeacherType, permission: Permission): boolean {
-  const permissions = getUserPermissions(teacherType)
-  return permissions.includes(permission)
-}
-
-/**
- * 检查用户是否有任意一个指定权限
- * @param teacherType 教师类型
- * @param permissions 权限列表
- * @returns 是否有任意一个权限
- */
-export function hasAnyPermission(teacherType: TeacherType, permissions: Permission[]): boolean {
-  return permissions.some(permission => hasPermission(teacherType, permission))
-}
-
-/**
- * 检查用户是否有所有指定权限
- * @param teacherType 教师类型
- * @param permissions 权限列表
- * @returns 是否有所有权限
- */
-export function hasAllPermissions(teacherType: TeacherType, permissions: Permission[]): boolean {
-  return permissions.every(permission => hasPermission(teacherType, permission))
+function getStoredTeacherPermissions(): string[] {
+  try {
+    const stored = localStorage.getItem('teacherPermissions')
+    if (stored) {
+      return JSON.parse(stored)
+    }
+  } catch (e) {
+    console.error('[teacherPermissions] 解析教师权限失败:', e)
+  }
+  return []
 }
 
 /**
  * 检查用户是否有访问路由的权限
- * @param teacherType 教师类型
+ * 基于后端返回的真实权限码(menu:xxx)判断，无硬编码权限回退
  * @param routeName 路由名称
  * @returns 是否有权限
  */
 export function hasRoutePermission(teacherType: TeacherType, routeName: string): boolean {
-  const requiredPermissions = ROUTE_PERMISSIONS[routeName]
-  // 路由没有在 ROUTE_PERMISSIONS 中定义时，默认允许所有教师访问
-  // 权限由管理员端的权限分配进行管控
-  if (!requiredPermissions || requiredPermissions.length === 0) {
+  if (ALWAYS_ACCESSIBLE_ROUTES.has(routeName)) {
     return true
   }
-  return hasAnyPermission(teacherType, requiredPermissions)
+  const requiredCode = ROUTE_MENU_PERMISSIONS[routeName]
+  if (!requiredCode) {
+    // 未映射的路由默认放行（由后端接口二次校验兜底）
+    return true
+  }
+  const storedPermissions = getStoredTeacherPermissions()
+  return storedPermissions.includes(requiredCode)
 }
 
 /**
@@ -179,40 +88,23 @@ export function hasRoutePermission(teacherType: TeacherType, routeName: string):
  * @returns 教师类型
  */
 export function getCurrentTeacherType(): TeacherType {
-  // 优先从 localStorage.getItem('teacherType') 获取（角色切换时会正确设置）
   const teacherTypeFromStorage = localStorage.getItem('teacherType')
-  if (teacherTypeFromStorage) {
-    // 将 'COLLEGE'/'DEPARTMENT'/'COUNSELOR' 转换为 TeacherType 枚举
-    if (teacherTypeFromStorage === 'COLLEGE') return TeacherType.COLLEGE
-    if (teacherTypeFromStorage === 'DEPARTMENT') return TeacherType.DEPARTMENT
-    if (teacherTypeFromStorage === 'COUNSELOR') return TeacherType.COUNSELOR
-  }
+  if (teacherTypeFromStorage === 'COLLEGE') return TeacherType.COLLEGE
+  if (teacherTypeFromStorage === 'DEPARTMENT') return TeacherType.DEPARTMENT
+  if (teacherTypeFromStorage === 'COUNSELOR') return TeacherType.COUNSELOR
 
-  // 回退到从 userInfo 获取
   const userInfoStr = localStorage.getItem('userInfo')
   if (userInfoStr) {
     try {
       const userInfo = JSON.parse(userInfoStr)
-      if (userInfo.teacherType) {
-        if (userInfo.teacherType === 'COLLEGE') return TeacherType.COLLEGE
-        if (userInfo.teacherType === 'DEPARTMENT') return TeacherType.DEPARTMENT
-        if (userInfo.teacherType === 'COUNSELOR') return TeacherType.COUNSELOR
-      }
+      if (userInfo.teacherType === 'COLLEGE') return TeacherType.COLLEGE
+      if (userInfo.teacherType === 'DEPARTMENT') return TeacherType.DEPARTMENT
+      if (userInfo.teacherType === 'COUNSELOR') return TeacherType.COUNSELOR
     } catch (e) {
       console.error('解析用户信息失败:', e)
     }
   }
   return TeacherType.COLLEGE
-}
-
-/**
- * 检查当前用户是否有指定权限
- * @param permission 权限
- * @returns 是否有权限
- */
-export function currentUserHasPermission(permission: Permission): boolean {
-  const teacherType = getCurrentTeacherType()
-  return hasPermission(teacherType, permission)
 }
 
 /**
@@ -237,32 +129,4 @@ export function getTeacherTypeName(teacherType: TeacherType): string {
     [TeacherType.COUNSELOR]: '辅导员教师',
   }
   return names[teacherType] || '未知类型'
-}
-
-/**
- * 根据教师类型获取可访问的路由列表
- * @param teacherType 教师类型
- * @returns 可访问的路由名称列表
- */
-export function getAccessibleRoutes(teacherType: TeacherType): string[] {
-  const permissions = getUserPermissions(teacherType)
-  const accessibleRoutes: string[] = []
-  
-  for (const [routeName, requiredPermissions] of Object.entries(ROUTE_PERMISSIONS)) {
-    if (requiredPermissions.length === 0 || 
-        requiredPermissions.some(perm => permissions.includes(perm))) {
-      accessibleRoutes.push(routeName)
-    }
-  }
-  
-  return accessibleRoutes
-}
-
-/**
- * 获取当前用户可访问的路由列表
- * @returns 可访问的路由名称列表
- */
-export function getCurrentUserAccessibleRoutes(): string[] {
-  const teacherType = getCurrentTeacherType()
-  return getAccessibleRoutes(teacherType)
 }

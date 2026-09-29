@@ -10,9 +10,10 @@
     @closed="handleClosed"
   >
     <div class="file-preview-container" v-loading="loading" element-loading-text="加载中...">
+      <div v-if="!byteUrl" class="unsupported-preview">文件读取地址不可用</div>
       <!-- 图片预览 -->
-      <div v-if="fileType === 'image'" class="image-preview">
-        <img :src="fileUrl" :alt="fileName" class="preview-image" @error="handleImageError" />
+      <div v-else-if="fileType === 'image'" class="image-preview">
+        <img v-if="mediaUrl" :src="mediaUrl" :alt="fileName" class="preview-image" @error="handleImageError" />
       </div>
 
       <!-- PDF 预览 (使用 PDF.js) -->
@@ -31,8 +32,8 @@
         </div>
       </div>
 
-      <!-- Word 文档预览 (使用 docx-preview + iframe 隔离) -->
-      <div v-else-if="fileType === 'word'" class="word-preview">
+      <!-- DOCX 文档预览 (使用 docx-preview 本地渲染) -->
+      <div v-else-if="fileType === 'docx'" class="word-preview">
         <div v-if="docxLoading" class="docx-loading-overlay">
           <el-icon class="is-loading"><Loading /></el-icon>
           <span>加载中...</span>
@@ -48,6 +49,23 @@
           class="docx-iframe"
           sandbox="allow-same-origin"
         ></iframe>
+      </div>
+
+      <!-- 旧版 DOC：经本系统后端解析，只展示消毒后的正文和表格 -->
+      <div v-else-if="fileType === 'doc'" class="word-preview">
+        <div v-if="docLoading" class="docx-loading">
+          <el-icon class="is-loading"><Loading /></el-icon>
+          <span>正在预览旧版 Word 文档...</span>
+        </div>
+        <div v-else-if="docError" class="docx-error">
+          <el-icon><Warning /></el-icon>
+          <span>旧版 Word 文档预览失败</span>
+          <el-button type="primary" size="small" @click="handleDownload">下载文件</el-button>
+        </div>
+        <template v-else-if="docHtmlContent">
+          <p class="doc-preview-note">旧版 Word 在线预览的版式可能与原文件不同，请下载原文件查看完整排版。</p>
+          <div class="doc-preview-content" v-html="docHtmlContent"></div>
+        </template>
       </div>
 
       <!-- Excel 文档预览 (使用 xlsx) -->
@@ -88,12 +106,12 @@
 
       <!-- 视频预览 -->
       <div v-else-if="fileType === 'video'" class="video-preview">
-        <video :src="fileUrl" controls class="preview-video"></video>
+        <video v-if="mediaUrl" :src="mediaUrl" controls class="preview-video"></video>
       </div>
 
       <!-- 音频预览 -->
       <div v-else-if="fileType === 'audio'" class="audio-preview">
-        <audio :src="fileUrl" controls class="preview-audio"></audio>
+        <audio v-if="mediaUrl" :src="mediaUrl" controls class="preview-audio"></audio>
       </div>
 
       <!-- 不支持预览的文件类型 -->
@@ -108,7 +126,7 @@
 
     <template #footer>
       <div class="preview-footer">
-        <el-button type="primary" @click="handleDownload" :loading="downloading">
+        <el-button type="primary" @click="handleDownload" :loading="downloading" :disabled="!byteUrl">
           <el-icon><Download /></el-icon>
           下载文件
         </el-button>
@@ -119,18 +137,20 @@
 </template>
 
 <script lang="ts" setup>
-import { ref, computed, watch, onMounted, nextTick } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Document, Download, Loading, Warning } from '@element-plus/icons-vue'
 import type { PdfJsLib, PdfDocument } from '@/types'
+import { authorizedFileByteUrl } from '@/utils/authorizedFileUrl'
+import { downloadAuthorizedFile, fetchAuthorizedFile, previewLegacyDoc } from '@/utils/authorizedFileDownload'
+import { sanitizeLegacyDocHTML } from '@/utils/sanitize'
 
 const props = defineProps<{
   modelValue: boolean
   fileUrl: string
   fileName: string
+  authorizedUrl: string
 }>()
-
-console.log('[FilePreviewDialog] props:', props)
 
 const emit = defineEmits(['update:modelValue'])
 
@@ -142,6 +162,26 @@ const visible = computed({
 const loading = ref(false)
 const downloading = ref(false)
 const textContent = ref('')
+const mediaUrl = ref('')
+let mediaObjectUrl = ''
+const byteUrl = computed(() => authorizedFileByteUrl(props.authorizedUrl))
+
+const loadMedia = async (sourceUrl: string) => {
+  try {
+    const response = await fetchAuthorizedFile(sourceUrl)
+    const objectUrl = URL.createObjectURL(await response.blob())
+    if (!visible.value || byteUrl.value !== sourceUrl) {
+      URL.revokeObjectURL(objectUrl)
+      return
+    }
+    if (mediaObjectUrl) URL.revokeObjectURL(mediaObjectUrl)
+    mediaObjectUrl = objectUrl
+    mediaUrl.value = objectUrl
+  } catch (error) {
+    console.error('加载预览文件失败:', error)
+    ElMessage.error('加载文件失败')
+  }
+}
 
 // PDF 相关
 const pdfLoading = ref(false)
@@ -156,6 +196,11 @@ const docxError = ref(false)
 const docxContainer = ref<HTMLDivElement | null>(null)
 const docxHtmlContent = ref('')
 let docxRendered = false
+
+const docLoading = ref(false)
+const docError = ref(false)
+const docHtmlContent = ref('')
+let docRenderId = 0
 
 // Excel 相关
 const excelLoading = ref(false)
@@ -182,14 +227,10 @@ const previewTitle = computed(() => {
 
 // 检测文件类型
 const detectFileType = (url: string, name: string): string => {
-  console.log('[FilePreviewDialog] detectFileType called with:', { url, name })
-
   // 安全地转换为字符串
   const nameStr = name ? String(name) : ''
   const urlStr = url ? String(url) : ''
   const str = nameStr || urlStr || ''
-
-  console.log('[FilePreviewDialog] processed strings:', { nameStr, urlStr, str })
 
   // 如果字符串为空，返回 unknown
   if (!str) {
@@ -199,8 +240,6 @@ const detectFileType = (url: string, name: string): string => {
 
   const extension = str.split('.').pop()?.toLowerCase() || ''
   fileExtension.value = extension
-
-  console.log('[FilePreviewDialog] detected extension:', extension)
 
   const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg']
   const officeExts = {
@@ -214,7 +253,8 @@ const detectFileType = (url: string, name: string): string => {
 
   if (imageExts.includes(extension)) return 'image'
   if (extension === 'pdf') return 'pdf'
-  if (officeExts.word.includes(extension)) return 'word'
+  if (extension === 'doc') return 'doc'
+  if (extension === 'docx') return 'docx'
   if (officeExts.excel.includes(extension)) return 'excel'
   if (officeExts.ppt.includes(extension)) return 'ppt'
   if (textExts.includes(extension)) return 'text'
@@ -228,7 +268,7 @@ const detectFileType = (url: string, name: string): string => {
 const loadTextContent = async () => {
   try {
     loading.value = true
-    const response = await fetch(props.fileUrl)
+    const response = await fetchAuthorizedFile(byteUrl.value)
     const text = await response.text()
     textContent.value = text.substring(0, 50000) // 限制显示长度
   } catch (error) {
@@ -263,53 +303,17 @@ const loadPdfJs = (): Promise<PdfJsLib> => {
   })
 }
 
-// 将 OSS URL 转换为后端代理 URL
-const convertToProxyUrl = (ossUrl: string): string => {
-  // 提取 OSS 路径 (例如：/resources/pdf/2026/03/xxx.pdf 或 /uploads/xxx.pdf)
-  try {
-    // 如果是完整 URL，使用 URL 解析
-    if (ossUrl.startsWith('http://') || ossUrl.startsWith('https://')) {
-      const urlObj = new URL(ossUrl)
-      const path = urlObj.pathname
-      return `/api/upload/preview${path}`
-    }
-    // 如果已经是路径格式（以 / 开头），直接使用
-    if (ossUrl.startsWith('/')) {
-      // 确保路径正确，去掉可能的前缀重复
-      let cleanPath = ossUrl
-      // 如果路径已经包含 /api/upload/preview，直接返回
-      if (cleanPath.startsWith('/api/upload/preview')) {
-        return cleanPath
-      }
-      // 否则添加预览前缀
-      return `/api/upload/preview${cleanPath}`
-    }
-    // 其他情况，直接拼接
-    return `/api/upload/preview/${ossUrl}`
-  } catch (e) {
-    console.error('解析 OSS URL 失败:', e)
-    // 回退：如果路径已经是正确的格式，直接使用
-    if (ossUrl.startsWith('/api/upload/preview')) {
-      return ossUrl
-    }
-    return `/api/upload/preview${ossUrl.startsWith('/') ? ossUrl : '/' + ossUrl}`
-  }
-}
-
 // 渲染 PDF
 const renderPdf = async () => {
   try {
     pdfLoading.value = true
     pdfError.value = false
 
-    // 将 OSS URL 转换为代理 URL
-    const proxyUrl = convertToProxyUrl(props.fileUrl)
-    console.log('[FilePreviewDialog] 使用代理 URL:', proxyUrl)
-
     // 加载 PDF.js
     const pdfjsLib = await loadPdfJs()
     // 加载 PDF 文档
-    pdfDoc = await pdfjsLib.getDocument(proxyUrl).promise
+    const response = await fetchAuthorizedFile(byteUrl.value)
+    pdfDoc = await pdfjsLib.getDocument({ data: await response.arrayBuffer() }).promise
 
     if (!pdfCanvas.value || !pdfContainer.value) {
       pdfLoading.value = false
@@ -363,32 +367,39 @@ const renderPdf = async () => {
   }
 }
 
-// 渲染 Word (docx) 文档
+// 渲染 Word (doc/docx) 文档
 const renderDocx = async () => {
   try {
     docxLoading.value = true
     docxError.value = false
 
-    // 将 OSS URL 转换为代理 URL
-    const proxyUrl = convertToProxyUrl(props.fileUrl)
-    console.log('[FilePreviewDialog] 渲染 Word 文档，使用代理 URL:', proxyUrl)
-
     // 获取文件内容
-    const response = await fetch(proxyUrl)
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`)
-    }
+    const response = await fetchAuthorizedFile(byteUrl.value)
     const blob = await response.blob()
 
     // 使用 docx-preview 渲染
-    const { renderAsync } = await import('docx-preview')
+    const { renderSafeDocx } = await import('@/utils/safeDocx')
 
     // 创建一个完全脱离的临时容器（永远不添加到 DOM）
     const tempContainer = document.createElement('div')
     tempContainer.style.cssText = 'position:absolute;left:-9999px;top:-9999px;width:800px;overflow:hidden;'
 
-    // 在临时容器中渲染
-    await renderAsync(blob, tempContainer, null, {
+    // 在临时容器中渲染（useMathMLPolyfill 为当前 docx-preview 版本已移除的旧选项，
+    // 运行时透传无影响；用局部接口收敛类型以通过 vue-tsc，避免对象字面量多余属性检查）
+    interface DocxPreviewRenderOptions {
+      className?: string
+      inWrapper?: boolean
+      ignoreLastRenderedPageBreak?: boolean
+      experimental?: boolean
+      trimXmlDeclaration?: boolean
+      useBase64URL?: boolean
+      useMathMLPolyfill?: boolean
+      renderHeaders?: boolean
+      renderFooters?: boolean
+      renderFootnotes?: boolean
+      renderEndnotes?: boolean
+    }
+    const docxRenderOptions: DocxPreviewRenderOptions = {
       className: 'docx',
       inWrapper: true,
       ignoreLastRenderedPageBreak: true,
@@ -400,7 +411,8 @@ const renderDocx = async () => {
       renderFooters: true,
       renderFootnotes: true,
       renderEndnotes: true
-    })
+    }
+    await renderSafeDocx(blob, tempContainer, undefined, docxRenderOptions)
 
     // 直接获取渲染后的 HTML 字符串
     docxHtmlContent.value = tempContainer.innerHTML
@@ -413,21 +425,34 @@ const renderDocx = async () => {
   }
 }
 
+const renderLegacyDoc = async (sourceUrl: string) => {
+  const renderId = ++docRenderId
+  docLoading.value = true
+  docError.value = false
+  docHtmlContent.value = ''
+  try {
+    const html = await previewLegacyDoc(sourceUrl)
+    if (renderId !== docRenderId || !visible.value || byteUrl.value !== sourceUrl) return
+    const sanitized = sanitizeLegacyDocHTML(html)
+    if (!sanitized.trim()) throw new Error('文档无可预览内容')
+    docHtmlContent.value = sanitized
+  } catch (error) {
+    if (renderId !== docRenderId) return
+    console.error('旧版 Word 文档预览失败:', error)
+    docError.value = true
+  } finally {
+    if (renderId === docRenderId) docLoading.value = false
+  }
+}
+
 // 渲染 Excel 文档
 const renderExcel = async () => {
   try {
     excelLoading.value = true
     excelError.value = false
 
-    // 将 OSS URL 转换为代理 URL
-    const proxyUrl = convertToProxyUrl(props.fileUrl)
-    console.log('[FilePreviewDialog] 渲染 Excel 文档，使用代理 URL:', proxyUrl)
-
     // 获取文件内容
-    const response = await fetch(proxyUrl)
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`)
-    }
+    const response = await fetchAuthorizedFile(byteUrl.value)
     const blob = await response.blob()
 
     // 使用 FileReader 读取 blob
@@ -446,7 +471,7 @@ const renderExcel = async () => {
 
       htmlContent += `<div class="excel-sheet">`
       if (workbook.SheetNames.length > 1) {
-        htmlContent += `<div class="sheet-title">${sheetName}</div>`
+        htmlContent += `<div class="sheet-title">${escapeHtml(sheetName)}</div>`
       }
       htmlContent += `<table class="excel-table">`
 
@@ -504,42 +529,18 @@ const handleDownload = async (event: Event) => {
     event.stopPropagation()
   }
 
-  if (!props.fileUrl) {
-    ElMessage.error('文件地址不存在')
+  if (!byteUrl.value) {
+    ElMessage.error('文件读取地址不可用')
     return
   }
 
   downloading.value = true
   try {
-    // 获取代理 URL 进行下载
-    const proxyUrl = convertToProxyUrl(props.fileUrl)
-    const response = await fetch(proxyUrl)
-    const blob = await response.blob()
-    const url = window.URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = props.fileName || 'download'
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-    window.URL.revokeObjectURL(url)
+    await downloadAuthorizedFile(byteUrl.value, props.fileName)
     ElMessage.success('开始下载')
   } catch (error) {
     console.error('下载失败:', error)
-    // 如果 blob 下载失败，回退到直接下载
-    try {
-      const link = document.createElement('a')
-      link.href = props.fileUrl
-      link.download = props.fileName || 'download'
-      link.target = '_blank'
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
-      ElMessage.success('开始下载')
-    } catch (fallbackError) {
-      console.error('回退下载失败:', fallbackError)
-      ElMessage.error('下载失败')
-    }
+    ElMessage.error('下载失败')
   } finally {
     downloading.value = false
   }
@@ -547,6 +548,13 @@ const handleDownload = async (event: Event) => {
 
 // 对话框关闭后的清理
 const handleClosed = () => {
+  docRenderId++
+  docHtmlContent.value = ''
+  docLoading.value = false
+  docError.value = false
+  if (mediaObjectUrl) URL.revokeObjectURL(mediaObjectUrl)
+  mediaObjectUrl = ''
+  mediaUrl.value = ''
   textContent.value = ''
   fileType.value = 'unknown'
   fileExtension.value = ''
@@ -577,37 +585,33 @@ const handleClosed = () => {
 }
 
 // 监听对话框打开和文件变化
-watch(() => [visible.value, props.fileUrl, props.fileName] as const, ([newVisible, newUrl, newName]) => {
-  console.log('[FilePreviewDialog] watch triggered:', {
-    newVisible,
-    newUrl,
-    newName,
-    newUrlType: typeof newUrl,
-    newNameType: typeof newName
-  })
-
-  if (newVisible && newUrl) {
+watch(() => [visible.value, props.fileUrl, props.fileName, byteUrl.value] as const, ([newVisible, newUrl, newName, newByteUrl]) => {
+  if (newVisible && newByteUrl) {
     // 确保 newName 是字符串类型
     const nameStr = typeof newName === 'string' ? newName : ''
     fileType.value = detectFileType(newUrl, nameStr)
-    console.log('[FilePreviewDialog] detected fileType:', fileType.value)
+    if (fileType.value === 'image' || fileType.value === 'video' || fileType.value === 'audio') {
+      void loadMedia(newByteUrl)
+    }
 
     // 文本文件需要加载内容
     if (fileType.value === 'text') {
       loadTextContent()
     }
-    // PDF 文件需要渲染
     if (fileType.value === 'pdf') {
       // 延迟渲染，确保 DOM 已经就绪
       setTimeout(() => {
         renderPdf()
       }, 100)
     }
-    // Word 文档需要渲染
-    if (fileType.value === 'word') {
+    // DOCX 文档需要使用 docx-preview 渲染
+    if (fileType.value === 'docx') {
       setTimeout(() => {
         renderDocx()
       }, 100)
+    }
+    if (fileType.value === 'doc') {
+      void renderLegacyDoc(newByteUrl)
     }
     // Excel 文档需要渲染
     if (fileType.value === 'excel') {
@@ -736,6 +740,32 @@ watch(() => [visible.value, props.fileUrl, props.fileName] as const, ([newVisibl
   height: 70vh;
   border: none;
   background: #fff;
+}
+
+.doc-preview-note {
+  color: #6b7280;
+  font-size: 12px;
+  margin: 0 0 16px;
+}
+
+.doc-preview-content {
+  max-width: 100%;
+  overflow-x: auto;
+  line-height: 1.65;
+  color: #303133;
+}
+
+.doc-preview-content :deep(table) {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 12px 0;
+}
+
+.doc-preview-content :deep(td),
+.doc-preview-content :deep(th) {
+  border: 1px solid #dcdfe6;
+  padding: 6px 8px;
+  vertical-align: top;
 }
 
 .docx-loading-overlay {
@@ -1030,5 +1060,76 @@ watch(() => [visible.value, props.fileUrl, props.fileName] as const, ([newVisibl
 .preview-footer .el-button {
   border-radius: 8px;
   padding: 10px 24px;
+}
+
+/* 手机端：预览内容统一限制在视口内，超出部分容器内滚动 */
+@media (max-width: 768px) {
+  .file-preview-container,
+  .image-preview,
+  .video-preview,
+  .pdf-preview,
+  .word-preview {
+    min-height: 0;
+  }
+
+  .file-preview-container {
+    max-height: calc(100dvh - 240px);
+    overflow-y: auto;
+  }
+
+  .preview-image,
+  .preview-video {
+    max-width: 100%;
+    max-height: 52dvh;
+    object-fit: contain;
+  }
+
+  .pdf-container {
+    height: auto;
+    max-height: 52dvh;
+    padding: 8px;
+  }
+
+  .pdf-canvas {
+    max-width: 100%;
+    height: auto !important;
+  }
+
+  .word-preview {
+    padding: 8px;
+    overflow: auto;
+  }
+
+  .docx-iframe {
+    height: 52dvh;
+  }
+
+  .excel-container {
+    max-width: 100%;
+    max-height: 52dvh;
+    overflow: auto;
+  }
+
+  .office-frame {
+    height: 52dvh;
+  }
+
+  .text-preview {
+    max-height: 52dvh;
+    padding: 12px;
+  }
+
+  .audio-preview {
+    min-height: 160px;
+    padding: 12px;
+  }
+
+  .preview-audio {
+    width: 100%;
+  }
+
+  .unsupported-preview {
+    min-height: 200px;
+  }
 }
 </style>

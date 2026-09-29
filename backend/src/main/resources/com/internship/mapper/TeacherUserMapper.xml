@@ -8,8 +8,8 @@
     
     <!-- 插入教师用户 -->
     <insert id="insert" parameterType="com.internship.entity.TeacherUser" useGeneratedKeys="true" keyProperty="id">
-        insert into teacher_users (username, password, name, gender, create_time, update_time, teacher_user_id, department_id, division_id, teacher_type, phone)
-        values (#{username}, #{password}, #{name}, #{gender}, #{createTime}, #{updateTime}, #{teacherUserId}, #{departmentId}, #{divisionId}, #{teacherType}, #{phone})
+        insert into teacher_users (username, password, name, gender, create_time, update_time, teacher_user_id, department_id, division_id, teacher_type, role, phone, email)
+        values (#{username}, #{password}, #{name}, #{gender}, #{createTime}, #{updateTime}, #{teacherUserId}, #{departmentId}, #{divisionId}, #{teacherType}, #{role}, #{phone}, #{email})
     </insert>
     
     <!-- 根据ID查询教师用户 -->
@@ -36,8 +36,9 @@
             <if test="divisionId != null and divisionId != ''">
                 division_id = #{divisionId},
             </if>
-            <if test="teacherUserId != null">
+            <if test="teacherUserId != null and teacherUserId != ''">
                 teacher_user_id = #{teacherUserId},
+                username = #{teacherUserId},
             </if>
             <if test="teacherType != null and teacherType != ''">
                 teacher_type = #{teacherType},
@@ -50,6 +51,9 @@
             </if>
             <if test="phone != null and phone != ''">
                 phone = #{phone},
+            </if>
+            <if test="email != null and email != ''">
+                email = #{email},
             </if>
             <if test="updateTime != null">
                 update_time = #{updateTime}
@@ -91,10 +95,10 @@
     
     <!-- 批量插入教师用户 -->
     <insert id="batchInsert" parameterType="java.util.List" useGeneratedKeys="true" keyProperty="id">
-        insert into teacher_users (username, password, name, gender, create_time, update_time, teacher_user_id, department_id, teacher_type, phone)
+        insert into teacher_users (username, password, name, gender, create_time, update_time, teacher_user_id, department_id, division_id, teacher_type, role, phone, email)
         values
         <foreach collection="teacherUsers" item="teacherUser" separator=",">
-            (#{teacherUser.username}, #{teacherUser.password}, #{teacherUser.name}, #{teacherUser.gender}, #{teacherUser.createTime}, #{teacherUser.updateTime}, #{teacherUser.teacherUserId}, #{teacherUser.departmentId}, #{teacherUser.teacherType}, #{teacherUser.phone})
+            (#{teacherUser.username}, #{teacherUser.password}, #{teacherUser.name}, #{teacherUser.gender}, #{teacherUser.createTime}, #{teacherUser.updateTime}, #{teacherUser.teacherUserId}, #{teacherUser.departmentId}, #{teacherUser.divisionId}, #{teacherUser.teacherType}, #{teacherUser.role}, #{teacherUser.phone}, #{teacherUser.email})
         </foreach>
     </insert>
     
@@ -146,5 +150,19 @@
         where teacher_type = #{teacherType}
         and status = 1
         order by name asc
+    </select>
+
+    <select id="findActiveOptions" resultType="com.internship.entity.TeacherUser">
+        SELECT id, username, name, teacher_user_id, phone, email, teacher_type, status
+        FROM teacher_users
+        WHERE status = 1
+        <if test="keyword != null and keyword != ''">
+            AND (
+                teacher_user_id LIKE CONCAT('%', #{keyword}, '%')
+                OR name LIKE CONCAT('%', #{keyword}, '%')
+                OR phone LIKE CONCAT('%', #{keyword}, '%')
+            )
+        </if>
+        ORDER BY name ASC, id ASC
     </select>
 </mapper>

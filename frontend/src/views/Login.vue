@@ -42,6 +42,8 @@
             <el-button class="button" type="primary" @click="handleLogin" :loading="loading">登 录</el-button>
           </el-form-item>
           <div class="register-link">
+            <span class="register-link-text" @click="goToForgotPassword">忘记密码？</span>
+            <span class="link-divider">|</span>
             <span class="register-link-text" @click="goToCompanyRegister">企业账号申请 ></span>
           </div>
         </div>
@@ -60,6 +62,7 @@ import {useAuthStore} from '../store/auth'
 import {useRouter} from 'vue-router'
 import request from '../utils/request'
 import { preloadHomePage } from '../router/preloadRoutes'
+import { resetStudentMenuConfigCache } from '@/utils/studentMenuConfig'
 
 const loginForm = ref({
   username: '',
@@ -122,6 +125,7 @@ const handleLogin = async () => {
 
   loading.value = true;
   try {
+    resetStudentMenuConfigCache()
     const success = await authStore.login(
         loginForm.value.username,
         loginForm.value.password
@@ -171,6 +175,10 @@ const handleLogin = async () => {
 
 const goToCompanyRegister = () => {
   router.push('/company-check');
+}
+
+const goToForgotPassword = () => {
+  router.push('/forgot-password');
 }
 </script>
 
@@ -285,6 +293,11 @@ const goToCompanyRegister = () => {
 .register-link-text:hover {
   color: #529B2E;
   text-decoration: none;
+}
+
+.link-divider {
+  margin: 0 10px;
+  color: #dcdfe6;
 }
 
 /* 系统标题容器 */
@@ -452,5 +465,110 @@ const goToCompanyRegister = () => {
   will-change: transform;
   transform: translateZ(0);
   backface-visibility: hidden;
+}
+
+/* 手机端：隐藏左侧装饰图，登录卡单列满宽；软键盘弹出后页面可纵向滚动 */
+@media screen and (max-width: 768px) {
+  .container {
+    height: auto;
+    min-height: 100vh;
+    min-height: 100dvh;
+    align-items: flex-start;
+    padding: 96px 16px calc(24px + var(--safe-bottom, 0px));
+    background-size: cover;
+  }
+
+  .logo-container {
+    top: calc(12px + var(--safe-top, 0px));
+    left: 16px;
+  }
+
+  .logo {
+    width: 56px;
+    height: 56px;
+  }
+
+  .system-title {
+    font-size: 28px;
+    letter-spacing: 0;
+  }
+
+  .system-subtitle {
+    font-size: 12px;
+    letter-spacing: 2px;
+  }
+
+  .university-title-container {
+    display: none;
+  }
+
+  .form-wrapper {
+    transform: none;
+    flex-direction: column;
+    align-items: center;
+    width: 100%;
+  }
+
+  .additional-image-container {
+    display: none;
+  }
+
+  .login-form {
+    width: 100%;
+    max-width: 420px;
+    height: auto;
+    min-height: 0;
+    padding: 8px 20px 20px;
+    border-radius: 12px;
+  }
+
+  .title {
+    font-size: 24px;
+    margin-top: 16px;
+    margin-bottom: 20px;
+  }
+
+  .custom-input,
+  .custom-input :deep(.el-input),
+  .el-form-item :deep(.el-input) {
+    width: 100%;
+  }
+
+  .custom-input :deep(.el-input__wrapper) {
+    font-size: 16px;
+    min-height: 44px;
+  }
+
+  .custom-input :deep(.el-input__inner) {
+    font-size: 16px;
+  }
+
+  .button-container {
+    margin-top: 16px;
+  }
+
+  .button-wrapper {
+    margin-top: 16px;
+  }
+
+  .button {
+    width: 100%;
+    height: 44px;
+    font-size: 16px;
+    border-radius: 8px;
+  }
+
+  .button :deep(span),
+  .button :deep(.el-icon) {
+    font-size: 16px;
+  }
+
+  .register-link-text {
+    font-size: 14px;
+  }
+
+  .version-text {
+    display: none;
+  }
 }
 </style>

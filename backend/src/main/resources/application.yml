@@ -50,7 +50,7 @@ spring:
       mode: never
   servlet:
     multipart:
-      max-file-size: 10MB
+      max-file-size: 20MB
       max-request-size: 100MB
       enabled: true
   data:
@@ -76,9 +76,9 @@ spring:
       time-to-live: 300000
       cache-null-values: false
   mail:
-    host: ${MAIL_HOST:smtp.qq.com}
-    port: ${MAIL_PORT:465}
-    username: ${MAIL_USERNAME:}
+    host: smtp.exmail.qq.com
+    port: 465
+    username: luzujian@deepintern.wecom.work
     password: ${MAIL_PASSWORD:}
     protocol: smtps
     properties:
@@ -92,6 +92,7 @@ spring:
           connectiontimeout: 5000
           timeout: 5000
           writetimeout: 5000
+          localhost: deepintern.wecom.work
     default-encoding: UTF-8
   jackson:
     date-format: yyyy-MM-dd HH:mm:ss
@@ -112,7 +113,7 @@ spring:
       base-url: ${DEEPSEEK_BASE_URL:https://api.deepseek.com}
       chat:
         options:
-          model: deepseek-chat
+          model: deepseek-flash
           temperature: 0.1
           max-tokens: 2000
   http:
@@ -127,18 +128,32 @@ spring:
 
 file:
   upload:
-    path: ${FILE_UPLOAD_PATH:D:/Web-work/Internship/uploads}
+    path: ${FILE_UPLOAD_PATH:./uploads}
     url-prefix: /uploads
     max-size: ${FILE_MAX_SIZE:10485760}
 
+internship:
+  appraisal:
+    max-size: ${INTERNSHIP_APPRAISAL_MAX_SIZE:20971520}
+
+# 审计可信反向代理列表（逗号分隔，支持精确 IP 与 IPv4 CIDR，如 172.18.0.5,172.18.0.0/16）。
+# 仅当连接来源命中该列表时才信任 X-Forwarded-For 等转发头；留空则审计 IP 一律取连接来源 IP。
+audit:
+  trusted-proxies: ${AUDIT_TRUSTED_PROXIES:}
+  # P2 哈希链签名密钥（建议通过服务器 .env 配置随机密钥；留空则首次自动生成并存入 system_config）
+  hash:
+    key: ${AUDIT_HASH_KEY:}
+
 backup:
-  path: ${BACKUP_PATH:OSS}
+  path: ${BACKUP_PATH:./backups}
+  tls:
+    ca: ${BACKUP_TLS_CA:}
   retention:
     days: ${BACKUP_RETENTION_DAYS:30}
   compress: false
   format: SQL
   storage:
-    type: ${BACKUP_STORAGE_TYPE:OSS}
+    type: ${BACKUP_STORAGE_TYPE:LOCAL}
     oss:
       enabled: true
 
@@ -177,11 +192,30 @@ logging:
     com.github.pagehelper: INFO
     com.github.pagehelper.page: INFO
 
+# Read-only Agent: system follows AI_ASSISTANT_ENABLED; local/test can override per process.
+agent:
+  enabled: ${AGENT_ENABLED:system}
+  model: ${AGENT_MODEL:deepseek-flash}
+
+teacher:
+  auto-task:
+    cron: ${TEACHER_AUTO_TASK_CRON:0 * * * * ?}
+    zone: ${TEACHER_AUTO_TASK_ZONE:Asia/Shanghai}
+    missed-grace-minutes: ${TEACHER_AUTO_TASK_MISSED_GRACE_MINUTES:60}
+    test-mode: ${TEACHER_AUTO_TASK_TEST_MODE:false}
+    recipient-allowlist: ${TEACHER_AUTO_TASK_RECIPIENT_ALLOWLIST:}
+
 jwt:
-  secret: ${JWT_SECRET:}
+  secret: ${JWT_SECRET:DevOnlyJwtSecret2025DeepInternLocalDev!NotForProduction!!}
   expiration: ${JWT_EXPIRATION:86400000}
   refresh-expiration: ${JWT_REFRESH_EXPIRATION:604800000}
   enabled: true
+
+announcement:
+  attachments:
+    legacy-manifest: ${ANNOUNCEMENT_ATTACHMENT_LEGACY_MANIFEST:}
+    signing-key: ${ANNOUNCEMENT_ATTACHMENT_SIGNING_KEY:}
+    previous-signing-keys: ${ANNOUNCEMENT_ATTACHMENT_PREVIOUS_SIGNING_KEYS:}
 
 aliyun:
   oss:

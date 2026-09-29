@@ -2,14 +2,16 @@ package com.internship.controller;
 
 import com.internship.anno.Log;
 import com.internship.entity.AIAnalysisSettings;
-import com.internship.entity.InternshipTimeSettings;
 import com.internship.entity.KeywordLibrary;
 import com.internship.entity.Result;
 import com.internship.entity.ScoringRule;
+import com.internship.entity.dto.InternshipCalendar;
 import com.internship.service.AIAnalysisSettingsService;
-import com.internship.service.InternshipTimeSettingsService;
+import com.internship.service.InternshipCalendarService;
 import com.internship.service.KeywordLibraryService;
 import com.internship.service.ScoringRuleService;
+import com.internship.service.TeacherPermissionService;
+import com.internship.utils.CurrentHolder;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -28,8 +30,8 @@ import java.util.Map;
 public class SettingsController {
     
     @Autowired
-    private InternshipTimeSettingsService internshipTimeSettingsService;
-    
+    private InternshipCalendarService internshipCalendarService;
+
     @Autowired
     private AIAnalysisSettingsService aiAnalysisSettingsService;
     
@@ -38,6 +40,9 @@ public class SettingsController {
     
     @Autowired
     private ScoringRuleService scoringRuleService;
+
+    @Autowired
+    private TeacherPermissionService teacherPermissionService;
     
     /**
      * 判断实习是否已开始（是否需要提交实习心得）
@@ -48,11 +53,11 @@ public class SettingsController {
     public Result getInternshipStatus() {
         log.info("判断实习是否已开始");
         try {
-            InternshipTimeSettings settings = internshipTimeSettingsService.findLatest();
+            InternshipCalendar settings = internshipCalendarService.getCalendar();
 
             Map<String, Object> result = new HashMap<>();
 
-            if (settings == null || settings.getStartDate() == null || settings.getStartDate().isEmpty()) {
+            if (settings.getStartDate() == null || settings.getStartDate().isEmpty()) {
                 // 未设置实习开始日期，默认为未开始
                 result.put("started", false);
                 result.put("message", "尚未设置实习开始日期");
@@ -87,18 +92,11 @@ public class SettingsController {
     public Result getInternshipTime() {
         log.info("获取实习时间设置");
         try {
-            InternshipTimeSettings settings = internshipTimeSettingsService.findLatest();
+            InternshipCalendar settings = internshipCalendarService.getCalendar();
 
             Map<String, Object> result = new HashMap<>();
-
-            if (settings == null || settings.getStartDate() == null || settings.getStartDate().isEmpty()) {
-                // 未设置，使用默认值
-                result.put("startDate", "2026-03-20");
-                result.put("endDate", "2026-06-20");
-            } else {
-                result.put("startDate", settings.getStartDate());
-                result.put("endDate", settings.getEndDate());
-            }
+            result.put("startDate", settings.getStartDate());
+            result.put("endDate", settings.getEndDate());
 
             return Result.success(result);
         } catch (Exception e) {
@@ -112,24 +110,7 @@ public class SettingsController {
     public Result getInternshipNodes() {
         log.info("获取实习时间节点设置");
         try {
-            InternshipTimeSettings settings = internshipTimeSettingsService.findLatest();
-            
-            if (settings == null) {
-                return Result.success(getDefaultInternshipSettings());
-            }
-            
-            Map<String, Object> result = new HashMap<>();
-            result.put("applicationStartTime", settings.getApplicationStartDate());
-            result.put("applicationEndTime", settings.getApplicationEndDate());
-            result.put("companyConfirmationDeadline", settings.getCompanyConfirmationDeadline());
-            result.put("delayApplicationDeadline", settings.getDelayApplicationDeadline());
-            result.put("reportCycle", settings.getReportCycle());
-            result.put("startDate", settings.getStartDate());
-            result.put("endDate", settings.getEndDate());
-            result.put("reportDeadline", settings.getReportDeadline());
-            result.put("evaluationDeadline", settings.getEvaluationDeadline());
-            
-            return Result.success(result);
+            return Result.success(toLegacyNodes(internshipCalendarService.getCalendar()));
         } catch (Exception e) {
             log.error("获取实习时间节点设置失败: {}", e.getMessage());
             return Result.error("获取实习时间节点设置失败");
@@ -137,30 +118,12 @@ public class SettingsController {
     }
     
     @PutMapping("/internship-nodes")
-    @PreAuthorize("hasAnyRole('TEACHER_COLLEGE', 'TEACHER_COUNSELOR', 'TEACHER_DEPARTMENT')")
+    @PreAuthorize("hasRole('TEACHER_DEPARTMENT')")
     @Log(module = "SETTINGS", operationType = "UPDATE", description = "更新实习时间节点设置")
     public Result updateInternshipNodes(@RequestBody Map<String, Object> settings) {
         log.info("更新实习时间节点设置");
         try {
-            InternshipTimeSettings currentSettings = internshipTimeSettingsService.findLatest();
-            
-            if (currentSettings == null) {
-                currentSettings = new InternshipTimeSettings();
-                internshipTimeSettingsService.insert(currentSettings);
-            }
-            
-            if (settings.containsKey("applicationStartTime")) {
-                currentSettings.setApplicationStartDate((String) settings.get("applicationStartTime"));
-            }
-            if (settings.containsKey("applicationEndTime")) {
-                currentSettings.setApplicationEndDate((String) settings.get("applicationEndTime"));
-            }
-            if (settings.containsKey("companyConfirmationDeadline")) {
-                currentSettings.setCompanyConfirmationDeadline((String) settings.get("companyConfirmationDeadline"));
-            }
-            if (settings.containsKey("delayApplicationDeadline")) {
-                currentSettings.setDelayApplicationDeadline((String) settings.get("delayApplicationDeadline"));
-            }
+            InternshipCalendar currentSettings = internshipCalendarService.getCalendar();
             if (settings.containsKey("reportCycle")) {
                 currentSettings.setReportCycle(toInteger(settings.get("reportCycle")));
             }
@@ -170,20 +133,53 @@ public class SettingsController {
             if (settings.containsKey("endDate")) {
                 currentSettings.setEndDate((String) settings.get("endDate"));
             }
-            if (settings.containsKey("reportDeadline")) {
-                currentSettings.setReportDeadline((String) settings.get("reportDeadline"));
-            }
             if (settings.containsKey("evaluationDeadline")) {
-                currentSettings.setEvaluationDeadline((String) settings.get("evaluationDeadline"));
+                currentSettings.setAppraisalDeadline((String) settings.get("evaluationDeadline"));
             }
-            
-            internshipTimeSettingsService.update(currentSettings);
-            
-            return Result.success("实习时间节点设置更新成功");
+            if (settings.containsKey("appraisalDeadline")) {
+                currentSettings.setAppraisalDeadline((String) settings.get("appraisalDeadline"));
+            }
+            if (settings.containsKey("version")) {
+                currentSettings.setVersion((String) settings.get("version"));
+            }
+            InternshipCalendar saved = internshipCalendarService.saveCalendar(
+                    currentSettings, currentUpdaterId(), currentUpdaterName());
+            return Result.success("实习时间节点设置更新成功", toLegacyNodes(saved));
         } catch (Exception e) {
             log.error("更新实习时间节点设置失败: {}", e.getMessage());
-            return Result.error("更新实习时间节点设置失败");
+            return Result.error(e.getMessage());
         }
+    }
+
+    @GetMapping("/internship-calendar")
+    public Result getInternshipCalendar() {
+        return Result.success(internshipCalendarService.getCalendar());
+    }
+
+    @PutMapping("/internship-calendar")
+    @PreAuthorize("hasRole('TEACHER_DEPARTMENT')")
+    @Log(module = "SETTINGS", operationType = "UPDATE", description = "更新全校统一实习日历")
+    public Result updateInternshipCalendar(@RequestBody InternshipCalendar calendar) {
+        try {
+            return Result.success(internshipCalendarService.saveCalendar(
+                    calendar, currentUpdaterId(), currentUpdaterName()));
+        } catch (Exception e) {
+            log.error("更新全校统一实习日历失败: {}", e.getMessage());
+            return Result.error(e.getMessage());
+        }
+    }
+
+    /**
+     * 心得周期配置项是否可见。
+     * 仅当管理员已将"智慧评分"菜单权限（menu:evaluation）授予至少一类教师角色时，重要设置页面的心得周期配置项才显示。
+     */
+    @GetMapping("/report-cycle-visible")
+    @PreAuthorize("hasAnyRole('TEACHER_COLLEGE', 'TEACHER_COUNSELOR', 'TEACHER_DEPARTMENT', 'TEACHER')")
+    public Result getReportCycleVisible() {
+        boolean visible = teacherPermissionService.isPermissionGrantedToAnyTeacherRole("menu:evaluation");
+        Map<String, Object> result = new HashMap<>();
+        result.put("visible", visible);
+        return Result.success(result);
     }
     
     @GetMapping("/ai-analysis")
@@ -338,18 +334,28 @@ public class SettingsController {
         }
     }
     
-    private Map<String, Object> getDefaultInternshipSettings() {
+    private Map<String, Object> toLegacyNodes(InternshipCalendar calendar) {
         Map<String, Object> result = new HashMap<>();
-        result.put("applicationStartTime", "2026-03-01");
-        result.put("applicationEndTime", "2026-05-31");
-        result.put("companyConfirmationDeadline", "2026-06-15");
-        result.put("delayApplicationDeadline", "2026-06-30");
-        result.put("reportCycle", 7);
-        result.put("startDate", "2026-07-01");
-        result.put("endDate", "2026-12-31");
-        result.put("reportDeadline", "2027-01-15");
-        result.put("evaluationDeadline", "2027-01-31");
+        result.put("applicationStartTime", null);
+        result.put("applicationEndTime", null);
+        result.put("companyConfirmationDeadline", null);
+        result.put("delayApplicationDeadline", null);
+        result.put("reportDeadline", null);
+        result.put("startDate", calendar.getStartDate());
+        result.put("endDate", calendar.getEndDate());
+        result.put("reportCycle", calendar.getReportCycle());
+        result.put("evaluationDeadline", calendar.getAppraisalDeadline());
+        result.put("appraisalDeadline", calendar.getAppraisalDeadline());
+        result.put("version", calendar.getVersion());
         return result;
+    }
+
+    private Long currentUpdaterId() {
+        return CurrentHolder.getUserId();
+    }
+
+    private String currentUpdaterName() {
+        return CurrentHolder.getUser() == null ? null : CurrentHolder.getUser().getUsername();
     }
     
     private Integer toInteger(Object value) {

@@ -19,7 +19,7 @@
         </div>
         <div class="stat-item clickable" v-if="showInternshipFields" @click="filterByStatus('0')">
           <div class="stat-value accent-warning">{{ statistics.noOfferCount || 0 }}</div>
-          <div class="stat-label">未实习</div>
+          <div class="stat-label">尚无 Offer</div>
         </div>
         <div class="stat-item clickable" v-if="showInternshipFields" @click="filterByStatus('3')">
           <div class="stat-value accent-primary">{{ statistics.interningCount || 0 }}</div>
@@ -45,15 +45,32 @@
             </el-select>
           </el-form-item>
           <el-form-item label="实习单位" v-if="showInternshipFields">
-            <el-select v-model="filters.company" placeholder="全部单位" clearable class="select-input">
+            <el-select v-model="filters.company" placeholder="全部单位" clearable filterable class="select-input">
               <el-option label="全部单位" value=""></el-option>
-              <el-option v-for="company in companyList" :key="company.id || company.companyName" :label="company.companyName || company.name" :value="company.companyName || company.name || company.id || ''"></el-option>
+              <el-option-group v-if="companyList.length" label="校企合作">
+                <el-option
+                  v-for="company in companyList"
+                  :key="`school-${company.id || company.companyName}`"
+                  :label="company.companyName"
+                  :value="company.companyName"
+                ></el-option>
+              </el-option-group>
+              <el-option-group v-if="selfPracticeCompanyList.length" label="自主实习">
+                <el-option
+                  v-for="company in selfPracticeCompanyList"
+                  :key="`self-${company.companyName}`"
+                  :label="company.companyName"
+                  :value="company.companyName"
+                ></el-option>
+              </el-option-group>
             </el-select>
           </el-form-item>
           <el-form-item label="实习状态" v-if="showInternshipFields">
             <el-select v-model="filters.status" placeholder="全部状态" clearable class="select-input">
               <el-option label="全部状态" value=""></el-option>
-              <el-option label="无offer" value="0"></el-option>
+              <el-option label="尚无 Offer（全部）" value="0"></el-option>
+              <el-option label="未投递" value="-1"></el-option>
+              <el-option label="无 Offer" value="-2"></el-option>
               <el-option label="待确认" value="1"></el-option>
               <el-option label="已确定" value="2"></el-option>
               <el-option label="实习中" value="3"></el-option>
@@ -95,7 +112,7 @@
               <el-icon><Refresh /></el-icon>&nbsp;重置
             </el-button>
             <el-button type="primary" @click="oneClickReminder" class="action-btn primary" v-if="showInternshipFields">
-              <el-icon><Bell /></el-icon>&nbsp;一键提醒
+              <el-icon><Bell /></el-icon>&nbsp;一键邮件提醒
             </el-button>
             <el-button type="success" @click="exportSelectedStudentProfiles" class="action-btn success" v-if="showInternshipFields">
               <el-icon><Download /></el-icon>&nbsp;导出已选择
@@ -113,10 +130,10 @@
         <h3 class="table-title">学生列表</h3>
         <div class="table-actions"></div>
       </div>
-      <el-table 
-        v-loading="loading" 
-        :data="students" 
-        style="width: 100%" 
+      <el-table
+        v-loading="loading"
+        :data="pagedStudents"
+        style="width: 100%"
         @selection-change="handleSelectionChange" 
         border
         fit
@@ -127,8 +144,8 @@
         <el-table-column prop="name" label="姓名" width="100" align="center"></el-table-column>
         <el-table-column label="状态" width="100" align="center" v-if="showInternshipFields">
           <template #default="scope">
-            <el-tag :type="getStatusTagType(scope.row.internshipStatus)" size="small" class="status-tag">
-              {{ getStatusText(scope.row.internshipStatus) }}
+            <el-tag :type="getStatusTagType(scope.row.jobSearchStatus || scope.row.internshipStatus)" size="small" class="status-tag">
+              {{ scope.row.jobSearchStatusText || getStatusText(scope.row.internshipStatus) }}
             </el-tag>
           </template>
         </el-table-column>
@@ -140,11 +157,6 @@
         <el-table-column prop="grade" label="年级" align="center" width="80" />
         <el-table-column prop="major" label="专业" min-width="150" show-overflow-tooltip></el-table-column>
         <el-table-column prop="className" label="班级" min-width="120" show-overflow-tooltip></el-table-column>
-        <el-table-column prop="gender" label="性别" align="center" width="80">
-          <template #default="scope">
-            <span>{{ scope.row.gender === 1 ? '男' : '女' }}</span>
-          </template>
-        </el-table-column>
         <el-table-column prop="status" label="状态" align="center" width="80" v-if="!showInternshipFields">
           <template #default="scope">
             <el-tag :type="scope.row.status === 1 ? 'success' : 'danger'" size="small">
@@ -154,7 +166,7 @@
         </el-table-column>
         <el-table-column label="操作" :width="showInternshipFields ? 240 : 180" fixed="right" align="center">
           <template #default="scope">
-            <div class="action-buttons">
+            <MobileMoreActions>
               <el-tooltip content="查看实习心得" placement="top" v-if="!showInternshipFields">
                 <el-button size="small" type="primary" @click="viewReports(scope.row)" class="table-btn view">
                   <el-icon><Document /></el-icon>
@@ -180,12 +192,12 @@
                   <el-icon><Download /></el-icon>
                 </el-button>
               </el-tooltip>
-              <el-tooltip content="提醒" placement="top" v-if="showInternshipFields">
+              <el-tooltip content="邮件提醒" placement="top" v-if="showInternshipFields">
                 <el-button size="small" type="warning" @click="remindStudent(scope.row.id)" class="table-btn remind">
                   <el-icon><Bell /></el-icon>
                 </el-button>
               </el-tooltip>
-            </div>
+            </MobileMoreActions>
           </template>
         </el-table-column>
       </el-table>
@@ -204,15 +216,17 @@
       </div>
     </el-card>
 
-    <el-dialog v-model="showReminderDialog" title="发送提醒" width="500px">
-      <el-form label-width="100px">
-        <el-form-item label="提醒模板">
-          <el-select v-model="reminderForm.template" placeholder="选择提醒模板" @change="handleTemplateChange" class="reminder-select">
-            <el-option v-for="t in reminderTemplates" :key="t.value" :label="t.label" :value="t.value" />
-          </el-select>
-        </el-form-item>
+    <el-dialog v-model="showReminderDialog" title="发送邮件提醒" width="480px" align-center class="reminder-dialog">
+      <div class="reminder-dialog-intro">提醒将发送到该学生在系统中绑定的邮箱</div>
+      <el-form label-position="top" class="reminder-form">
         <el-form-item label="提醒内容">
-          <el-input v-model="reminderForm.content" type="textarea" :rows="4" placeholder="请输入提醒内容" />
+          <el-input
+            v-model="reminderForm.content"
+            type="textarea"
+            :rows="6"
+            resize="none"
+            placeholder="请输入需要提醒学生的具体内容"
+          />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -222,16 +236,17 @@
     </el-dialog>
 
     <!-- 一键提醒弹窗 -->
-    <el-dialog v-model="showBatchReminderDialog" title="一键提醒" width="500px">
-      <p style="color:#666;margin-bottom:12px;">将向当前筛选条件下的所有学生发送提醒</p>
-      <el-form label-width="100px">
-        <el-form-item label="提醒模板">
-          <el-select v-model="batchReminderForm.template" placeholder="选择提醒模板" @change="handleBatchTemplateChange" class="reminder-select">
-            <el-option v-for="t in reminderTemplates" :key="t.value" :label="t.label" :value="t.value" />
-          </el-select>
-        </el-form-item>
+    <el-dialog v-model="showBatchReminderDialog" title="一键邮件提醒" width="480px" align-center class="reminder-dialog">
+      <div class="reminder-dialog-intro">将向当前筛选条件下的所有学生发送邮件提醒（发送到学生绑定的邮箱）</div>
+      <el-form label-position="top" class="reminder-form">
         <el-form-item label="提醒内容">
-          <el-input v-model="batchReminderForm.content" type="textarea" :rows="4" placeholder="请输入提醒内容" />
+          <el-input
+            v-model="batchReminderForm.content"
+            type="textarea"
+            :rows="6"
+            resize="none"
+            placeholder="请输入需要提醒学生的具体内容"
+          />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -247,7 +262,7 @@
             <span>{{ formatDate(scope.row.submitTime) }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="period" label="阶段" align="center" width="80" />
+        <el-table-column prop="period" label="期次" align="center" width="80" />
         <el-table-column prop="reportContent" label="内容摘要" align="center" min-width="200">
           <template #default="scope">
             <span>{{ scope.row.reportContent?.substring(0, 50) }}...</span>
@@ -358,7 +373,7 @@
           <h3>{{ currentStudent?.name }} 学生详情</h3>
           <button class="close-btn" @click="showStudentDetailModal = false">×</button>
         </div>
-        <div class="modal-body student-detail-body">
+        <div class="modal-body student-detail-body" v-loading="detailLoading">
           <div v-if="currentStudent" class="student-detail-content">
             <div class="detail-left">
               <div class="detail-section basic-info-section">
@@ -366,35 +381,35 @@
                 <div class="detail-grid">
                   <div class="detail-item">
                     <label>学号：</label>
-                    <span>{{ currentStudent.studentId }}</span>
+                    <span>{{ displayDetailValue(currentStudent.studentId) }}</span>
                   </div>
                   <div class="detail-item">
                     <label>姓名：</label>
-                    <span>{{ currentStudent.name }}</span>
-                  </div>
-                  <div class="detail-item">
-                    <label>性别：</label>
-                    <span>{{ currentStudent.gender === 1 ? '男' : currentStudent.gender === 2 ? '女' : '-' }}</span>
+                    <span>{{ displayDetailValue(currentStudent.name) }}</span>
                   </div>
                   <div class="detail-item">
                     <label>年级：</label>
-                    <span>{{ currentStudent.grade }}</span>
+                    <span>{{ formatGrade(currentStudent.grade) }}</span>
                   </div>
                   <div class="detail-item">
                     <label>学院：</label>
-                    <span>{{ currentStudent.department || '-' }}</span>
+                    <span>{{ displayDetailValue(currentStudent.department) }}</span>
                   </div>
                   <div class="detail-item">
                     <label>专业：</label>
-                    <span>{{ currentStudent.major }}</span>
+                    <span>{{ displayDetailValue(currentStudent.major) }}</span>
                   </div>
                   <div class="detail-item">
                     <label>班级：</label>
-                    <span>{{ currentStudent.className }}</span>
+                    <span>{{ displayDetailValue(currentStudent.className) }}</span>
                   </div>
                   <div class="detail-item">
                     <label>手机号：</label>
-                    <span>{{ currentStudent.phone || '-' }}</span>
+                    <span>{{ displayDetailValue(currentStudent.phone) }}</span>
+                  </div>
+                  <div class="detail-item">
+                    <label>邮箱：</label>
+                    <span>{{ displayDetailValue(currentStudent.email) }}</span>
                   </div>
                 </div>
               </div>
@@ -410,15 +425,11 @@
                   </div>
                   <div class="detail-item">
                     <label>实习状态：</label>
-                    <span class="status-badge" :class="getStatusClass(currentStudent.status)">{{ getStatusText(currentStudent.status) }}</span>
+                    <span class="status-badge" :class="getStatusClass(currentStudent.jobSearchStatus || currentStudent.internshipStatus)">{{ currentStudent.jobSearchStatusText || getStatusText(currentStudent.internshipStatus) }}</span>
                   </div>
                   <div class="detail-item">
-                    <label>实习开始日期：</label>
-                    <span>{{ currentStudent.internshipStartDate || '未开始' }}</span>
-                  </div>
-                  <div class="detail-item">
-                    <label>实习结束日期：</label>
-                    <span>{{ currentStudent.internshipEndDate || '未确定' }}</span>
+                    <label>实习岗位：</label>
+                    <span>{{ currentStudent.positionName || '未确定' }}</span>
                   </div>
                 </div>
               </div>
@@ -453,7 +464,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { useAuthStore } from '@/store/auth'
+const authStore = useAuthStore()
+import { useAgentPageContext } from "@/agent/useAgentPageContext"
+
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { useFormContext } from '@/agent/formContext'
+import type { FormFieldDescriptor } from '@/agent/types'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Search, Refresh, Bell, Download, FolderOpened, View, Document, MagicStick } from '@element-plus/icons-vue'
@@ -465,6 +482,7 @@ import {
   type TeacherClass
 } from '@/api/teacherClass'
 import { checkAiScoringEnabled } from '@/api/counselorAIAnalysis'
+import MobileMoreActions from '../../components/MobileMoreActions.vue'
 import request from '@/utils/request'
 
 const router = useRouter()
@@ -511,13 +529,15 @@ const loading = ref(false)
 const statsLoading = ref(false)
 const reportsLoading = ref(false)
 const aiStatusLoading = ref(false)
+const detailLoading = ref(false)
 
 const counselorId = ref<number>(0)
 const myClasses = ref<TeacherClass[]>([])
 const classList = ref<ClassItem[]>([])
 const majorList = ref<MajorItem[]>([])
 const gradeList = ref<number[]>([])
-const companyList = ref<any[]>([])
+const companyList = ref<Array<{ id?: number; companyName: string }>>([])
+const selfPracticeCompanyList = ref<Array<{ companyName: string }>>([])
 
 const students = ref<StudentUser[]>([])
 const studentReports = ref<any[]>([])
@@ -538,6 +558,16 @@ const currentPage = ref(1)
 const pageSize = ref(10)
 const total = ref(0)
 
+// 辅导员分支后端返回全部学生,前端按 currentPage/pageSize 切片显示
+// 管理员分支后端已分页,students 即当前页,直接返回
+const pagedStudents = computed(() => {
+  if (isCounselor.value) {
+    const start = (currentPage.value - 1) * pageSize.value
+    return students.value.slice(start, start + pageSize.value)
+  }
+  return students.value
+})
+
 const showExportModal = ref(false)
 const showStudentDetailModal = ref(false)
 const showFeedback = ref(false)
@@ -551,34 +581,16 @@ const aiStatusDialogVisible = ref(false)
 // 提醒相关
 const showReminderDialog = ref(false)
 const reminderForm = ref({
-  content: '',
-  template: ''
+  content: ''
 })
 const currentRemindStudentId = ref<number | null>(null)
 
-// 固定提醒模板
-const reminderTemplates = [
-  { value: '1', label: '请尽快完善实习登记信息' },
-  { value: '2', label: '请尽快提交实习周志' },
-  { value: '3', label: '实习确认表待审核，请及时处理' },
-  { value: '4', label: '请注意实习时间安排' },
-  { value: '5', label: '您还未找到实习，请尽快开始寻找' },
-  { value: '6', label: '其他（自定义输入）' }
-]
-
-const handleTemplateChange = (value: string) => {
-  if (value !== '6') {
-    const template = reminderTemplates.find(t => t.value === value)
-    reminderForm.value.content = template?.label || ''
-  } else {
-    reminderForm.value.content = ''
-  }
-}
 
 const openReminderDialog = (studentId: number) => {
   currentRemindStudentId.value = studentId
-  reminderForm.value = { content: '', template: '' }
+  reminderForm.value = { content: '' }
   showReminderDialog.value = true
+  registerReminderForm()
 }
 
 const sendReminder = async () => {
@@ -588,18 +600,20 @@ const sendReminder = async () => {
   }
   try {
     const teacherId = counselorId.value
-    await request.post('/teacher/reminder/send', null, {
+    const operation = formContext.beginFormOperation('teacher:reminder')
+    const response: any = await request.post('/teacher/reminder/send', null, {
       params: {
         studentId: currentRemindStudentId.value,
         teacherId: teacherId,
         content: reminderForm.value.content
       }
     })
-    ElMessage.success('提醒已发送')
+    operation.complete({ status: 'submitted', label: response?.message || '邮件提醒已发送', url: '/teacher/student-tracking' })
+    ElMessage.success(response?.message || '邮件提醒已发送')
     showReminderDialog.value = false
-  } catch (error) {
-    console.error('发送提醒失败:', error)
-    ElMessage.error('发送提醒失败')
+  } catch (error: any) {
+    console.error('发送邮件提醒失败:', error)
+    ElMessage.error(error?.response?.data?.message || error?.message || '发送邮件提醒失败')
   }
 }
 
@@ -632,6 +646,15 @@ const formatDate = (dateStr: string) => {
     minute: '2-digit'
   })
 }
+
+const resolveInternshipCompanyName = (item: any): string => {
+  if (item.company?.companyName) return item.company.companyName
+  if (item.companyName) return item.companyName
+  return typeof item.company === 'string' ? item.company : ''
+}
+
+const normalizeCompanyName = (companyName: string): string =>
+  companyName.trim().replace(/[，,。；;、]+$/g, '').replace(/\s+/g, '').toLowerCase()
 
 const loadMyClasses = async () => {
   try {
@@ -677,8 +700,10 @@ const loadStudents = async () => {
           email: item.email || '',
           status: item.status !== undefined ? item.status : 0,
           companyId: item.companyId,
-          company: item.companyName || item.company || '',
+          company: resolveInternshipCompanyName(item),
           internshipStatus: item.internshipStatus,
+          jobSearchStatus: item.jobSearchStatus,
+          jobSearchStatusText: item.jobSearchStatusText,
           positionId: item.positionId,
           positionName: item.positionName
         }))
@@ -695,10 +720,34 @@ const loadStudents = async () => {
         className: filters.value.class,
         status: filters.value.status ? getStatusValue(filters.value.status) : undefined,
         companyName: filters.value.company
-      })
-      const rawData = response?.list || response?.rows || []
-      scopeName.value = response?.scopeName || ''
-      scopeType.value = response?.scopeType || ''
+      }) as unknown as {
+        code?: number
+        message?: string
+        list?: StudentUser[]
+        rows?: StudentUser[]
+        total?: number
+        scopeName?: string
+        scopeType?: string
+        data?: {
+          list?: StudentUser[]
+          rows?: StudentUser[]
+          total?: number
+          scopeName?: string
+          scopeType?: string
+        }
+      }
+      // studentApi.getStudentList 实际返回 {code,message,data} 包体，分页行在内层 data；
+      // 兼容顶层直包与内层包两种形态
+      const pageEnvelope = (response.data ?? response) as {
+        list?: StudentUser[]
+        rows?: StudentUser[]
+        total?: number
+        scopeName?: string
+        scopeType?: string
+      }
+      const rawData = pageEnvelope.list ?? pageEnvelope.rows ?? []
+      scopeName.value = pageEnvelope.scopeName || ''
+      scopeType.value = pageEnvelope.scopeType || ''
       students.value = rawData.map((item: any) => ({
         id: item.student?.id || item.id,
         studentId: item.student?.studentUserId || item.studentId,
@@ -712,7 +761,7 @@ const loadStudents = async () => {
         email: item.student?.email || item.email,
         status: item.status !== undefined ? item.status : 0,
         companyId: item.companyId || item.company_id,
-        company: item.company?.companyName || item.company || '',
+        company: resolveInternshipCompanyName(item),
         positionId: item.positionId || item.position_id,
         positionName: item.position?.positionName || item.positionName,
         progress: item.progress || 0,
@@ -726,9 +775,11 @@ const loadStudents = async () => {
         internshipLogCount: item.internshipLogCount || 0,
         evaluationScore: item.evaluationScore || 0,
         // 实习状态：后端返回的是 status 字段（StudentInternshipStatus 对象）
-        internshipStatus: item.status !== undefined ? item.status : (item.internshipStatus !== undefined ? item.internshipStatus : null)
+        internshipStatus: item.status !== undefined ? item.status : (item.internshipStatus !== undefined ? item.internshipStatus : null),
+        jobSearchStatus: item.jobSearchStatus,
+        jobSearchStatusText: item.jobSearchStatusText
       }))
-      total.value = response?.total || 0
+      total.value = pageEnvelope.total || 0
     }
   } catch (error) {
     console.error('加载学生列表失败:', error)
@@ -743,15 +794,32 @@ const loadStatistics = async () => {
   try {
     // 如果是辅导员访问，加载辅导员的统计数据
     if (isCounselor.value && counselorId.value > 0) {
-      const response = await getCounselorStatistics(counselorId.value)
+      const response = await getCounselorStatistics(counselorId.value) as unknown as {
+        code?: number
+        data?: { classCount?: number; studentCount?: number }
+      }
       if (response.data) {
-        statistics.value = response.data
+        // 后端辅导员统计仅含 classCount/studentCount，按字段合并以保留其余指标初值
+        if (response.data.classCount !== undefined) statistics.value.classCount = response.data.classCount
+        if (response.data.studentCount !== undefined) statistics.value.studentCount = response.data.studentCount
       }
     } else {
       // 非辅导员访问（系室教师、院系教师等），获取全部学生的统计数据
-      const response = await studentApi.getStatistics()
-      // response.data 是后端返回的 { code, message, data } 结构，actualData 才是统计对象
-      const actualData = response?.data?.data || response?.data || response || {}
+      const response = await studentApi.getStatistics() as unknown as {
+        code?: number
+        data?: {
+          studentCount?: number
+          noOfferCount?: number
+          pendingCount?: number
+          confirmedCount?: number
+          interningCount?: number
+          finishedCount?: number
+          interruptedCount?: number
+          delayedCount?: number
+        }
+      }
+      // studentApi.getStatistics 返回 {code,data} 包体，统计对象即内层 data
+      const actualData = response?.data ?? {}
       statistics.value.studentCount = actualData.studentCount || 0
       statistics.value.noOfferCount = actualData.noOfferCount || 0
       statistics.value.pendingCount = actualData.pendingCount || 0
@@ -779,8 +847,19 @@ const loadClassList = async () => {
         name: cls.name
       }))
     } else {
-      const response = await studentApi.getClasses()
-      classList.value = response || []
+      const response = await studentApi.getClasses() as unknown as {
+        code?: number
+        data?: ClassItem[] | { data?: ClassItem[] }
+      } | ClassItem[]
+      const classRows: unknown = Array.isArray(response)
+        ? response
+        : ((response as { data?: unknown }).data ?? response)
+      const classData = Array.isArray(classRows)
+        ? classRows
+        : Array.isArray((classRows as { data?: unknown })?.data)
+          ? (classRows as { data: ClassItem[] }).data
+          : []
+      classList.value = classData as ClassItem[]
     }
   } catch (error) {
     console.error('加载班级列表失败:', error)
@@ -799,8 +878,19 @@ const loadMajorList = async () => {
       })
       majorList.value = Array.from(majorMap.entries()).map(([id, name]) => ({ id, name }))
     } else {
-      const response = await studentApi.getMajors()
-      majorList.value = response || []
+      const response = await studentApi.getMajors() as unknown as {
+        code?: number
+        data?: MajorItem[] | { data?: MajorItem[] }
+      } | MajorItem[]
+      const majorRows: unknown = Array.isArray(response)
+        ? response
+        : ((response as { data?: unknown }).data ?? response)
+      const majorData = Array.isArray(majorRows)
+        ? majorRows
+        : Array.isArray((majorRows as { data?: unknown })?.data)
+          ? (majorRows as { data: MajorItem[] }).data
+          : []
+      majorList.value = majorData as MajorItem[]
     }
   } catch (error) {
     console.error('加载专业列表失败:', error)
@@ -819,8 +909,19 @@ const loadGradeList = async () => {
       })
       gradeList.value = Array.from(gradeSet).sort((a, b) => b - a)
     } else {
-      const response = await studentApi.getGrades()
-      gradeList.value = response || []
+      const response = await studentApi.getGrades() as unknown as {
+        code?: number
+        data?: number[] | { data?: number[] }
+      } | number[]
+      const gradeRows: unknown = Array.isArray(response)
+        ? response
+        : ((response as { data?: unknown }).data ?? response)
+      const gradeData = Array.isArray(gradeRows)
+        ? gradeRows
+        : Array.isArray((gradeRows as { data?: unknown })?.data)
+          ? (gradeRows as { data: number[] }).data
+          : []
+      gradeList.value = gradeData as number[]
     }
   } catch (error) {
     console.error('加载年级列表失败:', error)
@@ -829,8 +930,30 @@ const loadGradeList = async () => {
 
 const loadCompanyList = async () => {
   try {
-    const response = await studentApi.getCompanies()
-    companyList.value = response || []
+    const [registeredCompanies, internshipCompanyNames] = await Promise.all([
+      studentApi.getCompanies(),
+      studentApi.getInternshipCompanyOptions()
+    ])
+    const registeredNames = new Set<string>()
+
+    companyList.value = (registeredCompanies || []).reduce<Array<{ id?: number; companyName: string }>>((options, company) => {
+      const companyName = String(company?.companyName || company?.name || '').trim()
+      const normalizedName = normalizeCompanyName(companyName)
+      if (!normalizedName || registeredNames.has(normalizedName)) return options
+      registeredNames.add(normalizedName)
+      options.push({ id: company?.id, companyName })
+      return options
+    }, [])
+
+    const selfPracticeNames = new Set<string>()
+    selfPracticeCompanyList.value = (internshipCompanyNames || []).reduce<Array<{ companyName: string }>>((options, name) => {
+      const companyName = String(name || '').trim()
+      const normalizedName = normalizeCompanyName(companyName)
+      if (!normalizedName || registeredNames.has(normalizedName) || selfPracticeNames.has(normalizedName)) return options
+      selfPracticeNames.add(normalizedName)
+      options.push({ companyName })
+      return options
+    }, [])
   } catch (error) {
     console.error('加载公司列表失败:', error)
   }
@@ -866,12 +989,15 @@ const handleSelectionChange = (selection: StudentUser[]) => {
 
 const handleSizeChange = (size: number) => {
   pageSize.value = size
-  loadStudents()
+  currentPage.value = 1
+  // 辅导员分支前端切片,无需重新请求;管理员分支需后端分页
+  if (!isCounselor.value) loadStudents()
 }
 
 const handleCurrentChange = (page: number) => {
   currentPage.value = page
-  loadStudents()
+  // 辅导员分支前端切片,无需重新请求;管理员分支需后端分页
+  if (!isCounselor.value) loadStudents()
 }
 
 const viewReports = async (student: any) => {
@@ -879,9 +1005,14 @@ const viewReports = async (student: any) => {
   reportsDialogVisible.value = true
   reportsLoading.value = true
   try {
-    const response = await request.get(`/internship/reports/student/${student.id}`)
+    interface StudentReportRow {
+      id?: number | string
+      [key: string]: unknown
+    }
+    const response = await request.get<StudentReportRow[]>(`/internship/reports/student/${student.id}`)
     if (response.data) {
-      studentReports.value = response.data.map((r: any) => ({
+      const reportRows = Array.isArray(response.data) ? response.data : []
+      studentReports.value = reportRows.map((r: StudentReportRow) => ({
         ...r,
         hasAIAnalysis: false
       }))
@@ -915,14 +1046,60 @@ const checkAIStatus = async (student: any) => {
   }
 }
 
-const viewStudentDetail = (student: any) => {
-  currentStudent.value = student
+const displayDetailValue = (value: unknown): string => {
+  if (value === null || value === undefined || String(value).trim() === '') return '-'
+  return String(value)
+}
+
+const formatGender = (gender: unknown): string => {
+  if (gender === 1 || gender === '1' || gender === '男') return '男'
+  if (gender === 2 || gender === '2' || gender === '女') return '女'
+  return '-'
+}
+
+const formatGrade = (grade: unknown): string => {
+  const value = displayDetailValue(grade)
+  return value === '-' || value.endsWith('级') ? value : `${value}级`
+}
+
+const formatDetailDate = (dateValue: unknown, emptyText: string): string => {
+  if (!dateValue) return emptyText
+  const date = new Date(String(dateValue))
+  if (Number.isNaN(date.getTime())) return emptyText
+  return date.toLocaleDateString('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  })
+}
+
+const viewStudentDetail = async (student: any) => {
+  currentStudent.value = { ...student }
   showStudentDetailModal.value = true
+  detailLoading.value = true
+  try {
+    const response: any = await request.get(`/teacher/students/${student.id}/internship-detail`)
+    const detail = response?.data || response
+    currentStudent.value = {
+      ...detail,
+      jobSearchStatus: detail?.jobSearchStatus || student.jobSearchStatus,
+      jobSearchStatusText: detail?.jobSearchStatusText || student.jobSearchStatusText,
+      // 详情接口可能未返回邮箱，用列表数据兜底
+      email: detail?.email ?? student.email ?? ''
+    }
+  } catch (error) {
+    console.error('加载学生详情失败:', error)
+    ElMessage.error('加载学生详情失败')
+  } finally {
+    detailLoading.value = false
+  }
 }
 
 const getStatusValue = (status: string): number => {
   switch (status) {
-    case '0': return 0  // 无offer
+    case '-1': return -1 // 未投递
+    case '-2': return -2 // 已有面试机会但无 Offer
+    case '0': return 0  // 尚无 Offer（未投递 + 无 Offer）
     case '1': return 1  // 待确认
     case '2': return 2  // 已确定
     case '3': return 3  // 实习中
@@ -938,11 +1115,26 @@ const getStatusValue = (status: string): number => {
 }
 
 const getStatusText = (status: number | string): string => {
+  if (typeof status === 'string') {
+    const derivedText: Record<string, string> = {
+      NOT_FOUND: '未投递',
+      NO_OFFER: '无 Offer',
+      PENDING_CONFIRMATION: '待确认',
+      CONFIRMED: '已确定',
+      IN_PROGRESS: '实习中',
+      ENDED: '已结束',
+      INTERRUPTED: '已中断',
+      DELAYED: '延期'
+    }
+    if (derivedText[status]) return derivedText[status]
+  }
   const statusNum = typeof status === 'string' ? getStatusValue(status) : status
   switch (statusNum) {
     case 2: return '已确定'
     case 1: return '待确认'
-    case 0: return '无offer'
+    case -1: return '未投递'
+    case -2: return '无 Offer'
+    case 0: return '尚无 Offer'
     case 5: return '已中断'
     case 3: return '实习中'
     case 4: return '已结束'
@@ -952,8 +1144,16 @@ const getStatusText = (status: number | string): string => {
 }
 
 const getStatusTagType = (status: number | string): string => {
+  if (status === 'NOT_FOUND') return 'danger'
+  if (status === 'NO_OFFER') return 'warning'
+  if (status === 'PENDING_CONFIRMATION') return 'warning'
+  if (status === 'CONFIRMED' || status === 'ENDED') return 'success'
+  if (status === 'IN_PROGRESS') return 'primary'
+  if (status === 'INTERRUPTED' || status === 'DELAYED') return 'warning'
   const statusNum = typeof status === 'string' ? getStatusValue(status) : status
   switch (statusNum) {
+    case -1: return 'danger'
+    case -2: return 'warning'
     case 2: return 'success'  // 已确定实习 - 绿色
     case 1: return 'warning'   // 待确认 - 黄色
     case 0: return 'danger'     // 无offer - 红色
@@ -965,8 +1165,17 @@ const getStatusTagType = (status: number | string): string => {
 }
 
 const getStatusClass = (status: number | string): string => {
+  if (status === 'NOT_FOUND') return 'status-no-offer'
+  if (status === 'NO_OFFER') return 'status-offer'
+  if (status === 'PENDING_CONFIRMATION') return 'status-offer'
+  if (status === 'CONFIRMED') return 'status-confirmed'
+  if (status === 'IN_PROGRESS') return 'status-in-progress'
+  if (status === 'ENDED') return 'status-completed'
+  if (status === 'INTERRUPTED' || status === 'DELAYED') return 'status-delayed'
   const statusNum = typeof status === 'string' ? getStatusValue(status) : status
   switch (statusNum) {
+    case -1: return 'status-no-offer'
+    case -2: return 'status-offer'
     case 2: return 'status-confirmed'
     case 1: return 'status-offer'
     case 0: return 'status-no-offer'
@@ -981,17 +1190,7 @@ const downloadApplicationForm = async (row: any): Promise<void> => {
   try {
     ElMessage({ message: '正在生成实习确认申请表...', type: 'info' })
 
-    const currentRole = localStorage.getItem('current_role') || 'ROLE_TEACHER'
-    const rolePrefixes: Record<string, string> = {
-      'ROLE_STUDENT': 'student_',
-      'ROLE_TEACHER': 'teacher_',
-      'ROLE_ADMIN': 'admin_',
-      'ROLE_COMPANY': 'company_'
-    }
-    const rolePrefix = rolePrefixes[currentRole] || 'teacher_'
-    const accessToken = localStorage.getItem(`${rolePrefix}accessToken_${currentRole}`) ||
-                        localStorage.getItem(`${rolePrefix}accessToken`) ||
-                        localStorage.getItem('teacher_accessToken_ROLE_TEACHER')
+    const accessToken = authStore.token
 
     const url = `/api/admin/internship-status/download-application/${row.internshipStatusId || row.id}`
     const response = await fetch(url, {
@@ -1025,22 +1224,54 @@ const downloadApplicationForm = async (row: any): Promise<void> => {
 
 // 一键提醒状态
 const showBatchReminderDialog = ref(false)
-const batchReminderForm = ref({ content: '', template: '' })
+const batchReminderForm = ref({ content: '' })
 const batchReminderSending = ref(false)
 
 const oneClickReminder = () => {
-  batchReminderForm.value = { content: '', template: '' }
+  batchReminderForm.value = { content: '' }
   showBatchReminderDialog.value = true
+  registerBatchReminderForm()
 }
 
-const handleBatchTemplateChange = (value: string) => {
-  if (value !== '6') {
-    const template = reminderTemplates.find(t => t.value === value)
-    batchReminderForm.value.content = template?.label || ''
-  } else {
-    batchReminderForm.value.content = ''
-  }
+
+// ===== 智能填表：提醒弹窗注册到 AI 侧栏（只写响应式 form，不触发提交，无 el-form 实例） =====
+const formContext = useFormContext()
+const buildReminderFillFields = (): FormFieldDescriptor[] => [
+  { prop: 'content', label: '提醒内容', type: 'textarea', required: true }
+]
+
+const registerReminderForm = () => {
+  formContext.register({
+    formId: 'teacher:reminder',
+    title: '发送提醒',
+    fields: buildReminderFillFields(),
+    getFields: buildReminderFillFields,
+    getModel: () => reminderForm.value,
+    getObject: () => currentRemindStudentId.value ? { type: 'student', id: String(currentRemindStudentId.value) } : null,
+    getValidationSummary: () => ({ missingFields: [], validationErrors: reminderForm.value.content.trim() ? [] : ['请输入提醒内容'] })
+  })
 }
+const registerBatchReminderForm = () => {
+  formContext.register({
+    formId: 'teacher:reminder-batch',
+    title: '一键提醒',
+    fields: buildReminderFillFields(),
+    getFields: buildReminderFillFields,
+    getModel: () => batchReminderForm.value,
+    getValidationSummary: () => ({ missingFields: [], validationErrors: batchReminderForm.value.content.trim() ? [] : ['请输入提醒内容'] })
+  })
+}
+
+watch(showReminderDialog, (open) => {
+  if (!open) formContext.unregister('teacher:reminder')
+})
+watch(showBatchReminderDialog, (open) => {
+  if (!open) formContext.unregister('teacher:reminder-batch')
+})
+onUnmounted(() => {
+  formContext.unregister('teacher:reminder')
+  formContext.unregister('teacher:reminder-batch')
+})
 
 const sendBatchReminder = async () => {
   if (!batchReminderForm.value.content.trim()) {
@@ -1060,8 +1291,9 @@ const sendBatchReminder = async () => {
         filters.value.grade ? filters.value.grade.replace('级', '') : undefined,
         filters.value.status ? getStatusValue(filters.value.status) : undefined,
         filters.value.company || undefined
-      )
-      allStudents = response?.data || []
+      ) as unknown as { code?: number; data?: StudentUser[] }
+      const counselorRows: unknown = response?.data
+      allStudents = Array.isArray(counselorRows) ? counselorRows : []
     } else {
       const response = await studentApi.getStudentList({
         page: 1,
@@ -1072,8 +1304,14 @@ const sendBatchReminder = async () => {
         className: filters.value.class,
         status: filters.value.status ? getStatusValue(filters.value.status) : undefined,
         companyName: filters.value.company
-      })
-      allStudents = response?.list || response?.rows || []
+      }) as unknown as {
+        code?: number
+        list?: StudentUser[]
+        rows?: StudentUser[]
+        data?: { list?: StudentUser[]; rows?: StudentUser[] }
+      }
+      const batchPage = (response.data ?? response) as { list?: StudentUser[]; rows?: StudentUser[] }
+      allStudents = batchPage.list ?? batchPage.rows ?? []
     }
 
     if (allStudents.length === 0) {
@@ -1082,38 +1320,54 @@ const sendBatchReminder = async () => {
     }
 
     const teacherId = counselorId.value
-    let successCount = 0
-    let failCount = 0
-
+    // 提醒接口使用 student_users.id；学号 studentUserId/studentId 不能当数据库主键。
+    const studentIds: number[] = []
+    let missingIdCount = 0
     for (const item of allStudents) {
-      try {
-        // 学生ID提取：参考 loadStudents 的映射逻辑
-        const sid = item.student?.id || item.id || item.studentId
-        const studentUserId = item.student?.studentUserId || item.studentId
-        // 优先使用 studentId（对应 student_users 表的 ID）
-        const targetId = studentUserId || sid
-        if (!targetId) {
-          failCount++
-          continue
-        }
-        await request.post('/teacher/reminder/send', null, {
-          params: {
-            studentId: targetId,
-            teacherId: teacherId,
-            content: batchReminderForm.value.content
-          }
-        })
-        successCount++
-      } catch {
-        failCount++
+      const targetId = item.student?.id ?? item.id
+      const numericId = Number(targetId)
+      if (!Number.isSafeInteger(numericId) || numericId <= 0) {
+        missingIdCount++
+        continue
+      }
+      if (!studentIds.includes(numericId)) {
+        studentIds.push(numericId)
       }
     }
 
+    if (studentIds.length === 0) {
+      ElMessage.warning('没有可提醒的学生（缺少学生ID）')
+      return
+    }
+
+    const operation = formContext.beginFormOperation('teacher:reminder-batch')
+    const response: any = await request.post('/teacher/reminder/send-batch', {
+      studentIds,
+      teacherId,
+      content: batchReminderForm.value.content
+    })
+    const result = response?.data || {}
+    const successCount = result.success ?? 0
+    const serverFail = result.fail ?? 0
+    const failCount = serverFail + missingIdCount
+    const failReasons = new Set<string>(
+      (result.failures || []).map((f: any) => f?.reason).filter(Boolean)
+    )
+    if (missingIdCount > 0) failReasons.add('学生信息缺少ID')
+
+    if (successCount > 0) operation.complete({ status: 'submitted', label: `邮件提醒已发送 ${successCount} 人${failCount > 0 ? `，${failCount} 人失败` : ''}`, url: '/teacher/student-tracking' })
+    if (successCount === 0) {
+      ElMessage.error(`邮件提醒未发送成功${failReasons.size ? `：${Array.from(failReasons).slice(0, 3).join('；')}` : ''}`)
+      return
+    }
     showBatchReminderDialog.value = false
-    ElMessage.success(`已向 ${successCount} 名学生发送提醒${failCount > 0 ? `，${failCount} 名失败` : ''}`)
-  } catch (error) {
-    console.error('批量发送提醒失败:', error)
-    ElMessage.error('批量发送失败')
+    const reasonText = failCount > 0 && failReasons.size > 0
+      ? `（${Array.from(failReasons).slice(0, 3).join('；')}）`
+      : ''
+    ElMessage.success(`已向 ${successCount} 名学生发送邮件提醒${failCount > 0 ? `，${failCount} 名失败${reasonText}` : ''}`)
+  } catch (error: any) {
+    console.error('批量发送邮件提醒失败:', error)
+    ElMessage.error(error?.response?.data?.message || error?.message || '批量发送邮件提醒失败')
   } finally {
     batchReminderSending.value = false
   }
@@ -1130,20 +1384,7 @@ const exportSelectedStudentProfiles = async () => {
     const timestamp = new Date().getTime()
 
     // 获取 token
-    const currentRole = localStorage.getItem('current_role') || 'ROLE_TEACHER'
-    const rolePrefixes: Record<string, string> = {
-      'ROLE_STUDENT': 'student_',
-      'ROLE_TEACHER': 'teacher_',
-      'ROLE_TEACHER_COUNSELOR': 'teacher_',
-      'ROLE_TEACHER_COLLEGE': 'teacher_',
-      'ROLE_TEACHER_DEPARTMENT': 'teacher_',
-      'ROLE_ADMIN': 'admin_',
-      'ROLE_COMPANY': 'company_'
-    }
-    const rolePrefix = rolePrefixes[currentRole] || 'teacher_'
-    const token = localStorage.getItem(`${rolePrefix}accessToken_${currentRole}`) ||
-                  localStorage.getItem(`${rolePrefix}accessToken`) ||
-                  localStorage.getItem('teacher_accessToken_ROLE_TEACHER')
+    const token = authStore.token
 
     const url = `/api/teacher/internship-status/export?studentIds=${studentIds}&t=${timestamp}`
     const response = await fetch(url, {
@@ -1174,18 +1415,7 @@ const exportSelectedStudentProfiles = async () => {
   }
 }
 
-const getAuthToken = () => {
-  const currentRole = localStorage.getItem('current_role') || 'ROLE_TEACHER'
-  const rolePrefixes: Record<string, string> = {
-    'ROLE_STUDENT': 'student_', 'ROLE_TEACHER': 'teacher_',
-    'ROLE_TEACHER_COUNSELOR': 'teacher_', 'ROLE_TEACHER_COLLEGE': 'teacher_',
-    'ROLE_TEACHER_DEPARTMENT': 'teacher_', 'ROLE_ADMIN': 'admin_', 'ROLE_COMPANY': 'company_'
-  }
-  const rolePrefix = rolePrefixes[currentRole] || 'teacher_'
-  return localStorage.getItem(`${rolePrefix}accessToken_${currentRole}`) ||
-         localStorage.getItem(`${rolePrefix}accessToken`) ||
-         localStorage.getItem('teacher_accessToken_ROLE_TEACHER')
-}
+const getAuthToken = () => authStore.token
 
 const exportAllData = async () => {
   const loadingMsg = ElMessage({ message: '正在导出学生数据...', type: 'info', duration: 0 })
@@ -1229,20 +1459,7 @@ const confirmExport = async () => {
     const timestamp = new Date().getTime()
 
     // 获取 token
-    const currentRole = localStorage.getItem('current_role') || 'ROLE_TEACHER'
-    const rolePrefixes: Record<string, string> = {
-      'ROLE_STUDENT': 'student_',
-      'ROLE_TEACHER': 'teacher_',
-      'ROLE_TEACHER_COUNSELOR': 'teacher_',
-      'ROLE_TEACHER_COLLEGE': 'teacher_',
-      'ROLE_TEACHER_DEPARTMENT': 'teacher_',
-      'ROLE_ADMIN': 'admin_',
-      'ROLE_COMPANY': 'company_'
-    }
-    const rolePrefix = rolePrefixes[currentRole] || 'teacher_'
-    const token = localStorage.getItem(`${rolePrefix}accessToken_${currentRole}`) ||
-                  localStorage.getItem(`${rolePrefix}accessToken`) ||
-                  localStorage.getItem('teacher_accessToken_ROLE_TEACHER')
+    const token = authStore.token
 
     let url = `/api/teacher/internship-status/export/batch?scope=${exportScope.value}&t=${timestamp}`
     if (exportScope.value === 'class') {
@@ -1286,20 +1503,7 @@ const exportStudentProfile = async (studentId: number) => {
     const timestamp = new Date().getTime()
 
     // 获取 token
-    const currentRole = localStorage.getItem('current_role') || 'ROLE_TEACHER'
-    const rolePrefixes: Record<string, string> = {
-      'ROLE_STUDENT': 'student_',
-      'ROLE_TEACHER': 'teacher_',
-      'ROLE_TEACHER_COUNSELOR': 'teacher_',
-      'ROLE_TEACHER_COLLEGE': 'teacher_',
-      'ROLE_TEACHER_DEPARTMENT': 'teacher_',
-      'ROLE_ADMIN': 'admin_',
-      'ROLE_COMPANY': 'company_'
-    }
-    const rolePrefix = rolePrefixes[currentRole] || 'teacher_'
-    const token = localStorage.getItem(`${rolePrefix}accessToken_${currentRole}`) ||
-                  localStorage.getItem(`${rolePrefix}accessToken`) ||
-                  localStorage.getItem('teacher_accessToken_ROLE_TEACHER')
+    const token = authStore.token
 
     const url = `/api/teacher/internship-status/export?studentId=${studentId}&t=${timestamp}`
     const response = await fetch(url, {
@@ -1345,10 +1549,8 @@ const showFeedbackMessage = (message: string, type: 'success' | 'error' | 'info'
 }
 
 onMounted(() => {
-  const currentRole = localStorage.getItem('current_role') || 'ROLE_TEACHER'
-  const rolePrefix = currentRole === 'ROLE_TEACHER' ? 'teacher_' : ''
-  const id = localStorage.getItem(rolePrefix + 'userId_' + currentRole) || localStorage.getItem('teacherId')
-  const type = localStorage.getItem('teacherType')
+  const id = authStore.user?.id
+  const type = authStore.user?.teacherType || authStore.role?.replace('ROLE_TEACHER_', '')
   if (id) {
     counselorId.value = parseInt(id)
   }
@@ -1385,6 +1587,25 @@ onMounted(() => {
     }
   }
 })
+
+useAgentPageContext(() => {
+  const selectedClass = [...myClasses.value, ...classList.value].find(item => item.name === filters.value.class)
+  return {
+    title: '学生跟踪', view: (showStudentDetailModal.value || reportsDialogVisible.value) ? 'student-detail' : 'page',
+    object: (showStudentDetailModal.value || reportsDialogVisible.value) && currentStudent.value?.id
+      ? { type: 'student', id: String(currentStudent.value.id) } : null,
+    selectedObjects: selectedStudents.value.slice(0, 20).map(student => ({ type: 'student', id: String(student.id) })),
+    filters: { keyword: filters.value.search, status: filters.value.status, company: filters.value.company,
+      major: filters.value.major, grade: filters.value.grade,
+      ...(filters.value.class && selectedClass?.id ? { classId: String(selectedClass.id) } : {}) }
+  }
+})
+
+// Reuse the existing authorized detail endpoint for links from query result cards.
+watch(() => router.currentRoute.value.query.agentStudentId, id => {
+  if (typeof id === 'string' && /^[1-9][0-9]*$/.test(id)) void viewStudentDetail({ id })
+}, { immediate: true })
+
 </script>
 
 <style scoped>
@@ -1784,18 +2005,18 @@ onMounted(() => {
 }
 
 .student-detail-modal {
-  max-width: 580px;
-  width: 580px;
+  max-width: min(860px, calc(100vw - 32px));
+  width: 820px;
 }
 
 .student-detail-content {
   display: flex;
-  gap: 12px;
+  gap: 16px;
   min-height: 300px;
 }
 
 .detail-left {
-  flex: 0 0 260px;
+  flex: 1.3;
   display: flex;
   flex-direction: column;
 }
@@ -1815,6 +2036,12 @@ onMounted(() => {
 
 .detail-left .detail-section {
   height: 100%;
+}
+
+.detail-left .detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 20px;
 }
 
 .detail-section h4 {
@@ -1847,6 +2074,7 @@ onMounted(() => {
   font-size: 14px;
   color: #303133;
   font-weight: 500;
+  overflow-wrap: anywhere;
 }
 
 .button-section {
@@ -1967,5 +2195,106 @@ onMounted(() => {
 
 .ai-tip {
   margin-top: 16px;
+}
+
+@media (max-width: 720px) {
+  .student-detail-content {
+    flex-direction: column;
+  }
+
+  .detail-left .detail-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 768px) {
+  .student-management-container {
+    padding: 8px 12px 16px;
+  }
+
+  .page-title {
+    font-size: 20px;
+  }
+
+  .stats-card {
+    position: static;
+    width: 100%;
+  }
+
+  .stats-container {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+  }
+
+  .stat-item {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+
+  .stat-label {
+    line-height: 1.2;
+    white-space: nowrap;
+  }
+
+  .search-card {
+    padding: 12px;
+  }
+
+  .search-form :deep(.el-form-item) {
+    width: 100%;
+    margin-right: 0;
+  }
+
+  .search-form :deep(.el-input),
+  .search-form :deep(.el-select),
+  .select-input,
+  .search-input {
+    width: 100% !important;
+  }
+
+  .search-actions {
+    margin-left: 0;
+  }
+
+  .search-actions :deep(.el-form-item__content) {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .search-actions :deep(.el-button) {
+    width: 100%;
+    margin-left: 0 !important;
+  }
+}
+
+.reminder-dialog {
+  width: min(480px, calc(100vw - 32px)) !important;
+}
+
+.reminder-dialog-intro {
+  margin-bottom: 16px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: #f5f7fa;
+  color: #606266;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.reminder-form :deep(.el-form-item) {
+  margin-bottom: 0;
+}
+
+.reminder-form :deep(.el-form-item__label) {
+  margin-bottom: 8px;
+  color: #303133;
+  font-weight: 500;
+}
+
+.reminder-form :deep(.el-textarea__inner) {
+  padding: 12px;
+  line-height: 1.6;
 }
 </style>

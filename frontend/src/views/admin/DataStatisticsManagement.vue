@@ -398,15 +398,26 @@ const refreshData = async () => {
       params.endDate = dateRange.value[1]
     }
     
-    const response = await request.get('/login-logs/active-users', { params })
+    const response = await request.get<{
+      studentData?: unknown[]
+      student_data?: unknown[]
+      teacherData?: unknown[]
+      teacher_data?: unknown[]
+      adminData?: unknown[]
+      admin_data?: unknown[]
+      dateRange?: string
+      date_range?: string
+    }>('/login-logs/active-users', { params })
 
     if (response.data && response.code === 200 && response.data) {
-      studentChartData.value = response.data.studentData || []
-      teacherChartData.value = response.data.teacherData || []
-      adminChartData.value = response.data.adminData || []
+      const statsData = response.data
+      studentChartData.value = Array.isArray(statsData.studentData) ? statsData.studentData : (Array.isArray(statsData.student_data) ? statsData.student_data : [])
+      teacherChartData.value = Array.isArray(statsData.teacherData) ? statsData.teacherData : (Array.isArray(statsData.teacher_data) ? statsData.teacher_data : [])
+      adminChartData.value = Array.isArray(statsData.adminData) ? statsData.adminData : (Array.isArray(statsData.admin_data) ? statsData.admin_data : [])
 
-      if (response.data.dateRange) {
-        dateRangeText.value = response.data.dateRange
+      const rangeText = statsData.dateRange ?? statsData.date_range
+      if (rangeText) {
+        dateRangeText.value = rangeText
       }
 
       renderCharts()

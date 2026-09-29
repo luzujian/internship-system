@@ -85,6 +85,12 @@
         order by status = 'processing' DESC, FIELD(priority, 'high', 'normal', 'low'), create_time desc
     </select>
 
+    <select id="findByOwner" resultMap="ProblemFeedbackResultMap">
+        select * from problem_feedback
+        where deleted = 0 and user_type = #{userType} and user_id = #{userId}
+        order by create_time desc
+    </select>
+
     <select id="list" resultMap="ProblemFeedbackResultMap">
         select * from problem_feedback
         <where>

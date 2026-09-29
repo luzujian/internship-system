@@ -12,7 +12,23 @@ public interface InternshipConfirmationRecordMapper {
 
     int update(InternshipConfirmationRecord record);
 
+    int submitPending(@Param("id") Long id, @Param("remark") String remark);
+
+    int resolvePending(@Param("id") Long id,
+                       @Param("status") Integer status,
+                       @Param("remark") String remark);
+
+    int recallPending(@Param("id") Long id, @Param("recallReason") String recallReason);
+
     InternshipConfirmationRecord findById(@Param("id") Long id);
+
+    InternshipConfirmationRecord findByIdForUpdate(@Param("id") Long id);
+
+    Long lockStudent(@Param("studentId") Long studentId);
+
+    InternshipConfirmationRecord findActiveByStudentForUpdate(@Param("studentId") Long studentId);
+
+    InternshipConfirmationRecord findSubmittedPendingByStudentForUpdate(@Param("studentId") Long studentId);
 
     List<InternshipConfirmationRecord> findByStudentId(@Param("studentId") Long studentId);
 

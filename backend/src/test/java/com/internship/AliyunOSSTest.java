@@ -1,6 +1,7 @@
 package com.internship;
 
 import com.internship.utils.AliyunOSSOperator;
+import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -16,6 +17,7 @@ import java.nio.file.Paths;
  * 2. 运行测试：mvn test -Dtest=AliyunOSSTest
  */
 @SpringBootTest
+@EnabledIfEnvironmentVariable(named = "RUN_LIVE_OSS_TESTS", matches = "true")
 public class AliyunOSSTest {
 
     @Autowired

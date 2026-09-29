@@ -95,37 +95,6 @@
           </div>
         </el-tab-pane>
 
-        <el-tab-pane label="权限列表" name="permissions">
-          <div class="permission-tree-container">
-            <el-card shadow="never" class="tree-card">
-              <div class="tree-header">
-                <h3 class="tree-title">系统权限结构</h3>
-                <p class="tree-description">所有可用权限的树形结构展示</p>
-              </div>
-              <el-tree
-                :data="filteredPermissionTree"
-                :props="{ children: 'children', label: 'module' }"
-                node-key="id"
-                default-expand-all
-                class="permission-tree"
-              >
-                <template #default="{ node, data }">
-                  <span class="custom-tree-node">
-                    <span v-if="data.module && !data.permissionCode" class="module-label">
-                      <el-icon class="module-icon"><component :is="getModuleIcon(data.module)" /></el-icon>
-                      {{ data.module }}
-                    </span>
-                    <span v-else class="permission-label">
-                      <el-tag size="small" type="info" class="permission-tag">{{ data.permissionCode }}</el-tag>
-                      {{ data.permissionName }}
-                    </span>
-                  </span>
-                </template>
-              </el-tree>
-            </el-card>
-          </div>
-        </el-tab-pane>
-
         <el-tab-pane label="学生端菜单配置" name="studentMenu">
           <div class="permission-tree-container">
             <el-card shadow="never" class="tree-card">
@@ -167,7 +136,7 @@
           </div>
         </el-tab-pane>
 
-        <el-tab-pane label="通用权限管理" name="generalPermission">
+        <el-tab-pane label="AI权限管理" name="generalPermission">
           <div class="permission-tree-container">
             <el-card shadow="never" class="tree-card">
               <div class="teacher-permission-header">
@@ -176,19 +145,144 @@
               </div>
               <div style="margin-top: 20px;">
                 <el-form label-width="200px">
-                  <el-form-item label="AI 悬浮球功能" style="margin-bottom: 20px;">
-                    <el-switch 
-                      v-model="aiAssistantEnabled" 
-                      active-text="启用" 
+                  <el-form-item label="AI 助手" style="margin-bottom: 20px;">
+                    <el-switch
+                      v-model="aiAssistantEnabled"
+                      active-text="启用"
                       inactive-text="关闭"
                       @change="saveAiConfig"
                     ></el-switch>
                     <div style="margin-left: 20px; color: #909399; font-size: 13px;">
-                      关闭后，悬浮球以及悬浮球旁边的气泡框均会被隐藏
+                      关闭后，各页面（学生/教师/企业/管理员）的 AI 助手入口均隐藏且不可使用
                     </div>
                   </el-form-item>
                 </el-form>
               </div>
+            </el-card>
+            <el-card shadow="never" class="tree-card" style="margin-top: 16px;">
+              <div class="teacher-permission-header">
+                <h3 class="assignment-title">AI 能力授权（角色级）</h3>
+                <p class="assignment-description">叠加在原业务权限之上，只收窄不放大；关闭对话问答等于该角色不可用助手；只读身份仅保留对话问答</p>
+                <div style="margin-top: 10px; display: flex; gap: 8px; align-items: center;">
+                  <el-button type="primary" @click="saveAgentCaps" :loading="agentCapsSaving">保存配置</el-button>
+                  <el-button @click="resetAgentCaps" :disabled="agentCapsLoading">恢复默认</el-button>
+                  <el-tag v-if="!agentCapsConfigured" size="small" type="info">未配置·显示默认</el-tag>
+                </div>
+              </div>
+              <div style="margin-top: 16px;" v-loading="agentCapsLoading">
+                <el-table :data="agentCapRows" border stripe style="width: 100%" class="permission-table">
+                  <el-table-column prop="label" label="AI 能力" width="220" align="center">
+                    <template #default="{ row }">
+                      <span>{{ row.label }}</span>
+                      <el-tag v-if="row.reserved" size="small" type="warning" style="margin-left: 8px;">预留未投产</el-tag>
+                      <div style="color: #909399; font-size: 12px; margin-top: 4px;">{{ row.desc }}</div>
+                    </template>
+                  </el-table-column>
+                  <el-table-column v-for="role in agentRoleColumns" :key="role.key" :prop="role.key" :label="role.label" align="center">
+                    <template #default="{ row }">
+                      <el-tooltip :content="capabilitySupportHint(role.key, row.key)" :disabled="supportsAgentCapability(role.key, row.key)" placement="top">
+                        <span>
+                          <el-checkbox
+                            :model-value="supportsAgentCapability(role.key, row.key) && agentCaps[role.key][row.key]"
+                            @change="value => agentCaps[role.key][row.key] = Boolean(value)"
+                            :aria-label="`${role.label} · ${row.label}`"
+                            :disabled="row.reserved || agentCapsLoading || !supportsAgentCapability(role.key, row.key)"
+                          />
+                        </span>
+                      </el-tooltip>
+                    </template>
+                  </el-table-column>
+                </el-table>
+              </div>
+
+              <AutomationVerification />
+              <el-divider content-position="left">用户级覆盖</el-divider>
+              <div class="user-override-box">
+                <div class="user-override-toolbar">
+                  <el-select v-model="overrideRole" style="width: 120px" @change="resetOverrideUser">
+                    <el-option label="学生" value="student" />
+                    <el-option label="教师" value="teacher" />
+                    <el-option label="企业" value="company" />
+                    <el-option label="管理员" value="admin" />
+                  </el-select>
+                  <el-input
+                    v-model="overrideKeyword"
+                    placeholder="搜索用户名或姓名"
+                    style="width: 220px"
+                    clearable
+                    @keyup.enter="searchOverrideUsers"
+                  />
+                  <el-button :loading="overrideLoading" @click="searchOverrideUsers">搜索用户</el-button>
+                </div>
+                <el-table
+                  :data="overrideUsers"
+                  size="small"
+                  max-height="240"
+                  empty-text="请搜索用户"
+                  highlight-current-row
+                  @row-click="selectOverrideUser"
+                >
+                  <el-table-column prop="id" label="ID" width="90" />
+                  <el-table-column prop="displayName" label="姓名 / 企业名称" min-width="140" />
+                  <el-table-column prop="account" label="用户名" min-width="140" />
+                  <el-table-column label="操作" width="90">
+                    <template #default="{ row }">
+                      <el-button link type="primary" @click.stop="selectOverrideUser(row)">配置</el-button>
+                    </template>
+                  </el-table-column>
+                </el-table>
+                <div v-if="selectedOverrideUser" class="user-override-editor">
+                  <div class="user-override-title">
+                    {{ roleLabel(overrideRole) }} · {{ selectedOverrideUser.displayName }}（{{ selectedOverrideUser.account || selectedOverrideUser.id }}）
+                    <span class="user-override-hint">用户级设置优先于角色默认</span>
+                  </div>
+                  <el-checkbox
+                    v-for="row in agentCapRows.filter(item => !item.reserved)"
+                    :key="row.key"
+                    :model-value="supportsAgentCapability(overrideRole, row.key) && overrideCaps[row.key]"
+                    @change="value => overrideCaps[row.key] = Boolean(value)"
+                    :disabled="overrideReading || !supportsAgentCapability(overrideRole, row.key)"
+                    :title="capabilitySupportHint(overrideRole, row.key)"
+                    class="user-override-check"
+                  >{{ row.label }}<span v-if="!supportsAgentCapability(overrideRole, row.key)">（该角色不支持）</span></el-checkbox>
+                  <div class="user-override-actions">
+                    <el-button @click="resetOverrideUser">取消</el-button>
+                    <el-button :loading="overrideSaving" @click="clearUserOverride">清除覆盖（恢复默认）</el-button>
+                    <el-button type="primary" :loading="overrideSaving" @click="saveUserOverride">保存该用户覆盖</el-button>
+                  </div>
+                </div>
+              </div>
+            </el-card>
+          </div>
+        </el-tab-pane>
+
+        <el-tab-pane label="管理员权限列表" name="permissions">
+          <div class="permission-tree-container">
+            <el-card shadow="never" class="tree-card">
+              <div class="tree-header">
+                <h3 class="tree-title">系统权限结构</h3>
+                <p class="tree-description">所有可用权限的树形结构展示</p>
+              </div>
+              <el-tree
+                :data="filteredPermissionTree"
+                :props="{ children: 'children', label: 'module' }"
+                node-key="id"
+                default-expand-all
+                class="permission-tree"
+              >
+                <template #default="{ node, data }">
+                  <span class="custom-tree-node">
+                    <span v-if="data.module && !data.permissionCode" class="module-label">
+                      <el-icon class="module-icon"><component :is="getModuleIcon(data.module)" /></el-icon>
+                      {{ data.module }}
+                    </span>
+                    <span v-else class="permission-label">
+                      <el-tag size="small" type="info" class="permission-tag">{{ data.permissionCode }}</el-tag>
+                      {{ data.permissionName }}
+                    </span>
+                  </span>
+                </template>
+              </el-tree>
             </el-card>
           </div>
         </el-tab-pane>
@@ -280,7 +374,8 @@
 
 <script lang="ts" setup>
 import logger from '@/utils/logger'
-import { ref, onMounted, computed, nextTick } from 'vue'
+import AutomationVerification from '@/components/agent/AutomationVerification.vue'
+import { ref, onMounted, computed, nextTick, h } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ElScrollbar } from 'element-plus'
 import { Key, User, DocumentChecked, DataLine, Setting, MagicStick, Lock, Briefcase, ChatDotRound, Folder, ChatLineRound, Document, School, Collection, Download, HomeFilled, Monitor, Edit, Bell, OfficeBuilding, Upload, Clock, Rank } from '@element-plus/icons-vue'
@@ -295,19 +390,37 @@ defineOptions({
 
 const authStore = useAuthStore()
 
+interface RoleRow {
+  id?: number
+  roleCode?: string
+  role_code?: string
+  roleName?: string
+  [key: string]: unknown
+}
+interface PermissionNode {
+  id?: number
+  module?: string
+  permissionCode?: string
+  permission_code?: string
+  sortOrder?: number
+  sort_order?: number
+  children?: PermissionNode[]
+  [key: string]: unknown
+}
+
 const activeTab = ref('roles')
 const loading = ref(false)
 const saving = ref(false)
-const roles = ref([])
-const permissionTree = ref([])
+const roles = ref<RoleRow[]>([])
+const permissionTree = ref<PermissionNode[]>([])
 const permissionDialogVisible = ref(false)
 const permissionTreeRef = ref(null)
 const currentRole = ref(null)
 
 const teacherLoading = ref(false)
 const teacherSaving = ref(false)
-const teacherRoles = ref([])
-const teacherPermissionList = ref([])
+const teacherRoles = ref<RoleRow[]>([])
+const teacherPermissionList = ref<PermissionNode[]>([])
 const teacherPermissionDialogVisible = ref(false)
 const currentTeacherRole = ref(null)
 const selectedMenuIds = ref<number[]>([])
@@ -322,8 +435,9 @@ const defaultStudentMenus = [
   { path: '/student/jobs', name: '职位浏览', icon: 'Briefcase', visible: true },
   { path: '/student/applications', name: '我的申请', icon: 'Document', visible: true },
   { path: '/student/interviews', name: '面试管理', icon: 'ChatDotRound', visible: true },
-  { path: '/student/internship-confirmation-form', name: '实习确认表', icon: 'DocumentChecked', visible: true },
+  { path: '/student/internship-confirmation-form', name: '实习确认', icon: 'DocumentChecked', visible: true },
   { path: '/student/internships', name: '实习心得', icon: 'Document', visible: true },
+  { path: '/student/internship-appraisal', name: '实习鉴定', icon: 'DocumentChecked', visible: true },
   { path: '/student/profile', name: '个人中心', icon: 'User', visible: true }
 ]
 const studentMenus = ref([...defaultStudentMenus])
@@ -332,6 +446,74 @@ const draggedStudentIndex = ref<number | null>(null)
 
 // 通用配置
 const aiAssistantEnabled = ref(true)
+
+// AI 能力授权（角色级 roleDefaults，与后端 AgentCapabilityService 对齐）
+const agentRoleColumns = [
+  { key: 'student', label: '学生' },
+  { key: 'teacher', label: '教师' },
+  { key: 'company', label: '企业' },
+  { key: 'admin', label: '管理员' }
+]
+const agentCapRows = [
+  { key: 'agent_chat', label: '对话问答', desc: '侧栏问答与系统顾问', reserved: false },
+  { key: 'voice_input', label: '语音输入', desc: '侧栏麦克风语音转文字', reserved: false },
+  { key: 'form_fill', label: '智能填表', desc: '语音/文字回填当前表单', reserved: false },
+  { key: 'internship_plan', label: '实习规划', desc: '学生全流程规划陪跑（仅学生可用）', reserved: false },
+  { key: 'auto_task', label: '自动任务', desc: '教师条件触发自动化', reserved: false },
+  { key: 'auto_task_notify', label: '自动通知', desc: '教师自动化站内/邮件提醒', reserved: false },
+  { key: 'teacher_internship_summary', label: '教师实习简报', desc: '教师查询授权范围内学生实习情况（仅教师可用）', reserved: false }
+]
+// Match the roles supported by the business endpoints, independently of grants.
+const capabilityRoles: Record<string, string[]> = {
+  agent_chat: ['student', 'teacher', 'company', 'admin'],
+  voice_input: ['student', 'teacher', 'company', 'admin'],
+  form_fill: ['student', 'teacher', 'company', 'admin'],
+  internship_plan: ['student'],
+  auto_task: ['teacher'], auto_task_notify: ['teacher'], teacher_internship_summary: ['teacher']
+}
+const supportsAgentCapability = (role: string, capability: string) => capabilityRoles[capability]?.includes(role) ?? false
+const capabilitySupportHint = (role: string, capability: string) => supportsAgentCapability(role, capability) ? ''
+  : `该角色暂不支持此能力；仅${(capabilityRoles[capability] || []).map(key => agentRoleColumns.find(item => item.key === key)?.label || key).join('、')}可用`
+const AGENT_CAPS_DEFAULTS: Record<string, string[]> = {
+  student: ['agent_chat', 'voice_input', 'form_fill', 'internship_plan'],
+  teacher: ['agent_chat', 'voice_input', 'form_fill', 'teacher_internship_summary'],
+  company: ['agent_chat', 'voice_input', 'form_fill'],
+  admin: ['agent_chat', 'voice_input', 'form_fill']
+}
+const buildDefaultAgentCaps = () => {
+  const caps: Record<string, Record<string, boolean>> = {}
+  for (const role of agentRoleColumns) {
+    caps[role.key] = {}
+    for (const row of agentCapRows) {
+      caps[role.key][row.key] = (AGENT_CAPS_DEFAULTS[role.key] || []).includes(row.key)
+    }
+  }
+  return caps
+}
+const agentCaps = ref<Record<string, Record<string, boolean>>>(buildDefaultAgentCaps())
+const agentCapsLoading = ref(false)
+const agentCapsSaving = ref(false)
+const agentCapsConfigured = ref(false)
+const agentConfigBase = ref<any>(null)
+const agentUserOverrides = ref<Record<string, Record<string, boolean>>>({})
+const agentAutoPolicy = ref(buildDefaultAgentAutoPolicy())
+
+function buildDefaultAgentAutoPolicy() {
+  return {
+    version: 1,
+    globalCooldownMinutes: 1440,
+    roleDefaults: {
+      teacher: {
+        actions: ['SEND_REMINDER'],
+        channels: ['STATION_REMINDER', 'EMAIL'],
+        scopes: ['OWN_CLASSES', 'OWN_DIVISION', 'OWN_COLLEGE'],
+        audienceLimitMode: 'ALL_AUTHORIZED',
+        maxTargetsPerRun: 200
+      }
+    },
+    userOverrides: {}
+  }
+}
 
 // 权限管理模块的权限ID和模块节点ID（系统管理-权限管理），admin角色不可取消这些权限
 const PERMISSION_MANAGE_LOCKED_IDS = [114, 115, 116, 117, 'sub_系统管理_权限管理']
@@ -482,6 +664,7 @@ const getMenuIcon = (iconName) => {
     'Monitor': Monitor,
     'Edit': Edit,
     'Document': Document,
+    'DocumentChecked': DocumentChecked,
     'Bell': Bell,
     'OfficeBuilding': OfficeBuilding,
     'Upload': Upload,
@@ -544,11 +727,12 @@ const dialogPermissionTree = computed(() => {
 const fetchRoles = async () => {
   loading.value = true
   try {
-    const response = await request.get('/admin/permissions/roles')
+    const response = await request.get<RoleRow[]>('/admin/permissions/roles')
     if (response.code === 200) {
-      roles.value = response.data.filter(role => role.roleCode === 'ROLE_ADMIN')
+      const roleRows = Array.isArray(response.data) ? response.data : []
+      roles.value = roleRows.filter(role => (role.roleCode ?? role.role_code) === 'ROLE_ADMIN')
     } else {
-      ElMessage.error(response.message || '获取角色列表失败')
+      ElMessage.error(response.message || response.msg || '获取角色列表失败')
     }
   } catch (error) {
     ElMessage.error('获取角色列表失败')
@@ -559,14 +743,14 @@ const fetchRoles = async () => {
 
 const fetchPermissionTree = async () => {
   try {
-    const response = await request.get('/admin/permissions/permission-tree')
+    const response = await request.get<PermissionNode[]>('/admin/permissions/permission-tree')
     logger.log('[PermissionManagement] 权限树接口响应:', response)
     if (response.code === 200) {
-      permissionTree.value = response.data
+      permissionTree.value = Array.isArray(response.data) ? response.data : []
       logger.log('[PermissionManagement] 获取到的权限树数据:', permissionTree.value)
       logger.log('[PermissionManagement] 权限树主模块:', permissionTree.value.map(m => m.module))
     } else {
-      ElMessage.error(response.message || '获取权限树失败')
+      ElMessage.error(response.message || response.msg || '获取权限树失败')
     }
   } catch (error) {
     logger.error('[PermissionManagement] 获取权限树失败:', error)
@@ -577,12 +761,12 @@ const fetchPermissionTree = async () => {
 const fetchTeacherRoles = async () => {
   teacherLoading.value = true
   try {
-    const response = await request.get('/teacher/permissions/roles')
+    const response = await request.get<RoleRow[]>('/teacher/permissions/roles')
     if (response.code === 200) {
-      teacherRoles.value = response.data
+      teacherRoles.value = Array.isArray(response.data) ? response.data : []
       await fetchTeacherPermissionCounts()
     } else {
-      ElMessage.error(response.message || '获取教师角色列表失败')
+      ElMessage.error(response.message || response.msg || '获取教师角色列表失败')
     }
   } catch (error) {
     ElMessage.error('获取教师角色列表失败')
@@ -594,9 +778,10 @@ const fetchTeacherRoles = async () => {
 const fetchTeacherPermissionCounts = async () => {
   for (const role of teacherRoles.value) {
     try {
-      const response = await request.get(`/teacher/permissions/role/${role.id}`)
+      const response = await request.get<PermissionNode[]>(`/teacher/permissions/role/${role.id}`)
       if (response.code === 200) {
-        teacherPermissionCounts.value[role.id] = response.data.length
+        const countRows = Array.isArray(response.data) ? response.data : []
+        if (role.id !== undefined) teacherPermissionCounts.value[role.id] = countRows.length
       }
     } catch (error) {
       logger.error(`获取角色 ${role.id} 权限数量失败:`, error)
@@ -606,11 +791,11 @@ const fetchTeacherPermissionCounts = async () => {
 
 const fetchTeacherPermissionList = async () => {
   try {
-    const response = await request.get('/teacher/permissions/tree')
+    const response = await request.get<PermissionNode[]>('/teacher/permissions/tree')
     if (response.code === 200) {
-      teacherPermissionList.value = response.data
+      teacherPermissionList.value = Array.isArray(response.data) ? response.data : []
     } else {
-      ElMessage.error(response.message || '获取教师权限列表失败')
+      ElMessage.error(response.message || response.msg || '获取教师权限列表失败')
     }
   } catch (error) {
     ElMessage.error('获取教师权限列表失败')
@@ -624,9 +809,10 @@ const handleAssignPermissions = async (row) => {
   await nextTick()
 
   try {
-    const response = await request.get(`/admin/permissions/roles/${row.id}/permissions`)
+    const response = await request.get<PermissionNode[]>(`/admin/permissions/roles/${row.id}/permissions`)
     if (response.code === 200) {
-      let checkedKeys = response.data.map(p => p.id)
+      const permissionRows = Array.isArray(response.data) ? response.data : []
+      let checkedKeys: Array<string | number> = permissionRows.map(p => p.id).filter((id): id is number => id !== undefined)
 
       // 如果是admin角色，确保权限管理权限始终被选中
       if (row.id === 1 || row.roleCode === 'ROLE_ADMIN') {
@@ -655,14 +841,15 @@ const handleTeacherPermissionConfig = async (row) => {
   await nextTick()
   
   try {
-    const response = await request.get(`/teacher/permissions/role/${row.id}`)
+    const response = await request.get<PermissionNode[]>(`/teacher/permissions/role/${row.id}`)
     if (response.code === 200) {
-      selectedMenuIds.value = response.data.map(p => p.id)
-      const allMenuIds = teacherPermissionList.value.map(m => m.id)
-      const selectedIds = response.data.map(p => p.id)
+      const rolePermissionRows = Array.isArray(response.data) ? response.data : []
+      selectedMenuIds.value = rolePermissionRows.map(p => p.id).filter((id): id is number => id !== undefined)
+      const allMenuIds = teacherPermissionList.value.map(m => m.id).filter((id): id is number => id !== undefined)
+      const selectedIds = rolePermissionRows.map(p => p.id).filter((id): id is number => id !== undefined)
       const unselectedIds = allMenuIds.filter(id => !selectedIds.includes(id))
-      const sortedSelected = response.data.sort((a, b) => (a.sortOrder || 999) - (b.sortOrder || 999))
-      menuSortOrder.value = [...sortedSelected.map(p => p.id), ...unselectedIds]
+      const sortedSelected = [...rolePermissionRows].sort((a, b) => ((a.sortOrder ?? a.sort_order ?? 999) - (b.sortOrder ?? b.sort_order ?? 999)))
+      menuSortOrder.value = [...sortedSelected.map(p => p.id).filter((id): id is number => id !== undefined), ...unselectedIds]
     }
   } catch (error) {
     ElMessage.error('获取教师角色权限失败')
@@ -781,11 +968,18 @@ const saveTeacherPermissions = async () => {
 
 const fetchStudentMenus = async () => {
   try {
-    const response = await request.get('/admin/system-config/key/STUDENT_MENU_CONFIG')
-    if (response.code === 200 && response.data && response.data.configValue) {
-      let configMenus = []
+    interface SystemConfigRow {
+      configValue?: string
+      config_value?: string
+      [key: string]: unknown
+    }
+    const response = await request.get<SystemConfigRow>('/admin/system-config/key/STUDENT_MENU_CONFIG')
+    if (response.code === 200 && response.data && (response.data.configValue ?? response.data.config_value)) {
+      const rawConfigValue = response.data.configValue ?? response.data.config_value ?? ''
+      let configMenus: Array<{ path?: string; visible?: boolean }> = []
       try {
-        configMenus = JSON.parse(response.data.configValue)
+        const parsedMenus: unknown = JSON.parse(rawConfigValue)
+        configMenus = Array.isArray(parsedMenus) ? parsedMenus : []
       } catch (e) {
         logger.error('解析学生菜单配置失败:', e)
       }
@@ -806,7 +1000,7 @@ const fetchStudentMenus = async () => {
         // 2. 添加默认菜单中有但配置中没有的菜单（新增菜单）
         for (const defaultMenu of defaultStudentMenus) {
           if (!configMap.has(defaultMenu.path)) {
-            mergedMenus.push({ ...defaultMenu, visible: true })
+            mergedMenus.push({ ...defaultMenu, visible: false })
           }
         }
         
@@ -878,14 +1072,18 @@ const resetStudentMenus = () => {
 
 const fetchAiConfig = async () => {
   try {
-    const response = await request.get('/admin/system-config/key/AI_ASSISTANT_ENABLED')
+    interface AiConfigRow {
+      configValue?: string
+      [key: string]: unknown
+    }
+    const response = await request.get<AiConfigRow>('/admin/system-config/key/AI_ASSISTANT_ENABLED')
     if (response.code === 200 && response.data) {
       aiAssistantEnabled.value = response.data.configValue === 'true'
     } else {
       aiAssistantEnabled.value = true // 默认为true
     }
   } catch (error) {
-    logger.error('获取AI悬浮球配置失败:', error)
+    logger.error('获取AI助手配置失败:', error)
     aiAssistantEnabled.value = true
   }
 }
@@ -909,29 +1107,259 @@ const saveAiConfig = async (val: boolean) => {
       configKey: 'AI_ASSISTANT_ENABLED',
       configValue: configValue,
       configType: 'BOOLEAN',
-      configName: 'AI悬浮球功能开关',
-      description: '控制各角色端是否显示AI悬浮球及气泡框',
+      configName: 'AI助手功能开关',
+      description: '控制各角色端是否显示AI助手入口，关闭后各页面AI助手隐藏且不可使用',
       status: 1
     }
-    
+
     let response
     if (exists) {
       response = await request.put('/admin/system-config/key/AI_ASSISTANT_ENABLED', requestData)
     } else {
       response = await request.post('/admin/system-config', requestData)
     }
-    
+
     if (response.code === 200) {
-      ElMessage.success('AI悬浮球功能配置已更新')
+      ElMessage.success('AI 助手功能配置已更新')
+      // 开启或关闭后都刷新管理员页面，让入口及依赖总开关的状态立即重新初始化。
+      window.setTimeout(() => window.location.reload(), 500)
     } else {
       ElMessage.error(response.message || '配置更新失败')
       aiAssistantEnabled.value = !val // 恢复原状
     }
   } catch (error) {
-    logger.error('保存AI悬浮球配置失败:', error)
+    logger.error('保存AI助手配置失败:', error)
     ElMessage.error('配置更新失败')
     aiAssistantEnabled.value = !val // 恢复原状
   }
+}
+
+const fetchAgentCaps = async () => {
+  agentCapsLoading.value = true
+  try {
+    interface AgentCapsConfig {
+      roleDefaults?: Record<string, string[]>
+      autoTaskPolicy?: { roleDefaults?: Record<string, unknown> } & Record<string, unknown>
+      userOverrides?: Record<string, Record<string, boolean>>
+      configured?: boolean
+      [key: string]: unknown
+    }
+    const response = await request.get<AgentCapsConfig>('/admin/agent-capabilities/config')
+    if (response.code === 200 && response.data) {
+      const parsed = response.data
+      agentConfigBase.value = JSON.parse(JSON.stringify(parsed))
+      const roleDefaults = parsed?.roleDefaults
+      if (roleDefaults && typeof roleDefaults === 'object') {
+        const next = buildDefaultAgentCaps()
+        for (const role of agentRoleColumns) {
+          const list = roleDefaults[role.key]
+          if (Array.isArray(list)) {
+            for (const row of agentCapRows) {
+              if (!row.reserved) next[role.key][row.key] = list.includes(row.key)
+            }
+          }
+        }
+        agentCaps.value = next
+        agentAutoPolicy.value = parsed.autoTaskPolicy?.roleDefaults?.teacher
+          ? parsed.autoTaskPolicy as typeof agentAutoPolicy.value
+          : buildDefaultAgentAutoPolicy()
+        agentAutoPolicy.value.globalCooldownMinutes ??= 1440
+        agentUserOverrides.value = parsed?.userOverrides && typeof parsed.userOverrides === 'object'
+          ? parsed.userOverrides as Record<string, Record<string, boolean>>
+          : {}
+        agentCapsConfigured.value = parsed.configured === true
+      } else {
+        throw new Error('角色能力配置无效')
+      }
+      return true
+    }
+    throw new Error(response.message || '获取AI能力授权配置失败')
+  } catch (error) {
+    logger.error('获取AI能力授权配置失败:', error)
+    ElMessage.error('读取权限配置失败，请刷新后重试')
+    return false
+  } finally {
+    agentCapsLoading.value = false
+  }
+}
+
+function agentConfigDraft() {
+  const roleDefaults: Record<string, string[]> = {}
+  for (const role of agentRoleColumns) roleDefaults[role.key] = agentCapRows.filter(row => !row.reserved && supportsAgentCapability(role.key, row.key) && agentCaps.value[role.key]?.[row.key]).map(row => row.key)
+  return { roleDefaults, autoTaskPolicy: JSON.parse(JSON.stringify(agentAutoPolicy.value)) }
+}
+function agentConfigError(error: any) {
+  if (error === 'cancel' || error === 'close') return
+  ElMessage.error(error?.response?.status === 409 ? '配置已变化或预览已失效，请重新生成预览后确认。' : error?.response?.data?.message || error?.message || '配置更新失败')
+}
+async function confirmAgentPreview(preview: any): Promise<boolean> {
+  if (preview.questions?.length) { ElMessage.warning(preview.questions.join('；')); return false }
+  if (!preview.actionId) throw new Error('未取得有效变更预览，请重新核对。')
+  const lines: string[] = []
+  const previous = agentConfigBase.value || {}
+  for (const role of agentRoleColumns) {
+    const before = previous.roleDefaults?.[role.key] || [], after = preview.proposedRoleDefaults?.[role.key] || []
+    for (const row of agentCapRows) if (before.includes(row.key) !== after.includes(row.key)) lines.push(`${role.label} · ${row.label}：${before.includes(row.key) ? '开启' : '关闭'} → ${after.includes(row.key) ? '开启' : '关闭'}`)
+  }
+  const oldPolicy = previous.autoTaskPolicy || {}, newPolicy = preview.proposedAutoTaskPolicy || {}
+  for (const field of ['actions', 'channels', 'scopes', 'maxTargetsPerRun', 'audienceLimitMode', 'globalCooldownMinutes']) {
+    const before = oldPolicy.roleDefaults?.teacher?.[field], after = newPolicy.roleDefaults?.teacher?.[field]
+    if (JSON.stringify(before) !== JSON.stringify(after)) lines.push(`教师自动化${policyFieldLabel(field)}：${policyValue(before)} → ${policyValue(after)}`)
+  }
+  if (oldPolicy.globalCooldownMinutes !== newPolicy.globalCooldownMinutes) lines.push(`同事项提醒冷却：${oldPolicy.globalCooldownMinutes ?? 1440} → ${newPolicy.globalCooldownMinutes ?? 1440} 分钟`)
+  for (const change of preview.userChanges || []) {
+    const before = change.fromOverrides || change.before || {}, after = change.overrides || {}
+    const fields = new Set([...Object.keys(before), ...Object.keys(after)])
+    for (const key of fields) if (before[key] !== after[key]) lines.push(`${change.name || change.userId}（${change.account || change.roleKey || change.role}）· ${capabilityLabel(key)}：${before[key] == null ? '跟随角色默认' : before[key] ? '开启' : '关闭'} → ${after[key] == null ? '跟随角色默认' : after[key] ? '开启' : '关闭'}`)
+    if (change.automationPolicy) {
+      const previous = change.fromAutomationPolicy || {}
+      for (const key of new Set([...Object.keys(previous), ...Object.keys(change.automationPolicy)])) if (JSON.stringify(previous[key]) !== JSON.stringify(change.automationPolicy[key])) lines.push(`${change.name || change.userId}（${change.account || change.roleKey || change.role}）· 自动跟进${policyFieldLabel(key)}：${previous[key] == null ? '跟随角色默认' : policyValue(previous[key])} → ${policyValue(change.automationPolicy[key])}`)
+    }
+  }
+  lines.push(`影响：将暂停 ${preview.impact?.tasksAtRisk ?? 0} 个任务；已存在 ${preview.impact?.usersWithOverrides ?? 0} 个用户覆盖。`)
+  for (const task of preview.impact?.tasks || []) lines.push(`${task.teacherName || '教师'} · ${task.name}：${task.reason}`)
+  await ElMessageBox.confirm(h('div', { style: 'max-height:55vh;overflow:auto;white-space:pre-wrap;line-height:1.8' }, lines.map(line => h('p', line))), '核对权限变更', { confirmButtonText: '确认并保存', cancelButtonText: '返回修改', closeOnClickModal: false })
+  const response: any = await request.put('/admin/agent-capabilities/config', {
+    actionId: preview.actionId, confirmed: true, configurationVersion: preview.configurationVersion,
+    roleDefaults: preview.proposedRoleDefaults, autoTaskPolicy: preview.proposedAutoTaskPolicy, userChanges: preview.userChanges || []
+  })
+  if (response.code !== 200) throw new Error(response.message || '保存未完成')
+  return true
+}
+const saveAgentCaps = async () => {
+  if (agentCapsSaving.value || agentCapsLoading.value) return
+  agentCapsSaving.value = true
+  try {
+    const response: any = await request.post('/admin/agent-capabilities/config/preview', agentConfigDraft())
+    if (!await confirmAgentPreview(response.data)) return
+    if (!await fetchAgentCaps()) { ElMessage.warning('配置已保存，但重查失败，请刷新核验'); return }
+    if (selectedOverrideUser.value) await loadUserOverride(selectedOverrideUser.value)
+    ElMessage.success('AI 能力授权已更新并重新读取')
+  } catch (error: any) { agentConfigError(error) }
+  finally { agentCapsSaving.value = false }
+}
+
+// ===== 用户级覆盖 =====
+const overrideRole = ref('teacher')
+const overrideKeyword = ref('')
+const overrideUsers = ref<Array<{ id: number; displayName: string; account: string }>>([])
+const overrideLoading = ref(false)
+const selectedOverrideUser = ref<{ id: number; displayName: string; account: string } | null>(null)
+const overrideCaps = ref<Record<string, boolean>>({})
+const overrideSaving = ref(false)
+const overrideReading = ref(false)
+const overrideReady = ref(false)
+
+const roleLabel = (role: string) => ({ student: '学生', teacher: '教师', company: '企业', admin: '管理员' } as Record<string, string>)[role] || role
+const capabilityLabel = (capability: string) => agentCapRows.find(row => row.key === capability)?.label || capability
+const policyFieldLabel = (field: string) => ({
+  actions: '动作',
+  channels: '渠道',
+  scopes: '数据范围',
+  maxTargetsPerRun: '单次上限', audienceLimitMode: '人数限制方式', globalCooldownMinutes: '提醒间隔', ALL_AUTHORIZED: '完整负责范围', LIMITED: '限制总人数'
+}[field] || field)
+const policyValue = (value: unknown) => Array.isArray(value)
+  ? (value.length ? value.map((item: any) => ({
+    SEND_REMINDER: '发送提醒', STATION_REMINDER: '站内', EMAIL: '邮件', OWN_CLASSES: '本人班级', OWN_DIVISION: '本系', OWN_COLLEGE: '本学院'
+  }[item] || item)).join('、') : '无')
+  : String(value ?? '无')
+
+let overrideSearchVersion = 0
+const resetOverrideUser = () => {
+  overrideSearchVersion++
+  overrideUsers.value = []
+  overrideLoading.value = false
+  selectedOverrideUser.value = null
+  overrideCaps.value = {}
+}
+
+const searchOverrideUsers = async () => {
+  resetOverrideUser()
+  const version = overrideSearchVersion
+  const role = overrideRole.value
+  overrideLoading.value = true
+  try {
+    const keyword = overrideKeyword.value.trim()
+    const response: any = await request.get('/admin/agent-capabilities/users', { params: { role, keyword } })
+    if (version !== overrideSearchVersion || role !== overrideRole.value) return
+    const data = response?.data
+    const rows: any[] = Array.isArray(data) ? data : (data?.rows || data?.list || [])
+    overrideUsers.value = rows.map((row: any) => ({
+      id: row.id,
+      displayName: row.name || row.account || ('用户' + row.id),
+      account: row.account || ''
+    })).filter((row: any) => row.id != null)
+  } catch (error) {
+    if (version !== overrideSearchVersion) return
+    logger.error('搜索用户失败:', error)
+    ElMessage.error('搜索用户失败')
+  } finally {
+    if (version === overrideSearchVersion) overrideLoading.value = false
+  }
+}
+
+const selectOverrideUser = async (user: { id: number; displayName: string; account: string }) => {
+  if (overrideSaving.value) return
+  await loadUserOverride(user)
+}
+
+const loadUserOverride = async (user: { id: number; displayName: string; account: string }) => {
+  const role = overrideRole.value
+  selectedOverrideUser.value = user
+  overrideCaps.value = {}
+  overrideReading.value = true
+  overrideReady.value = false
+  try {
+    const response: any = await request.get('/admin/agent-capabilities/user-overrides', {
+      params: { role, userId: user.id }
+    })
+    if (selectedOverrideUser.value?.id !== user.id || overrideRole.value !== role) return false
+    if (response.code !== 200) throw new Error(response.message || '读取用户覆盖失败')
+    const existing = response.data?.overrides || {}
+    for (const row of agentCapRows) {
+      if (!row.reserved) overrideCaps.value[row.key] = typeof existing[row.key] === 'boolean'
+        ? existing[row.key] : Boolean(agentCaps.value[role]?.[row.key])
+    }
+    overrideReady.value = true
+    return true
+  } catch (error) {
+    logger.error('读取用户覆盖失败:', error)
+    ElMessage.error('读取用户覆盖失败，请重新选择用户后重试')
+    return false
+  } finally {
+    if (selectedOverrideUser.value?.id === user.id && overrideRole.value === role) overrideReading.value = false
+  }
+}
+
+async function submitUserOverride(overrides: Record<string, boolean>) {
+  const user = selectedOverrideUser.value
+  if (!user || !overrideReady.value || overrideSaving.value) return
+  overrideSaving.value = true
+  try {
+    const base = agentConfigBase.value
+    if (!base) throw new Error('请先重新读取配置后再试。')
+    const response: any = await request.post('/admin/agent-capabilities/config/preview', {
+      roleDefaults: base.roleDefaults, autoTaskPolicy: base.autoTaskPolicy,
+      userChanges: [{ role: overrideRole.value, userId: user.id, overrides, replace: true }]
+    })
+    if (!await confirmAgentPreview(response.data)) return
+    if (!await fetchAgentCaps() || !await loadUserOverride(user)) { ElMessage.warning('覆盖已保存，请重新选择用户核对。'); return }
+    ElMessage.success('用户级能力变更已保存并重新核对')
+  } catch (error: any) { agentConfigError(error) }
+  finally { overrideSaving.value = false }
+}
+const saveUserOverride = () => submitUserOverride(Object.fromEntries(Object.entries(overrideCaps.value).filter(([key]) => supportsAgentCapability(overrideRole.value, key))))
+const clearUserOverride = () => submitUserOverride({})
+
+const resetAgentCaps = () => {
+  ElMessageBox.confirm('确定恢复 AI 能力默认配置吗？将覆盖当前角色级设置。', '提示', {
+    confirmButtonText: '确定',
+    cancelButtonText: '取消',
+    type: 'warning'
+  }).then(() => {
+    agentCaps.value = buildDefaultAgentCaps()
+    agentAutoPolicy.value = buildDefaultAgentAutoPolicy()
+  }).catch(() => {})
 }
 
 onMounted(() => {
@@ -941,6 +1369,7 @@ onMounted(() => {
   fetchTeacherPermissionList()
   fetchStudentMenus()
   fetchAiConfig()
+  fetchAgentCaps()
 })
 </script>
 
@@ -1358,4 +1787,11 @@ onMounted(() => {
 .disabled-node .el-tag {
   opacity: 0.6;
 }
+.user-override-box { margin-top: 4px; }
+.user-override-toolbar { display: flex; gap: 10px; margin-bottom: 10px; }
+.user-override-editor { margin-top: 12px; padding: 12px; border: 1px solid #ebeef5; border-radius: 6px; background: #fafafa; }
+.user-override-title { font-weight: 600; display: flex; align-items: center; gap: 10px; }
+.user-override-hint { font-weight: 400; color: #909399; font-size: 12px; }
+.user-override-check { margin-right: 14px; margin-top: 10px; }
+.user-override-actions { margin-top: 12px; display: flex; gap: 12px; }
 </style>

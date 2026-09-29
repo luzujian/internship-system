@@ -1,10 +1,11 @@
 package com.internship.utils;
 
+import com.internship.config.TrustedProxyConfig;
 import jakarta.servlet.http.HttpServletRequest;
 
 /**
  * IP 地址工具类
- * 从请求中提取真实客户端 IP，按优先级检查各代理头
+ * 只有连接来源是已配置的可信反向代理时才读取转发头；否则仅使用连接来源 IP
  */
 public class IpUtils {
 
@@ -14,29 +15,40 @@ public class IpUtils {
 
     /**
      * 获取客户端真实 IP 地址
-     * 优先级：X-Forwarded-For > Proxy-Client-IP > WL-Proxy-Client-IP > HTTP_CLIENT_IP > getRemoteAddr
+     * 未配置可信代理时仅返回连接来源 IP，避免审计 IP 被客户端伪造的转发头污染
      */
     public static String getClientIp(HttpServletRequest request) {
-        String ip = request.getHeader("X-Forwarded-For");
+        String remoteAddr = request.getRemoteAddr();
+        String fallback = remoteAddr != null && !remoteAddr.isEmpty() ? remoteAddr : "未知";
+
+        if (!TrustedProxyConfig.isTrustedProxy(remoteAddr)) {
+            return fallback;
+        }
+
+        String ip = firstForwardedIp(request);
         if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
-            ip = request.getHeader("Proxy-Client-IP");
+            return fallback;
         }
-        if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
-            ip = request.getHeader("WL-Proxy-Client-IP");
+        return ip;
+    }
+
+    /**
+     * 按优先级读取代理转发头，X-Forwarded-For 可能包含多个 IP（客户端, 代理1, 代理2），取第一个
+     */
+    private static String firstForwardedIp(HttpServletRequest request) {
+        String[] headers = {
+                "X-Forwarded-For",
+                "Proxy-Client-IP",
+                "WL-Proxy-Client-IP",
+                "HTTP_CLIENT_IP",
+                "HTTP_X_FORWARDED_FOR"
+        };
+        for (String header : headers) {
+            String value = request.getHeader(header);
+            if (value != null && !value.isEmpty() && !"unknown".equalsIgnoreCase(value)) {
+                return value.split(",")[0].trim();
+            }
         }
-        if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
-            ip = request.getHeader("HTTP_CLIENT_IP");
-        }
-        if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
-            ip = request.getHeader("HTTP_X_FORWARDED_FOR");
-        }
-        if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
-            ip = request.getRemoteAddr();
-        }
-        // X-Forwarded-For 可能包含多个 IP（客户端, 代理1, 代理2），取第一个
-        if (ip != null && ip.contains(",")) {
-            ip = ip.split(",")[0].trim();
-        }
-        return ip != null ? ip : "未知";
+        return null;
     }
 }

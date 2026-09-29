@@ -68,6 +68,10 @@ public class ResourceDocumentServiceImpl implements ResourceDocumentService {
         
         validateResourceDocumentInfo(resourceDocument);
         
+        // Metadata edits cannot repoint a document to another uploaded object.
+        resourceDocument.setFileUrl(existingDocument.getFileUrl());
+        resourceDocument.setPublisherId(existingDocument.getPublisherId());
+        resourceDocument.setPublisherRole(existingDocument.getPublisherRole());
         int result = resourceDocumentMapper.update(resourceDocument);
         log.info("资源文档更新成功，标题: {}", resourceDocument.getTitle());
         return result;

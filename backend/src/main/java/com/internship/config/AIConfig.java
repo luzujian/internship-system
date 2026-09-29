@@ -33,12 +33,15 @@ public class AIConfig {
     public DeepSeekApi deepSeekApi() {
         return DeepSeekApi.builder()
                 .baseUrl(baseUrl)
+                .restClientBuilder(org.springframework.web.client.RestClient.builder().requestInterceptor(com.internship.util.QwenRequestSupport.interceptor()))
+                .webClientBuilder(org.springframework.web.reactive.function.client.WebClient.builder().filter(com.internship.util.QwenRequestSupport.filter()))
                 .apiKey(apiKey)
                 .build();
     }
 
     @Bean
     public DynamicChatClientFactory dynamicChatClientFactory(DeepSeekApi deepSeekApi) {
-        return new DynamicChatClientFactory(deepSeekApi, aiConfigRefreshService);
+        // 全局地址/Key 显式传入：模型行未配独立接入点时回退到这里。
+        return new DynamicChatClientFactory(deepSeekApi, aiConfigRefreshService, baseUrl, apiKey);
     }
 }

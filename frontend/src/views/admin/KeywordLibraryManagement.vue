@@ -28,7 +28,7 @@
             <el-button type="warning" @click="handleReset" class="reset-btn">
               <el-icon><Refresh /></el-icon>&nbsp;重置
             </el-button>
-            <el-button v-if="authStore.hasPermission('keyword:view')" type="primary" @click="handleAdd" class="action-btn primary">
+            <el-button v-if="authStore.hasPermission('keyword:view')" type="primary" data-agent-open @click="handleAdd" class="action-btn primary">
               <el-icon><Plus /></el-icon>&nbsp;新增关键词
             </el-button>
           </el-form-item>
@@ -114,11 +114,18 @@
 </template>
 
 <script lang="ts" setup>
-import { ref, onMounted, nextTick, computed } from 'vue'
+import { ref, onMounted, onUnmounted, nextTick, computed, watch } from 'vue'
+import { useFormContext } from '@/agent/formContext'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Edit, Delete, Search, Refresh, Document, CircleCheck, CircleClose } from '@element-plus/icons-vue'
 import request from '@/utils/request'
 import { useAuthStore } from '@/store/auth'
+
+interface KeywordRow {
+  id: number
+  keyword?: string
+  status: number
+}
 
 const authStore = useAuthStore()
 
@@ -126,7 +133,7 @@ const loading = ref(false)
 const saving = ref(false)
 const dialogVisible = ref(false)
 const dialogTitle = ref('')
-const keywordList = ref([])
+const keywordList = ref<KeywordRow[]>([])
 const filterStatus = ref('')
 const formRef = ref(null)
 
@@ -141,6 +148,24 @@ const rules = {
     { required: true, message: '请输入关键词', trigger: 'blur' }
   ]
 }
+
+// ===== 智能填表：新增/编辑关键词注册到 AI 侧栏 =====
+const formContext = useFormContext()
+watch([dialogVisible, dialogTitle], ([open, title]) => {
+  if (!open) { formContext.unregister('admin:keyword'); return }
+  formContext.register({
+    formId: 'admin:keyword',
+    title: String(title) || '关键词维护',
+    fields: [
+      { prop: 'keyword', label: '关键词', type: 'input', required: true },
+      { prop: 'status', label: '状态', type: 'radio', valueType: 'number',
+        options: [{ label: '禁用', value: 0 }, { label: '启用', value: 1 }] }
+    ],
+    getModel: () => form.value,
+    getFormEl: () => formRef.value
+  })
+})
+onUnmounted(() => formContext.unregister('admin:keyword'))
 
 const totalKeywords = computed(() => keywordList.value.length)
 
@@ -160,9 +185,9 @@ const sortedKeywords = computed(() => {
 const fetchKeywords = async () => {
   loading.value = true
   try {
-    const response = await request.get('/admin/keyword-library')
+    const response = await request.get<KeywordRow[]>('/admin/keyword-library')
     if (response.code === 200) {
-      keywordList.value = response.data || []
+      keywordList.value = Array.isArray(response.data) ? response.data : []
     } else {
       ElMessage.error(response.msg || '获取关键词列表失败')
     }
@@ -181,9 +206,9 @@ const handleFilter = async () => {
       url += `/status/${filterStatus.value}`
     }
     
-    const response = await request.get(url)
+    const response = await request.get<KeywordRow[]>(url)
     if (response.code === 200) {
-      keywordList.value = response.data || []
+      keywordList.value = Array.isArray(response.data) ? response.data : []
     } else {
       ElMessage.error(response.msg || '筛选失败')
     }
@@ -284,7 +309,8 @@ const handleSave = async () => {
     return
   }
   
-  saving.value = true
+  const operation = formContext.beginFormOperation('admin:keyword')
+    saving.value = true
   try {
     let response
     if (form.value.id) {
@@ -294,6 +320,7 @@ const handleSave = async () => {
     }
     
     if (response.code === 200) {
+      operation.complete({ status: 'saved', label: '关键词已保存', url: '/admin/keyword-library' })
       ElMessage.success('保存成功')
       dialogVisible.value = false
       fetchKeywords()
@@ -615,5 +642,34 @@ onMounted(() => {
   font-size: 12px;
   padding: 2px 8px;
   border-radius: 4px;
+}
+
+@media (max-width: 768px) {
+  .page-header {
+    flex-direction: column;
+    align-items: stretch;
+    padding: 18px 20px;
+    margin-bottom: 16px;
+  }
+
+  .page-title {
+    font-size: 22px;
+  }
+
+  .header-illustration {
+    display: none;
+  }
+
+  .stats-summary {
+    flex-wrap: wrap;
+    gap: 12px;
+    padding: 16px 18px;
+  }
+
+  .keywords-grid {
+    grid-template-columns: 1fr;
+    gap: 16px;
+    padding: 16px 18px;
+  }
 }
 </style>

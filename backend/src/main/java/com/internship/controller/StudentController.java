@@ -27,8 +27,6 @@ import org.springframework.web.multipart.MultipartFile;
 
 import com.github.pagehelper.PageHelper;
 import com.github.pagehelper.PageInfo;
-import java.time.LocalDateTime;
-import java.time.ZoneId;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -42,9 +40,14 @@ import java.util.stream.Collectors;
 @PreAuthorize("hasRole('STUDENT')")
 @Validated
 public class StudentController {
+    @Autowired
+    private com.internship.service.JwtRedisService jwtRedisService;
 
     @Autowired
     private UserService userService;
+
+    @Autowired
+    private UserCacheService userCacheService;
 
     @Autowired
     private AliyunOSSOperator aliyunOSSOperator;
@@ -52,14 +55,11 @@ public class StudentController {
     @Autowired
     private StudentInternshipStatusService studentInternshipStatusService;
 
+    @Autowired(required = false)
+    private com.internship.service.InternshipLifecycleService internshipLifecycleService;
+
     @Autowired
     private StudentUserService studentUserService;
-
-    @Autowired
-    private InternshipTimeSettingsService internshipTimeSettingsService;
-
-    @Autowired
-    private PositionService positionService;
 
     @Autowired
     private ClassService classService;
@@ -130,58 +130,10 @@ public class StudentController {
                 return Result.error("用户不存在");
             }
 
-            StudentInternshipStatus status = studentInternshipStatusService.findByStudentId(user.getId());
-            if (status != null) {
-                // 优先使用岗位设置的实习时间，其次使用系室默认设置
-                String startDateStr = null;
-                String endDateStr = null;
-
-                // 1. 先尝试获取岗位设置的实习时间
-                if (status.getPositionId() != null) {
-                    Position position = positionService.findById(status.getPositionId());
-                    if (position != null && position.getInternshipStartDate() != null && position.getInternshipEndDate() != null) {
-                        startDateStr = null; // flag that position has dates
-                        endDateStr = null;
-                    }
-                }
-
-                // 如果学生没有设置实习时间，才使用岗位或系室设置
-                if (status.getInternshipStartTime() == null || status.getInternshipEndTime() == null) {
-                    java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("yyyy-MM-dd");
-
-                    // 1. 先尝试获取岗位设置的实习时间
-                    if (status.getPositionId() != null) {
-                        Position position = positionService.findById(status.getPositionId());
-                        if (position != null && position.getInternshipStartDate() != null && position.getInternshipEndDate() != null) {
-                            if (status.getInternshipStartTime() == null) {
-                                status.setInternshipStartTime(position.getInternshipStartDate());
-                            }
-                            if (status.getInternshipEndTime() == null) {
-                                status.setInternshipEndTime(position.getInternshipEndDate());
-                            }
-                        }
-                    }
-
-                    // 2. 如果岗位没有设置，使用系室默认设置
-                    if (status.getInternshipStartTime() == null || status.getInternshipEndTime() == null) {
-                        InternshipTimeSettings defaultSettings = internshipTimeSettingsService.findLatest();
-                        if (status.getInternshipStartTime() == null && defaultSettings != null && defaultSettings.getStartDate() != null) {
-                            try {
-                                status.setInternshipStartTime(sdf.parse(defaultSettings.getStartDate()));
-                            } catch (Exception e) {
-                                log.warn("解析系室默认开始时间失败: {}", e.getMessage());
-                            }
-                        }
-                        if (status.getInternshipEndTime() == null && defaultSettings != null && defaultSettings.getEndDate() != null) {
-                            try {
-                                status.setInternshipEndTime(sdf.parse(defaultSettings.getEndDate()));
-                            } catch (Exception e) {
-                                log.warn("解析系室默认结束时间失败: {}", e.getMessage());
-                            }
-                        }
-                    }
-                }
+            if (internshipLifecycleService != null) {
+                internshipLifecycleService.refreshStudentLifecycle(user.getId());
             }
+            StudentInternshipStatus status = studentInternshipStatusService.findByStudentId(user.getId());
             return Result.success(status);
         } catch (Exception e) {
             log.error("获取实习状态失败：{}", e.getMessage(), e);
@@ -343,7 +295,15 @@ public class StudentController {
             if (body.containsKey("major")) studentUser.setMajor((String) body.get("major"));
             if (body.containsKey("class")) studentUser.setClasses((String) body.get("class"));
             if (body.containsKey("phone")) studentUser.setPhone((String) body.get("phone"));
-            if (body.containsKey("email")) studentUser.setEmail((String) body.get("email"));
+            if (body.containsKey("email")) {
+                String email = body.get("email") == null ? "" : body.get("email").toString().trim();
+                if (!email.isEmpty()) {
+                    if (!email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$")) {
+                        return Result.error("邮箱格式不正确");
+                    }
+                    studentUser.setEmail(email);
+                }
+            }
             if (body.containsKey("avatar")) studentUser.setAvatar((String) body.get("avatar"));
             studentUserService.updateProfile(studentUser);
             return Result.success("更新成功");
@@ -372,6 +332,10 @@ public class StudentController {
             StudentUser studentUser = studentUserService.findById(user.getId());
             if (studentUser == null) return Result.error("用户不存在");
 
+            if (studentUser.getEmail() == null || studentUser.getEmail().trim().isEmpty()) {
+                return Result.error("请先绑定邮箱后再修改密码，绑定后可使用忘记密码找回");
+            }
+
             if (!passwordEncoder.matches(oldPassword, studentUser.getPassword())) {
                 return Result.error("旧密码不正确");
             }
@@ -379,8 +343,14 @@ public class StudentController {
             if (!validationResult.isValid()) {
                 return Result.error(validationResult.getMessage());
             }
+            if (studentUser.getPassword() != null && passwordEncoder.matches(newPassword, studentUser.getPassword())) {
+                return Result.error("新密码不能与当前密码相同。");
+            }
+            jwtRedisService.incrementUserTokenVersion(username);
             studentUser.setPassword(newPassword);
             studentUserService.update(studentUser);
+            // 清除该用户在 Redis 中的缓存，避免登录时仍命中旧密码哈希
+            userCacheService.evictUserCache(username);
             return Result.success("密码修改成功");
         } catch (Exception e) {
             log.error("修改密码失败: {}", e.getMessage(), e);
@@ -402,32 +372,8 @@ public class StudentController {
 
             StudentInternshipStatus status = studentInternshipStatusService.findByStudentId(user.getId());
             if (status != null) {
-                // 格式化日期
-                java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("yyyy-MM-dd");
-
-                // 优先使用岗位设置的实习时间，其次使用系室默认设置
-                String startDateStr = null;
-                String endDateStr = null;
-
-                // 1. 先尝试获取岗位设置的实习时间
-                if (status.getPositionId() != null) {
-                    Position position = positionService.findById(status.getPositionId());
-                    if (position != null && position.getInternshipStartDate() != null && position.getInternshipEndDate() != null) {
-                        startDateStr = sdf.format(position.getInternshipStartDate());
-                        endDateStr = sdf.format(position.getInternshipEndDate());
-                    }
-                }
-
-                // 2. 如果岗位没有设置，使用系室默认设置
-                if (startDateStr == null || endDateStr == null) {
-                    InternshipTimeSettings defaultSettings = internshipTimeSettingsService.findLatest();
-                    if (startDateStr == null && defaultSettings != null && defaultSettings.getStartDate() != null) {
-                        startDateStr = defaultSettings.getStartDate();
-                    }
-                    if (endDateStr == null && defaultSettings != null && defaultSettings.getEndDate() != null) {
-                        endDateStr = defaultSettings.getEndDate();
-                    }
-                }
+                String startDateStr = formatActualDate(status.getInternshipStartTime());
+                String endDateStr = formatActualDate(status.getInternshipEndTime());
 
                 // 计算实习进度
                 int progress = calculateInternshipProgress(status, startDateStr, endDateStr);
@@ -457,8 +403,8 @@ public class StudentController {
     /**
      * 计算实习进度百分比
      * @param status 学生实习状态
-     * @param startDateStr 实习开始日期字符串（来自系室设置）
-     * @param endDateStr 实习结束日期字符串（来自系室设置）
+     * @param startDateStr 实际实习开始日期字符串
+     * @param endDateStr 实际实习结束日期字符串
      */
     private int calculateInternshipProgress(StudentInternshipStatus status, String startDateStr, String endDateStr) {
         if (status == null) {
@@ -469,7 +415,7 @@ public class StudentController {
         Date startTime = null;
         Date endTime = null;
 
-        // 统一使用系室设置的实习时间
+        // 只使用学生实际实习时间；开放中的实习没有结束日期，不计算完成进度。
         if (startDateStr != null && endDateStr != null) {
             try {
                 java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("yyyy-MM-dd");
@@ -502,5 +448,12 @@ public class StudentController {
         }
 
         return (int) (elapsed * 100 / totalDuration);
+    }
+
+    private String formatActualDate(Date value) {
+        if (value == null) {
+            return null;
+        }
+        return new java.text.SimpleDateFormat("yyyy-MM-dd").format(value);
     }
 }

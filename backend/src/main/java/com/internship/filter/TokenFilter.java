@@ -2,16 +2,19 @@ package com.internship.filter;
 
 import com.internship.entity.AdminUser;
 import com.internship.entity.CompanyUser;
+import com.internship.entity.SecurityEventLog;
 import com.internship.entity.StudentUser;
 import com.internship.entity.TeacherUser;
 import com.internship.entity.User;
 import com.internship.service.AdminUserService;
+import com.internship.service.AuditLogService;
 import com.internship.service.CompanyUserService;
 import com.internship.service.StudentUserService;
 import com.internship.service.TeacherUserService;
 import com.internship.service.UserService;
 import com.internship.service.UserCacheService;
 import com.internship.utils.CurrentHolder;
+import com.internship.utils.IpUtils;
 import com.internship.utils.JwtUtils;
 import com.internship.config.SystemSettingsConfig;
 import io.jsonwebtoken.Claims;
@@ -54,6 +57,38 @@ public class TokenFilter extends OncePerRequestFilter implements ApplicationCont
     private StudentUserService studentUserService;
     private CompanyUserService companyUserService;
     private AdminUserService adminUserService;
+    private AuditLogService auditLogService;
+
+    // 懒加载 AuditLogService，用于记录 Token 相关安全事件
+    private AuditLogService getAuditLogService() {
+        if (auditLogService == null) {
+            auditLogService = applicationContext.getBean(AuditLogService.class);
+        }
+        return auditLogService;
+    }
+
+    /**
+     * 记录 Token 相关安全事件（P1：会话超时、账号禁用、Token 无效/异常等 401/403 场景）
+     * 记录失败不影响请求处理
+     */
+    private void recordTokenSecurityEvent(HttpServletRequest request, String eventType, String username,
+                                          String errorCode, String riskLevel, String description) {
+        try {
+            SecurityEventLog event = new SecurityEventLog();
+            event.setEventType(eventType);
+            event.setUsername(username);
+            event.setRiskLevel(riskLevel);
+            event.setResult("FAILURE");
+            event.setErrorCode(errorCode);
+            event.setIpAddress(IpUtils.getClientIp(request));
+            event.setHttpMethod(request.getMethod());
+            event.setRequestPath(request.getRequestURI());
+            event.setDescription(description);
+            getAuditLogService().recordSecurityEvent(event);
+        } catch (Exception e) {
+            log.debug("记录 Token 安全事件失败：{}", e.getMessage());
+        }
+    }
 
     @Override
     public void setApplicationContext(ApplicationContext applicationContext) throws BeansException {
@@ -241,16 +276,29 @@ public class TokenFilter extends OncePerRequestFilter implements ApplicationCont
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain) throws ServletException, IOException {
+        // 容器线程会复用；每个请求都必须从干净的业务身份上下文开始，并在结束时清理。
+        CurrentHolder.remove();
+        try {
+            doFilterWithToken(request, response, filterChain);
+        } finally {
+            CurrentHolder.remove();
+        }
+    }
+
+    private void doFilterWithToken(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain) throws ServletException, IOException {
         String requestUri = request.getRequestURI();
+        String requestPath = requestUri.substring(request.getContextPath().length());
         log.debug("处理请求：{}", requestUri);
 
-        boolean isLoginRequest = requestUri.contains("/api/auth/login");
-        boolean isRefreshTokenRequest = requestUri.contains("/auth/refresh-token");
+        boolean isLoginRequest = "POST".equals(request.getMethod()) && "/api/auth/login".equals(requestPath);
+        boolean isRefreshTokenRequest = "POST".equals(request.getMethod()) && "/api/auth/refresh-token".equals(requestPath);
         // 检查是否是流式 API 请求
         boolean isStreamingRequest = requestUri.contains("/stream");
 
-        // 对于登录请求、刷新 token 请求和 WebSocket 请求，直接放行，不进行 token 验证
-        if (isLoginRequest || isRefreshTokenRequest || requestUri.contains("/ws/")) {
+        // WebSocket handshakes are GET; unsafe requests under /ws/ must not bypass
+        // the read-only write guard merely because of their path.
+        boolean isWebSocketHandshake = "GET".equals(request.getMethod()) && requestPath.startsWith("/ws/");
+        if (isLoginRequest || isRefreshTokenRequest || isWebSocketHandshake) {
             log.debug("登录、刷新 token 或 WebSocket 请求，跳过 Token 验证，直接放行");
             filterChain.doFilter(request, response);
             return;
@@ -260,7 +308,7 @@ public class TokenFilter extends OncePerRequestFilter implements ApplicationCont
 
         if (token != null && token.startsWith("Bearer ")) {
             token = token.substring(7);
-            log.debug("提取到 Token: {}", token);
+            log.debug("已提取 Bearer Token");
         }
 
         if (token != null && !token.isEmpty()) {
@@ -270,6 +318,24 @@ public class TokenFilter extends OncePerRequestFilter implements ApplicationCont
                         Claims claims = jwtUtils.parseToken(token);
                         String username = claims.get("username", String.class);
                         String role = claims.get("role", String.class);
+
+                        if ("ROLE_TEACHER".equals(role)) {
+                            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+                            response.setContentType("application/json;charset=UTF-8");
+                            response.getWriter().write("{\"code\":401,\"message\":\"教师身份需重新验证\"}");
+                            return;
+                        }
+
+                        // A refresh token is not an HTTP access credential. This also
+                        // prevents old unmarked impersonation refresh tokens from writing.
+                        if (!"access".equals(claims.get("typ"))) {
+                            recordTokenSecurityEvent(request, "TOKEN_INVALID", username, "WRONG_TOKEN_TYPE",
+                                    AuditLogService.RISK_MEDIUM, "刷新令牌不能用于访问接口");
+                            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+                            response.setContentType("application/json;charset=UTF-8");
+                            response.getWriter().write("{\"code\":401,\"message\":\"请使用访问令牌\"}");
+                            return;
+                        }
 
                         log.debug("Token 验证成功，用户：{}, 角色：{}", username, role);
 
@@ -284,6 +350,8 @@ public class TokenFilter extends OncePerRequestFilter implements ApplicationCont
                                     username, issuedAt, currentTime, sessionTimeoutMinutes);
                             // 对于登录请求，不拦截，让登录逻辑处理
                             if (!isLoginRequest) {
+                                recordTokenSecurityEvent(request, "SESSION_TIMEOUT", username, "SESSION_TIMEOUT",
+                                        AuditLogService.RISK_MEDIUM, "会话已超时，拒绝访问");
                                 response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
                                 response.setContentType("application/json;charset=UTF-8");
                                 response.setCharacterEncoding("UTF-8");
@@ -297,10 +365,26 @@ public class TokenFilter extends OncePerRequestFilter implements ApplicationCont
                         // 先检查用户状态，如果被禁用则返回 403
                         if (isUserDisabled(username, role)) {
                             log.warn("用户已被禁用，拒绝访问：{}", username);
+                            recordTokenSecurityEvent(request, "ACCOUNT_DISABLED", username, "ACCOUNT_DISABLED",
+                                    AuditLogService.RISK_HIGH, "用户已被禁用，拒绝访问");
                             response.setStatus(HttpServletResponse.SC_FORBIDDEN);
                             response.setContentType("application/json;charset=UTF-8");
                             response.setCharacterEncoding("UTF-8");
                             response.getWriter().write("{\"code\": 403, \"message\": \"您的账号已被禁用，请联系管理员\"}");
+                            return;
+                        }
+
+                        boolean readOnly = Boolean.TRUE.equals(claims.get("isReadOnly"))
+                                || claims.containsKey("originalAdminId") || claims.containsKey("originalAdminUsername");
+                        boolean safeMethod = "GET".equals(request.getMethod())
+                                || "HEAD".equals(request.getMethod()) || "OPTIONS".equals(request.getMethod());
+                        boolean logout = "POST".equals(request.getMethod()) && "/api/auth/logout".equals(requestPath);
+                        if (readOnly && !safeMethod && !logout) {
+                            recordTokenSecurityEvent(request, "READ_ONLY_WRITE", username, "READ_ONLY_WRITE",
+                                    AuditLogService.RISK_HIGH, "只读角色切换身份禁止写请求");
+                            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+                            response.setContentType("application/json;charset=UTF-8");
+                            response.getWriter().write("{\"code\":403,\"message\":\"只读模式下禁止修改操作\"}");
                             return;
                         }
 
@@ -330,6 +414,8 @@ public class TokenFilter extends OncePerRequestFilter implements ApplicationCont
                         // 对于非登录请求，验证失败应该返回 401
                         // 但对于流式请求，不直接写入 response，让过滤器链继续执行
                         if (!isLoginRequest && !isStreamingRequest) {
+                            recordTokenSecurityEvent(request, "TOKEN_INVALID", null, "JWT_PARSE_FAILED",
+                                    AuditLogService.RISK_MEDIUM, "JWT token 验证失败，拒绝访问");
                             response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
                             response.setContentType("application/json;charset=UTF-8");
                             response.setCharacterEncoding("UTF-8");
@@ -346,6 +432,8 @@ public class TokenFilter extends OncePerRequestFilter implements ApplicationCont
                         // 对于非登录请求，无效令牌返回 401
                         // 但对于流式请求，不直接写入 response，让过滤器链继续执行
                         if (!isLoginRequest && !isStreamingRequest) {
+                            recordTokenSecurityEvent(request, "TOKEN_INVALID", null, "JWT_INVALID",
+                                    AuditLogService.RISK_MEDIUM, "无效的 JWT token，拒绝访问");
                             response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
                             response.setContentType("application/json;charset=UTF-8");
                             response.setCharacterEncoding("UTF-8");
@@ -363,6 +451,8 @@ public class TokenFilter extends OncePerRequestFilter implements ApplicationCont
                     // 对于非登录请求，Token 异常返回 401
                     // 但对于流式请求，不直接写入 response，让过滤器链继续执行
                     if (!isLoginRequest && !isStreamingRequest) {
+                        recordTokenSecurityEvent(request, "TOKEN_INVALID", null, "JWT_PROCESS_ERROR",
+                                AuditLogService.RISK_MEDIUM, "处理 Token 时发生异常，拒绝访问");
                         response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
                         response.setContentType("application/json;charset=UTF-8");
                         response.setCharacterEncoding("UTF-8");
@@ -377,11 +467,6 @@ public class TokenFilter extends OncePerRequestFilter implements ApplicationCont
             log.debug("请求中未包含 Authorization 头");
         }
 
-        try {
-            filterChain.doFilter(request, response);
-        } finally {
-            // 注意：不要清理 ThreadLocal 中的用户信息，因为后续的 Controller 方法还需要使用
-            // 注意：不要清理 Security 上下文，因为后续的权限检查还需要使用
-        }
+        filterChain.doFilter(request, response);
     }
 }

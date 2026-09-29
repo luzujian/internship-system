@@ -4,9 +4,11 @@ import com.internship.anno.Log;
 import com.internship.entity.LearningResource;
 import com.internship.entity.ResourceCategory;
 import com.internship.service.ResourceService;
+import com.internship.utils.CurrentHolder;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import org.slf4j.Logger;
@@ -14,6 +16,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
 /**
@@ -32,13 +35,17 @@ public class ResourceController {
      * 上传资源
      */
     @PostMapping("/upload")
+    @PreAuthorize("hasAnyRole('STUDENT', 'TEACHER', 'TEACHER_COLLEGE', 'TEACHER_DEPARTMENT', 'TEACHER_COUNSELOR', 'ADMIN')")
     @Log(operationType = "UPLOAD", module = "RESOURCE_MANAGEMENT", description = "上传学习资源")
     public ResponseEntity<?> uploadResource(
             @RequestParam(required = false) MultipartFile file,
             @RequestParam String title,
-            @RequestParam(required = false) String description,
-            @RequestParam Long uploaderId,
-            @RequestParam String uploaderRole) {
+            @RequestParam(required = false) String description) {
+        Long uploaderId = CurrentHolder.getUserId();
+        String uploaderRole = resourceRole(CurrentHolder.getUserRole());
+        if (uploaderId == null || uploaderRole == null) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body("无法确认上传者身份");
+        }
         try {
             LearningResource resource = new LearningResource();
             resource.setTitle(title);
@@ -55,12 +62,20 @@ public class ResourceController {
      * 审核资源
      */
     @PostMapping("/{id}/review")
+    @PreAuthorize("hasRole('ADMIN')")
     @Log(operationType = "AUDIT", module = "RESOURCE_MANAGEMENT", description = "审核学习资源")
     public ResponseEntity<?> reviewResource(
             @PathVariable Long id,
             @RequestBody ReviewRequest request) {
+        Long reviewerId = CurrentHolder.getUserId();
+        if (reviewerId == null || !"ROLE_ADMIN".equals(CurrentHolder.getUserRole())) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body("无法确认审核人身份");
+        }
+        if (request == null || request.getApproved() == null) {
+            return ResponseEntity.badRequest().body("审核结果不能为空");
+        }
         try {
-            resourceService.reviewResource(id, request.getApproved(), request.getReviewerId());
+            resourceService.reviewResource(id, request.getApproved(), reviewerId);
             return ResponseEntity.ok().build();
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(e.getMessage());
@@ -93,6 +108,14 @@ public class ResourceController {
             if (resource == null) {
                 return ResponseEntity.status(HttpStatus.NOT_FOUND).body("资源不存在");
             }
+            Long currentUserId = CurrentHolder.getUserId();
+            boolean isOwner = currentUserId != null && Objects.equals(resource.getUploaderId(), currentUserId)
+                    && Objects.equals(resource.getUploaderRole(), resourceRole(CurrentHolder.getUserRole()));
+            boolean isAdmin = currentUserId != null && "ROLE_ADMIN".equals(CurrentHolder.getUserRole());
+            if (!"PUBLISHED".equals(resource.getStatus()) && !"APPROVED".equals(resource.getStatus())
+                    && !isAdmin && !isOwner) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).body("无权查看该资源");
+            }
             return ResponseEntity.ok(resource);
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(e.getMessage());
@@ -103,6 +126,7 @@ public class ResourceController {
      * 获取待审核资源列表
      */
     @GetMapping("/pending")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<?> getPendingResources() {
         try {
             List<LearningResource> resources = resourceService.getPendingResources();
@@ -144,6 +168,7 @@ public class ResourceController {
      * 添加资源分类
      */
     @PostMapping("/categories")
+    @PreAuthorize("hasRole('ADMIN')")
     @Log(operationType = "INSERT", module = "RESOURCE_MANAGEMENT", description = "添加资源分类")
     public ResponseEntity<?> addCategory(@RequestBody ResourceCategory category) {
         try {
@@ -158,6 +183,7 @@ public class ResourceController {
      * 删除资源
      */
     @DeleteMapping("/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
     @Log(operationType = "DELETE", module = "RESOURCE_MANAGEMENT", description = "删除学习资源")
     public ResponseEntity<?> deleteResource(@PathVariable Long id) {
         try {
@@ -166,6 +192,16 @@ public class ResourceController {
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(e.getMessage());
         }
+    }
+
+    private String resourceRole(String role) {
+        if ("ROLE_STUDENT".equals(role)) return "STUDENT";
+        if ("ROLE_ADMIN".equals(role)) return "ADMIN";
+        if ("ROLE_TEACHER".equals(role) || "ROLE_TEACHER_COLLEGE".equals(role)
+                || "ROLE_TEACHER_DEPARTMENT".equals(role) || "ROLE_TEACHER_COUNSELOR".equals(role)) {
+            return "TEACHER";
+        }
+        return null;
     }
     
     // 内部请求参数类

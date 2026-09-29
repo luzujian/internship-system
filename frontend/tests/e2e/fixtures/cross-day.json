@@ -1,0 +1,57 @@
+{
+  "code": 200,
+  "data": {
+    "items": [
+      {
+        "id": 201,
+        "eventType": "job_applied",
+        "category": "recruitment",
+        "title": "今天投递",
+        "description": "星河科技 · Java 实习生",
+        "status": "pending",
+        "statusText": "待企业处理",
+        "occurredAt": "2026-07-18T09:00:00+08:00",
+        "relatedId": 201,
+        "action": { "key": "VIEW_APPLICATION", "targetId": 201, "params": {} }
+      },
+      {
+        "id": 202,
+        "eventType": "interview_invited",
+        "category": "recruitment",
+        "title": "昨天面试邀请",
+        "description": "云海科技 · 前端实习生",
+        "status": "info",
+        "statusText": "待面试",
+        "occurredAt": "2026-07-17T14:00:00+08:00",
+        "relatedId": 202,
+        "action": { "key": "VIEW_INTERVIEW", "targetId": 202, "params": {} }
+      },
+      {
+        "id": 203,
+        "eventType": "confirmation_confirmed",
+        "category": "confirmation",
+        "title": "本年早期确认",
+        "description": "星河科技 · Java 实习生",
+        "status": "approved",
+        "statusText": "已确认",
+        "occurredAt": "2026-06-15T10:00:00+08:00",
+        "relatedId": 203,
+        "action": { "key": "VIEW_CONFIRMATION", "targetId": 203, "params": {} }
+      },
+      {
+        "id": 204,
+        "eventType": "internship_started",
+        "category": "internship",
+        "title": "跨年实习开始",
+        "description": "云海科技 · 前端实习生",
+        "status": "info",
+        "statusText": "实习中",
+        "occurredAt": "2025-12-31T08:00:00+08:00",
+        "relatedId": 204,
+        "action": { "key": "VIEW_INTERNSHIP", "targetId": 204, "params": {} }
+      }
+    ],
+    "nextCursor": null,
+    "hasMore": false
+  }
+}

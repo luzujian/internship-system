@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.internship.anno.Log;
 import com.internship.entity.Result;
 import com.internship.entity.Announcement;
+import com.internship.entity.AnnouncementReadRecord;
+import com.internship.entity.PageResult;
 import com.internship.entity.User;
 import com.internship.service.AnnouncementService;
 import com.internship.service.UserService;
@@ -19,6 +21,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -33,11 +36,23 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 @Slf4j
 @RestController
 @RequestMapping("/api/announcements")
 public class AnnouncementController {
+    @Autowired
+    private com.internship.service.AnnouncementAttachmentPolicy attachmentPolicy;
+
+    @GetMapping("/capabilities")
+    @PreAuthorize("isAuthenticated()")
+    public Result capabilities(org.springframework.security.core.Authentication authentication) {
+        var authorities = authentication.getAuthorities().stream().map(a -> a.getAuthority()).collect(java.util.stream.Collectors.toSet());
+        boolean teacher = authorities.stream().anyMatch(java.util.Set.of("ROLE_TEACHER_COLLEGE", "ROLE_TEACHER_DEPARTMENT", "ROLE_TEACHER_COUNSELOR")::contains);
+        return Result.success(Map.of("add", authorities.contains("announcement:add"),
+                "edit", authorities.contains("announcement:edit"), "delete", teacher || authorities.contains("announcement:delete")));
+    }
 
     @Autowired
     private AnnouncementService announcementService;
@@ -54,14 +69,20 @@ public class AnnouncementController {
     @Autowired
     private com.internship.websocket.AnnouncementWebSocketHandler webSocketHandler;
 
+    @Autowired
+    private com.internship.mapper.StudentUserMapper studentUserMapper;
+
     // 获取所有公告
     @GetMapping
     @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_TEACHER', 'ROLE_TEACHER_COLLEGE', 'ROLE_TEACHER_DEPARTMENT', 'ROLE_TEACHER_COUNSELOR', 'ROLE_STUDENT')")
     public Result getAllAnnouncements() {
         log.info("获取所有公告列表");
         try {
-            List<Announcement> announcements = announcementService.findAll();
+            User viewer = requireAnnouncementViewer();
+            List<Announcement> announcements = visibleAnnouncements(announcementService.findAll(), viewer);
             return Result.success(announcements);
+        } catch (AccessDeniedException e) {
+            throw e;
         } catch (Exception e) {
             log.error("获取公告列表失败：{}", e.getMessage(), e);
             return Result.error("获取公告列表失败：" + e.getMessage());
@@ -78,39 +99,45 @@ public class AnnouncementController {
             if (announcement == null) {
                 return Result.error("公告不存在");
             }
-            
-            // 记录阅读状态（非管理员用户，同一用户只记录一次）
-            try {
-                Long userId = com.internship.utils.CurrentHolder.getUserId();
-                if (userId != null) {
-                    String userRole = com.internship.utils.CurrentHolder.getUserRole();
-                    String userType = convertRoleToType(userRole);
-                    if (!"ADMIN".equals(userType)) {
-                        // 检查是否已有阅读记录
-                        com.internship.entity.AnnouncementReadRecord existingRecord = announcementReadRecordService
-                                .findByAnnouncementAndUser(id, String.valueOf(userId), userType);
-                        if (existingRecord == null) {
-                            com.internship.entity.AnnouncementReadRecord readRecord = new com.internship.entity.AnnouncementReadRecord();
-                            readRecord.setAnnouncementId(id);
-                            readRecord.setUserId(String.valueOf(userId));
-                            readRecord.setUserType(userType);
-                            readRecord.setReadTime(new java.util.Date());
-                            announcementReadRecordService.insert(readRecord);
-                            announcementService.incrementReadCount(id);
-                            log.info("阅读记录创建成功 - 公告ID: {}, 用户ID: {}", id, userId);
-                        } else {
-                            log.info("用户已阅读过，跳过 - 公告ID: {}, 用户ID: {}", id, userId);
-                        }
-                    }
-                }
-            } catch (Exception e) {
-                log.warn("记录阅读状态失败：{}", e.getMessage(), e);
+
+            User viewer = requireAnnouncementViewer();
+            if (!canViewAnnouncement(announcement, viewer)) {
+                throw new AccessDeniedException("无权查看此公告");
             }
-            
+            markAnnouncementRead(announcement, viewer);
             return Result.success(announcement);
+        } catch (AccessDeniedException e) {
+            throw e;
         } catch (Exception e) {
             log.error("获取公告详情失败：{}", e.getMessage(), e);
             return Result.error("获取公告详情失败：" + e.getMessage());
+        }
+    }
+
+    // 显式标记公告已读，首页卡片与消息中心共用同一阅读记录
+    @PostMapping("/{id}/read")
+    @Log(operationType = "UPDATE", module = "ANNOUNCEMENT_MANAGEMENT", description = "标记公告已读")
+    @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_TEACHER', 'ROLE_TEACHER_COLLEGE', 'ROLE_TEACHER_DEPARTMENT', 'ROLE_TEACHER_COUNSELOR', 'ROLE_STUDENT', 'ROLE_COMPANY')")
+    public Result markAnnouncementReadApi(@PathVariable Long id) {
+        try {
+            Announcement announcement = announcementService.findById(id);
+            if (announcement == null) {
+                return Result.error("公告不存在");
+            }
+            User viewer = requireAnnouncementViewer();
+            if (!canViewAnnouncement(announcement, viewer)) {
+                throw new AccessDeniedException("无权查看此公告");
+            }
+            markAnnouncementRead(announcement, viewer);
+            return Result.success(Map.of(
+                    "isRead", Boolean.TRUE,
+                    "readCount", announcement.getReadCount() == null ? 0 : announcement.getReadCount()
+            ));
+        } catch (AccessDeniedException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("标记公告已读失败：{}", e.getMessage(), e);
+            return Result.error("标记公告已读失败：" + e.getMessage());
         }
     }
 
@@ -123,28 +150,49 @@ public class AnnouncementController {
             @RequestParam(required = false) String title,
             @RequestParam(required = false) String status,
             @RequestParam(required = false) String publisher,
-            @RequestParam(required = false) String excludePublisherRole) {
+            @RequestParam(required = false) String excludePublisherRole,
+            @RequestParam(defaultValue = "false") boolean mine) {
         log.info("分页查询公告，页码：{}, 每页大小：{}, 标题：{}, 状态：{}, 发布人：{}, 排除角色：{}", page, pageSize, title, status, publisher, excludePublisherRole);
         try {
+            User viewer = requireAnnouncementViewer();
             // 根据当前用户角色设置过滤规则
             String currentUserRole = com.internship.utils.CurrentHolder.getUserRole();
             String actualExcludeRole = excludePublisherRole;
 
             // 如果当前用户是辅导员，排除其他辅导员的消息
             // 只有在不指定发布人时才排除（查询"我的公告"时需要显示自己的公告）
-            if ("ROLE_TEACHER_COUNSELOR".equals(currentUserRole) && actualExcludeRole == null && publisher == null) {
+            if (!mine && "ROLE_TEACHER_COUNSELOR".equals(currentUserRole) && actualExcludeRole == null && publisher == null) {
                 actualExcludeRole = "COUNSELOR";
             }
             // 如果当前用户是系室教师或学院教师，也排除辅导员的消息
             // 只有在不指定发布人时才排除
             if (("ROLE_TEACHER_DEPARTMENT".equals(currentUserRole) || "ROLE_TEACHER_COLLEGE".equals(currentUserRole))
-                    && actualExcludeRole == null && publisher == null) {
+                    && !mine && actualExcludeRole == null && publisher == null) {
                 actualExcludeRole = "COUNSELOR";
             }
 
             Long currentUserId = com.internship.utils.CurrentHolder.getUserId();
             String userId = currentUserId != null ? String.valueOf(currentUserId) : null;
-            return Result.success(announcementService.findPage(page, pageSize, title, status, publisher, actualExcludeRole, userId));
+            String userType = convertRoleToType(viewer.getRole());
+            if (isAnnouncementAdmin(viewer) && !mine) {
+                return Result.success(announcementService.findPage(page, pageSize, title, status,
+                        publisher, actualExcludeRole, userId, userType));
+            }
+            List<Announcement> visible = announcementService.listForViewer(
+                            title, status, publisher, actualExcludeRole, userId, userType)
+                    .stream()
+                    .filter(item -> canViewAnnouncement(item, viewer) || ownsAnnouncement(item, viewer))
+                    .filter(item -> !mine || com.internship.service.AnnouncementOwnership.owns(item, viewer))
+                    .toList();
+            int safePage = page == null || page < 1 ? 1 : page;
+            int safeSize = pageSize == null || pageSize < 1 ? 10 : pageSize;
+            int start = (int) Math.min((long) (safePage - 1) * safeSize, visible.size());
+            int end = (int) Math.min((long) start + safeSize, visible.size());
+            int pages = (int) Math.ceil((double) visible.size() / safeSize);
+            return Result.success(PageResult.build((long) visible.size(), visible.subList(start, end),
+                    pages, safePage, safeSize));
+        } catch (AccessDeniedException e) {
+            throw e;
         } catch (Exception e) {
             log.error("分页查询公告失败：{}", e.getMessage(), e);
             return Result.error("分页查询公告失败：" + e.getMessage());
@@ -156,7 +204,7 @@ public class AnnouncementController {
     @PostMapping
     @PreAuthorize("hasAuthority('announcement:add')")
     public Result addAnnouncement(@RequestBody Map<String, Object> request) {
-        log.info("新增公告，请求参数：{}", request);
+        log.info("收到新增公告请求");
         try {
             Announcement announcement = new Announcement();
             announcement.setTitle((String) request.get("title"));
@@ -177,9 +225,10 @@ public class AnnouncementController {
                 log.warn("publisherRole 为空，使用默认值：{}", publisherRole);
             }
             announcement.setPublisherRole(publisherRole);
+            applyPublisherIdentityForCreate(announcement);
 
             announcement.setStatus((String) request.getOrDefault("status", "DRAFT"));
-            announcement.setPriority((String) request.getOrDefault("priority", "normal"));
+            announcement.setPriority("normal");
 
             // 教师用户只能设置目标群体为 STUDENT 或 MAJOR
             String currentUserRole = com.internship.utils.CurrentHolder.getUserRole();
@@ -321,6 +370,7 @@ public class AnnouncementController {
                 announcement.setAttachments("[]");
             }
 
+            validateTeacherAudience(announcement);
             int result = announcementService.insert(announcement);
             
             if ("PUBLISHED".equals(announcement.getStatus())) {
@@ -328,6 +378,8 @@ public class AnnouncementController {
             }
             
             return Result.success("添加公告成功", result);
+        } catch (AccessDeniedException e) {
+            throw e;
         } catch (Exception e) {
             log.error("添加公告失败：{}", e.getMessage(), e);
             return Result.error("添加公告失败：" + e.getMessage());
@@ -339,7 +391,7 @@ public class AnnouncementController {
     @PostMapping("/with-attachments")
     @PreAuthorize("hasAuthority('announcement:add')")
     public Result addAnnouncementWithAttachments(@RequestBody Map<String, Object> request) {
-        log.info("新增公告（带附件），请求参数：{}", request);
+        log.info("收到带附件的新增公告请求");
         try {
             Announcement announcement = new Announcement();
             announcement.setTitle((String) request.get("title"));
@@ -360,9 +412,10 @@ public class AnnouncementController {
                 log.warn("publisherRole为空，使用默认值: {}", publisherRole);
             }
             announcement.setPublisherRole(publisherRole);
+            applyPublisherIdentityForCreate(announcement);
 
             announcement.setStatus((String) request.getOrDefault("status", "DRAFT"));
-            announcement.setPriority((String) request.getOrDefault("priority", "normal"));
+            announcement.setPriority("normal");
 
             // 教师用户只能设置目标群体为 STUDENT 或 MAJOR
             String currentUserRole = com.internship.utils.CurrentHolder.getUserRole();
@@ -526,12 +579,9 @@ public class AnnouncementController {
                 announcement.setAttachments("[]");
             }
 
-            log.info("准备插入公告数据：title={}, content={}, publisher={}, publisherRole={}, status={}, priority={}, targetType={}, validFrom={}, validTo={}, attachments={}",
-                    announcement.getTitle(), announcement.getContent(), announcement.getPublisher(),
-                    announcement.getPublisherRole(), announcement.getStatus(), announcement.getPriority(),
-                    announcement.getTargetType(), announcement.getValidFrom(), announcement.getValidTo(),
-                    announcement.getAttachments());
+            log.info("准备插入公告数据：status={}", announcement.getStatus());
 
+            validateTeacherAudience(announcement);
             int result = announcementService.insert(announcement);
             
             if ("PUBLISHED".equals(announcement.getStatus())) {
@@ -539,6 +589,8 @@ public class AnnouncementController {
             }
             
             return Result.success("添加公告成功", result);
+        } catch (AccessDeniedException e) {
+            throw e;
         } catch (Exception e) {
             log.error("添加公告失败：{}", e.getMessage(), e);
             return Result.error("添加公告失败：" + e.getMessage());
@@ -552,7 +604,17 @@ public class AnnouncementController {
     public Result updateAnnouncement(@PathVariable Long id, @RequestBody Announcement announcement) {
         log.info("更新公告：ID={}", id);
         try {
+            Announcement existing = announcementService.findById(id);
+            if (existing == null) {
+                return Result.error("公告不存在");
+            }
+            User actor = requireManagePermission(existing);
+            if (!isAnnouncementAdmin(actor)) {
+                announcement.setPublisher(existing.getPublisher());
+                announcement.setPublisherRole(existing.getPublisherRole());
+            }
             announcement.setId(id);
+            validateTeacherAudience(announcement);
             int result = announcementService.update(announcement);
             
             if ("PUBLISHED".equals(announcement.getStatus())) {
@@ -560,6 +622,8 @@ public class AnnouncementController {
             }
             
             return Result.success("更新公告成功", result);
+        } catch (AccessDeniedException e) {
+            throw e;
         } catch (Exception e) {
             log.error("更新公告失败：{}", e.getMessage(), e);
             return Result.error("更新公告失败：" + e.getMessage());
@@ -571,8 +635,14 @@ public class AnnouncementController {
     @PutMapping("/{id}/with-attachments")
     @PreAuthorize("hasAuthority('announcement:edit')")
     public Result updateAnnouncementWithAttachments(@PathVariable Long id, @RequestBody Map<String, Object> request) {
-        log.info("更新公告（带附件）: ID={}, 请求参数：{}", id, request);
+        log.info("收到带附件的公告更新请求：id={}", id);
         try {
+            Announcement existing = announcementService.findById(id);
+            if (existing == null) {
+                return Result.error("公告不存在");
+            }
+            User actor = requireManagePermission(existing);
+
             Announcement announcement = new Announcement();
             announcement.setId(id);
             announcement.setTitle((String) request.get("title"));
@@ -593,9 +663,13 @@ public class AnnouncementController {
                 log.warn("更新时publisherRole为空，使用默认值: {}", publisherRole);
             }
             announcement.setPublisherRole(publisherRole);
+            if (!isAnnouncementAdmin(actor)) {
+                announcement.setPublisher(existing.getPublisher());
+                announcement.setPublisherRole(existing.getPublisherRole());
+            }
 
             announcement.setStatus((String) request.getOrDefault("status", "DRAFT"));
-            announcement.setPriority((String) request.getOrDefault("priority", "normal"));
+            announcement.setPriority(null);
 
             // 教师用户只能设置目标群体为 STUDENT 或 MAJOR
             String currentUserRole = com.internship.utils.CurrentHolder.getUserRole();
@@ -759,12 +833,9 @@ public class AnnouncementController {
                 announcement.setAttachments("[]");
             }
 
-            log.info("准备更新公告数据：id={}, title={}, content={}, publisher={}, publisherRole={}, status={}, priority={}, targetType={}, validFrom={}, validTo={}, attachments={}",
-                    id, announcement.getTitle(), announcement.getContent(), announcement.getPublisher(),
-                    announcement.getPublisherRole(), announcement.getStatus(), announcement.getPriority(),
-                    announcement.getTargetType(), announcement.getValidFrom(), announcement.getValidTo(),
-                    announcement.getAttachments());
+            log.info("准备更新公告数据：id={}, status={}", id, announcement.getStatus());
 
+            validateTeacherAudience(announcement);
             int result = announcementService.update(announcement);
             
             if ("PUBLISHED".equals(announcement.getStatus())) {
@@ -772,6 +843,8 @@ public class AnnouncementController {
             }
             
             return Result.success("更新公告成功", result);
+        } catch (AccessDeniedException e) {
+            throw e;
         } catch (Exception e) {
             log.error("更新公告失败：{}", e.getMessage(), e);
             return Result.error("更新公告失败：" + e.getMessage());
@@ -781,7 +854,7 @@ public class AnnouncementController {
     // 删除公告
     @Log(operationType = "DELETE", module = "ANNOUNCEMENT_MANAGEMENT", description = "删除公告")
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasAuthority('announcement:delete')")
+    @PreAuthorize("hasAuthority('announcement:delete') or hasAnyRole('TEACHER_COLLEGE', 'TEACHER_DEPARTMENT', 'TEACHER_COUNSELOR')")
     public Result deleteAnnouncement(@PathVariable Long id) {
         log.info("删除公告：ID={}", id);
         try {
@@ -791,24 +864,12 @@ public class AnnouncementController {
                 return Result.error("公告不存在");
             }
 
-            // 教师用户只能删除自己发布的公告
-            String currentUserRole = com.internship.utils.CurrentHolder.getUserRole();
-            boolean isTeacher = currentUserRole != null && (
-                currentUserRole.equals("ROLE_TEACHER") ||
-                currentUserRole.equals("ROLE_TEACHER_COLLEGE") ||
-                currentUserRole.equals("ROLE_TEACHER_DEPARTMENT") ||
-                currentUserRole.equals("ROLE_TEACHER_COUNSELOR")
-            );
-
-            if (isTeacher) {
-                User currentUser = com.internship.utils.CurrentHolder.getUser();
-                if (currentUser != null && !announcement.getPublisher().equals(currentUser.getName())) {
-                    return Result.error("教师用户只能删除自己发布的公告");
-                }
-            }
+            requireManagePermission(announcement);
 
             int result = announcementService.delete(id);
             return Result.success("删除公告成功", result);
+        } catch (AccessDeniedException e) {
+            throw e;
         } catch (Exception e) {
             log.error("删除公告失败：{}", e.getMessage(), e);
             return Result.error("删除公告失败：" + e.getMessage());
@@ -816,9 +877,9 @@ public class AnnouncementController {
     }
 
     // 批量删除公告
-    @Log(operationType = "DELETE", module = "ANNOUNCEMENT_MANAGEMENT", description = "批量删除公告")
+    @Log(operationType = "DELETE", module = "ANNOUNCEMENT_MANAGEMENT", description = "批量删除公告", riskLevel = "HIGH", critical = true)
     @DeleteMapping("/batch")
-    @PreAuthorize("hasAuthority('announcement:delete')")
+    @PreAuthorize("hasAuthority('announcement:delete') or hasAnyRole('TEACHER_COLLEGE', 'TEACHER_DEPARTMENT', 'TEACHER_COUNSELOR')")
     public Result batchDeleteAnnouncement(@RequestBody Map<String, List<Long>> request) {
         List<Long> ids = request.get("ids");
         log.info("批量删除公告，IDs: {}", ids);
@@ -827,33 +888,18 @@ public class AnnouncementController {
                 return Result.error("公告 ID 列表不能为空");
             }
 
-            // 教师用户只能删除自己发布的公告
-            String currentUserRole = com.internship.utils.CurrentHolder.getUserRole();
-            boolean isTeacher = currentUserRole != null && (
-                currentUserRole.equals("ROLE_TEACHER") ||
-                currentUserRole.equals("ROLE_TEACHER_COLLEGE") ||
-                currentUserRole.equals("ROLE_TEACHER_DEPARTMENT") ||
-                currentUserRole.equals("ROLE_TEACHER_COUNSELOR")
-            );
-
-            if (isTeacher) {
-                User currentUser = com.internship.utils.CurrentHolder.getUser();
-                if (currentUser != null) {
-                    // 检查所有公告是否都属于当前用户
-                    for (Long id : ids) {
-                        Announcement announcement = announcementService.findById(id);
-                        if (announcement == null) {
-                            return Result.error("公告不存在：ID=" + id);
-                        }
-                        if (!announcement.getPublisher().equals(currentUser.getName())) {
-                            return Result.error("教师用户只能删除自己发布的公告");
-                        }
-                    }
+            for (Long id : ids) {
+                Announcement announcement = announcementService.findById(id);
+                if (announcement == null) {
+                    return Result.error("公告不存在：ID=" + id);
                 }
+                requireManagePermission(announcement);
             }
 
             int result = announcementService.batchDelete(ids);
             return Result.success("批量删除公告成功", result);
+        } catch (AccessDeniedException e) {
+            throw e;
         } catch (Exception e) {
             log.error("批量删除公告失败：{}", e.getMessage(), e);
             return Result.error("批量删除公告失败：" + e.getMessage());
@@ -868,8 +914,18 @@ public class AnnouncementController {
             @RequestParam(required = false) String status) {
         log.info("搜索公告，标题：{}, 状态：{}", title, status);
         try {
-            List<Announcement> announcements = announcementService.list(title, status);
+            User viewer = requireAnnouncementViewer();
+            List<Announcement> announcements;
+            if (isAnnouncementAdmin(viewer)) {
+                announcements = announcementService.list(title, status);
+            } else if (status != null && !status.isBlank() && !"PUBLISHED".equals(status)) {
+                announcements = List.of();
+            } else {
+                announcements = visibleAnnouncements(announcementService.list(title, "PUBLISHED"), viewer);
+            }
             return Result.success(announcements);
+        } catch (AccessDeniedException e) {
+            throw e;
         } catch (Exception e) {
             log.error("搜索公告失败：{}", e.getMessage(), e);
             return Result.error("搜索公告失败：" + e.getMessage());
@@ -883,15 +939,26 @@ public class AnnouncementController {
             @RequestParam String userType,
             @RequestParam(required = false) String userInfo,
             @RequestParam(required = false) String userId) {
-        log.info("根据用户类型获取公告列表，用户类型：{}, 用户信息：{}, 用户ID：{}", userType, userInfo, userId);
+        log.info("根据用户类型获取公告列表：userType={}, hasUserId={}",
+                userType, userId != null && !userId.isBlank());
         try {
-            // 优先使用前端传递的userId，否则使用CurrentHolder获取
-            if (userId == null || userId.isEmpty()) {
-                Long currentUserId = com.internship.utils.CurrentHolder.getUserId();
-                userId = currentUserId != null ? String.valueOf(currentUserId) : null;
+            User viewer = requireAnnouncementViewer();
+            String trustedType = convertRoleToType(viewer.getRole());
+            String trustedInfo = switch (trustedType) {
+                case "STUDENT" -> getStudentMajorId(viewer.getId());
+                case "TEACHER" -> getTeacherTypeFromRole(viewer.getRole());
+                default -> null;
+            };
+            if ("UNKNOWN".equals(trustedType) || ("TEACHER".equals(trustedType) && trustedInfo == null)) {
+                throw new AccessDeniedException("公告阅读身份不可用");
             }
-            List<Announcement> announcements = announcementService.getAnnouncementsForUser(userType, userInfo, userId);
+            String queryType = "ENTERPRISE".equals(trustedType) ? "COMPANY" : trustedType;
+            List<Announcement> announcements = visibleAnnouncements(
+                    announcementService.getAnnouncementsForUser(queryType, trustedInfo,
+                            String.valueOf(viewer.getId()), trustedType), viewer);
             return Result.success(announcements);
+        } catch (AccessDeniedException e) {
+            throw e;
         } catch (Exception e) {
             log.error("获取用户公告列表失败：{}", e.getMessage(), e);
             return Result.error("获取用户公告列表失败：" + e.getMessage());
@@ -940,6 +1007,7 @@ public class AnnouncementController {
      * @param title 标题筛选条件
      * @param status 状态筛选条件
      */
+    @Log(operationType = "EXPORT", module = "ANNOUNCEMENT_MANAGEMENT", description = "导出公告数据", riskLevel = "MEDIUM", critical = true)
     @GetMapping("/export")
     @PreAuthorize("hasRole('ROLE_ADMIN')")
     public void exportAnnouncementData(HttpServletResponse response,
@@ -954,7 +1022,7 @@ public class AnnouncementController {
             Sheet sheet = workbook.createSheet("公告数据");
 
             Row headerRow = sheet.createRow(0);
-            String[] headers = {"标题", "内容", "发布人", "发布人身份", "状态", "优先级", "目标群体", "发布日期", "过期日期", "阅读量", "创建时间", "更新时间"};
+            String[] headers = {"标题", "内容", "发布人", "发布人身份", "状态", "目标群体", "发布日期", "阅读量", "创建时间", "更新时间"};
             CellStyle headerStyle = workbook.createCellStyle();
             headerStyle.setFillForegroundColor(IndexedColors.GREEN.getIndex());
             headerStyle.setFillPattern(FillPatternType.SOLID_FOREGROUND);
@@ -991,33 +1059,26 @@ public class AnnouncementController {
                 dataRow.createCell(2).setCellValue(announcement.getPublisher() != null ? announcement.getPublisher() : "");
                 dataRow.createCell(3).setCellValue(convertPublisherRoleToChinese(announcement.getPublisherRole()));
                 dataRow.createCell(4).setCellValue(convertStatusToChinese(announcement.getStatus()));
-                dataRow.createCell(5).setCellValue(convertPriorityToChinese(announcement.getPriority()));
-                dataRow.createCell(6).setCellValue(convertTargetTypeToChinese(announcement.getTargetType()));
+                dataRow.createCell(5).setCellValue(convertTargetTypeToChinese(announcement.getTargetType()));
 
                 if (announcement.getPublishTime() != null) {
-                    dataRow.createCell(7).setCellValue(new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(announcement.getPublishTime()));
+                    dataRow.createCell(6).setCellValue(new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(announcement.getPublishTime()));
                 } else {
-                    dataRow.createCell(7).setCellValue("");
+                    dataRow.createCell(6).setCellValue("");
                 }
 
-                if (announcement.getValidTo() != null) {
-                    dataRow.createCell(8).setCellValue(new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(announcement.getValidTo()));
+                dataRow.createCell(7).setCellValue(announcement.getReadCount() != null ? announcement.getReadCount() : 0);
+
+                if (announcement.getCreateTime() != null) {
+                    dataRow.createCell(8).setCellValue(new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(announcement.getCreateTime()));
                 } else {
                     dataRow.createCell(8).setCellValue("");
                 }
 
-                dataRow.createCell(9).setCellValue(announcement.getReadCount() != null ? announcement.getReadCount() : 0);
-
-                if (announcement.getCreateTime() != null) {
-                    dataRow.createCell(10).setCellValue(new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(announcement.getCreateTime()));
-                } else {
-                    dataRow.createCell(10).setCellValue("");
-                }
-
                 if (announcement.getUpdateTime() != null) {
-                    dataRow.createCell(11).setCellValue(new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(announcement.getUpdateTime()));
+                    dataRow.createCell(9).setCellValue(new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(announcement.getUpdateTime()));
                 } else {
-                    dataRow.createCell(11).setCellValue("");
+                    dataRow.createCell(9).setCellValue("");
                 }
 
                 for (int j = 0; j < headers.length; j++) {
@@ -1061,6 +1122,7 @@ public class AnnouncementController {
      */
     @PostMapping("/import")
     @PreAuthorize("hasRole('ROLE_ADMIN')")
+    @Log(operationType = "IMPORT", module = "ANNOUNCEMENT_MANAGEMENT", description = "批量导入公告数据", riskLevel = "MEDIUM")
     public Result importAnnouncementData(@RequestParam("file") MultipartFile file) {
         log.info("导入公告 Excel 数据，文件名：{}", file.getOriginalFilename());
 
@@ -1114,20 +1176,6 @@ public class AnnouncementController {
         }
     }
 
-    private String convertPriorityToChinese(String priority) {
-        if (priority == null) {
-            return "";
-        }
-        switch (priority) {
-            case "normal":
-                return "普通";
-            case "important":
-                return "重要";
-            default:
-                return priority;
-        }
-    }
-
     private String convertTargetTypeToChinese(String targetType) {
         if (targetType == null) {
             return "";
@@ -1148,6 +1196,7 @@ public class AnnouncementController {
         }
     }
 
+    @Log(operationType = "DOWNLOAD", module = "ANNOUNCEMENT_MANAGEMENT", description = "下载公告附件", riskLevel = "MEDIUM")
     @GetMapping("/download-attachment")
     @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_TEACHER', 'ROLE_TEACHER_COLLEGE', 'ROLE_TEACHER_DEPARTMENT', 'ROLE_TEACHER_COUNSELOR', 'ROLE_STUDENT', 'ROLE_COMPANY')")
     public ResponseEntity<InputStreamResource> downloadAttachment(
@@ -1158,6 +1207,9 @@ public class AnnouncementController {
             Announcement announcement = announcementService.findById(Long.parseLong(announcementId));
             if (announcement == null) {
                 return ResponseEntity.notFound().build();
+            }
+            if (!canViewAnnouncement(announcement, requireAnnouncementViewer())) {
+                throw new AccessDeniedException("无权下载此公告附件");
             }
 
             if (announcement.getAttachments() == null || announcement.getAttachments().isEmpty()) {
@@ -1187,6 +1239,7 @@ public class AnnouncementController {
                 return ResponseEntity.notFound().build();
             }
 
+            attachmentPolicy.verifyDownload(announcement.getId(), targetAttachment);
             // 从 OSS 下载文件
             byte[] fileContent = aliyunOSSOperator.downloadFile(fileUrl);
 
@@ -1201,6 +1254,8 @@ public class AnnouncementController {
             return ResponseEntity.ok()
                     .headers(headers)
                     .body(new InputStreamResource(new ByteArrayInputStream(fileContent)));
+        } catch (AccessDeniedException e) {
+            throw e;
         } catch (Exception e) {
             log.error("下载公告附件失败：{}", e.getMessage(), e);
             return ResponseEntity.internalServerError().build();
@@ -1222,7 +1277,7 @@ public class AnnouncementController {
 
             // 创建表头行（第 1 行）
             Row headerRow = sheet.createRow(0);
-            String[] headers = {"标题", "内容", "发布人", "发布人身份", "状态", "优先级", "目标群体", "目标值", "说明"};
+            String[] headers = {"标题", "内容", "发布人", "发布人身份", "状态", "目标群体", "目标值", "说明"};
 
             // 创建表头样式
             CellStyle headerStyle = workbook.createCellStyle();
@@ -1255,8 +1310,8 @@ public class AnnouncementController {
 
             // 在表头行的最后一列右边添加说明
             Row descRow = sheet.createRow(1);
-            Cell descCell = descRow.createCell(8);
-            descCell.setCellValue("说明：标题、内容为必填项；发布人身份：ADMIN/TEACHER/STUDENT；状态：DRAFT/PUBLISHED；优先级：LOW/MEDIUM/HIGH；目标群体：ALL/STUDENT/TEACHER");
+            Cell descCell = descRow.createCell(7);
+            descCell.setCellValue("说明：标题、内容为必填项；发布人身份：ADMIN/COLLEGE/DEPARTMENT/COUNSELOR；状态：DRAFT/PUBLISHED；目标群体：ALL/STUDENT/TEACHER/MAJOR/COMPANY");
 
             CellStyle descStyle = workbook.createCellStyle();
             descStyle.setFillForegroundColor(IndexedColors.YELLOW.getIndex());
@@ -1301,29 +1356,33 @@ public class AnnouncementController {
             announcementData.put("content", announcement.getContent());
             announcementData.put("publisher", announcement.getPublisher());
             announcementData.put("publisherRole", announcement.getPublisherRole());
-            announcementData.put("priority", announcement.getPriority());
             announcementData.put("targetType", announcement.getTargetType());
             announcementData.put("publishTime", announcement.getPublishTime());
-            announcementData.put("validFrom", announcement.getValidFrom());
-            announcementData.put("validTo", announcement.getValidTo());
             
-            String targetType = announcement.getTargetType();
-            if (targetType != null) {
-                if (targetType.contains("COMPANY")) {
+            // 解析 targetType JSON 数组，精确匹配避免子串歧义
+            java.util.List<String> targetTypes = parseTargetTypeList(announcement.getTargetType());
+
+            if (targetTypes.contains("ALL")) {
+                log.info("广播公告到所有用户：{}", announcement.getTitle());
+                webSocketHandler.broadcastAnnouncement(announcementData);
+            } else {
+                if (targetTypes.contains("COMPANY")) {
                     log.info("推送公告到企业端：{}", announcement.getTitle());
                     webSocketHandler.sendAnnouncementToRole("COMPANY", announcementData);
                 }
-                if (targetType.contains("STUDENT")) {
+                if (targetTypes.contains("STUDENT")) {
                     log.info("推送公告到学生端：{}", announcement.getTitle());
                     webSocketHandler.sendAnnouncementToRole("STUDENT", announcementData);
                 }
-                if (targetType.contains("TEACHER")) {
+                if (targetTypes.contains("TEACHER")) {
                     log.info("推送公告到教师端：{}", announcement.getTitle());
                     webSocketHandler.sendAnnouncementToRole("TEACHER", announcementData);
-                }
-                if (targetType.contains("ALL")) {
-                    log.info("广播公告到所有用户：{}", announcement.getTitle());
-                    webSocketHandler.broadcastAnnouncement(announcementData);
+                } else if (targetTypes.contains("TEACHER_TYPE")) {
+                    for (String type : java.util.List.of("COLLEGE", "DEPARTMENT", "COUNSELOR")) {
+                        if (isUserInfoInJsonArray(announcement.getTargetValue(), "teacherTypes", type)) {
+                            webSocketHandler.sendAnnouncementToRole("TEACHER_" + type, announcementData);
+                        }
+                    }
                 }
             }
             
@@ -1351,5 +1410,229 @@ public class AnnouncementController {
             return "ENTERPRISE";
         }
         return "UNKNOWN";
+    }
+
+    private User requireAnnouncementViewer() {
+        User viewer = com.internship.utils.CurrentHolder.getUser();
+        if (viewer == null || viewer.getId() == null || viewer.getId() <= 0
+                || viewer.getRole() == null
+                || (viewer.getRole().startsWith("ROLE_TEACHER")
+                    && getTeacherTypeFromRole(viewer.getRole()) == null)) {
+            throw new AccessDeniedException("公告阅读身份不可用");
+        }
+        return viewer;
+    }
+
+    private boolean isAnnouncementAdmin(User viewer) {
+        return "ROLE_ADMIN".equals(viewer.getRole());
+    }
+
+    private boolean isTeacherUser(User user) {
+        return user != null && user.getRole() != null && user.getRole().startsWith("ROLE_TEACHER");
+    }
+
+    private String normalizePublisherRole(String publisherRole) {
+        if (publisherRole == null || publisherRole.isBlank()) return null;
+        return switch (publisherRole) {
+            case "ROLE_TEACHER_COLLEGE", "COLLEGE" -> "COLLEGE";
+            case "ROLE_TEACHER_DEPARTMENT", "DEPARTMENT" -> "DEPARTMENT";
+            case "ROLE_TEACHER_COUNSELOR", "COUNSELOR" -> "COUNSELOR";
+            case "ROLE_ADMIN", "ADMIN" -> "ADMIN";
+            default -> publisherRole;
+        };
+    }
+
+    private boolean ownsAnnouncement(Announcement announcement, User user) {
+        return isTeacherUser(user) && com.internship.service.AnnouncementOwnership.owns(announcement, user);
+    }
+
+    private User requireManagePermission(Announcement announcement) {
+        User actor = requireAnnouncementViewer();
+        if (!isAnnouncementAdmin(actor) && !ownsAnnouncement(announcement, actor)) {
+            throw new AccessDeniedException("只能编辑或删除自己发布的公告");
+        }
+        return actor;
+    }
+
+    private void applyPublisherIdentityForCreate(Announcement announcement) {
+        User actor = requireAnnouncementViewer();
+        com.internship.service.AnnouncementOwnership.bindCreator(announcement);
+        if (isAnnouncementAdmin(actor)) return;
+        if (!isTeacherUser(actor)) {
+            throw new AccessDeniedException("当前用户不能发布公告");
+        }
+        String teacherType = getTeacherTypeFromRole(actor.getRole());
+        if (teacherType == null) {
+            throw new AccessDeniedException("教师发布身份不可用");
+        }
+        announcement.setPublisher(actor.getName());
+        announcement.setPublisherRole(teacherType);
+    }
+
+    private void markAnnouncementRead(Announcement announcement, User viewer) {
+        Long userId = viewer.getId();
+        String userType = convertRoleToType(viewer.getRole());
+        AnnouncementReadRecord existing = announcementReadRecordService
+                .findByAnnouncementAndUser(announcement.getId(), String.valueOf(userId), userType);
+        if (existing == null) {
+            AnnouncementReadRecord record = new AnnouncementReadRecord();
+            record.setAnnouncementId(announcement.getId());
+            record.setUserId(String.valueOf(userId));
+            record.setUserType(userType);
+            record.setReadTime(new Date());
+            announcementReadRecordService.insert(record);
+        }
+        Long count = announcementReadRecordService.countReadByAnnouncementId(announcement.getId());
+        announcement.setReadCount(count == null ? 0 : count.intValue());
+        announcement.setIsRead(Boolean.TRUE);
+    }
+
+    private void validateTeacherAudience(Announcement announcement) {
+        User actor = requireAnnouncementViewer();
+        if (isAnnouncementAdmin(actor)) return;
+        String target = announcement.getTargetType();
+        if (target == null && announcement.getId() != null) {
+            Announcement previous = announcementService.findById(announcement.getId());
+            if (previous != null) target = previous.getTargetType();
+        }
+        List<String> types = com.internship.service.AnnouncementAudiencePolicy.targetTypes(target);
+        if (types.isEmpty() || types.stream().anyMatch(type -> !"STUDENT".equals(type) && !"MAJOR".equals(type))) {
+            throw new AccessDeniedException("教师仅能向学生或指定专业发布公告");
+        }
+        announcement.setTargetType(target);
+    }
+
+    private List<Announcement> visibleAnnouncements(List<Announcement> candidates, User viewer) {
+        if (candidates == null) return List.of();
+        return candidates.stream().filter(item -> canViewAnnouncement(item, viewer)).toList();
+    }
+
+    private boolean canViewAnnouncement(Announcement announcement, User viewer) {
+        if (announcement == null || viewer == null) return false;
+        if (isAnnouncementAdmin(viewer) || ownsAnnouncement(announcement, viewer)) return true;
+        Date now = new Date();
+        if (!"PUBLISHED".equals(announcement.getStatus())
+                || (announcement.getPublishTime() != null && announcement.getPublishTime().after(now))
+                || (announcement.getValidFrom() != null && announcement.getValidFrom().after(now))) {
+            return false;
+        }
+        String role = viewer.getRole();
+        String type = convertRoleToType(role);
+        if ("UNKNOWN".equals(type)) return false;
+        return isUserInTargetAudience(parseTargetTypeList(announcement.getTargetType()), type,
+                announcement.getTargetValue(), viewer.getId(), role);
+    }
+
+    /**
+     * 解析 targetType 字段为字符串列表
+     * 兼容 JSON 数组格式（如 ["STUDENT","TEACHER"]）和旧纯字符串格式（如 STUDENT）
+     */
+    private java.util.List<String> parseTargetTypeList(String targetType) {
+        if (targetType == null || targetType.isBlank()) {
+            return java.util.Collections.emptyList();
+        }
+        try {
+            ObjectMapper mapper = new ObjectMapper();
+            return mapper.readValue(targetType, new com.fasterxml.jackson.core.type.TypeReference<java.util.List<String>>() {});
+        } catch (Exception e) {
+            // 兼容旧格式：纯字符串（非 JSON 数组）
+            String[] parts = targetType.split(",");
+            java.util.List<String> result = new java.util.ArrayList<>();
+            for (String part : parts) {
+                String trimmed = part.trim();
+                if (!trimmed.isEmpty()) {
+                    result.add(trimmed);
+                }
+            }
+            return result;
+        }
+    }
+
+    /**
+     * 判断用户是否在公告的目标群体中
+     * 使用 JSON 解析进行精确匹配，避免子串攻击
+     */
+    private boolean isUserInTargetAudience(java.util.List<String> targetTypes, String userType,
+                                           String targetValue, Long userId, String role) {
+        if (targetTypes == null || targetTypes.isEmpty()) {
+            return false;
+        }
+
+        // ALL 对所有人可见
+        if (targetTypes.contains("ALL")) {
+            return true;
+        }
+
+        if ("STUDENT".equals(userType)) {
+            if (targetTypes.contains("STUDENT")) return true;
+            if (targetTypes.contains("MAJOR")) {
+                if (targetValue == null || targetValue.isBlank()) return false;
+                try {
+                    String userInfo = getStudentMajorId(userId);
+                    if (userInfo == null) return false;
+                    return isUserInfoInJsonArray(targetValue, "majorIds", userInfo);
+                } catch (Exception ignored) {}
+            }
+        } else if ("TEACHER".equals(userType)) {
+            if (targetTypes.contains("TEACHER")) return true;
+            if (targetTypes.contains("TEACHER_TYPE")) {
+                if (targetValue == null || targetValue.isBlank()) return false;
+                try {
+                    String teacherType = getTeacherTypeFromRole(role);
+                    if (teacherType == null) return false;
+                    return isUserInfoInJsonArray(targetValue, "teacherTypes", teacherType);
+                } catch (Exception ignored) {}
+            }
+        } else if ("ENTERPRISE".equals(userType)) {
+            if (targetTypes.contains("COMPANY")) return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * 解析 targetValue JSON，检查 userInfo 是否在指定数组中
+     * 使用 JSON 精确解析而非字符串包含，避免子串碰撞
+     */
+    private boolean isUserInfoInJsonArray(String targetValue, String arrayKey, String userInfo) {
+        try {
+            ObjectMapper mapper = new ObjectMapper();
+            com.fasterxml.jackson.databind.JsonNode root = mapper.readTree(targetValue);
+            com.fasterxml.jackson.databind.JsonNode array = root.get(arrayKey);
+            if (array != null && array.isArray()) {
+                for (com.fasterxml.jackson.databind.JsonNode node : array) {
+                    if (userInfo.equals(node.asText())) {
+                        return true;
+                    }
+                }
+            }
+        } catch (Exception ignored) {}
+        return false;
+    }
+
+    /**
+     * 获取学生的专业ID（字符串）
+     */
+    private String getStudentMajorId(Long userId) {
+        if (userId == null) return null;
+        try {
+            com.internship.entity.StudentUser studentUser = studentUserMapper.findById(userId);
+            if (studentUser != null && studentUser.getMajorId() != null) {
+                return String.valueOf(studentUser.getMajorId());
+            }
+        } catch (Exception ignored) {}
+        return null;
+    }
+
+    /**
+     * 从角色中提取教师类别（COLLEGE/DEPARTMENT/COUNSELOR）
+     */
+    private String getTeacherTypeFromRole(String role) {
+        return switch (role == null ? "" : role) {
+            case "ROLE_TEACHER_COLLEGE" -> "COLLEGE";
+            case "ROLE_TEACHER_DEPARTMENT" -> "DEPARTMENT";
+            case "ROLE_TEACHER_COUNSELOR" -> "COUNSELOR";
+            default -> null;
+        };
     }
 }

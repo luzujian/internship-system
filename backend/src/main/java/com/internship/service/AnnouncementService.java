@@ -92,7 +92,9 @@ public interface AnnouncementService {
     
     PageResult<Announcement> findPage(Integer page, Integer pageSize, String title, String status, String publisher, String excludePublisherRole);
 
-    PageResult<Announcement> findPage(Integer page, Integer pageSize, String title, String status, String publisher, String excludePublisherRole, String userId);
+    PageResult<Announcement> findPage(Integer page, Integer pageSize, String title, String status,
+                                      String publisher, String excludePublisherRole, String userId,
+                                      String userType);
 
     /**
      * 根据用户类型和用户信息获取公告列表
@@ -101,7 +103,10 @@ public interface AnnouncementService {
      * @param userId 当前用户ID，用于判断已读状态
      * @return 公告列表
      */
-    List<Announcement> getAnnouncementsForUser(String userType, String userInfo, String userId);
+    List<Announcement> getAnnouncementsForUser(String userType, String userInfo, String userId, String readerType);
+
+    List<Announcement> listForViewer(String title, String status, String publisher,
+                                     String excludePublisherRole, String userId, String userType);
     
     /**
      * 查询所有满足条件的公告（不分页）

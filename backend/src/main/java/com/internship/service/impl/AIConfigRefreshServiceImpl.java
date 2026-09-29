@@ -49,6 +49,15 @@ public class AIConfigRefreshServiceImpl implements AIConfigRefreshService {
         }
     }
 
+    /** Read the committed default on every new call; cache refresh is not the authority. */
+    public AIModel getDefaultModelConfig() {
+        AIModel model = aiModelMapper.findDefaultModel();
+        if (model == null || !Integer.valueOf(1).equals(model.getStatus()) || model.getModelCode() == null || model.getModelCode().isBlank()) {
+            throw new IllegalStateException("请管理员在 AI 大模型选择页面启用并设置默认模型。");
+        }
+        return model;
+    }
+
     public AIModel getModelConfig(String modelCode) {
         if (modelConfigCache.isEmpty()) {
             refreshAIConfig();

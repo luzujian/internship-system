@@ -7,12 +7,10 @@ import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.annotation.Scheduled;
 
 @Slf4j
 @Configuration
-@EnableScheduling
 public class SystemSettingsConfig {
     
     @Autowired
@@ -63,6 +61,34 @@ public class SystemSettingsConfig {
         return currentSettings;
     }
     
+    /** 邮件提醒总开关：无配置（含历史行/列缺失）时默认开启，保持既有行为。 */
+    public static boolean isEmailNotifyEnabled() {
+        if (currentSettings == null || currentSettings.getEmailNotifyEnabled() == null) {
+            return true;
+        }
+        return currentSettings.getEmailNotifyEnabled() == 1;
+    }
+
+    /** 指定业务是否启用邮件提醒：总开关关闭一律不发；范围为空视为全部启用。 */
+    public static boolean isEmailNotifyScopeEnabled(EmailNotifyScope scope) {
+        if (scope == null || !isEmailNotifyEnabled()) {
+            return false;
+        }
+        if (currentSettings == null) {
+            return true;
+        }
+        String scopes = currentSettings.getEmailNotifyScopes();
+        if (scopes == null || scopes.isBlank()) {
+            return true;
+        }
+        for (String item : scopes.split(",")) {
+            if (scope.name().equalsIgnoreCase(item.trim())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     public static String getSystemName() {
         return currentSettings != null ? currentSettings.getSystemName() : "学生实习管理系统";
     }

@@ -12,6 +12,7 @@
         <result property="content" column="content" />
         <result property="remark" column="remark" />
         <result property="internshipStatusId" column="internship_status_id" />
+        <result property="stageAssignmentId" column="stage_assignment_id" />
         <result property="periodNumber" column="period_number" />
         <result property="taskType" column="task_type" />
         <result property="deadline" column="deadline" />
@@ -38,8 +39,8 @@
     </resultMap>
     
     <insert id="insert" parameterType="com.internship.entity.InternshipReflection" useGeneratedKeys="true" keyProperty="id">
-        insert into internship_reflection (student_id, student_name, student_user_id, content, remark, internship_status_id, period_number, task_type, deadline, counselor_id, submit_time, ai_keywords, ai_analysis, ai_score, ai_analysis_time, status, create_time, update_time, deleted)
-        values (#{studentId}, #{studentName}, #{studentUserId}, #{content}, #{remark}, #{internshipStatusId}, #{periodNumber}, #{taskType}, #{deadline}, #{counselorId}, #{submitTime}, #{aiKeywords}, #{aiAnalysis}, #{aiScore}, #{aiAnalysisTime}, #{status}, #{createTime}, #{updateTime}, #{deleted})
+        insert into internship_reflection (student_id, student_name, student_user_id, content, remark, internship_status_id, stage_assignment_id, period_number, task_type, deadline, counselor_id, submit_time, ai_keywords, ai_analysis, ai_score, ai_analysis_time, status, create_time, update_time, deleted)
+        values (#{studentId}, #{studentName}, #{studentUserId}, #{content}, #{remark}, #{internshipStatusId}, #{stageAssignmentId}, #{periodNumber}, #{taskType}, #{deadline}, #{counselorId}, #{submitTime}, #{aiKeywords}, #{aiAnalysis}, #{aiScore}, #{aiAnalysisTime}, #{status}, #{createTime}, #{updateTime}, #{deleted})
     </insert>
     
     <update id="updateById" parameterType="com.internship.entity.InternshipReflection">
@@ -52,6 +53,7 @@
             <if test="remark != null">remark = #{remark},</if>
             <if test="remark == null">remark = null,</if>
             <if test="internshipStatusId != null">internship_status_id = #{internshipStatusId},</if>
+            <if test="stageAssignmentId != null">stage_assignment_id = #{stageAssignmentId},</if>
             <if test="periodNumber != null">period_number = #{periodNumber},</if>
             <if test="taskType != null and taskType != ''">task_type = #{taskType},</if>
             <if test="deadline != null">deadline = #{deadline},</if>
@@ -66,6 +68,22 @@
             <if test="deleted != null">deleted = #{deleted},</if>
         </set>
         where id = #{id}
+    </update>
+
+    <update id="withdrawSubmitted">
+        UPDATE internship_reflection
+        SET status = 0,
+            remark = '0',
+            ai_keywords = NULL,
+            ai_analysis = NULL,
+            ai_improvements = NULL,
+            ai_score = NULL,
+            ai_analysis_time = NULL,
+            update_time = #{updateTime}
+        WHERE id = #{id}
+          AND student_id = #{studentId}
+          AND deleted = 0
+          AND remark IS NULL
     </update>
     
     <delete id="deleteById">

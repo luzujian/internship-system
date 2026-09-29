@@ -107,12 +107,22 @@ public class AnnouncementWebSocketHandler extends TextWebSocketHandler {
         log.error("WebSocket传输错误：sessionId={}, error={}", session.getId(), exception.getMessage());
     }
 
+    private Set<String> sessionsForRole(Long userId, String role) {
+        Set<String> ids = userSessions.get(userId);
+        if (ids == null) return Set.of();
+        return ids.stream().filter(id -> {
+            WebSocketSession session = sessions.get(id);
+            return session != null && role.equals(session.getAttributes().get("role"));
+        }).collect(java.util.stream.Collectors.toSet());
+    }
+
     public void sendAnnouncementToRole(String role, Map<String, Object> announcement) {
         log.info("向角色 {} 推送公告：{}", role, announcement.get("title"));
         
         for (WebSocketSession session : sessions.values()) {
             String sessionRole = (String) session.getAttributes().get("role");
-            if (sessionRole != null && sessionRole.contains(role)) {
+            if (sessionRole != null && (sessionRole.equals("ROLE_" + role)
+                    || ("TEACHER".equals(role) && Set.of("ROLE_TEACHER", "ROLE_TEACHER_COLLEGE", "ROLE_TEACHER_DEPARTMENT", "ROLE_TEACHER_COUNSELOR").contains(sessionRole)))) {
                 try {
                     Map<String, Object> message = Map.of(
                         "type", "new_announcement",
@@ -198,7 +208,7 @@ public class AnnouncementWebSocketHandler extends TextWebSocketHandler {
     public void sendApplicationStatusToUser(Long userId, Map<String, Object> applicationStatus) {
         log.info("向用户 {} 推送申请状态更新：{}", userId, applicationStatus);
 
-        Set<String> userSessionSet = userSessions.get(userId);
+        Set<String> userSessionSet = sessionsForRole(userId, "ROLE_STUDENT");
         if (userSessionSet != null && !userSessionSet.isEmpty()) {
             for (String sessionId : userSessionSet) {
                 WebSocketSession session = sessions.get(sessionId);
@@ -350,7 +360,7 @@ public class AnnouncementWebSocketHandler extends TextWebSocketHandler {
      * @param message 要发送的消息
      */
     private void sendToUser(Long userId, Map<String, Object> message) {
-        Set<String> userSessionSet = userSessions.get(userId);
+        Set<String> userSessionSet = sessionsForRole(userId, "ROLE_STUDENT");
         if (userSessionSet != null && !userSessionSet.isEmpty()) {
             for (String sessionId : userSessionSet) {
                 WebSocketSession session = sessions.get(sessionId);
@@ -522,7 +532,7 @@ public class AnnouncementWebSocketHandler extends TextWebSocketHandler {
         wsMessage.put("timestamp", System.currentTimeMillis());
 
         // 推送给对应的学生用户
-        Set<String> userSessionSet = userSessions.get(studentId);
+        Set<String> userSessionSet = sessionsForRole(studentId, "ROLE_STUDENT");
         if (userSessionSet != null && !userSessionSet.isEmpty()) {
             for (String sessionId : userSessionSet) {
                 WebSocketSession session = sessions.get(sessionId);
@@ -557,7 +567,7 @@ public class AnnouncementWebSocketHandler extends TextWebSocketHandler {
         wsMessage.put("timestamp", System.currentTimeMillis());
 
         // 推送给对应的辅导员用户
-        Set<String> userSessionSet = userSessions.get(counselorId);
+        Set<String> userSessionSet = sessionsForRole(counselorId, "ROLE_TEACHER_COUNSELOR");
         if (userSessionSet != null && !userSessionSet.isEmpty()) {
             for (String sessionId : userSessionSet) {
                 WebSocketSession session = sessions.get(sessionId);
@@ -591,7 +601,7 @@ public class AnnouncementWebSocketHandler extends TextWebSocketHandler {
         wsMessage.put("timestamp", System.currentTimeMillis());
 
         // 推送给对应的学生用户
-        Set<String> userSessionSet = userSessions.get(studentId);
+        Set<String> userSessionSet = sessionsForRole(studentId, "ROLE_STUDENT");
         if (userSessionSet != null && !userSessionSet.isEmpty()) {
             for (String sessionId : userSessionSet) {
                 WebSocketSession session = sessions.get(sessionId);
@@ -623,7 +633,7 @@ public class AnnouncementWebSocketHandler extends TextWebSocketHandler {
         wsMessage.put("timestamp", System.currentTimeMillis());
 
         // 推送给对应的学生用户
-        Set<String> userSessionSet = userSessions.get(studentId);
+        Set<String> userSessionSet = sessionsForRole(studentId, "ROLE_STUDENT");
         if (userSessionSet != null && !userSessionSet.isEmpty()) {
             for (String sessionId : userSessionSet) {
                 WebSocketSession session = sessions.get(sessionId);
@@ -638,6 +648,74 @@ public class AnnouncementWebSocketHandler extends TextWebSocketHandler {
             }
         } else {
             log.info("学生 {} 当前无在线session，提醒将存入数据库待下次连接时显示", studentId);
+        }
+    }
+
+    /**
+     * 通知学生首页刷新最近动态。该消息只携带刷新线索，动态详情仍以首页接口为准。
+     */
+    public void sendStudentRecentActivityChanged(Long studentId, Long activityId) {
+        if (studentId == null) {
+            return;
+        }
+
+        Map<String, Object> data = new HashMap<>();
+        if (activityId != null) {
+            data.put("activityId", activityId);
+        }
+
+        Map<String, Object> wsMessage = new HashMap<>();
+        wsMessage.put("type", "student_recent_activity_changed");
+        wsMessage.put("data", data);
+        wsMessage.put("timestamp", System.currentTimeMillis());
+
+        Set<String> userSessionSet = sessionsForRole(studentId, "ROLE_STUDENT");
+        if (userSessionSet == null || userSessionSet.isEmpty()) {
+            log.debug("学生 {} 当前无在线session，跳过最近动态刷新推送", studentId);
+            return;
+        }
+
+        for (String sessionId : userSessionSet) {
+            WebSocketSession session = sessions.get(sessionId);
+            if (session != null && session.isOpen()) {
+                try {
+                    sendMessage(session, wsMessage);
+                } catch (Exception e) {
+                    log.error("推送最近动态刷新失败：sessionId={}, error={}", sessionId, e.getMessage());
+                }
+            }
+        }
+    }
+
+    /**
+     * 向学生推送实习状态更新
+     */
+    public void sendInternshipStatusUpdateToStudent(Long studentId, Integer currentStatus) {
+        log.info("向学生 {} 推送实习状态更新：status={}", studentId, currentStatus);
+
+        Map<String, Object> data = new HashMap<>();
+        data.put("currentStatus", currentStatus);
+
+        Map<String, Object> wsMessage = new HashMap<>();
+        wsMessage.put("type", "internship_status_update");
+        wsMessage.put("data", data);
+        wsMessage.put("timestamp", System.currentTimeMillis());
+
+        Set<String> userSessionSet = sessionsForRole(studentId, "ROLE_STUDENT");
+        if (userSessionSet != null && !userSessionSet.isEmpty()) {
+            for (String sessionId : userSessionSet) {
+                WebSocketSession session = sessions.get(sessionId);
+                if (session != null && session.isOpen()) {
+                    try {
+                        sendMessage(session, wsMessage);
+                        log.info("已向学生 {} 推送实习状态更新", studentId);
+                    } catch (Exception e) {
+                        log.error("推送实习状态更新失败：sessionId={}, error={}", session.getId(), e.getMessage());
+                    }
+                }
+            }
+        } else {
+            log.debug("学生 {} 当前无在线session，跳过推送", studentId);
         }
     }
 }

@@ -4,6 +4,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
+import org.springframework.test.util.ReflectionTestUtils;
 import com.internship.service.JwtRedisService;
 
 import java.util.HashMap;
@@ -26,6 +27,11 @@ public class JwtUtilsTest {
     void setUp() {
         MockitoAnnotations.openMocks(this);
         jwtUtils = new JwtUtils();
+        ReflectionTestUtils.setField(jwtUtils, "secretKeyString",
+                "unit-test-secret-key-32-bytes-minimum-1234567890");
+        ReflectionTestUtils.setField(jwtUtils, "expirationTime", 3_600_000L);
+        ReflectionTestUtils.setField(jwtUtils, "refreshExpirationTime", 86_400_000L);
+        ReflectionTestUtils.setField(jwtUtils, "slidingWindowThreshold", 60L);
 
         // 使用反射注入 mock 的 JwtRedisService
         try {
@@ -61,7 +67,7 @@ public class JwtUtilsTest {
         assertNotNull(parsedClaims);
         assertEquals("testuser", parsedClaims.get("username"));
         assertEquals("ROLE_USER", parsedClaims.get("role"));
-        assertEquals(1L, parsedClaims.get("userId"));
+        assertEquals(1, ((Number) parsedClaims.get("userId")).intValue());
         assertNotNull(parsedClaims.get("jti")); // 验证令牌 ID 存在
         assertNotNull(parsedClaims.get("ver")); // 验证版本号存在
         assertNotNull(parsedClaims.get("typ")); // 验证类型标识存在
@@ -85,11 +91,30 @@ public class JwtUtilsTest {
         assertNotNull(parsedClaims);
         assertEquals("testuser", parsedClaims.get("username"));
         assertEquals("ROLE_USER", parsedClaims.get("role"));
-        assertEquals(1L, parsedClaims.get("userId"));
+        assertEquals(1, ((Number) parsedClaims.get("userId")).intValue());
         assertNotNull(parsedClaims.get("jti")); // 验证令牌 ID 存在
         assertNotNull(parsedClaims.get("ver")); // 验证版本号存在
         assertNotNull(parsedClaims.get("typ")); // 验证类型标识存在
         assertEquals("refresh", parsedClaims.get("typ")); // 验证类型为 refresh
+        assertEquals(Boolean.FALSE, parsedClaims.get("isReadOnly"));
+        assertFalse(parsedClaims.containsKey("originalAdminUsername"));
+    }
+
+    @Test
+    void readOnlyRefreshTokenRetainsIdentityAndScope() {
+        Map<String, Object> claims = new HashMap<>();
+        claims.put("username", "student");
+        claims.put("role", "ROLE_STUDENT");
+        claims.put("userId", 7L);
+        claims.put("isReadOnly", true);
+        claims.put("originalAdminId", 1L);
+        claims.put("originalAdminUsername", "admin");
+
+        var parsed = jwtUtils.parseToken(jwtUtils.generateRefreshToken(claims));
+
+        assertEquals(Boolean.TRUE, parsed.get("isReadOnly"));
+        assertEquals(1L, ((Number) parsed.get("originalAdminId")).longValue());
+        assertEquals("admin", parsed.get("originalAdminUsername"));
     }
 
     @Test

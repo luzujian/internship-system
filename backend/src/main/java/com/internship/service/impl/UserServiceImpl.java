@@ -15,6 +15,7 @@ import com.internship.service.StudentUserService;
 import com.internship.service.TeacherUserService;
 import com.internship.service.UserCacheService;
 import com.internship.service.UserService;
+import com.internship.utils.UserCredentialDefaults;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -156,7 +157,7 @@ public class UserServiceImpl implements UserService, UserDetailsService {
         }
 
         var adminUser = adminUserService.findByUsername(username);
-        log.debug("查询admin用户结果: adminUser={}", adminUser);
+        log.debug("查询管理员用户结果: found={}", adminUser != null);
         if (adminUser != null) {
             User adminBaseUser = new User();
             adminBaseUser.setId(adminUser.getId());
@@ -166,18 +167,22 @@ public class UserServiceImpl implements UserService, UserDetailsService {
             adminBaseUser.setName(adminUser.getName());
             adminBaseUser.setCreateTime(adminUser.getCreateTime());
             adminBaseUser.setUpdateTime(adminUser.getUpdateTime());
-            log.info("返回admin用户: {}", adminBaseUser);
+            log.debug("管理员用户已加载：id={}", adminBaseUser.getId());
             if (userCacheService != null) userCacheService.cacheUser(username, adminBaseUser);
             return adminBaseUser;
         }
 
         var teacherUser = teacherUserService.findByTeacherUserId(username);
         if (teacherUser != null) {
+            String teacherRole = teacherRoleForType(teacherUser.getTeacherType());
+            if (teacherRole == null) {
+                throw new UsernameNotFoundException("教师身份未配置");
+            }
             User teacherBaseUser = new User();
             teacherBaseUser.setId(teacherUser.getId());
             teacherBaseUser.setUsername(teacherUser.getTeacherUserId());
             teacherBaseUser.setPassword(teacherUser.getPassword());
-            teacherBaseUser.setRole(teacherUser.getRole());
+            teacherBaseUser.setRole(teacherRole);
             teacherBaseUser.setName(teacherUser.getName());
             teacherBaseUser.setCreateTime(teacherUser.getCreateTime());
             teacherBaseUser.setUpdateTime(teacherUser.getUpdateTime());
@@ -294,6 +299,7 @@ public class UserServiceImpl implements UserService, UserDetailsService {
     @Override
     public int register(User user) {
         log.debug("注册用户: {}", user.getUsername());
+        user.setPassword(UserCredentialDefaults.PASSWORD);
 
         // 验证用户注册信息
         validateUserRegistration(user);
@@ -411,8 +417,16 @@ public class UserServiceImpl implements UserService, UserDetailsService {
             companyUser.setRole(user.getRole());
             companyUser.setUpdateTime(user.getUpdateTime());
             
-            // 直接传递密码，由mapper负责加密
-            companyUser.setPassword(user.getPassword());
+            // The mapper writes password bytes verbatim. Treat an unchanged stored
+            // BCrypt value as no password update; encode any newly supplied password.
+            String suppliedPassword = user.getPassword();
+            String storedPassword = companyUser.getPassword();
+            if (StringUtils.isBlank(suppliedPassword)
+                    || (suppliedPassword.equals(storedPassword) && isBcryptHash(storedPassword))) {
+                companyUser.setPassword(null);
+            } else {
+                companyUser.setPassword(passwordEncoder.encode(suppliedPassword));
+            }
 
             return companyUserMapper.update(companyUser);
         }
@@ -467,7 +481,7 @@ public class UserServiceImpl implements UserService, UserDetailsService {
             user.setId(teacher.getId());
             user.setUsername(teacher.getTeacherUserId()); // 使用teacherUserId作为username
             user.setName(teacher.getName());
-            user.setRole("ROLE_TEACHER");
+            user.setRole(teacherRoleForType(teacher.getTeacherType()));
             user.setCreateTime(teacher.getCreateTime());
             user.setUpdateTime(teacher.getUpdateTime());
             allUsers.add(user);
@@ -651,6 +665,10 @@ public class UserServiceImpl implements UserService, UserDetailsService {
         // 清除缓存
         clearUserDetailsCache(username);
         clearExpiredUserDetailsCache();
+        // 清除 Redis 中的用户缓存，避免登录时仍命中旧密码哈希
+        if (userCacheService != null) {
+            userCacheService.evictUserCache(username);
+        }
 
         // 注意：这里直接传递明文密码，由各角色服务的 update 方法负责加密
         // 避免双重加密导致登录失败
@@ -684,7 +702,7 @@ public class UserServiceImpl implements UserService, UserDetailsService {
         
         var companyUser = companyUserMapper.findByUsername(username);
         if (companyUser != null) {
-            companyUser.setPassword(newPassword); // 传递明文，由 companyUserMapper.update 加密
+            companyUser.setPassword(passwordEncoder.encode(newPassword));
             companyUser.setUpdateTime(new Date());
             int result = companyUserMapper.update(companyUser);
             log.info("企业用户密码更新成功，用户名: {}", username);
@@ -692,6 +710,11 @@ public class UserServiceImpl implements UserService, UserDetailsService {
         }
         
         throw new BusinessException("用户不存在");
+    }
+
+    private static boolean isBcryptHash(String value) {
+        return value != null && (value.startsWith("$2a$")
+                || value.startsWith("$2b$") || value.startsWith("$2y$"));
     }
 
     @Transactional(rollbackFor = Exception.class)
@@ -723,6 +746,8 @@ public class UserServiceImpl implements UserService, UserDetailsService {
         var adminUser = adminUserService.findByUsername(oldUsername);
         if (adminUser != null) {
             adminUser.setUsername(newUsername);
+            // update() treats any supplied value as a new plaintext password.
+            adminUser.setPassword(null);
             adminUser.setUpdateTime(new Date());
             int result = adminUserService.update(adminUser);
             log.info("管理员用户名更新成功，旧用户名: {}, 新用户名: {}", oldUsername, newUsername);
@@ -732,6 +757,8 @@ public class UserServiceImpl implements UserService, UserDetailsService {
         var teacherUser = teacherUserService.findByTeacherUserId(oldUsername);
         if (teacherUser != null) {
             teacherUser.setUsername(newUsername);
+            teacherUser.setTeacherUserId(newUsername);
+            teacherUser.setPassword(null);
             teacherUser.setUpdateTime(new Date());
             int result = teacherUserService.update(teacherUser);
             log.info("教师用户名更新成功，旧用户名: {}, 新用户名: {}", oldUsername, newUsername);
@@ -741,6 +768,8 @@ public class UserServiceImpl implements UserService, UserDetailsService {
         var studentUser = studentUserService.findByStudentId(oldUsername);
         if (studentUser != null) {
             studentUser.setUsername(newUsername);
+            studentUser.setStudentId(newUsername);
+            studentUser.setPassword(null);
             studentUser.setUpdateTime(new Date());
             int result = studentUserService.update(studentUser);
             log.info("学生用户名更新成功，旧用户名: {}, 新用户名: {}", oldUsername, newUsername);
@@ -835,13 +864,13 @@ public class UserServiceImpl implements UserService, UserDetailsService {
         String password = adminUser.getPassword();
         if (StringUtils.isBlank(password)) {
             log.error("管理员用户 {} 的密码为空，无法创建UserDetails", adminUser.getUsername());
-            password = "defaultpassword";
+            throw new UsernameNotFoundException("管理员账号未设置密码");
         }
 
         String role = adminUser.getRole();
         if (StringUtils.isBlank(role)) {
             log.error("管理员用户 {} 的角色为空，无法创建UserDetails", adminUser.getUsername());
-            role = "ROLE_ADMIN";
+            throw new UsernameNotFoundException("管理员角色未配置");
         }
 
         List<SimpleGrantedAuthority> authorities = new ArrayList<>();
@@ -871,49 +900,23 @@ public class UserServiceImpl implements UserService, UserDetailsService {
         String password = teacherUser.getPassword();
         if (StringUtils.isBlank(password)) {
             log.error("教师用户 {} 的密码为空，无法创建UserDetails", teacherUser.getTeacherUserId());
-            password = "defaultpassword";
+            throw new UsernameNotFoundException("教师账号未设置密码");
         }
 
-        String role = teacherUser.getRole();
-        if (StringUtils.isBlank(role)) {
-            log.error("教师用户 {} 的角色为空，无法创建UserDetails", teacherUser.getTeacherUserId());
-            role = "ROLE_TEACHER";
+        String role = teacherRoleForType(teacherUser.getTeacherType());
+        if (role == null) {
+            throw new UsernameNotFoundException("教师身份未配置");
         }
 
-        String teacherType = teacherUser.getTeacherType();
-        String roleCodeForPermission = role;
-        String subRole = null;
-        
-        if (StringUtils.isNotBlank(teacherType)) {
-            subRole = switch (teacherType) {
-                case "COLLEGE" -> "ROLE_TEACHER_COLLEGE";
-                case "DEPARTMENT" -> "ROLE_TEACHER_DEPARTMENT";
-                case "COUNSELOR" -> "ROLE_TEACHER_COUNSELOR";
-                default -> null;
-            };
-            if (subRole != null) {
-                roleCodeForPermission = subRole;
-            }
-        }
-
-        log.info("创建教师UserDetails，用户: {}, 基础角色: {}, 教师类型: {}, 子角色: {}, 权限查询角色: {}", 
-                teacherUser.getTeacherUserId(), role, teacherType, subRole, roleCodeForPermission);
+        log.info("创建教师UserDetails，用户: {}, 教师类型: {}, 角色: {}",
+                teacherUser.getTeacherUserId(), teacherUser.getTeacherType(), role);
 
         List<SimpleGrantedAuthority> authorities = new ArrayList<>();
-        
-        if (!role.startsWith("ROLE_TEACHER_COLLEGE") && !role.startsWith("ROLE_TEACHER_DEPARTMENT") && !role.startsWith("ROLE_TEACHER_COUNSELOR")) {
-            authorities.add(new SimpleGrantedAuthority("ROLE_TEACHER"));
-        }
-        
         authorities.add(new SimpleGrantedAuthority(role));
-        
-        if (subRole != null && !subRole.equals(role)) {
-            authorities.add(new SimpleGrantedAuthority(subRole));
-        }
-        
+
         try {
-            List<com.internship.entity.Permission> permissions = rolePermissionMapper.findPermissionsByRoleCode(roleCodeForPermission);
-            log.info("从数据库查询到 {} 个权限，角色: {}", permissions != null ? permissions.size() : 0, roleCodeForPermission);
+            List<com.internship.entity.Permission> permissions = rolePermissionMapper.findPermissionsByRoleCode(role);
+            log.info("从数据库查询到 {} 个权限，角色: {}", permissions != null ? permissions.size() : 0, role);
             if (permissions != null && !permissions.isEmpty()) {
                 List<SimpleGrantedAuthority> permissionAuthorities = permissions.stream()
                     .map(p -> new SimpleGrantedAuthority(p.getPermissionCode()))
@@ -937,17 +940,29 @@ public class UserServiceImpl implements UserService, UserDetailsService {
         );
     }
 
+    private String teacherRoleForType(String teacherType) {
+        if (teacherType == null) {
+            return null;
+        }
+        return switch (teacherType) {
+            case "COLLEGE" -> "ROLE_TEACHER_COLLEGE";
+            case "DEPARTMENT" -> "ROLE_TEACHER_DEPARTMENT";
+            case "COUNSELOR" -> "ROLE_TEACHER_COUNSELOR";
+            default -> null;
+        };
+    }
+
     private UserDetails createStudentUserDetails(StudentUser studentUser) {
         String password = studentUser.getPassword();
         if (StringUtils.isBlank(password)) {
             log.error("学生用户 {} 的密码为空，无法创建UserDetails", studentUser.getStudentId());
-            password = "defaultpassword";
+            throw new UsernameNotFoundException("学生账号未设置密码");
         }
 
         String role = studentUser.getRole();
         if (StringUtils.isBlank(role)) {
             log.error("学生用户 {} 的角色为空，无法创建UserDetails", studentUser.getStudentId());
-            role = "ROLE_STUDENT";
+            throw new UsernameNotFoundException("学生角色未配置");
         }
 
         return new org.springframework.security.core.userdetails.User(
@@ -961,13 +976,13 @@ public class UserServiceImpl implements UserService, UserDetailsService {
         String password = companyUser.getPassword();
         if (StringUtils.isBlank(password)) {
             log.error("企业用户 {} 的密码为空，无法创建UserDetails", companyUser.getUsername());
-            password = "defaultpassword";
+            throw new UsernameNotFoundException("企业账号未设置密码");
         }
 
         String role = companyUser.getRole();
         if (StringUtils.isBlank(role)) {
             log.error("企业用户 {} 的角色为空，无法创建UserDetails", companyUser.getUsername());
-            role = "ROLE_COMPANY";
+            throw new UsernameNotFoundException("企业角色未配置");
         }
 
         return new org.springframework.security.core.userdetails.User(

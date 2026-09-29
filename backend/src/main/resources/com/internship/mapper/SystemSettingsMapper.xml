@@ -25,6 +25,9 @@
         <result property="enableTwoFactor" column="enable_two_factor" />
         <result property="dualSelectionStartDate" column="dual_selection_start_date" />
         <result property="dualSelectionEndDate" column="dual_selection_end_date" />
+        <result property="enableDualPhase" column="enable_dual_phase" />
+        <result property="emailNotifyEnabled" column="email_notify_enabled" />
+        <result property="emailNotifyScopes" column="email_notify_scopes" />
     </resultMap>
     
     <insert id="insert" parameterType="com.internship.entity.SystemSettings">
@@ -32,11 +35,13 @@
             system_name, system_description, page_size, logo, system_status,
             min_password_length, password_complexity, password_expire_days, max_login_attempts,
             lock_time, session_timeout, enable_two_factor, dual_selection_start_date, dual_selection_end_date,
+            email_notify_enabled, email_notify_scopes,
             create_time, update_time, creator, updater, deleted
         ) values (
             #{systemName}, #{systemDescription}, #{pageSize}, #{logo}, #{systemStatus},
             #{minPasswordLength}, #{passwordComplexity}, #{passwordExpireDays}, #{maxLoginAttempts},
             #{lockTime}, #{sessionTimeout}, #{enableTwoFactor}, #{dualSelectionStartDate}, #{dualSelectionEndDate},
+            #{emailNotifyEnabled}, #{emailNotifyScopes},
             NOW(), NOW(), #{creator}, #{updater}, 0
         )
     </insert>
@@ -70,6 +75,9 @@
             <if test="enableTwoFactor != null">enable_two_factor = #{enableTwoFactor},</if>
             <if test="dualSelectionStartDate != null">dual_selection_start_date = #{dualSelectionStartDate},</if>
             <if test="dualSelectionEndDate != null">dual_selection_end_date = #{dualSelectionEndDate},</if>
+            <if test="enableDualPhase != null">enable_dual_phase = #{enableDualPhase},</if>
+            <if test="emailNotifyEnabled != null">email_notify_enabled = #{emailNotifyEnabled},</if>
+            <if test="emailNotifyScopes != null">email_notify_scopes = #{emailNotifyScopes},</if>
             <if test="updater != null">updater = #{updater},</if>
             update_time = NOW()
         </set>

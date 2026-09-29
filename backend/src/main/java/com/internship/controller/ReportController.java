@@ -1,17 +1,25 @@
 package com.internship.controller;
 
+import com.internship.anno.Log;
 import com.internship.entity.Result;
+import com.internship.entity.TeacherUser;
+import com.internship.entity.User;
 import com.internship.entity.dto.ApprovalDetailDTO;
 import com.internship.entity.dto.CompanyDetailDTO;
 import com.internship.entity.dto.CompanyTrendDTO;
 import com.internship.entity.dto.CoreMetricsDTO;
 import com.internship.entity.dto.StudentInternshipDetailDTO;
 import com.internship.mapper.CompanyUserMapper;
+import com.internship.mapper.PositionMapper;
 import com.internship.mapper.ReportMapper;
 import com.internship.mapper.StudentApplicationMapper;
 import com.internship.mapper.StudentInternshipStatusMapper;
 import com.internship.mapper.StudentUserMapper;
+import com.internship.mapper.TeacherAutomationScopeMapper;
 import com.internship.service.CompanyUserService;
+import com.internship.service.TeacherAutomationScopeService;
+import com.internship.service.TeacherUserService;
+import com.internship.utils.CurrentHolder;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.poi.ss.usermodel.*;
@@ -19,6 +27,9 @@ import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -66,6 +77,15 @@ public class ReportController {
     @Autowired
     private StudentApplicationMapper studentApplicationMapper;
 
+    @Autowired
+    private PositionMapper positionMapper;
+
+    @Autowired
+    private TeacherUserService teacherUserService;
+
+    @Autowired
+    private TeacherAutomationScopeMapper teacherScopeMapper;
+
     /**
      * 获取核心指标数据
      */
@@ -75,6 +95,7 @@ public class ReportController {
             @RequestParam(defaultValue = "month") String timeRange,
             @RequestParam(required = false) @DateTimeFormat(pattern = "yyyy-MM-dd") Date startDate,
             @RequestParam(required = false) @DateTimeFormat(pattern = "yyyy-MM-dd") Date endDate) {
+        List<Long> studentScope = reportStudentScope();
         log.info("获取核心指标数据，时间范围: {}, 开始日期: {}, 结束日期: {}", timeRange, startDate, endDate);
         try {
             Date[] dateRange = calculateDateRange(timeRange, startDate, endDate);
@@ -95,14 +116,19 @@ public class ReportController {
 
             long totalStudents = 0;
             try {
-                totalStudents = studentUserMapper.count() != null ? studentUserMapper.count() : 0;
+                Long total = studentScope == null ? studentUserMapper.count()
+                        : reportMapper.countScopedStudents(studentScope);
+                totalStudents = total == null ? 0 : total;
             } catch (Exception e) {
                 log.warn("获取学生总数失败: {}", e.getMessage());
             }
 
             long internshipStudents = 0;
             try {
-                internshipStudents = internshipStatusMapper.countByStatus(2) + internshipStatusMapper.countByStatus(3) + internshipStatusMapper.countByStatus(4);
+                internshipStudents = studentScope == null
+                        ? internshipStatusMapper.countByStatus(2) + internshipStatusMapper.countByStatus(3)
+                                + internshipStatusMapper.countByStatus(4)
+                        : reportMapper.countScopedInternshipStudents(studentScope);
             } catch (Exception e) {
                 log.warn("获取实习学生数失败: {}", e.getMessage());
             }
@@ -110,8 +136,23 @@ public class ReportController {
             double internshipRate = totalStudents > 0 ? (double) internshipStudents / totalStudents * 100 : 0;
             currentMetrics.setInternshipRate(Math.round(internshipRate * 10.0) / 10.0);
 
-            int approvalCount = getApprovalCount();
+            int approvalCount = getApprovalCount(studentScope);
             currentMetrics.setApprovalCount(approvalCount);
+
+            // 剩余岗位数量（所有岗位的剩余名额之和）
+            int remainingPositionCount = 0;
+            try {
+                remainingPositionCount = positionMapper.findAll().stream()
+                        .mapToInt(p -> p.getRemainingQuota() != null ? p.getRemainingQuota() : 0)
+                        .sum();
+            } catch (Exception e) {
+                log.warn("获取剩余岗位数量失败: {}", e.getMessage());
+            }
+            currentMetrics.setRemainingPositionCount(remainingPositionCount);
+
+            // 尚无 Offer 学生数量 = 总学生数 - 已确定实习学生数
+            long unplacedStudents = Math.max(0, totalStudents - internshipStudents);
+            currentMetrics.setUnplacedStudentCount((int) unplacedStudents);
 
             currentMetrics.setCompanyChange(0);
             currentMetrics.setInternshipRateChange(0);
@@ -127,6 +168,8 @@ public class ReportController {
             defaultMetrics.setInternshipRateChange(0);
             defaultMetrics.setApprovalCount(0);
             defaultMetrics.setApprovalCountChange(0);
+            defaultMetrics.setRemainingPositionCount(0);
+            defaultMetrics.setUnplacedStudentCount(0);
             return Result.success(defaultMetrics);
         }
     }
@@ -137,6 +180,7 @@ public class ReportController {
     @GetMapping("/company-trend")
     @PreAuthorize("hasAnyRole('ADMIN', 'TEACHER', 'TEACHER_COLLEGE', 'TEACHER_DEPARTMENT', 'TEACHER_COUNSELOR')")
     public Result getCompanyTrend(@RequestParam(defaultValue = "2026") Integer year) {
+        reportStudentScope();
         log.info("获取企业入驻趋势数据，年份: {}", year);
         try {
             List<CompanyTrendDTO> trend = reportMapper.getCompanyTrendByQuarter(year);
@@ -177,15 +221,19 @@ public class ReportController {
     public Result getCompanyDetails(
             @RequestParam(defaultValue = "1") Integer page,
             @RequestParam(defaultValue = "5") Integer pageSize) {
+        List<Long> studentScope = reportStudentScope();
         log.info("获取企业入驻详情列表，页码: {}, 每页大小: {}", page, pageSize);
         try {
             int offset = (page - 1) * pageSize;
-            List<CompanyDetailDTO> companies = reportMapper.getCompanyDetails(offset, pageSize);
+            List<CompanyDetailDTO> companies = companyDetails(offset, pageSize, studentScope);
 
             for (CompanyDetailDTO company : companies) {
                 List<String> tags = new ArrayList<>();
                 String companyTag = company.getCompanyTag();
                 if (companyTag != null) {
+                    if (companyTag.contains("基地")) {
+                        tags.add("基地");
+                    }
                     if (companyTag.contains("双向")) {
                         tags.add("双向");
                     }
@@ -215,6 +263,7 @@ public class ReportController {
     @GetMapping("/companies/count")
     @PreAuthorize("hasAnyRole('ADMIN', 'TEACHER', 'TEACHER_COLLEGE', 'TEACHER_DEPARTMENT', 'TEACHER_COUNSELOR')")
     public Result getCompanyDetailsCount() {
+        reportStudentScope();
         log.info("获取企业入驻详情总数");
         try {
             Long count = reportMapper.getCompanyDetailsCount();
@@ -233,10 +282,11 @@ public class ReportController {
     public Result getStudentInternshipDetails(
             @RequestParam(defaultValue = "1") Integer page,
             @RequestParam(defaultValue = "5") Integer pageSize) {
+        List<Long> studentScope = reportStudentScope();
         log.info("获取学生实习详情列表，页码: {}, 每页大小: {}", page, pageSize);
         try {
             int offset = (page - 1) * pageSize;
-            List<StudentInternshipDetailDTO> students = reportMapper.getStudentInternshipDetails(offset, pageSize);
+            List<StudentInternshipDetailDTO> students = studentDetails(offset, pageSize, studentScope);
             return Result.success(students);
         } catch (Exception e) {
             log.error("获取学生实习详情列表失败: {}", e.getMessage(), e);
@@ -250,9 +300,11 @@ public class ReportController {
     @GetMapping("/students/count")
     @PreAuthorize("hasAnyRole('ADMIN', 'TEACHER', 'TEACHER_COLLEGE', 'TEACHER_DEPARTMENT', 'TEACHER_COUNSELOR')")
     public Result getStudentInternshipDetailsCount() {
+        List<Long> studentScope = reportStudentScope();
         log.info("获取学生实习详情总数");
         try {
-            Long count = reportMapper.getStudentInternshipDetailsCount();
+            Long count = studentScope == null ? reportMapper.getStudentInternshipDetailsCount()
+                    : reportMapper.getScopedStudentInternshipDetailsCount(studentScope);
             return Result.success(count != null ? count : 0);
         } catch (Exception e) {
             log.error("获取学生实习详情总数失败: {}", e.getMessage(), e);
@@ -268,10 +320,11 @@ public class ReportController {
     public Result getApprovalDetails(
             @RequestParam(defaultValue = "1") Integer page,
             @RequestParam(defaultValue = "5") Integer pageSize) {
+        List<Long> studentScope = reportStudentScope();
         log.info("获取申请审核详情列表，页码: {}, 每页大小: {}", page, pageSize);
         try {
             int offset = (page - 1) * pageSize;
-            List<ApprovalDetailDTO> approvals = reportMapper.getApprovalDetails(offset, pageSize);
+            List<ApprovalDetailDTO> approvals = approvalDetails(offset, pageSize, studentScope);
             return Result.success(approvals);
         } catch (Exception e) {
             log.error("获取申请审核详情列表失败: {}", e.getMessage(), e);
@@ -285,9 +338,12 @@ public class ReportController {
     @GetMapping("/approvals/count")
     @PreAuthorize("hasAnyRole('ADMIN', 'TEACHER', 'TEACHER_COLLEGE', 'TEACHER_DEPARTMENT', 'TEACHER_COUNSELOR')")
     public Result getApprovalDetailsCount() {
+        List<Long> studentScope = reportStudentScope();
         log.info("获取申请审核详情总数");
         try {
-            Long count = reportMapper.getApprovalDetailsCount();
+            Long count = studentScope == null ? reportMapper.getApprovalDetailsCount()
+                    : reportMapper.getScopedApprovalDetailsCount(studentScope,
+                            includeCompanyApprovals(studentScope));
             return Result.success(count != null ? count : 0);
         } catch (Exception e) {
             log.error("获取申请审核详情总数失败: {}", e.getMessage(), e);
@@ -298,6 +354,7 @@ public class ReportController {
     /**
      * 导出综合统计报表
      */
+    @Log(operationType = "EXPORT", module = "DATA_EXPORT", description = "导出综合统计报表", riskLevel = "MEDIUM", critical = true)
     @GetMapping("/export")
     @PreAuthorize("hasAnyRole('ADMIN', 'TEACHER', 'TEACHER_COLLEGE', 'TEACHER_DEPARTMENT', 'TEACHER_COUNSELOR')")
     public void exportReport(
@@ -305,6 +362,7 @@ public class ReportController {
             @RequestParam(required = false) @DateTimeFormat(pattern = "yyyy-MM-dd") Date startDate,
             @RequestParam(required = false) @DateTimeFormat(pattern = "yyyy-MM-dd") Date endDate,
             HttpServletResponse response) throws IOException {
+        List<Long> studentScope = reportStudentScope();
         log.info("导出综合统计报表，时间范围: {}, 开始日期: {}, 结束日期: {}", timeRange, startDate, endDate);
 
         Date[] dateRange = calculateDateRange(timeRange, startDate, endDate);
@@ -315,11 +373,11 @@ public class ReportController {
         int companyCount = 0;
         try { companyCount = companyUserMapper.countApproved(); } catch (Exception e) { log.warn("获取企业数量失败: {}", e.getMessage()); }
         long totalStudents = 0;
-        try { totalStudents = studentUserMapper.count() != null ? studentUserMapper.count() : 0; } catch (Exception e) { log.warn("获取学生总数失败: {}", e.getMessage()); }
+        try { Long total = studentScope == null ? studentUserMapper.count() : reportMapper.countScopedStudents(studentScope); totalStudents = total == null ? 0 : total; } catch (Exception e) { log.warn("获取学生总数失败: {}", e.getMessage()); }
         long internshipStudentsExport = 0;
-        try { internshipStudentsExport = internshipStatusMapper.countByStatus(2) + internshipStatusMapper.countByStatus(3) + internshipStatusMapper.countByStatus(4); } catch (Exception e) { log.warn("获取实习学生数失败: {}", e.getMessage()); }
+        try { internshipStudentsExport = studentScope == null ? internshipStatusMapper.countByStatus(2) + internshipStatusMapper.countByStatus(3) + internshipStatusMapper.countByStatus(4) : reportMapper.countScopedInternshipStudents(studentScope); } catch (Exception e) { log.warn("获取实习学生数失败: {}", e.getMessage()); }
         double internshipRate = totalStudents > 0 ? (double) internshipStudentsExport / totalStudents * 100 : 0;
-        int approvalCount = getApprovalCount();
+        int approvalCount = getApprovalCount(studentScope);
 
         // 获取企业入驻趋势
         int currentYear = Calendar.getInstance().get(Calendar.YEAR);
@@ -331,9 +389,9 @@ public class ReportController {
         quarterMap.put("第四季度", 0);
         for (CompanyTrendDTO dto : rawTrend) { quarterMap.put(dto.getLabel(), dto.getValue()); }
 
-        List<CompanyDetailDTO> companies = reportMapper.getCompanyDetails(0, 1000);
-        List<StudentInternshipDetailDTO> students = reportMapper.getStudentInternshipDetails(0, 1000);
-        List<ApprovalDetailDTO> approvals = reportMapper.getApprovalDetails(0, 1000);
+        List<CompanyDetailDTO> companies = companyDetails(0, 1000, studentScope);
+        List<StudentInternshipDetailDTO> students = studentDetails(0, 1000, studentScope);
+        List<ApprovalDetailDTO> approvals = approvalDetails(0, 1000, studentScope);
 
         // 设置企业标签
         for (CompanyDetailDTO company : companies) {
@@ -520,12 +578,14 @@ public class ReportController {
     /**
      * 导出企业入驻报表
      */
+    @Log(operationType = "EXPORT", module = "DATA_EXPORT", description = "导出企业入驻报表", riskLevel = "MEDIUM", critical = true)
     @GetMapping("/export/companies")
     @PreAuthorize("hasAnyRole('ADMIN', 'TEACHER', 'TEACHER_COLLEGE', 'TEACHER_DEPARTMENT', 'TEACHER_COUNSELOR')")
     public void exportCompanyReport(HttpServletResponse response) throws IOException {
+        List<Long> studentScope = reportStudentScope();
         log.info("导出企业入驻报表");
 
-        List<CompanyDetailDTO> companies = reportMapper.getCompanyDetails(0, 10000);
+        List<CompanyDetailDTO> companies = companyDetails(0, 10000, studentScope);
 
         // 设置企业标签
         for (CompanyDetailDTO company : companies) {
@@ -596,12 +656,14 @@ public class ReportController {
     /**
      * 导出学生实习报表
      */
+    @Log(operationType = "EXPORT", module = "DATA_EXPORT", description = "导出学生实习报表", riskLevel = "MEDIUM", critical = true)
     @GetMapping("/export/students")
     @PreAuthorize("hasAnyRole('ADMIN', 'TEACHER', 'TEACHER_COLLEGE', 'TEACHER_DEPARTMENT', 'TEACHER_COUNSELOR')")
     public void exportStudentReport(HttpServletResponse response) throws IOException {
+        List<Long> studentScope = reportStudentScope();
         log.info("导出学生实习报表");
 
-        List<StudentInternshipDetailDTO> students = reportMapper.getStudentInternshipDetails(0, 10000);
+        List<StudentInternshipDetailDTO> students = studentDetails(0, 10000, studentScope);
 
         try (Workbook workbook = new XSSFWorkbook(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
             Sheet sheet = workbook.createSheet("学生实习详情");
@@ -650,12 +712,14 @@ public class ReportController {
     /**
      * 导出申请审核报表
      */
+    @Log(operationType = "EXPORT", module = "DATA_EXPORT", description = "导出申请审核报表", riskLevel = "MEDIUM", critical = true)
     @GetMapping("/export/approvals")
     @PreAuthorize("hasAnyRole('ADMIN', 'TEACHER', 'TEACHER_COLLEGE', 'TEACHER_DEPARTMENT', 'TEACHER_COUNSELOR')")
     public void exportApprovalReport(HttpServletResponse response) throws IOException {
+        List<Long> studentScope = reportStudentScope();
         log.info("导出申请审核报表");
 
-        List<ApprovalDetailDTO> approvals = reportMapper.getApprovalDetails(0, 10000);
+        List<ApprovalDetailDTO> approvals = approvalDetails(0, 10000, studentScope);
 
         try (Workbook workbook = new XSSFWorkbook(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
             Sheet sheet = workbook.createSheet("申请审核详情");
@@ -782,10 +846,68 @@ public class ReportController {
         return new Date[]{currentStartDate, currentEndDate, previousStartDate, previousEndDate};
     }
 
-    private int getApprovalCount() {
+    /** null is reserved for an authenticated administrator; teachers always carry a bounded list. */
+    private List<Long> reportStudentScope() {
+        User actor = CurrentHolder.getUser();
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (actor == null || actor.getId() == null || authentication == null) {
+            throw new AccessDeniedException("报表身份不可用");
+        }
+        if ("ROLE_ADMIN".equals(actor.getRole()) && authentication.getAuthorities().stream()
+                .anyMatch(a -> "ROLE_ADMIN".equals(a.getAuthority()))) {
+            return null;
+        }
+        if (actor.getUsername() == null || actor.getRole() == null
+                || !actor.getRole().matches("ROLE_TEACHER_(COLLEGE|DEPARTMENT|COUNSELOR)")
+                || authentication.getAuthorities().stream()
+                    .noneMatch(a -> actor.getRole().equals(a.getAuthority()))) {
+            throw new AccessDeniedException("报表教师身份不匹配");
+        }
         try {
-            Long studentApps = studentApplicationMapper.count();
-            Long companyApps = companyUserService.count();
+            TeacherUser teacher = teacherUserService.findById(actor.getId());
+            TeacherAutomationScopeService.requireTeacher(teacher);
+            if (!actor.getUsername().equals(teacher.getTeacherUserId())
+                    || !actor.getRole().equals("ROLE_TEACHER_" + teacher.getTeacherType())) {
+                throw new AccessDeniedException("报表教师身份不匹配");
+            }
+            List<Long> ids = teacherScopeMapper.studentIds(teacher);
+            if (ids == null) throw new AccessDeniedException("报表教师范围不可用");
+            return ids.stream().filter(id -> id != null && id > 0).distinct().toList();
+        } catch (AccessDeniedException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new AccessDeniedException("报表教师范围不可用", e);
+        }
+    }
+
+    private List<CompanyDetailDTO> companyDetails(int offset, int pageSize, List<Long> studentScope) {
+        return studentScope == null ? reportMapper.getCompanyDetails(offset, pageSize)
+                : reportMapper.getScopedCompanyDetails(offset, pageSize, studentScope);
+    }
+
+    private List<StudentInternshipDetailDTO> studentDetails(int offset, int pageSize, List<Long> studentScope) {
+        if (studentScope != null && studentScope.isEmpty()) return List.of();
+        return studentScope == null ? reportMapper.getStudentInternshipDetails(offset, pageSize)
+                : reportMapper.getScopedStudentInternshipDetails(offset, pageSize, studentScope);
+    }
+
+    private List<ApprovalDetailDTO> approvalDetails(int offset, int pageSize, List<Long> studentScope) {
+        return studentScope == null ? reportMapper.getApprovalDetails(offset, pageSize)
+                : reportMapper.getScopedApprovalDetails(offset, pageSize, studentScope,
+                        includeCompanyApprovals(studentScope));
+    }
+
+    private boolean includeCompanyApprovals(List<Long> studentScope) {
+        return studentScope == null || SecurityContextHolder.getContext().getAuthentication()
+                .getAuthorities().stream()
+                .anyMatch(authority -> "user:company:audit".equals(authority.getAuthority()));
+    }
+
+    private int getApprovalCount(List<Long> studentScope) {
+        try {
+            Long studentApps = studentScope == null ? studentApplicationMapper.count()
+                    : reportMapper.countScopedApplications(studentScope);
+            Long companyApps = includeCompanyApprovals(studentScope) ? companyUserService.count() : 0L;
             return (studentApps != null ? studentApps.intValue() : 0)
                  + (companyApps != null ? companyApps.intValue() : 0);
         } catch (Exception e) {

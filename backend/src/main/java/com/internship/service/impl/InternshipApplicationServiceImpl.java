@@ -63,6 +63,12 @@ public class InternshipApplicationServiceImpl implements InternshipApplicationSe
         int result = internshipApplicationMapper.updateStatus(id, status);
         return result > 0;
     }
+
+    @Override
+    public boolean updateLatestStatusByStudentAndPosition(Long studentId, Long positionId, String status) {
+        return internshipApplicationMapper.updateLatestStatusByStudentAndPosition(
+                studentId, positionId, status) > 0;
+    }
     
     @Override
     public boolean markAsViewed(Long id) {

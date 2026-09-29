@@ -21,7 +21,8 @@
         <div
           v-for="item in filteredInterviews"
           :key="item.id"
-          class="interview-card"
+          :class="['interview-card', { 'deep-link-target': String(item.id) === String(highlightedInterviewId) }]"
+          :data-activity-id="item.id"
         >
           <div class="card-header">
             <div class="card-title">{{ item.jobTitle }}</div>
@@ -49,6 +50,7 @@
               </div>
             </div>
             <div class="card-footer">
+              <span class="create-time">{{ item.createTime?.slice(0, 10) }}</span>
               <div class="card-actions">
                 <button class="action-button view" @click="viewDetails(item)">
                   <el-icon><ArrowRight /></el-icon>
@@ -144,21 +146,67 @@
 </template>
 
 <script setup lang="ts">
+import { useAgentPageContext } from '@/agent/useAgentPageContext'
 import { ref, computed, inject, watch, onMounted, onUnmounted } from 'vue'
+import type { Ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { Clock, VideoCamera, Location, OfficeBuilding, ArrowRight } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import request from '@/utils/request'
 import emitter from '@/utils/event-bus'
 import { onInterviewCreate, onInterviewStatusUpdate, offInterviewCreate, offInterviewStatusUpdate } from '@/utils/websocket'
+import { getInterviewStatusText } from '@/utils/directHire'
 
 // 接收父组件提供的对话框状态
-const isDialogOpen = inject('isDialogOpen');
+const isDialogOpen = inject<Ref<boolean>>('isDialogOpen');
+const route = useRoute()
+const router = useRouter()
 
 const currentFilter = ref('all')
 const showDetailDialog = ref(false)
 const currentInterview = ref(null)
 
-const interviews = ref([])
+interface InterviewRow {
+  id?: number | string
+  positionName?: string
+  position_name?: string
+  companyName?: string
+  company_name?: string
+  interviewTime?: string
+  interview_time?: string
+  interviewMethod?: string
+  interview_method?: string
+  directHire?: boolean
+  direct_hire?: boolean
+  interviewLocation?: string
+  interview_location?: string
+  status?: string | number
+  contactPerson?: string
+  contact_person?: string
+  contactPhone?: string
+  contact_phone?: string
+  website?: string
+  remark?: string
+  createTime?: string
+}
+interface InterviewDisplay {
+  id?: number | string
+  jobTitle?: string
+  company?: string
+  interviewTime?: string
+  interviewMethod?: string
+  location?: string
+  status?: string
+  statusClass?: string
+  directHire?: boolean
+  contactPerson?: string
+  contactPhone?: string
+  website?: string
+  interviewNotice?: string
+  createTime?: string
+}
+const interviews = ref<InterviewDisplay[]>([])
+const highlightedInterviewId = ref<string | number | null>(null)
 
 // 监听对话框状态变化
 watch(showDetailDialog, (newVal) => {
@@ -174,6 +222,12 @@ const filters = [
   { label: '已完成', value: 'completed' }
 ]
 
+// 面试时间去掉秒，只显示到分钟（后端返回格式：yyyy-MM-dd HH:mm:ss）
+const formatInterviewTime = (time?: string) => {
+  if (!time) return ''
+  return time.replace(/(\d{2}:\d{2}):\d{2}/, '$1')
+}
+
 const fetchInterviews = async () => {
   try {
     let status = null
@@ -183,24 +237,27 @@ const fetchInterviews = async () => {
     }
     // completed 和 all 都获取所有数据，前端筛选
 
-    const response = await request.get(`/student/interviews/list`, {
+    const response = await request.get<InterviewRow[]>(`/student/interviews/list`, {
       params: status !== null ? { status } : {}
     })
     
     if (response.code === 200) {
-      interviews.value = response.data.map(item => ({
+      const rows = Array.isArray(response.data) ? response.data : []
+      interviews.value = rows.map(item => ({
         id: item.id,
         jobTitle: item.positionName,
         company: item.companyName,
-        interviewTime: item.interviewTime,
-        interviewMethod: item.interviewMethod,
+        interviewTime: formatInterviewTime(item.interviewTime),
+        interviewMethod: item.directHire ? '免面试（直接录取）' : item.interviewMethod,
         location: item.interviewLocation,
-        status: getStatusText(item.status),
+        status: getStatusText(item.status, item.directHire),
         statusClass: getStatusClass(item.status),
+        directHire: item.directHire,
         contactPerson: item.contactPerson,
         contactPhone: item.contactPhone,
         website: item.website,
-        interviewNotice: item.remark || ''
+        interviewNotice: item.remark || '',
+        createTime: item.createTime
       }))
     }
   } catch (error) {
@@ -208,16 +265,10 @@ const fetchInterviews = async () => {
   }
 }
 
-const getStatusText = (status: string | number) => {
-  const statusMap: Record<string, string> = {
-    'pending_interview': '待面试',
-    'interview_passed': '面试通过',
-    'interview_failed': '面试没通过'
-  }
-  return statusMap[String(status)] || String(status)
-}
+const getStatusText = (status: string | number | undefined, directHire: boolean | undefined = false) =>
+  getInterviewStatusText(status as string | number, directHire as boolean)
 
-const getStatusClass = (status: string | number) => {
+const getStatusClass = (status: string | number | undefined) => {
   const statusMap: Record<string, string> = {
     'pending_interview': 'pending',
     'interview_passed': 'interview_passed',
@@ -251,28 +302,39 @@ const viewDetails = (item) => {
   showDetailDialog.value = true
 }
 
+const clearInterviewDeepLink = () => {
+  const query = { ...route.query }
+  delete query.interviewId
+  router.replace({ path: route.path, query })
+}
+
+const openInterviewFromQuery = () => {
+  const targetId = route.query.interviewId
+  if (!targetId) return
+
+  const target = interviews.value.find((interview) => String(interview.id) === String(targetId))
+  if (!target) {
+    highlightedInterviewId.value = null
+    ElMessage.warning('未找到该面试记录，已为您显示面试列表')
+    clearInterviewDeepLink()
+    return
+  }
+
+  currentFilter.value = 'all'
+  highlightedInterviewId.value = target.id
+  viewDetails(target)
+}
+
 watch(currentFilter, () => {
   fetchInterviews()
 })
 
 // 面试创建处理函数
-const handleInterviewCreate = (data) => {
-  const newInterview = {
-    id: data.id,
-    jobTitle: data.positionName,
-    company: data.companyName,
-    interviewTime: data.interviewTime,
-    interviewMethod: data.interviewMethod,
-    location: data.interviewLocation,
-    status: getStatusText(data.status),
-    statusClass: getStatusClass(data.status),
-    contactPerson: data.contactPerson || '',
-    contactPhone: data.contactPhone || '',
-    website: data.website || '',
-    interviewNotice: data.remark || ''
-  }
-  interviews.value.unshift(newInterview)
-  ElMessage.success(`新增面试：${data.positionName}`)
+const handleInterviewCreate = async (data) => {
+  await fetchInterviews()
+  ElMessage.success(data.directHire
+    ? `企业已直接录取：${data.positionName}`
+    : `新增面试：${data.positionName}`)
 }
 
 // 面试状态更新处理函数
@@ -298,7 +360,8 @@ const handleApplicationStatusUpdate = (data) => {
 }
 
 onMounted(async () => {
-  fetchInterviews()
+  await fetchInterviews()
+  openInterviewFromQuery()
 
   // 注册面试事件监听（复用在 StudentLayout 中已初始化的 WebSocket）
   onInterviewCreate(handleInterviewCreate)
@@ -308,11 +371,22 @@ onMounted(async () => {
   emitter.on('application-status-update', handleApplicationStatusUpdate)
 })
 
+watch(() => route.query.interviewId, () => {
+  if (interviews.value.length > 0) openInterviewFromQuery()
+})
+
 onUnmounted(() => {
   offInterviewCreate(handleInterviewCreate)
   offInterviewStatusUpdate(handleInterviewStatusUpdate)
   emitter.off('application-status-update', handleApplicationStatusUpdate)
 })
+
+useAgentPageContext(() => ({
+  title: '面试管理',
+  view: showDetailDialog.value ? 'interview-detail' : 'page',
+  object: (showDetailDialog.value && (currentInterview.value as any)?.id) ? { type: 'offer', id: String((currentInterview.value as any).id) } : null,
+  filters: { status: currentFilter.value === 'all' ? '' : String(currentFilter.value) }
+}))
 </script>
 
 <style scoped>
@@ -482,6 +556,11 @@ onUnmounted(() => {
   background: linear-gradient(145deg, #ffffff 0%, #f0f9ff 100%);
 }
 
+.interview-card.deep-link-target {
+  border-color: #409eff;
+  box-shadow: 0 0 0 3px rgba(64, 158, 255, 0.18), 0 12px 40px rgba(64, 158, 255, 0.18);
+}
+
 .interview-card:hover .card-title {
   color: #409EFF;
   text-shadow: 0 0 20px rgba(64, 158, 255, 0.3);
@@ -634,7 +713,7 @@ onUnmounted(() => {
 
 .card-footer {
   display: flex;
-  justify-content: flex-end;
+  justify-content: space-between;
   gap: 12px;
   padding: 12px 0 0 0;
   margin-top: auto;
@@ -650,6 +729,15 @@ onUnmounted(() => {
   right: 0;
   height: 1px;
   background: linear-gradient(90deg, transparent, rgba(226, 232, 240, 0.6), transparent);
+}
+
+.create-time {
+  font-size: 12px;
+  color: #94a3b8;
+  white-space: nowrap;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
 }
 
 .card-actions {

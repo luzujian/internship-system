@@ -8,6 +8,7 @@ export interface ClassItem {
   name: string
   grade?: number
   majorId?: number
+  teacherId?: number
   description?: string
   studentCount?: number
   createTime?: string

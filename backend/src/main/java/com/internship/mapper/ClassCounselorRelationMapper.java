@@ -7,6 +7,8 @@ import java.util.List;
 
 @Mapper
 public interface ClassCounselorRelationMapper {
+    @org.apache.ibatis.annotations.Select("SELECT * FROM class_counselor_relation WHERE class_id=#{classId} FOR UPDATE")
+    List<ClassCounselorRelation> findByClassIdForUpdate(@Param("classId") Long classId);
     
     int insert(ClassCounselorRelation relation);
     

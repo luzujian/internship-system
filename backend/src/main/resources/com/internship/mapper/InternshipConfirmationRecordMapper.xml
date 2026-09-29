@@ -75,8 +75,71 @@
         WHERE id = #{id}
     </update>
 
+    <!-- 首次提交以 recall_status: NULL -> 0 作为无新增字段条件下的原子业务转换。 -->
+    <update id="submitPending">
+        UPDATE internship_confirmation_record
+        SET remark = #{remark},
+            recall_status = 0,
+            recall_reason = NULL,
+            recall_apply_time = NULL,
+            update_time = NOW()
+        WHERE id = #{id}
+          AND status = 0
+          AND recall_status IS NULL
+    </update>
+
+    <!-- 企业只能把仍待确认且未撤回的记录原子转换为确认或拒绝。 -->
+    <update id="resolvePending">
+        UPDATE internship_confirmation_record
+        SET status = #{status},
+            remark = #{remark},
+            update_time = NOW()
+        WHERE id = #{id}
+          AND status = 0
+          AND (recall_status IS NULL OR recall_status = 0)
+    </update>
+
+    <update id="recallPending">
+        UPDATE internship_confirmation_record
+        SET recall_status = 2,
+            recall_reason = #{recallReason},
+            recall_apply_time = NOW(),
+            update_time = NOW()
+        WHERE id = #{id}
+          AND status = 0
+          AND (recall_status IS NULL OR recall_status = 0)
+    </update>
+
     <select id="findById" resultMap="BaseResultMap">
         SELECT * FROM internship_confirmation_record WHERE id = #{id}
+    </select>
+
+    <select id="findByIdForUpdate" resultMap="BaseResultMap">
+        SELECT * FROM internship_confirmation_record WHERE id = #{id} FOR UPDATE
+    </select>
+
+    <select id="lockStudent" resultType="java.lang.Long">
+        SELECT id FROM student_users WHERE id = #{studentId} FOR UPDATE
+    </select>
+
+    <select id="findActiveByStudentForUpdate" resultMap="BaseResultMap">
+        SELECT * FROM internship_confirmation_record
+        WHERE student_id = #{studentId}
+          AND status = 0
+          AND recall_status = 0
+        ORDER BY id DESC
+        LIMIT 1
+        FOR UPDATE
+    </select>
+
+    <select id="findSubmittedPendingByStudentForUpdate" resultMap="BaseResultMap">
+        SELECT * FROM internship_confirmation_record
+        WHERE student_id = #{studentId}
+          AND status = 0
+          AND recall_status = 0
+        ORDER BY id DESC
+        LIMIT 1
+        FOR UPDATE
     </select>
 
     <select id="findByStudentId" resultMap="BaseResultMap">
@@ -88,15 +151,26 @@
     </select>
 
     <select id="findByCompanyId" resultMap="BaseResultMap">
-        SELECT * FROM internship_confirmation_record WHERE company_id = #{companyId} AND (recall_status IS NULL OR recall_status != 2) ORDER BY create_time DESC
+        SELECT record.*
+        FROM internship_confirmation_record record
+        INNER JOIN student_users student ON student.id = record.student_id
+        WHERE record.company_id = #{companyId}
+          AND (record.recall_status IS NULL OR record.recall_status != 2)
+        ORDER BY record.create_time DESC
     </select>
 
     <select id="findByCompanyIdAndStatus" resultMap="BaseResultMap">
-        SELECT * FROM internship_confirmation_record WHERE company_id = #{companyId} AND status = #{status} AND (recall_status IS NULL OR recall_status NOT IN (1, 2))
+        SELECT record.*
+        FROM internship_confirmation_record record
+        INNER JOIN student_users student ON student.id = record.student_id
+        WHERE record.company_id = #{companyId} AND record.status = #{status}
         <if test="status == 0">
-            AND (recall_status IS NULL OR recall_status != 2)
+            AND record.recall_status = 0
         </if>
-        ORDER BY create_time DESC
+        <if test="status != 0">
+            AND (record.recall_status IS NULL OR record.recall_status NOT IN (1, 2))
+        </if>
+        ORDER BY record.create_time DESC
     </select>
 
     <select id="findByStudentIdAndStatus" resultMap="BaseResultMap">
@@ -105,18 +179,20 @@
 
     <!-- 查询待撤回确认记录（撤回状态为2=已撤回） -->
     <select id="findPendingRecallList" resultMap="BaseResultMap">
-        SELECT * FROM internship_confirmation_record
-        WHERE recall_status = 2
+        SELECT record.*
+        FROM internship_confirmation_record record
+        INNER JOIN student_users student ON student.id = record.student_id
+        WHERE record.recall_status = 2
         <if test="studentId != null">
-            AND student_id = #{studentId}
+            AND record.student_id = #{studentId}
         </if>
         <if test="name != null and name != ''">
-            AND student_name LIKE CONCAT('%', #{name}, '%')
+            AND record.student_name LIKE CONCAT('%', #{name}, '%')
         </if>
         <if test="companyName != null and companyName != ''">
-            AND company_name LIKE CONCAT('%', #{companyName}, '%')
+            AND record.company_name LIKE CONCAT('%', #{companyName}, '%')
         </if>
-        ORDER BY recall_apply_time DESC
+        ORDER BY record.recall_apply_time DESC
     </select>
 
 </mapper>

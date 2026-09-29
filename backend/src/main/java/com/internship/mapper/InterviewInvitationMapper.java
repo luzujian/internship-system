@@ -29,7 +29,8 @@ public interface InterviewInvitationMapper {
     })
     @Select("SELECT ii.*, cu.website FROM interview_invitation ii " +
             "LEFT JOIN company_users cu ON ii.company_id = cu.id " +
-            "WHERE ii.student_id = #{studentId} AND ii.position_id = #{positionId}")
+            "WHERE ii.student_id = #{studentId} AND ii.position_id = #{positionId} " +
+            "ORDER BY COALESCE(ii.update_time, ii.create_time) DESC, ii.id DESC LIMIT 1")
     InterviewInvitation findByStudentAndPosition(@Param("studentId") Long studentId, @Param("positionId") Long positionId);
 
     @Results({

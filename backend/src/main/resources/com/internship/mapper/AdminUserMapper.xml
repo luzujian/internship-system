@@ -27,10 +27,32 @@
     <!-- 更新管理员用户信息 -->
     <update id="update" parameterType="com.internship.entity.AdminUser">
         update admin_users
-        set username    = #{username},
-            password    = #{password},
-            phone       = #{phone},
-            admin_level = #{adminLevel}
+        <set>
+            <if test="username != null and username != ''">
+                username = #{username},
+            </if>
+            <if test="password != null and password != ''">
+                password = #{password},
+            </if>
+            <if test="name != null and name != ''">
+                name = #{name},
+            </if>
+            <if test="phone != null">
+                phone = #{phone},
+            </if>
+            <if test="department != null">
+                department = #{department},
+            </if>
+            <if test="adminLevel != null">
+                admin_level = #{adminLevel},
+            </if>
+            <if test="status != null">
+                status = #{status},
+            </if>
+            <if test="updateTime != null">
+                update_time = #{updateTime}
+            </if>
+        </set>
         where id = #{id}
     </update>
 

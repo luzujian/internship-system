@@ -54,21 +54,43 @@ public class SecurityConfig {
                 )
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(authorize -> authorize
+                        // 用户私聊/群聊已退役；独立的 AI 助手入口不受影响。
+                        .requestMatchers("/api/chat", "/api/chat/**").denyAll()
+                        // 旧文件管理入口无前端调用，且含客户端指定上传者与本地文件读取，整体关闭。
+                        .requestMatchers("/api/file-management", "/api/file-management/**").denyAll()
+                        // 旧学习资源上传仅生成文件 URL，未保存字节；资源文档上传使用独立的受保护流程。
+                        .requestMatchers(HttpMethod.POST, "/api/resources/upload").denyAll()
+                        // 分类接口无对应表，也不被现有资源管理页面使用；关闭遗留入口，避免返回数据库错误。
+                        .requestMatchers("/api/resources/categories", "/api/resources/categories/**").denyAll()
+                        // 学生账号只允许由管理员创建或批量导入；保留旧路径拦截，防止旧客户端重开注册。
+                        .requestMatchers(HttpMethod.POST, "/api/auth/register").denyAll()
+                        // 企业申请无需邮箱验证码；已停用的发码和申请管理凭据入口不再开放。
+                        .requestMatchers(HttpMethod.POST, "/api/company/send-verify-code",
+                                "/api/company/send-management-code", "/api/company/verify-management-code",
+                                "/api/company/verify-management-secret", "/api/company/application-detail").denyAll()
+                        // 学生账号发放必须由管理员发起，原有 user:student:add 功能权限仍在控制器核验。
+                        .requestMatchers(HttpMethod.POST,
+                                "/api/admin/student-users", "/api/admin/student-users/batch", "/api/admin/student-users/import",
+                                "/api/admin/students", "/api/admin/students/batch", "/api/admin/students/import")
+                            .hasRole("ADMIN")
                         // 允许所有 OPTIONS 请求通过（用于 CORS 预检）
                         .requestMatchers(HttpMethod.OPTIONS).permitAll()
-                        // 允许登录、注册和刷新令牌接口无需认证
-                        .requestMatchers("/api/auth/login", "/api/auth/register", "/api/auth/refresh-token", "/api/auth/password-rules").permitAll()
+                        // 登录和刷新令牌接口无需认证。
+                        .requestMatchers("/api/auth/login", "/api/auth/refresh-token", "/api/auth/password-rules", "/api/auth/forgot-password/**").permitAll()
                         // 允许企业注册相关接口无需认证
-                        .requestMatchers("/api/company/register", "/api/company/check-username", "/api/company/check-status", "/api/company/send-verify-code", "/api/company/recall", "/api/company/update/**").permitAll()
-                        // 允许文件上传接口无需认证
-                        .requestMatchers("/api/upload/**").permitAll()
-                        // 允许上传的静态资源访问
-                        .requestMatchers("/api/uploads/**").permitAll()
-                        // 允许测试接口无需认证（调试用）
-                        .requestMatchers("/api/test/**").permitAll()
+                        .requestMatchers("/api/company/register", "/api/company/check-username", "/api/company/check-status",
+                                "/api/company/recall", "/api/company/update/**").permitAll()
+                        // 遗留无校验上传和按 URL 删除接口不对外开放。
+                        .requestMatchers(HttpMethod.POST, "/api/upload").denyAll()
+                        .requestMatchers(HttpMethod.DELETE, "/api/upload/image").denyAll()
+                        // 上传要求登录；未绑定业务记录的通用对象键读取由 OssObjectReadPolicy 拒绝。
+                        .requestMatchers(HttpMethod.POST, "/api/upload/**").authenticated()
+                        .requestMatchers("/api/upload/**").authenticated()
+                        .requestMatchers("/api/uploads/**").authenticated()
+                        .requestMatchers("/api/test/**").denyAll()
                         // 允许教师登录接口无需认证
                         .requestMatchers("/api/teacher/login").permitAll()
-                        // 允许注册页面访问专业、班级和院系相关接口
+                        // 保留现有专业、班级和院系只读接口。
                         .requestMatchers(HttpMethod.GET, "/api/majors", "/api/majors/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/admin/classes", "/api/admin/classes/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/admin/departments", "/api/admin/departments/**").permitAll()
@@ -86,27 +108,31 @@ public class SecurityConfig {
                         .requestMatchers("/sms/**").permitAll()
                         // 文件下载需要认证
                         .requestMatchers("/api/download/**").authenticated()
-                        // 允许学生查询 Agent 接口无需认证
-                        .requestMatchers("/api/ai/student/query", "/api/ai/student/query/stream", "/api/ai/student/info").permitAll()
-                        // 允许资源查询 Agent 接口无需认证
-                        .requestMatchers("/api/ai/resource/advanced/query", "/api/ai/resource/advanced/query/stream").permitAll()
+                        // 遗留自然语言入口含删除能力；只读Agent通过 /api/agent 使用独立授权工具。
+                        .requestMatchers("/api/ai/student/query", "/api/ai/student/query/stream", "/api/ai/student/info").denyAll()
+                        .requestMatchers("/api/ai/resource/advanced/query", "/api/ai/resource/advanced/query/stream").authenticated()
                         // 允许 WebSocket 端点访问（认证在握手拦截器中处理）
                         .requestMatchers("/ws/**").permitAll()
                         // 允许公告相关接口访问（权限由Controller的@PreAuthorize控制）
                         .requestMatchers("/api/announcement/**").authenticated()
                         // 允许静态资源访问
                         .requestMatchers("/css/**", "/js/**", "/images/**", "/favicon.ico").permitAll()
-                        // 允许模板文件下载（学生需要下载模板）
-                        .requestMatchers("/api/admin/templates/*/download").permitAll()
-                        // 允许 Swagger 文档访问
-                        .requestMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll()
+                        // 模板文件由管理员管理，下载入口也必须遵守同一权限。
+                        .requestMatchers("/api/admin/templates/*/download").hasRole("ADMIN")
+                        .requestMatchers("/swagger-ui/**", "/v3/api-docs/**").hasRole("ADMIN")
+                        // The company-specific list verifies object ownership in its controller.
+                        .requestMatchers(HttpMethod.GET, "/api/admin/applications/company/*")
+                            .hasAnyRole("ADMIN", "COMPANY")
+                        .requestMatchers("/api/admin/applications", "/api/admin/applications/**")
+                            .hasRole("ADMIN")
+                        .requestMatchers("/api/admin/category-weight", "/api/admin/category-weight/**")
+                            .hasRole("ADMIN")
                         // 教师企业审核接口（基于权限控制，需要放在更宽泛的路径之前）
                         .requestMatchers("/api/teacher/companies/audit/pending").hasAuthority("user:company:audit")
                         .requestMatchers("/api/teacher/companies/statistics").hasAuthority("user:company:audit")
                         .requestMatchers("/api/teacher/companies/*/audit").hasAuthority("user:company:audit")
                         // 管理员企业管理接口（基于权限控制）
                         .requestMatchers("/api/admin/companies/*/reset-password").hasAuthority("user:company:reset")
-                        .requestMatchers("/api/admin/companies/*/recall-audit").hasAuthority("company:recall:audit")
                         // 按角色授权教师接口
                         .requestMatchers("/api/teacher/college/**").hasRole("TEACHER_COLLEGE")
                         .requestMatchers("/api/teacher/department/**").hasRole("TEACHER_DEPARTMENT")

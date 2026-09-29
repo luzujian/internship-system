@@ -71,6 +71,8 @@
 </template>
 
 <script setup lang="ts">
+import { useAuthStore } from '@/store/auth'
+const authStore = useAuthStore()
 import { ref, watch, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 
@@ -125,19 +127,34 @@ const showOperationFeedback = (message: string, type: 'success' | 'error' = 'suc
 
 const loadAiScoringSettings = async () => {
   try {
-    const currentRole = localStorage.getItem('current_role') || 'ROLE_TEACHER'
-    const rolePrefix = currentRole === 'ROLE_TEACHER' ? 'teacher_' : ''
-    const userId = localStorage.getItem(rolePrefix + 'userId_' + currentRole) || localStorage.getItem('teacherId')
+    const userId = authStore.user?.id
     const { getCounselorAISettings } = await import('../../api/counselorAISettings')
-    const response = await getCounselorAISettings(parseInt(userId || '0'))
+    interface CounselorScoringRuleRow {
+      ruleName?: string
+      ruleCode?: string
+      weight?: number
+      minScore?: number
+      maxScore?: number
+      description?: string
+      [key: string]: unknown
+    }
+    interface CounselorAISettingsData {
+      settings?: { enableAiScoring?: number | boolean; aiModelCode?: string; [key: string]: unknown }
+      scoringRules?: CounselorScoringRuleRow[]
+      scoring_rules?: CounselorScoringRuleRow[]
+      [key: string]: unknown
+    }
+    const response = await getCounselorAISettings(parseInt(userId || '0')) as unknown as { code?: number; data?: CounselorAISettingsData }
     if (response && response.data) {
       const data = response.data
-      if (data.settings) {
-        aiScoringSettings.value.enableAiScoring = data.settings.enableAiScoring === 1
-        aiScoringSettings.value.aiModelCode = data.settings.aiModelCode || 'deepseek-chat'
+      const settingsData = data.settings
+      if (settingsData) {
+        aiScoringSettings.value.enableAiScoring = settingsData.enableAiScoring === 1 || settingsData.enableAiScoring === true
+        aiScoringSettings.value.aiModelCode = settingsData.aiModelCode || 'deepseek-chat'
       }
-      if (data.scoringRules && data.scoringRules.length > 0) {
-        aiScoringSettings.value.scoringRules = data.scoringRules.map((rule: any) => ({
+      const rulesData = data.scoringRules ?? data.scoring_rules
+      if (rulesData && rulesData.length > 0) {
+        aiScoringSettings.value.scoringRules = rulesData.map((rule: CounselorScoringRuleRow) => ({
           ruleName: rule.ruleName,
           ruleCode: rule.ruleCode,
           weight: rule.weight,
@@ -163,9 +180,7 @@ const goToKeywordLibrary = () => {
 // 保存AI分析配置（自动保存）
 const saveAiScoringSettings = async () => {
   try {
-    const currentRole = localStorage.getItem('current_role') || 'ROLE_TEACHER'
-    const rolePrefix = currentRole === 'ROLE_TEACHER' ? 'teacher_' : ''
-    const userId = localStorage.getItem(rolePrefix + 'userId_' + currentRole) || localStorage.getItem('teacherId')
+    const userId = authStore.user?.id
     const data = {
       counselorId: parseInt(userId || '0'),
       enableAiScoring: aiScoringSettings.value.enableAiScoring ? 1 : 0,

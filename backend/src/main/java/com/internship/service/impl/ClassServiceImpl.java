@@ -100,18 +100,21 @@ public class ClassServiceImpl implements ClassService {
     @Transactional(rollbackFor = Exception.class)
     public int update(Class classEntity) {
         // 获取旧的班级信息，用于比较教师是否变更
-        Class oldClass = classMapper.findById(classEntity.getId());
+        Class oldClass = classMapper.findByIdForUpdate(classEntity.getId());
         String oldTeacherId = oldClass != null ? oldClass.getTeacherId() : null;
 
         classEntity.setUpdateTime(new Date());
         int result = classMapper.update(classEntity);
 
-        String newTeacherId = classEntity.getTeacherId();
+        String newTeacherId = classEntity.getTeacherId() == null ? oldTeacherId : classEntity.getTeacherId();
         boolean teacherChanged = (newTeacherId == null && oldTeacherId != null)
                 || (newTeacherId != null && !newTeacherId.equals(oldTeacherId));
 
-        // 删除该班级的所有旧辅导员关联（无论是否变更，都重新建立关联）
-        List<ClassCounselorRelation> oldRelations = classCounselorRelationMapper.findByClassId(classEntity.getId());
+        // 只修改名称等信息时保留已认领/分配关系；明确更换负责教师才转交。
+        if (!teacherChanged) return result;
+
+        // 管理员明确变更负责教师时，删除旧关联并建立新关联。
+        List<ClassCounselorRelation> oldRelations = classCounselorRelationMapper.findByClassIdForUpdate(classEntity.getId());
         for (ClassCounselorRelation oldRelation : oldRelations) {
             classCounselorRelationMapper.deleteById(oldRelation.getId());
             log.info("删除旧的辅导员关联: 班级ID={}, 原辅导员ID={}", classEntity.getId(), oldRelation.getCounselorId());
@@ -145,20 +148,36 @@ public class ClassServiceImpl implements ClassService {
     @CacheEvict(value = "classes", key = "'all'")
     public int delete(Long id) {
         log.info("删除班级，ID: {}", id);
-        
+
         if (id == null || id <= 0) {
             throw new IllegalArgumentException("班级ID无效");
         }
-        
-        Class classEntity = classMapper.findById(id);
+
+        Class classEntity = classMapper.findByIdForUpdate(id);
         if (classEntity == null) {
             throw new IllegalArgumentException("班级不存在");
         }
-        
-        log.info("开始删除班级 {} 下的所有学生", id);
-        int deletedStudentCount = studentUserService.deleteByClassId(id);
-        log.info("成功删除班级 {} 下的 {} 名学生", id, deletedStudentCount);
-        
+
+        // 关联表必须在班级删除前清理，并与班级删除处于同一事务中。
+        // 清理失败时直接抛出异常，让事务回滚，避免留下指向不存在班级的教师关联。
+        int removedRelations = classCounselorRelationMapper.deleteByClassId(id);
+        log.info("清理班级 {} 的辅导员关联 {} 条", id, removedRelations);
+
+        // ===== 删除班级下的所有学生（学生级联清理已做 try-catch 兜底）；失败时兜底：直接置空 student_users.class_id 绕过外键 =====
+        try {
+            log.info("开始删除班级 {} 下的所有学生", id);
+            int deletedStudentCount = studentUserService.deleteByClassId(id);
+            log.info("成功删除班级 {} 下的 {} 名学生", id, deletedStudentCount);
+        } catch (Exception e) {
+            log.warn("删除班级下学生时发生异常，改为直接置空 student_users.class_id 兜底绕过外键: {}", trimErr(e));
+            try {
+                studentUserService.clearClassIdOnStudents(id);
+            } catch (Exception ex) {
+                log.warn("置空 student_users.class_id 兜底也失败（可忽略）: {}", trimErr(ex));
+            }
+        }
+
+        // ===== 删除班级本身 =====
         int result = classMapper.delete(id);
         log.info("班级删除成功，班级ID: {}", id);
         return result;
@@ -531,5 +550,21 @@ public class ClassServiceImpl implements ClassService {
 
         // 如果是 BusinessException 的中文消息，直接返回
         return message;
+    }
+
+    /** 提取精简错误信息，避免超长 SQL 堆栈刷屏 */
+    private String trimErr(Throwable e) {
+        Throwable c = e;
+        String lastMsg = (e.getMessage() == null ? "" : e.getMessage().split(";")[0].trim());
+        int depth = 0;
+        while (c.getCause() != null && depth < 5) {
+            c = c.getCause();
+            if (c.getMessage() != null) {
+                String m = c.getMessage().split(";")[0].trim();
+                if (m.length() < 160) lastMsg = m;
+            }
+            depth++;
+        }
+        return lastMsg.length() > 160 ? lastMsg.substring(0, 160) : lastMsg;
     }
 }

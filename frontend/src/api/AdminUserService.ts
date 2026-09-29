@@ -94,9 +94,9 @@ const AdminUserService = {
     }
   },
 
-  resetAdminPassword: async (id: number, password: string) => {
+  resetAdminPassword: async (id: number) => {
     try {
-      const response = await request.post(`/admin/admins/${id}/reset-password`, { password })
+      const response = await request.post(`/admin/admins/${id}/reset-password`, {})
       return response
     } catch (error) {
       console.error('重置管理员用户密码失败:', error)

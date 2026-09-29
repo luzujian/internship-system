@@ -19,6 +19,8 @@ public interface ProblemFeedbackMapper {
 
     List<ProblemFeedback> findAll();
 
+    List<ProblemFeedback> findByOwner(@Param("userType") String userType, @Param("userId") Long userId);
+
     List<ProblemFeedback> list(@Param("userType") String userType,
                                 @Param("status") String status,
                                 @Param("priority") String priority,

@@ -1,0 +1,33 @@
+{
+  "code": 200,
+  "data": {
+    "items": [
+      {
+        "id": 301,
+        "eventType": "interview_passed",
+        "category": "recruitment",
+        "title": "面试已通过",
+        "description": "星河科技 · Java 实习生",
+        "status": "success",
+        "statusText": "获得 Offer",
+        "occurredAt": "2026-07-18T14:00:00+08:00",
+        "relatedId": 25,
+        "action": { "key": "START_CONFIRMATION", "targetId": 25, "params": {} }
+      },
+      {
+        "id": 302,
+        "eventType": "direct_offer",
+        "category": "recruitment",
+        "title": "直发 Offer",
+        "description": "云海科技 · 前端实习生",
+        "status": "success",
+        "statusText": "获得 Offer",
+        "occurredAt": "2026-07-18T11:00:00+08:00",
+        "relatedId": 26,
+        "action": { "key": "START_CONFIRMATION", "targetId": 26, "params": {} }
+      }
+    ],
+    "nextCursor": null,
+    "hasMore": false
+  }
+}

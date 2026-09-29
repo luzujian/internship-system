@@ -50,7 +50,7 @@ public class CounselorAISettingsController {
     @PreAuthorize("hasAnyRole('TEACHER_COUNSELOR', 'ADMIN')")
     @Log(module = "COUNSELOR_AI_SETTINGS", operationType = "INSERT", description = "保存辅导员AI评分设置")
     public Result saveSettings(@RequestBody Map<String, Object> request) {
-        log.info("保存辅导员AI评分设置: {}", request);
+        log.info("收到辅导员 AI 评分设置保存请求");
         try {
             Long counselorId = Long.parseLong(request.get("counselorId").toString());
             
@@ -99,7 +99,7 @@ public class CounselorAISettingsController {
     @PreAuthorize("hasAnyRole('TEACHER_COUNSELOR', 'ADMIN')")
     @Log(module = "COUNSELOR_AI_SETTINGS", operationType = "UPDATE", description = "更新辅导员AI评分设置")
     public Result updateSettings(@RequestBody CounselorAISettings settings) {
-        log.info("更新辅导员AI评分设置: {}", settings);
+        log.info("收到辅导员 AI 评分设置更新请求：counselorId={}", settings.getCounselorId());
         try {
             int result = counselorAISettingsService.update(settings);
             if (result > 0) {
@@ -159,7 +159,7 @@ public class CounselorAISettingsController {
     @PreAuthorize("hasAnyRole('TEACHER_COUNSELOR', 'ADMIN')")
     @Log(module = "COUNSELOR_AI_SETTINGS", operationType = "INSERT", description = "保存辅导员评分规则")
     public Result saveScoringRules(@RequestBody Map<String, Object> request) {
-        log.info("保存辅导员评分规则: {}", request);
+        log.info("收到辅导员评分规则保存请求");
         try {
             Long counselorId = Long.parseLong(request.get("counselorId").toString());
             List<Map<String, Object>> rulesData = (List<Map<String, Object>>) request.get("rules");
@@ -243,7 +243,7 @@ public class CounselorAISettingsController {
     @PreAuthorize("hasAnyRole('TEACHER_COUNSELOR', 'ADMIN')")
     @Log(module = "COUNSELOR_AI_SETTINGS", operationType = "INSERT", description = "批量创建辅导员评分规则并生成AI描述")
     public Result batchCreateWithAIDescription(@RequestBody Map<String, Object> request) {
-        log.info("批量创建辅导员评分规则并生成AI描述: {}", request);
+        log.info("收到批量创建辅导员评分规则请求");
         try {
             Long counselorId = Long.parseLong(request.get("counselorId").toString());
             String categoryName = request.get("categoryName").toString();
