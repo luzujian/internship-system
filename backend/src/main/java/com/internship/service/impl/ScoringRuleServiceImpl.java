@@ -12,10 +12,13 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
+import java.util.Locale;
 
 @Slf4j
 @Service
@@ -27,6 +30,9 @@ public class ScoringRuleServiceImpl implements ScoringRuleService {
     @Autowired
     @Lazy
     private EnhancedDeepSeekService enhancedDeepSeekService;
+
+    @Autowired
+    private TransactionTemplate transactionTemplate;
 
     @Autowired
     public ScoringRuleServiceImpl(ScoringRuleMapper scoringRuleMapper, CategoryWeightMapper categoryWeightMapper) {
@@ -53,15 +59,13 @@ public class ScoringRuleServiceImpl implements ScoringRuleService {
     }
     
     @Override
-    @Transactional(rollbackFor = Exception.class)
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public int batchInsert(List<ScoringRule> scoringRules) {
-        log.debug("批量插入评分规则，数量: {}", scoringRules.size());
-        
         if (scoringRules == null || scoringRules.isEmpty()) {
             throw new BusinessException("评分规则列表不能为空");
         }
+        log.debug("批量插入评分规则，数量: {}", scoringRules.size());
         
-        int totalInserted = 0;
         for (ScoringRule scoringRule : scoringRules) {
             if (scoringRule.getRuleName() == null || scoringRule.getRuleName().trim().isEmpty()) {
                 throw new BusinessException("规则名称不能为空");
@@ -70,34 +74,30 @@ public class ScoringRuleServiceImpl implements ScoringRuleService {
             String categoryName = getCategoryName(scoringRule.getCategory());
             String description = generateDescription(categoryName, scoringRule.getRuleName(), scoringRule.getMinScore(), scoringRule.getMaxScore());
             scoringRule.setDescription(description);
-            
-            int result = scoringRuleMapper.insert(scoringRule);
-            totalInserted += result;
         }
+        Integer totalInserted = transactionTemplate.execute(status -> {
+            int inserted = 0;
+            for (ScoringRule rule : scoringRules) inserted += scoringRuleMapper.insert(rule);
+            return inserted;
+        });
+        if (totalInserted == null) throw new BusinessException("评分规则保存失败");
         
         log.info("批量插入评分规则成功，插入数量: {}", totalInserted);
         return totalInserted;
     }
     
     private String generateDescription(String categoryName, String level, int minScore, int maxScore) {
-        try {
-            String prompt = String.format("请为实习管理系统的%s评分等级生成一段简短的中文描述（50-100字）：\n" +
-                    "类别：%s\n" +
-                    "等级：%s\n" +
-                    "分数范围：%d-%d分\n" +
-                    "描述要求：简洁明了，突出该等级的特点和评价标准。",
-                    categoryName, categoryName, level, minScore, maxScore);
-            
-            String aiDescription = enhancedDeepSeekService.chatWithResources(prompt, false);
-            
-            if (aiDescription != null && !aiDescription.trim().isEmpty()) {
-                return aiDescription.trim();
-            }
-        } catch (Exception e) {
-            log.warn("AI生成描述失败，使用默认描述: {}", e.getMessage());
-        }
-        
-        return String.format("%s - %s等级（%d-%d分）", categoryName, level, minScore, maxScore);
+        String prompt = String.format("请为实习管理系统的%s评分等级生成一段简短的中文描述（50-100字）：\n" +
+                "类别：%s\n" +
+                "等级：%s\n" +
+                "分数范围：%d-%d分\n" +
+                "描述要求：简洁明了，突出该等级的特点和评价标准。",
+                categoryName, categoryName, level, minScore, maxScore);
+
+        String aiDescription = enhancedDeepSeekService.chatWithResources(prompt, false);
+
+        if (aiDescription == null || aiDescription.isBlank()) throw new BusinessException("AI未返回评分描述，请稍后重试");
+        return aiDescription.trim();
     }
     
     private String getCategoryName(String category) {
@@ -220,15 +220,16 @@ public class ScoringRuleServiceImpl implements ScoringRuleService {
      * 每个category下创建5个等级规则（优秀、良好、中等、及格、不及格）
      */
     @Override
-    @Transactional(rollbackFor = Exception.class)
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public int batchCreateWithAIDescription(String categoryName) {
         log.info("批量创建评分规则并生成AI描述，类别: {}", categoryName);
 
         if (categoryName == null || categoryName.trim().isEmpty()) {
             throw new BusinessException("类别名称不能为空");
         }
+        if (categoryName.length() > 100) throw new BusinessException("类别名称过长");
 
-        String categoryCode = categoryName.toLowerCase().replace(" ", "_");
+        String categoryCode = categoryName.trim().toLowerCase(Locale.ROOT).replace(" ", "_");
         Date now = new Date();
 
         String[][] levels = {
@@ -262,8 +263,12 @@ public class ScoringRuleServiceImpl implements ScoringRuleService {
             rules.add(rule);
         }
 
-        int result = scoringRuleMapper.batchInsert(rules);
-        redistributeWeights();
+        Integer result = transactionTemplate.execute(status -> {
+            int inserted = scoringRuleMapper.batchInsert(rules);
+            redistributeWeights();
+            return inserted;
+        });
+        if (result == null) throw new BusinessException("评分规则保存失败");
         log.info("批量创建评分规则成功，创建数量: {}", result);
         return result;
     }

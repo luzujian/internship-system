@@ -72,37 +72,9 @@ const returnToAdmin = async () => {
 
     const originalAdminUsername = authStore.user?.originalAdminUsername
     if (originalAdminUsername) {
-      const currentRole = authStore.role
-      if (currentRole) {
-        const rolePrefix = 'company_'
-        localStorage.removeItem(rolePrefix + 'accessToken_' + currentRole)
-        localStorage.removeItem(rolePrefix + 'refreshToken_' + currentRole)
-        localStorage.removeItem(rolePrefix + 'token_' + currentRole)
-        localStorage.removeItem(rolePrefix + 'role_' + currentRole)
-        localStorage.removeItem(rolePrefix + 'userId_' + currentRole)
-        localStorage.removeItem(rolePrefix + 'username_' + currentRole)
-        localStorage.removeItem(rolePrefix + 'isReadOnly_' + currentRole)
-        localStorage.removeItem(rolePrefix + 'originalAdminUsername_' + currentRole)
-        console.log('[returnToAdmin] 已清除企业角色token:', currentRole)
+      if (!authStore.restoreAdminSession()) {
+        throw new Error('管理员会话已失效，请重新登录')
       }
-
-      localStorage.setItem('current_role', 'ROLE_ADMIN')
-      localStorage.setItem('admin_accessToken_ROLE_ADMIN', localStorage.getItem('admin_accessToken_ROLE_ADMIN') || '')
-      localStorage.setItem('admin_refreshToken_ROLE_ADMIN', localStorage.getItem('admin_refreshToken_ROLE_ADMIN') || '')
-      localStorage.setItem('admin_role_ROLE_ADMIN', 'ROLE_ADMIN')
-      localStorage.setItem('admin_userId_ROLE_ADMIN', localStorage.getItem('admin_userId_ROLE_ADMIN') || '')
-      localStorage.setItem('admin_username_ROLE_ADMIN', originalAdminUsername)
-
-      authStore.role = 'ROLE_ADMIN'
-      authStore.user = {
-        id: localStorage.getItem('admin_userId_ROLE_ADMIN'),
-        username: originalAdminUsername,
-        name: originalAdminUsername
-      }
-      authStore.token = localStorage.getItem('admin_accessToken_ROLE_ADMIN')
-      authStore.isAuthenticated = true
-      authStore.user.isReadOnly = false
-      authStore.user.originalAdminUsername = null
 
       await router.push('/admin/dashboard')
     } else {
@@ -327,6 +299,11 @@ const initWebSocket = () => {
               <DocumentChecked />
             </el-icon>
             <span>实习确认</span>
+          </el-menu-item>
+
+          <el-menu-item index="/company/internship-students" data-agent-route="/company/internship-students">
+            <el-icon><UserFilled /></el-icon>
+            <span>实习学生</span>
           </el-menu-item>
 
           

@@ -829,9 +829,9 @@ public class StudentPositionController {
         // 使用传入的公司信息
         if (company != null) {
             vo.setCompany(company.getCompanyName());
-            vo.setContactPerson(company.getContactPerson());
-            vo.setContactPhone(company.getContactPhone());
-            vo.setContactEmail(company.getContactEmail());
+            vo.setContactPerson(position.getContactPerson());
+            vo.setContactPhone(position.getContactPhone());
+            vo.setContactEmail(position.getContactEmail());
 
             if (company.getIsInternshipBase() != null && company.getIsInternshipBase() == 1) {
                 vo.setInternshipBase("national");
@@ -839,7 +839,7 @@ public class StudentPositionController {
                 vo.setInternshipBase(null);
             }
             vo.setIsAlumniUnit(company.getIsAlumniUnit());
-            vo.setCooperationMode(company.getCooperationMode());
+            vo.setCooperationMode("mutual_choice");
             vo.setLogo(company.getLogo());
             vo.setPhotos(company.getPhotos());
             vo.setVideos(company.getVideos());
@@ -861,7 +861,7 @@ public class StudentPositionController {
                 String[] tagArray = company.getCompanyTag().split("[,，]");
                 vo.setTags(Arrays.stream(tagArray)
                         .map(String::trim)
-                        .filter(s -> !s.isEmpty())
+                        .filter(s -> !s.isEmpty() && !"学生自主联系".equals(s))
                         .collect(Collectors.toList()));
             } else {
                 vo.setTags(Collections.emptyList());
@@ -959,9 +959,9 @@ public class StudentPositionController {
             CompanyUser company = companyUserMapper.findById(position.getCompanyId());
             if (company != null) {
                 vo.setCompany(company.getCompanyName());
-                vo.setContactPerson(company.getContactPerson());
-                vo.setContactPhone(company.getContactPhone());
-                vo.setContactEmail(company.getContactEmail());
+                vo.setContactPerson(position.getContactPerson());
+                vo.setContactPhone(position.getContactPhone());
+                vo.setContactEmail(position.getContactEmail());
 
                 if (company.getIsInternshipBase() != null && company.getIsInternshipBase() == 1) {
                     vo.setInternshipBase("national");
@@ -969,7 +969,7 @@ public class StudentPositionController {
                     vo.setInternshipBase(null);
                 }
                 vo.setIsAlumniUnit(company.getIsAlumniUnit());
-                vo.setCooperationMode(company.getCooperationMode());
+                vo.setCooperationMode("mutual_choice");
                 vo.setLogo(company.getLogo());
                 vo.setPhotos(company.getPhotos());
                 vo.setVideos(company.getVideos());
@@ -991,7 +991,7 @@ public class StudentPositionController {
                     String[] tagArray = company.getCompanyTag().split("[,，]");
                     vo.setTags(Arrays.stream(tagArray)
                             .map(String::trim)
-                            .filter(s -> !s.isEmpty())
+                            .filter(s -> !s.isEmpty() && !"学生自主联系".equals(s))
                             .collect(Collectors.toList()));
                 } else {
                     vo.setTags(Collections.emptyList());

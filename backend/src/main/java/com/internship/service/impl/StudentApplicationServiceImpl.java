@@ -53,6 +53,9 @@ import static com.internship.service.InternshipProgressEvents.append;
 @Service
 public class StudentApplicationServiceImpl implements StudentApplicationService {
 
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.internship.service.InternshipAgreementService agreementService;
+
     private final StudentApplicationMapper studentApplicationMapper;
     private final CompanyUserMapper companyUserMapper;
     private final InternshipTimeSettingsService internshipTimeSettingsService;
@@ -100,6 +103,10 @@ public class StudentApplicationServiceImpl implements StudentApplicationService 
         validateApplicationInfo(application);
         validateSelfPracticeInfo(application);
 
+        if ("selfPractice".equals(application.getApplicationType())) {
+            com.internship.service.InternshipAgreementService.requireFileIds(application.getAgreementFileIds());
+        }
+
         if ("unitChange".equals(application.getApplicationType())) {
             throw new BusinessException("单位变更申请流程已停用，请申请新岗位并提交新的实习确认表");
         }
@@ -114,6 +121,9 @@ public class StudentApplicationServiceImpl implements StudentApplicationService 
 
         int result = studentApplicationMapper.insert(application);
         if (result > 0) {
+            if ("selfPractice".equals(application.getApplicationType())) {
+                agreementService.bindSubmission(application.getStudentId(), "SELF_PRACTICE", application.getId(), application.getAgreementFileIds());
+            }
             appendSubmittedEvent(application);
         }
         log.info("学生申请插入成功，学生: {}", application.getStudentName());
@@ -744,9 +754,15 @@ public class StudentApplicationServiceImpl implements StudentApplicationService 
         }
         application.setMaterials(materials);
 
+        if ("selfPractice".equals(type)) {
+            com.internship.service.InternshipAgreementService.requireFileIds(application.getAgreementFileIds());
+        }
         int result = studentApplicationMapper.resetForResubmit(application);
         if (result == 0) {
             throw new BusinessException("申请状态已变化，请刷新后重试");
+        }
+        if ("selfPractice".equals(type)) {
+            agreementService.bindSubmission(studentId, "SELF_PRACTICE", id, application.getAgreementFileIds());
         }
         appendSubmittedEvent(application);
         log.info("学生重新提交申请成功，ID: {}, studentId: {}, type: {}", id, studentId, type);

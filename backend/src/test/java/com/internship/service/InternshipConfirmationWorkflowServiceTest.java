@@ -43,6 +43,7 @@ class InternshipConfirmationWorkflowServiceTest {
     @Mock private StudentInternshipStatusCache statusCache;
     @Mock private InternshipCalendarService internshipCalendarService;
     @Mock private InternshipConfirmationResultNotifier confirmationResultNotifier;
+    @Mock private InternshipAgreementService agreementService;
 
     private InternshipConfirmationWorkflowService service;
 
@@ -52,12 +53,14 @@ class InternshipConfirmationWorkflowServiceTest {
                 confirmationMapper, assignmentMapper, statusMapper, positionMapper,
                 progressRecordService, statusCache, internshipCalendarService,
                 confirmationResultNotifier);
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "agreementService", agreementService);
     }
 
     @Test
     void submitOfferCreatesOneNonCurrentStageOnePlacementWithStableOfferSource() {
         InternshipConfirmationRecord record = pendingRecord(7L, 200L, 20L, 70L);
         record.setId(null);
+        record.setAgreementFileIds(List.of(501L));
         when(confirmationMapper.lockStudent(7L)).thenReturn(7L);
         when(assignmentMapper.findByStudentId(7L)).thenReturn(List.of());
         when(assignmentMapper.countByStudent(7L)).thenReturn(3);
@@ -75,6 +78,7 @@ class InternshipConfirmationWorkflowServiceTest {
         InternshipConfirmationRecord saved = service.submitOffer(record, 880L, null);
 
         assertEquals(70L, saved.getId());
+        verify(agreementService).bindSubmission(7L, "CONFIRMATION", 70L, List.of(501L));
         assertEquals(0, saved.getRecallStatus());
         ArgumentCaptor<InternshipStageAssignment> placement =
                 ArgumentCaptor.forClass(InternshipStageAssignment.class);

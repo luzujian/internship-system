@@ -32,6 +32,8 @@ import java.util.UUID;
 @PreAuthorize("hasRole('STUDENT')")
 public class StudentInternshipAppraisalController {
     private static final Set<String> ALLOWED_EXTENSIONS = Set.of("pdf", "doc", "docx");
+    private static final Set<String> APPRAISABLE_PLACEMENT_STATUSES =
+            Set.of("CONFIRMED", "IN_PROGRESS", "REPLACED", "INTERRUPTED", "ENDED");
 
     private final UserService userService;
     private final InternshipAppraisalService appraisalService;
@@ -75,6 +77,10 @@ public class StudentInternshipAppraisalController {
                 assignment = assignmentService.findById(assignmentId);
                 if (assignment == null || !user.getId().equals(assignment.getStudentId())) {
                     return Result.error("无权关联该实习经历");
+                }
+                if (assignment.getStatus() == null
+                        || !APPRAISABLE_PLACEMENT_STATUSES.contains(assignment.getStatus())) {
+                    return Result.error("只能关联已确认的实习经历");
                 }
             }
             appraisalService.validateFileUploadAllowed(user.getId());

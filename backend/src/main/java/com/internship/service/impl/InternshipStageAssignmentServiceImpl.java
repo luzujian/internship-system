@@ -9,6 +9,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Date;
 import java.util.List;
+import java.util.Objects;
 
 @Service
 public class InternshipStageAssignmentServiceImpl implements InternshipStageAssignmentService {
@@ -102,18 +103,29 @@ public class InternshipStageAssignmentServiceImpl implements InternshipStageAssi
 
         assignment.setStageNo(1);
         InternshipStageAssignment existing = null;
-        if (assignment.getSourceType() != null && assignment.getSourceAssignmentId() != null) {
+        boolean hasSourceIdentity = assignment.getSourceType() != null
+                && assignment.getSourceAssignmentId() != null;
+        if (hasSourceIdentity) {
             existing = mapper.findBySource(
                     assignment.getSourceType(), assignment.getSourceAssignmentId());
         }
-        if (existing == null && assignment.getApplicationId() != null) {
-            existing = mapper.findByApplicationId(assignment.getApplicationId());
+        // 自主实习来源于 student_application，岗位申请来源于 student_job_application；
+        // 两张表的自增 ID 可以相同，不能把它们当作同一来源。
+        if (existing == null && !hasSourceIdentity && assignment.getApplicationId() != null) {
+            InternshipStageAssignment candidate = mapper.findByApplicationId(assignment.getApplicationId());
+            if (candidate != null && Objects.equals(assignment.getStudentId(), candidate.getStudentId())
+                    && !"SELF_PRACTICE".equals(candidate.getSourceType())) {
+                existing = candidate;
+            }
         }
         if (existing == null && assignment.getCompanyId() != null && assignment.getPositionId() != null) {
             existing = mapper.findPendingByStudentAndPosition(
                     assignment.getStudentId(), assignment.getCompanyId(), assignment.getPositionId());
         }
         if (existing != null) {
+            if (!Objects.equals(assignment.getStudentId(), existing.getStudentId())) {
+                throw new BusinessException("实习经历来源不属于当前学生");
+            }
             return existing;
         }
 

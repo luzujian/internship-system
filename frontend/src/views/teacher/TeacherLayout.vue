@@ -36,7 +36,7 @@
         <div class="header-metrics" aria-label="教师宏观数据">
           <span class="header-metrics-title">宏观数据</span>
           <span class="header-metrics-divider"></span>
-          <div class="header-metric header-metric--students" title="当前教师所属学院内，未投递与无 Offer 学生人数之和">
+          <div class="header-metric header-metric--students" title="本院未投递与无 Offer 学生总数，不含延期学生。">
             <span class="header-metric-dot"></span>
             <span class="header-metric-label">本院尚无 Offer</span>
             <strong>{{ withoutOfferStudentCount ?? '--' }}</strong>
@@ -198,37 +198,9 @@ const returnToAdmin = async () => {
 
     const originalAdminUsername = authStore.user?.originalAdminUsername
     if (originalAdminUsername) {
-      const currentRole = authStore.role
-      if (currentRole) {
-        const rolePrefix = 'teacher_'
-        localStorage.removeItem(rolePrefix + 'accessToken_' + currentRole)
-        localStorage.removeItem(rolePrefix + 'refreshToken_' + currentRole)
-        localStorage.removeItem(rolePrefix + 'token_' + currentRole)
-        localStorage.removeItem(rolePrefix + 'role_' + currentRole)
-        localStorage.removeItem(rolePrefix + 'userId_' + currentRole)
-        localStorage.removeItem(rolePrefix + 'username_' + currentRole)
-        localStorage.removeItem(rolePrefix + 'isReadOnly_' + currentRole)
-        localStorage.removeItem(rolePrefix + 'originalAdminUsername_' + currentRole)
-        console.log('[returnToAdmin] 已清除教师角色token:', currentRole)
+      if (!authStore.restoreAdminSession()) {
+        throw new Error('管理员会话已失效，请重新登录')
       }
-
-      localStorage.setItem('current_role', 'ROLE_ADMIN')
-      localStorage.setItem('admin_accessToken_ROLE_ADMIN', localStorage.getItem('admin_accessToken_ROLE_ADMIN') || '')
-      localStorage.setItem('admin_refreshToken_ROLE_ADMIN', localStorage.getItem('admin_refreshToken_ROLE_ADMIN') || '')
-      localStorage.setItem('admin_role_ROLE_ADMIN', 'ROLE_ADMIN')
-      localStorage.setItem('admin_userId_ROLE_ADMIN', localStorage.getItem('admin_userId_ROLE_ADMIN') || '')
-      localStorage.setItem('admin_username_ROLE_ADMIN', originalAdminUsername)
-
-      authStore.role = 'ROLE_ADMIN'
-      authStore.user = {
-        id: localStorage.getItem('admin_userId_ROLE_ADMIN'),
-        username: originalAdminUsername,
-        name: originalAdminUsername
-      }
-      authStore.token = localStorage.getItem('admin_accessToken_ROLE_ADMIN')
-      authStore.isAuthenticated = true
-      authStore.user.isReadOnly = false
-      authStore.user.originalAdminUsername = null
 
       await router.push('/admin/dashboard')
     } else {
@@ -308,7 +280,7 @@ const fetchTeacherMenus = async () => {
           const menuInfo = allMenus.find((m: any) => m.permissionCode === perm.permissionCode)
           return {
             id: perm.id,
-            name: perm.permissionName,
+            name: perm.permissionCode === 'menu:appraisal-collection' ? '实习材料收集' : perm.permissionName,
             path: perm.path || (menuInfo?.path || ''),
             icon: perm.icon || menuInfo?.icon,
             sortOrder: perm.sortOrder || 0

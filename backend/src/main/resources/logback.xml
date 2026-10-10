@@ -17,6 +17,8 @@
             <MaxHistory>30</MaxHistory>
             <!-- 最大文件大小，超过这个大小会触发滚动到新文件，默认为 10MB -->
             <maxFileSize>10MB</maxFileSize>
+            <!-- 仅限制诊断文件日志；数据库审计及其备份归档使用独立留存策略。 -->
+            <totalSizeCap>${LOG_TOTAL_SIZE_CAP:-1GB}</totalSizeCap>
         </rollingPolicy>
 
         <encoder class="ch.qos.logback.classic.encoder.PatternLayoutEncoder">

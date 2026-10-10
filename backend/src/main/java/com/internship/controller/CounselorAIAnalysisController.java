@@ -3,7 +3,7 @@ package com.internship.controller;
 import com.internship.anno.Log;
 import com.internship.entity.Result;
 import com.internship.entity.StudentReflectionAIAnalysis;
-import com.internship.service.ClassCounselorRelationService;
+import com.internship.service.ReflectionAiAccessPolicy;
 import com.internship.service.CounselorAISettingsService;
 import com.internship.service.StudentReflectionAIAnalysisService;
 import com.internship.service.StudentReflectionEvaluationService;
@@ -14,6 +14,7 @@ import com.itextpdf.text.pdf.PdfWriter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.annotation.*;
 
 import jakarta.servlet.http.HttpServletResponse;
@@ -39,7 +40,7 @@ public class CounselorAIAnalysisController {
     private CounselorAISettingsService counselorAISettingsService;
 
     @Autowired
-    private ClassCounselorRelationService classCounselorRelationService;
+    private ReflectionAiAccessPolicy aiAccess;
 
     @Autowired
     private InternshipReflectionService internshipReflectionService;
@@ -50,10 +51,12 @@ public class CounselorAIAnalysisController {
     public Result getAnalysisByReflectionId(@PathVariable Long reflectionId) {
         log.info("获取实习心得AI分析结果，心得ID: {}", reflectionId);
         try {
+            aiAccess.requireReflection(reflectionId, null, false);
             StudentReflectionAIAnalysis analysis = studentReflectionAIAnalysisService.findByReflectionId(reflectionId);
             if (analysis == null) {
                 return Result.error("未找到AI分析结果");
             }
+            aiAccess.requireAnalysis(analysis, false);
 
             // 构建与管理员端相同格式的返回数据
             Map<String, Object> resultData = new HashMap<>();
@@ -105,6 +108,8 @@ public class CounselorAIAnalysisController {
             }
 
             return Result.success(resultData);
+        } catch (AccessDeniedException e) {
+            throw e;
         } catch (Exception e) {
             log.error("获取AI分析结果失败: {}", e.getMessage());
             return Result.error("获取AI分析结果失败: " + e.getMessage());
@@ -254,11 +259,15 @@ public class CounselorAIAnalysisController {
     public Result getReflectionDetail(@PathVariable Long reflectionId) {
         log.info("获取实习心得详情，心得ID: {}", reflectionId);
         try {
+            aiAccess.requireReflection(reflectionId, null, false);
             InternshipReflection reflection = internshipReflectionService.findById(reflectionId);
             if (reflection == null) {
                 return Result.error("未找到实习心得");
             }
+            aiAccess.requireStudent(reflection.getStudentId(), false);
             return Result.success(reflection);
+        } catch (AccessDeniedException e) {
+            throw e;
         } catch (Exception e) {
             log.error("获取实习心得详情失败: {}", e.getMessage());
             return Result.error("获取实习心得详情失败: " + e.getMessage());
@@ -268,13 +277,19 @@ public class CounselorAIAnalysisController {
     @GetMapping("/student/{studentId}")
     @PreAuthorize("hasAnyRole('TEACHER_COUNSELOR', 'ADMIN')")
     @Log(module = "COUNSELOR_AI_ANALYSIS", operationType = "SELECT", description = "获取学生AI分析结果")
-    public Result getAnalysisByStudentId(@PathVariable Long studentId) {
+    public Result getAnalysisByStudentId(@PathVariable Long studentId,
+                                        @RequestParam(required = false) Long reflectionId) {
         log.info("获取学生AI分析结果，学生ID: {}", studentId);
         try {
-            StudentReflectionAIAnalysis analysis = studentReflectionAIAnalysisService.findByStudentId(studentId);
+            aiAccess.requireStudent(studentId, false);
+            if (reflectionId != null) aiAccess.requireReflection(reflectionId, studentId, false);
+            StudentReflectionAIAnalysis analysis = reflectionId == null
+                    ? studentReflectionAIAnalysisService.findByStudentId(studentId)
+                    : studentReflectionAIAnalysisService.findByReflectionId(reflectionId);
             if (analysis == null) {
                 return Result.error("未找到AI分析结果");
             }
+            aiAccess.requireAnalysis(analysis, false);
 
             // 构建与管理员端相同格式的返回数据
             Map<String, Object> resultData = new HashMap<>();
@@ -333,6 +348,8 @@ public class CounselorAIAnalysisController {
             }
 
             return Result.success(resultData);
+        } catch (AccessDeniedException e) {
+            throw e;
         } catch (Exception e) {
             log.error("获取AI分析结果失败: {}", e.getMessage());
             return Result.error("获取AI分析结果失败: " + e.getMessage());
@@ -345,8 +362,11 @@ public class CounselorAIAnalysisController {
     public Result getAnalysesByCounselorId(@PathVariable Long counselorId) {
         log.info("获取辅导员所有AI分析结果，辅导员ID: {}", counselorId);
         try {
+            aiAccess.requireCounselor(counselorId);
             List<StudentReflectionAIAnalysis> analyses = studentReflectionAIAnalysisService.findByCounselorId(counselorId);
-            return Result.success(analyses);
+            return Result.success(aiAccess.readableAnalyses(analyses));
+        } catch (AccessDeniedException e) {
+            throw e;
         } catch (Exception e) {
             log.error("获取AI分析结果失败: {}", e.getMessage());
             return Result.error("获取AI分析结果失败: " + e.getMessage());
@@ -359,21 +379,10 @@ public class CounselorAIAnalysisController {
     public Result triggerAnalysis(@PathVariable Long reflectionId, @RequestBody Map<String, Long> params) {
         log.info("手动触发AI分析，心得ID: {}", reflectionId);
         try {
-            Long counselorId = params.get("counselorId");
-            if (counselorId == null) {
-                return Result.error("辅导员ID不能为空");
-            }
-
-            InternshipReflection report = internshipReflectionService.findById(reflectionId);
-            if (report == null) {
-                return Result.error("实习心得不存在");
-            }
-
+            var target = aiAccess.requireAnalysisTarget(reflectionId);
+            InternshipReflection report = target.reflection();
+            Long counselorId = target.counselorId();
             Long studentId = report.getStudentId();
-            Long counselorIdForStudent = classCounselorRelationService.findCounselorIdByStudentId(studentId);
-            if (counselorIdForStudent == null || !counselorIdForStudent.equals(counselorId)) {
-                return Result.error("您没有权限分析此学生的实习心得");
-            }
 
             if (!counselorAISettingsService.isAiScoringEnabled(counselorId)) {
                 return Result.error("AI评分功能未启用");
@@ -382,11 +391,13 @@ public class CounselorAIAnalysisController {
             Map<String, Object> result = studentReflectionAIAnalysisService.analyzeReflectionContent(
                     report.getContent(), counselorId, studentId, reflectionId);
 
-            if (result != null && !result.isEmpty()) {
+            if (result != null && Boolean.TRUE.equals(result.get("success"))) {
                 return Result.success("AI分析完成", result);
             } else {
-                return Result.error("AI分析失败");
+                return Result.error(result == null ? "AI分析失败" : (String) result.getOrDefault("message", "AI分析失败"));
             }
+        } catch (AccessDeniedException e) {
+            throw e;
         } catch (Exception e) {
             log.error("触发AI分析失败: {}", e.getMessage());
             return Result.error("触发AI分析失败: " + e.getMessage());
@@ -399,12 +410,14 @@ public class CounselorAIAnalysisController {
     public void downloadAnalysisReport(@PathVariable Long reflectionId, HttpServletResponse response) {
         log.info("下载AI分析报告，心得ID: {}", reflectionId);
         try {
+            aiAccess.requireReflection(reflectionId, null, false);
             StudentReflectionAIAnalysis analysis = studentReflectionAIAnalysisService.findByReflectionId(reflectionId);
             if (analysis == null) {
                 response.setContentType("application/json;charset=utf-8");
                 response.getWriter().write("{\"code\": 500, \"message\": \"未找到AI分析结果\"}");
                 return;
             }
+            aiAccess.requireAnalysis(analysis, false);
 
             // 优先从 analysis 对象获取学生信息（已通过 LEFT JOIN 加载）
             String studentName = "未知学生";
@@ -609,6 +622,8 @@ public class CounselorAIAnalysisController {
             outputStream.flush();
 
             log.info("AI分析报告下载成功");
+        } catch (AccessDeniedException e) {
+            throw e;
         } catch (Exception e) {
             log.error("下载AI分析报告失败: {}", e.getMessage(), e);
             try {
@@ -626,10 +641,13 @@ public class CounselorAIAnalysisController {
     public Result checkAiScoringEnabled(@PathVariable Long counselorId) {
         log.info("检查辅导员AI评分是否启用，辅导员ID: {}", counselorId);
         try {
+            aiAccess.requireCounselor(counselorId);
             boolean enabled = counselorAISettingsService.isAiScoringEnabled(counselorId);
             Map<String, Object> data = new HashMap<>();
             data.put("aiScoringEnabled", enabled);
             return Result.success(data);
+        } catch (AccessDeniedException e) {
+            throw e;
         } catch (Exception e) {
             log.error("检查AI评分状态失败: {}", e.getMessage());
             return Result.error("检查失败: " + e.getMessage());

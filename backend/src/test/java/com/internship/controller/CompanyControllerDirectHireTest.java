@@ -3,6 +3,7 @@ package com.internship.controller;
 import com.internship.entity.Result;
 import com.internship.entity.StudentJobApplication;
 import com.internship.entity.User;
+import com.internship.entity.dto.StudentPositionKey;
 import com.internship.service.DirectHireService;
 import com.internship.service.InternshipApplicationService;
 import com.internship.service.InternshipProgressRecordService;
@@ -23,6 +24,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -176,11 +178,13 @@ class CompanyControllerDirectHireTest {
         application.setCompanyId(200L);
         application.setStatus("interview_passed");
         when(applicationService.findByCompanyId(200L)).thenReturn(List.of(application));
-        when(directHireService.isDirectHire(400L, 300L)).thenReturn(true);
+        when(directHireService.findDirectHirePairs(List.of(new StudentPositionKey(400L, 300L))))
+                .thenReturn(Set.of(new StudentPositionKey(400L, 300L)));
 
         Result result = controller.getJobApplications();
         StudentJobApplication returned = ((List<StudentJobApplication>) result.getData()).get(0);
 
         assertTrue(returned.getDirectHire());
+        verify(directHireService, never()).isDirectHire(any(), any());
     }
 }

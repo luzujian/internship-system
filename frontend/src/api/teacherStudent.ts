@@ -96,7 +96,7 @@ export const studentApi = {
 
   getStatistics: async () => {
     try {
-      const response = await request.get<{ code: number; message: string; data: { studentCount: number; noOfferCount: number; pendingCount: number; confirmedCount: number; interningCount: number; finishedCount: number; interruptedCount: number; delayedCount: number } }>('/teacher/internship-status/statistics')
+      const response = await request.get<{ studentCount: number; noOfferCount: number; pendingCount: number; confirmedCount: number; interningCount: number; finishedCount: number; interruptedCount: number; delayedCount: number }>('/teacher/internship-status/statistics')
       return response.data
     } catch (error) {
       throw new Error(`Failed to fetch statistics: ${error}`)

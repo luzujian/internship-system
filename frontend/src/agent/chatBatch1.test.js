@@ -72,14 +72,23 @@ test('form-open messages are delegated to semantic fill intent without phrase ma
   const messages = [
     '标题就弄成实习周报模板吧',
     '状态用草稿，目标群体弄成学生',
-    '帮我处理一下这个文档，你看着填',
-    '这个字段是什么意思？'
+    '帮我处理一下这个文档，你看着填'
   ]
   for (const message of messages) {
     assert.equal(shouldResolveFormFill(message, { hasForm: true }), true, message)
     assert.equal(shouldResolveUiIntent(message), true, message)
   }
   assert.equal(shouldResolveFormFill('标题就弄成实习周报模板吧', { hasForm: false }), false)
+})
+
+test('ordinary questions bypass UI and fill models even with a form open', () => {
+  for (const message of ['你知道什么', '你能做什么？', '这个字段是什么意思？', '本企业有多少招聘岗位', '有哪些学生申请了我们的岗位', '为什么不能保存', '请介绍企业端的功能有哪些']) {
+    assert.equal(shouldResolveUiIntent(message), false, message)
+    assert.equal(shouldResolveFormFill(message, { hasForm: true }), false, message)
+  }
+  for (const message of ['帮我打开岗位发布', '打开表单后告诉我这个字段是什么意思', '你能做什么？顺便打开企业资料', '标题改成为什么选择我们']) {
+    assert.equal(shouldResolveUiIntent(message), true, message)
+  }
 })
 
 test('business send actions stay out of form-fill routing', () => {

@@ -26,11 +26,12 @@ export interface ParsedJobPosting {
 }
 
 export default {
-  parseJobPosting(text: string) {
+  parseJobPosting(text: string, signal?: AbortSignal) {
     return request<ParsedJobPosting>({
       url: '/ai/company/parse-job-posting',
       method: 'post',
-      data: { text }
+      data: { text },
+      signal
     })
   }
 }

@@ -20,6 +20,7 @@
         <result property="submitTime" column="submit_time" />
         <result property="aiKeywords" column="ai_keywords" />
         <result property="aiAnalysis" column="ai_analysis" />
+        <result property="aiImprovements" column="ai_improvements" />
         <result property="aiScore" column="ai_score" />
         <result property="aiAnalysisTime" column="ai_analysis_time" />
         <result property="status" column="status" />
@@ -39,8 +40,8 @@
     </resultMap>
     
     <insert id="insert" parameterType="com.internship.entity.InternshipReflection" useGeneratedKeys="true" keyProperty="id">
-        insert into internship_reflection (student_id, student_name, student_user_id, content, remark, internship_status_id, stage_assignment_id, period_number, task_type, deadline, counselor_id, submit_time, ai_keywords, ai_analysis, ai_score, ai_analysis_time, status, create_time, update_time, deleted)
-        values (#{studentId}, #{studentName}, #{studentUserId}, #{content}, #{remark}, #{internshipStatusId}, #{stageAssignmentId}, #{periodNumber}, #{taskType}, #{deadline}, #{counselorId}, #{submitTime}, #{aiKeywords}, #{aiAnalysis}, #{aiScore}, #{aiAnalysisTime}, #{status}, #{createTime}, #{updateTime}, #{deleted})
+        insert into internship_reflection (student_id, student_name, student_user_id, content, remark, internship_status_id, stage_assignment_id, period_number, task_type, deadline, counselor_id, submit_time, ai_keywords, ai_analysis, ai_improvements, ai_score, ai_analysis_time, status, create_time, update_time, deleted)
+        values (#{studentId}, #{studentName}, #{studentUserId}, #{content}, #{remark}, #{internshipStatusId}, #{stageAssignmentId}, #{periodNumber}, #{taskType}, #{deadline}, #{counselorId}, #{submitTime}, #{aiKeywords}, #{aiAnalysis}, #{aiImprovements}, #{aiScore}, #{aiAnalysisTime}, #{status}, #{createTime}, #{updateTime}, #{deleted})
     </insert>
     
     <update id="updateById" parameterType="com.internship.entity.InternshipReflection">
@@ -61,6 +62,7 @@
             <if test="submitTime != null">submit_time = #{submitTime},</if>
             <if test="aiKeywords != null">ai_keywords = #{aiKeywords},</if>
             <if test="aiAnalysis != null">ai_analysis = #{aiAnalysis},</if>
+            <if test="aiImprovements != null">ai_improvements = #{aiImprovements},</if>
             <if test="aiScore != null">ai_score = #{aiScore},</if>
             <if test="aiAnalysisTime != null">ai_analysis_time = #{aiAnalysisTime},</if>
             <if test="status != null">status = #{status},</if>
@@ -100,6 +102,102 @@
         where ir.id = #{id}
     </select>
     
+    <select id="findByIds" resultMap="InternshipReflectionResultMap">
+        SELECT * FROM internship_reflection WHERE deleted = 0
+        <choose>
+            <when test="ids != null and !ids.isEmpty()">
+                AND id IN <foreach collection="ids" item="id" open="(" separator="," close=")">#{id}</foreach>
+            </when>
+            <otherwise>AND 1 = 0</otherwise>
+        </choose>
+    </select>
+
+    <select id="lockById" resultMap="InternshipReflectionResultMap">
+        SELECT * FROM internship_reflection WHERE id = #{id} FOR UPDATE
+    </select>
+
+    <select id="hasManualEvaluation" resultType="boolean">
+        SELECT EXISTS (SELECT 1 FROM student_reflection_evaluation
+                       WHERE reflection_id = #{reflectionId} AND total_score IS NOT NULL)
+    </select>
+
+    <select id="latestSubmissionEventId" resultType="java.lang.Long">
+        SELECT COALESCE(MAX(id), 0) FROM internship_progress_record
+        WHERE related_id = #{reflectionId} AND student_id = #{studentId}
+          AND event_type IN ('reflection_submitted', 'reflection_resubmitted', 'reflection_submit', 'reflection_withdrawn')
+    </select>
+
+    <update id="completeAiAnalysis">
+        UPDATE internship_reflection
+        SET status = <choose><when test="accepted">1</when><otherwise>0</otherwise></choose>,
+            remark = <choose><when test="accepted">NULL</when><otherwise>'0'</otherwise></choose>,
+            update_time = #{updateTime}
+        WHERE id = #{id} AND deleted = 0 AND remark IS NULL
+    </update>
+
+    <sql id="currentSubmissionVersion">
+        (SELECT COALESCE(MAX(submission.id), 0) FROM internship_progress_record submission
+         WHERE submission.related_id = ir.id AND submission.student_id = ir.student_id
+           AND submission.event_type IN ('reflection_submitted', 'reflection_resubmitted', 'reflection_submit', 'reflection_withdrawn'))
+    </sql>
+
+    <select id="findPendingAiAnalysis" resultType="java.lang.Long">
+        SELECT ir.id FROM internship_reflection ir
+        INNER JOIN student_users su ON su.id = ir.student_id
+        WHERE ir.deleted = 0 AND ir.status = 0 AND ir.remark IS NULL
+          AND ir.submit_time IS NOT NULL AND ir.content IS NOT NULL AND TRIM(ir.content) != ''
+          AND NOT EXISTS (SELECT 1 FROM student_reflection_ai_analysis analysis WHERE analysis.reflection_id = ir.id)
+          AND NOT EXISTS (SELECT 1 FROM student_reflection_evaluation evaluation
+                          WHERE evaluation.reflection_id = ir.id AND evaluation.total_score IS NOT NULL)
+          AND EXISTS (SELECT 1 FROM class_counselor_relation relation
+                      INNER JOIN teacher_users counselor ON counselor.id = relation.counselor_id
+                          AND counselor.status = 1 AND counselor.teacher_type = 'COUNSELOR'
+                      INNER JOIN counselor_ai_settings settings ON settings.counselor_id = relation.counselor_id
+                      WHERE relation.class_id = su.class_id AND settings.enable_ai_scoring = 1)
+          AND (SELECT COUNT(*) FROM internship_progress_record failure
+               WHERE failure.related_id = ir.id AND failure.student_id = ir.student_id
+                 AND failure.event_type = 'reflection_ai_failed'
+                 AND failure.status = CAST(<include refid="currentSubmissionVersion"/> AS CHAR)) &lt; #{maxAttempts}
+          AND NOT EXISTS (SELECT 1 FROM internship_progress_record failure
+                          WHERE failure.related_id = ir.id AND failure.student_id = ir.student_id
+                            AND failure.event_type = 'reflection_ai_failed'
+                            AND failure.status = CAST(<include refid="currentSubmissionVersion"/> AS CHAR)
+                            AND failure.create_time &gt; DATE_SUB(NOW(), INTERVAL #{retryDelaySeconds} SECOND))
+        ORDER BY ir.submit_time, ir.id
+        LIMIT #{limit}
+    </select>
+
+    <select id="countAiFailures" resultType="java.lang.Integer">
+        SELECT COUNT(*) FROM internship_progress_record
+        WHERE related_id = #{reflectionId} AND student_id = #{studentId}
+          AND event_type = 'reflection_ai_failed' AND status = CAST(#{version} AS CHAR)
+    </select>
+
+    <insert id="recordAiFailure">
+        INSERT INTO internship_progress_record
+            (student_id, event_type, event_title, description, status, related_id, event_time, create_time)
+        SELECT ir.student_id, 'reflection_ai_failed', 'AI分析暂未完成',
+               '心得已提交，AI分析暂未完成，可稍后重试或教师人工批阅，无需重复提交',
+               CAST(#{version} AS CHAR), ir.id, #{failedAt}, #{failedAt}
+        FROM internship_reflection ir
+        <!-- Aggregates force materialization when reading the INSERT target table. -->
+        LEFT JOIN (SELECT MAX(id) AS submission_version FROM internship_progress_record
+                   WHERE related_id = #{snapshot.id} AND student_id = #{snapshot.studentId}
+                     AND event_type IN ('reflection_submitted', 'reflection_resubmitted', 'reflection_submit', 'reflection_withdrawn')) latest ON 1 = 1
+        INNER JOIN (SELECT COUNT(*) AS failure_count FROM internship_progress_record
+                    WHERE related_id = #{snapshot.id} AND student_id = #{snapshot.studentId}
+                      AND event_type = 'reflection_ai_failed' AND status = CAST(#{version} AS CHAR)) failures ON 1 = 1
+        WHERE ir.id = #{snapshot.id} AND ir.student_id = #{snapshot.studentId}
+          AND ir.deleted = 0 AND ir.status = 0 AND ir.remark IS NULL
+          AND BINARY ir.content = BINARY #{snapshot.content}
+          AND ir.submit_time = #{snapshot.submitTime}
+          AND COALESCE(latest.submission_version, 0) = #{version}
+          AND NOT EXISTS (SELECT 1 FROM student_reflection_ai_analysis analysis WHERE analysis.reflection_id = ir.id)
+          AND NOT EXISTS (SELECT 1 FROM student_reflection_evaluation evaluation
+                          WHERE evaluation.reflection_id = ir.id AND evaluation.total_score IS NOT NULL)
+          AND failures.failure_count &lt; 3
+    </insert>
+
     <select id="findByStudentId" resultMap="InternshipReflectionResultMap">
         select
             ir.*,

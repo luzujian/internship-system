@@ -80,10 +80,11 @@ public interface LoginLogMapper {
             OPERATOR_FILTER +
             "<if test='q.role != null and q.role != \"\"'> and (user_type like concat(#{q.role}, '%') or user_type like concat('ROLE_', #{q.role}, '%') or ('UNKNOWN' = #{q.role} and user_type is null))</if>" +
             "<if test='q.result != null and q.result != \"\"'> and login_status = #{q.result}</if>" +
-            "<if test='q.riskLevel != null and q.riskLevel != \"\"'> and risk_level = #{q.riskLevel}</if>" +
+            "<if test='q.riskLevel != null and q.riskLevel != \"\"'> and (risk_level = #{q.riskLevel} or (#{q.riskLevel} = 'HIGH,CRITICAL' and risk_level in ('HIGH','CRITICAL')))</if>" +
             "<if test='q.ip != null and q.ip != \"\"'> and ip_address like concat('%', #{q.ip}, '%')</if>" +
             "<if test='q.requestId != null and q.requestId != \"\"'> and request_id = #{q.requestId}</if>" +
-            " order by ${q.sortField} ${q.sortOrder}" +
+            " order by ${q.sortField} ${q.sortOrder}, id ${q.sortOrder}" +
+            "<if test='q.limit != null'> limit #{q.limit}</if>" +
             "</script>")
     List<LoginLog> selectByFilter(@Param("q") LogQueryParams q);
 
@@ -96,7 +97,7 @@ public interface LoginLogMapper {
             OPERATOR_FILTER +
             "<if test='q.role != null and q.role != \"\"'> and (user_type like concat(#{q.role}, '%') or user_type like concat('ROLE_', #{q.role}, '%') or ('UNKNOWN' = #{q.role} and user_type is null))</if>" +
             "<if test='q.result != null and q.result != \"\"'> and login_status = #{q.result}</if>" +
-            "<if test='q.riskLevel != null and q.riskLevel != \"\"'> and risk_level = #{q.riskLevel}</if>" +
+            "<if test='q.riskLevel != null and q.riskLevel != \"\"'> and (risk_level = #{q.riskLevel} or (#{q.riskLevel} = 'HIGH,CRITICAL' and risk_level in ('HIGH','CRITICAL')))</if>" +
             "<if test='q.ip != null and q.ip != \"\"'> and ip_address like concat('%', #{q.ip}, '%')</if>" +
             "<if test='q.requestId != null and q.requestId != \"\"'> and request_id = #{q.requestId}</if>" +
             "</script>")
@@ -222,4 +223,7 @@ public interface LoginLogMapper {
      */
     @Select("select count(*) from login_log where entry_hash is not null")
     long countChained();
+
+    @Select("select count(*) from login_log where entry_hash is null")
+    long countUnchained();
 }

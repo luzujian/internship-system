@@ -69,6 +69,10 @@
         where sre.reflection_id = #{reflectionId}
     </select>
     
+    <select id="lockByReflectionId" resultMap="StudentReflectionEvaluationResultMap">
+        SELECT * FROM student_reflection_evaluation WHERE reflection_id = #{reflectionId} FOR UPDATE
+    </select>
+
     <select id="findByStudentId" resultMap="StudentReflectionEvaluationResultMap">
         select sre.*, 
             su.id as su_id, su.name as su_name, su.student_user_id as su_student_user_id, su.grade as su_grade,

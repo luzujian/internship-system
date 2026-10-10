@@ -16,21 +16,23 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.io.File;
-import java.io.FileOutputStream;
 import java.io.OutputStreamWriter;
 import java.io.Writer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.StandardOpenOption;
 import java.text.SimpleDateFormat;
 import java.util.Calendar;
 import java.util.Date;
+import java.util.List;
+import java.util.UUID;
 import java.util.function.ToIntFunction;
 import java.util.zip.GZIPOutputStream;
 
 /**
  * 日志时间留存任务（P1 + P2 归档增强）
  * 每天 02:30 分批删除到期数据；清理前后写入安全事件；失败告警。
- * P2：高风险记录（权限、管理员、备份、日志管理等）到期后先归档为 JSONL.gz 不可变文件（默认再保留2年）再删除，
+ * 高风险记录到期后先归档为独立 JSONL.gz 文件（默认再保留2年）再删除，
  * 实现在线1年 + 归档2年的完整留存链。
  */
 @Slf4j
@@ -71,34 +73,17 @@ public class LogRetentionTask {
     @Scheduled(cron = "0 30 2 * * ?")
     public void runRetention() {
         try {
-            int highRiskDays = getRetentionConfig(RETENTION_HIGH_RISK_DAYS_KEY, 365);
-            int normalDays = getRetentionConfig(RETENTION_NORMAL_DAYS_KEY, 180);
-            int loginDays = getRetentionConfig(RETENTION_LOGIN_DAYS_KEY, 180);
-
+            OperateLog attempt = new OperateLog();
+            attempt.setOperatorName("SYSTEM");
+            attempt.setOperatorUsername("SYSTEM");
+            attempt.setOperatorRole("SYSTEM");
+            attempt.setOperationType("CLEAN");
+            attempt.setModule("LOG_MANAGEMENT");
+            attempt.setRiskLevel("HIGH");
+            attempt.setDescription("定时日志留存清理（02:30）");
+            auditLogService.recordCriticalAttempt(attempt);
             recordRetentionEvent("ATTEMPTED", 0);
-
-            long totalDeleted = 0;
-            // 普通业务日志（非高风险）
-            totalDeleted += deleteInBatches(
-                    before -> operateLogMapper.deleteBeforeTimeBatchExcludeHighRisk(before, RETENTION_BATCH_SIZE),
-                    daysBefore(normalDays));
-            // 登录日志
-            totalDeleted += deleteInBatches(
-                    before -> loginLogMapper.deleteBeforeTimeBatch(before, RETENTION_BATCH_SIZE),
-                    daysBefore(loginDays));
-            // 安全事件（非高风险）
-            totalDeleted += deleteInBatches(
-                    before -> securityEventLogMapper.deleteBeforeTimeBatchExcludeHighRisk(before, RETENTION_BATCH_SIZE),
-                    daysBefore(normalDays));
-
-            // 高风险记录：先归档（不可变 JSONL.gz）再删除，按更长留存
-            Date highRiskBefore = daysBefore(highRiskDays);
-            totalDeleted += archiveAndDeleteHighRiskOperateLogs(highRiskBefore);
-            totalDeleted += archiveAndDeleteHighRiskSecurityEvents(highRiskBefore);
-
-            // 清理超过归档保留期的归档文件
-            cleanupExpiredArchives();
-
+            long totalDeleted = cleanupExpiredLogs();
             recordRetentionEvent("SUCCESS", totalDeleted);
             log.info("日志留存清理完成：共删除 {} 条到期数据", totalDeleted);
         } catch (Exception e) {
@@ -109,60 +94,74 @@ public class LogRetentionTask {
         }
     }
 
+    /** 手动和定时清理共用同一路径；同一应用实例内禁止并发清理。 */
+    public synchronized long cleanupExpiredLogs() throws Exception {
+        int highRiskDays = getRetentionConfig(RETENTION_HIGH_RISK_DAYS_KEY, 365);
+        int normalDays = getRetentionConfig(RETENTION_NORMAL_DAYS_KEY, 180);
+        int loginDays = getRetentionConfig(RETENTION_LOGIN_DAYS_KEY, 180);
+        if (highRiskDays < normalDays) {
+            throw new IllegalArgumentException("高风险日志留存时间不能短于普通业务日志");
+        }
+        long totalDeleted = deleteInBatches(
+                before -> operateLogMapper.deleteBeforeTimeBatchExcludeHighRisk(before, RETENTION_BATCH_SIZE), daysBefore(normalDays));
+        totalDeleted += deleteInBatches(
+                before -> loginLogMapper.deleteBeforeTimeBatch(before, RETENTION_BATCH_SIZE), daysBefore(loginDays));
+        totalDeleted += deleteInBatches(
+                before -> securityEventLogMapper.deleteBeforeTimeBatchExcludeHighRisk(before, RETENTION_BATCH_SIZE), daysBefore(normalDays));
+        Date highRiskBefore = daysBefore(highRiskDays);
+        totalDeleted += archiveAndDeleteHighRiskOperateLogs(highRiskBefore);
+        totalDeleted += archiveAndDeleteHighRiskSecurityEvents(highRiskBefore);
+        cleanupExpiredArchives();
+        return totalDeleted;
+    }
+
     // ================================================================
     // P2 高风险归档 + 删除
     // ================================================================
 
     /** operate_log 高风险到期数据：归档 → 删除 */
     private long archiveAndDeleteHighRiskOperateLogs(Date before) throws Exception {
-        String fileName = "operate_log-" + new SimpleDateFormat("yyyyMMdd").format(new Date()) + ".jsonl.gz";
-        long archived = 0;
+        long deleted = 0;
         long afterId = 0;
-        try (ArchiveWriter writer = new ArchiveWriter(archiveFile("operate_log", fileName))) {
-            while (true) {
-                var batch = operateLogMapper.selectExpiredHighRiskBatch(before, afterId, RETENTION_BATCH_SIZE);
-                if (batch.isEmpty()) {
-                    break;
-                }
-                for (OperateLog row : batch) {
-                    writer.writeLine(archiveMapper.writeValueAsString(row));
-                    afterId = row.getId();
-                    archived++;
-                }
+        while (true) {
+            var batch = operateLogMapper.selectExpiredHighRiskBatch(before, afterId, RETENTION_BATCH_SIZE);
+            if (batch.isEmpty()) {
+                break;
             }
-        }
-        long deleted = deleteInBatches(
-                beforeTime -> operateLogMapper.deleteBeforeTimeBatch(beforeTime, RETENTION_BATCH_SIZE), before);
-        if (archived > 0) {
-            recordArchiveEvent("operate_log", fileName, archived);
+            String fileName = writeArchive("operate_log", batch);
+            deleted += operateLogMapper.deleteArchivedHighRisk(batch.stream().map(OperateLog::getId).toList());
+            afterId = batch.getLast().getId();
+            recordArchiveEvent("operate_log", fileName, batch.size());
         }
         return deleted;
     }
 
     /** security_event_log 高风险到期数据：归档 → 删除 */
     private long archiveAndDeleteHighRiskSecurityEvents(Date before) throws Exception {
-        String fileName = "security_event_log-" + new SimpleDateFormat("yyyyMMdd").format(new Date()) + ".jsonl.gz";
-        long archived = 0;
+        long deleted = 0;
         long afterId = 0;
-        try (ArchiveWriter writer = new ArchiveWriter(archiveFile("security_event_log", fileName))) {
-            while (true) {
-                var batch = securityEventLogMapper.selectExpiredHighRiskBatch(before, afterId, RETENTION_BATCH_SIZE);
-                if (batch.isEmpty()) {
-                    break;
-                }
-                for (SecurityEventLog row : batch) {
-                    writer.writeLine(archiveMapper.writeValueAsString(row));
-                    afterId = row.getId();
-                    archived++;
-                }
+        while (true) {
+            var batch = securityEventLogMapper.selectExpiredHighRiskBatch(before, afterId, RETENTION_BATCH_SIZE);
+            if (batch.isEmpty()) {
+                break;
             }
-        }
-        long deleted = deleteInBatches(
-                beforeTime -> securityEventLogMapper.deleteBeforeTimeBatch(beforeTime, RETENTION_BATCH_SIZE), before);
-        if (archived > 0) {
-            recordArchiveEvent("security_event_log", fileName, archived);
+            String fileName = writeArchive("security_event_log", batch);
+            deleted += securityEventLogMapper.deleteArchivedHighRisk(batch.stream().map(SecurityEventLog::getId).toList());
+            afterId = batch.getLast().getId();
+            recordArchiveEvent("security_event_log", fileName, batch.size());
         }
         return deleted;
+    }
+
+    private String writeArchive(String table, List<?> rows) throws Exception {
+        String fileName = table + "-" + new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date())
+                + "-" + UUID.randomUUID() + ".jsonl.gz";
+        try (ArchiveWriter writer = new ArchiveWriter(archiveFile(table, fileName))) {
+            for (Object row : rows) {
+                writer.writeLine(archiveMapper.writeValueAsString(row));
+            }
+        }
+        return fileName;
     }
 
     private File archiveFile(String table, String fileName) {
@@ -225,11 +224,18 @@ public class LogRetentionTask {
     // ================================================================
 
     private int getRetentionConfig(String key, int defaultValue) {
-        try {
-            Integer value = systemConfigService.getConfigValueAsInt(key);
-            return value != null ? value : defaultValue;
-        } catch (Exception e) {
+        String rawValue = systemConfigService.getConfigValue(key);
+        if (rawValue == null) {
             return defaultValue;
+        }
+        try {
+            int value = Integer.parseInt(rawValue.trim());
+            if (value < 30 || value > 3650) {
+                throw new IllegalArgumentException("留存天数必须在30-3650之间");
+            }
+            return value;
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("留存策略配置无效，请检查留存天数");
         }
     }
 
@@ -268,13 +274,14 @@ public class LogRetentionTask {
         }
     }
 
-    /** 追加式 JSONL.gz 归档写入器（gzip 支持多成员追加，标准解压工具可读） */
+    /** 每批独立归档，写入及关闭成功后才能删除对应记录。 */
     private static class ArchiveWriter implements AutoCloseable {
         private final Writer writer;
 
         ArchiveWriter(File file) throws Exception {
             this.writer = new OutputStreamWriter(
-                    new GZIPOutputStream(new FileOutputStream(file, true)), StandardCharsets.UTF_8);
+                    new GZIPOutputStream(Files.newOutputStream(file.toPath(), StandardOpenOption.CREATE_NEW,
+                            StandardOpenOption.WRITE)), StandardCharsets.UTF_8);
         }
 
         void writeLine(String json) throws Exception {

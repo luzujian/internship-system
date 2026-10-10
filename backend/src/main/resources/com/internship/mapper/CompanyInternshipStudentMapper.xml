@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.internship.mapper.CompanyInternshipStudentMapper">
+    <resultMap id="CompanyInternshipStudentMap" type="com.internship.entity.dto.CompanyInternshipStudent">
+        <id property="studentId" column="student_id"/>
+        <result property="placementId" column="placement_id"/>
+        <result property="studentName" column="student_name"/>
+        <result property="studentNumber" column="student_number"/>
+        <result property="grade" column="grade"/>
+        <result property="majorName" column="major_name"/>
+        <result property="className" column="class_name"/>
+        <result property="phone" column="phone"/>
+        <result property="email" column="email"/>
+        <result property="positionName" column="position_name"/>
+        <result property="sourceType" column="source_type"/>
+        <result property="internshipStartTime" column="internship_start_time"/>
+        <result property="internshipEndTime" column="internship_end_time"/>
+    </resultMap>
+
+    <!-- 数量与名单共用同一范围，历史确认/已离开/待开始的学生不计入当前实习。 -->
+    <sql id="CurrentStudentsScope">
+        FROM student_internship_status sis
+        JOIN student_users su ON su.id = sis.student_id
+        JOIN company_users company ON company.id = #{companyId}
+        LEFT JOIN internship_stage_assignment assignment ON assignment.id = (
+            SELECT MAX(current_assignment.id)
+            FROM internship_stage_assignment current_assignment
+            WHERE current_assignment.student_id = sis.student_id AND current_assignment.current_flag = 1
+        )
+        LEFT JOIN major m ON m.id = su.major_id
+        LEFT JOIN class cls ON cls.id = su.class_id
+        LEFT JOIN position p ON p.id = sis.position_id
+        WHERE su.status = 1
+          AND sis.status = 3
+          AND sis.company_confirm_status = 1
+          AND (assignment.id IS NULL OR assignment.status = 'IN_PROGRESS')
+          AND (sis.internship_start_time IS NULL OR sis.internship_start_time &lt;= NOW())
+          AND (sis.internship_end_time IS NULL OR sis.internship_end_time > NOW())
+          AND (
+              (sis.company_id = company.id AND (assignment.id IS NULL OR assignment.company_id = company.id))
+              OR (
+                  sis.company_id IS NULL
+                  AND assignment.company_id IS NULL
+                  AND assignment.source_type = 'SELF_PRACTICE'
+                  AND LOWER(TRIM(assignment.company_name)) = LOWER(TRIM(company.company_name))
+                  AND LOWER(TRIM(sis.company_name)) = LOWER(TRIM(company.company_name))
+                  AND company.status = 1 AND company.audit_status = 1
+                  AND COALESCE(company.recall_status, 0) != 1
+                  AND NOT EXISTS (
+                      SELECT 1 FROM company_users duplicate_company
+                      WHERE duplicate_company.id != company.id
+                        AND duplicate_company.status = 1 AND duplicate_company.audit_status = 1
+                        AND COALESCE(duplicate_company.recall_status, 0) != 1
+                        AND LOWER(TRIM(duplicate_company.company_name)) = LOWER(TRIM(company.company_name))
+                  )
+              )
+          )
+        <if test="keyword != null and keyword != ''">
+          AND (
+              su.name LIKE CONCAT('%', #{keyword}, '%')
+              OR su.student_user_id LIKE CONCAT('%', #{keyword}, '%')
+              OR COALESCE(NULLIF(p.position_name, ''), sis.position_name, assignment.position_name) LIKE CONCAT('%', #{keyword}, '%')
+          )
+        </if>
+    </sql>
+
+    <select id="countCurrentStudents" resultType="java.lang.Long">
+        SELECT COUNT(*)
+        <include refid="CurrentStudentsScope"/>
+    </select>
+
+    <select id="findCurrentStudents" resultMap="CompanyInternshipStudentMap">
+        SELECT su.id AS student_id, assignment.id AS placement_id,
+               COALESCE(NULLIF(su.name, ''), sis.student_name) AS student_name,
+               su.student_user_id AS student_number,
+               COALESCE(NULLIF(su.grade, ''), sis.grade) AS grade,
+               COALESCE(NULLIF(m.name, ''), sis.major_name) AS major_name,
+               COALESCE(NULLIF(cls.name, ''), sis.class_name) AS class_name,
+               COALESCE(NULLIF(su.phone, ''), sis.contact_phone) AS phone,
+               COALESCE(NULLIF(su.email, ''), sis.email) AS email,
+               COALESCE(NULLIF(p.position_name, ''), sis.position_name, assignment.position_name) AS position_name,
+               COALESCE(assignment.source_type, 'JOB_APPLICATION') AS source_type,
+               sis.internship_start_time, sis.internship_end_time
+        <include refid="CurrentStudentsScope"/>
+        ORDER BY sis.internship_start_time DESC, su.id DESC
+        LIMIT #{pageSize} OFFSET #{offset}
+    </select>
+</mapper>

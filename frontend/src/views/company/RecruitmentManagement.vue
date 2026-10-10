@@ -12,6 +12,8 @@ import {
 } from '@element-plus/icons-vue';
 import { usePositionStore } from '../../store/position';
 import { useAuthStore } from '../../store/auth';
+import { listCompanyContacts, type CompanyContact } from '@/api/companyContacts';
+import { useRouter } from 'vue-router';
 import positionApi from '../../api/PositionService';
 import studentApi from '../../api/StudentUserService';
 import PositionCategoryService from '../../api/positionCategory';
@@ -22,6 +24,7 @@ import {
   decideJobPostingAutoFill,
 } from '../../utils/jobPostingAutoFill.js';
 import { normalizeSalaryUnit } from '../../utils/salaryRange.js';
+import { normalizeInterviewMethods, serializeInterviewMethods } from '../../utils/interviewMethods.js';
 import {
   commitAllowCreateText,
   withModelOption,
@@ -35,6 +38,27 @@ const chinaData = new EluiChinaAreaDht.ChinaArea().chinaAreaflat;
 
 const positionStore = usePositionStore();
 const authStore = useAuthStore();
+const router = useRouter();
+const contacts = ref<CompanyContact[]>([]);
+const contactsLoading = ref(false);
+const contactsError = ref('');
+const fetchContacts = async () => {
+  contactsLoading.value = true;
+  contactsError.value = '';
+  try {
+    const response = await listCompanyContacts();
+    if (response.code !== 200) throw new Error(response.message || response.msg || '加载联系人失败');
+    contacts.value = response.data || [];
+  } catch (error) {
+    contacts.value = [];
+    contactsError.value = error instanceof Error ? error.message : '加载联系人失败，请重试';
+  } finally { contactsLoading.value = false; }
+};
+const contactOptions = computed(() => [
+  { label: '使用企业原联系人', value: 0 },
+  ...contacts.value.map(contact => ({ label: `${contact.name}（${contact.phone}）`, value: contact.id }))
+]);
+const selectedContact = computed(() => contacts.value.find(contact => contact.id === positionForm.value.contactId));
 const isMobile = useIsMobile();
 
 // 专业选项列表
@@ -103,7 +127,7 @@ const interviewLoading = ref(false);
 const interviewForm = ref({
   interviewTime: '',
   interviewLocation: '',
-  interviewMethod: '线下',
+  interviewMethod: ['线下'],
   remark: '',
 });
 
@@ -115,6 +139,7 @@ const interviewMethodOptions = [
 
 const positionForm = ref({
   id: null,
+  contactId: 0,
   positionName: '',
   department: '',
   positionType: '',
@@ -134,7 +159,7 @@ const positionForm = ref({
   addressCode: [],
   interviewTime: '',
   interviewLocation: '',
-  interviewMethod: '线下',
+  interviewMethod: ['线下'],
   interviewRemark: '',
   internshipEnvironment: '',
   providesAccommodation: 0,
@@ -142,11 +167,25 @@ const positionForm = ref({
   categoryId: null,
 });
 
+let postingParseController: AbortController | null = null;
+let postingFormRevision = 0;
+const postingOwner = () => `${authStore.role || ''}:${authStore.user?.id || ''}:${authStore.user?.username || ''}`;
+const cancelPostingParse = () => {
+  postingFormRevision++;
+  postingParseController?.abort();
+  postingParseController = null;
+  parsingPosting.value = false;
+};
+// Any edit (including edit then revert), reopened dialog, or account change invalidates the old parse.
+watch([positionForm, dialogVisible, postingOwner, () => Boolean(authStore.token), postingText], cancelPostingParse, { deep: true, flush: 'sync' });
+onUnmounted(cancelPostingParse);
+
 // ===== 智能填表：岗位发布/编辑弹窗注册到 AI 侧栏（只写响应式 model，不触发提交） =====
 // 未覆盖字段说明：面试时间（datetime 字符串格式）、id/名额计数/状态（系统管理）——需手动操作或由系统维护；
 // 省市区通过 province/city/district 字段解析为工作地点级联值，招聘专业按数组写入多选控件。
 const formContext = useFormContext();
 const positionFillFields = (): FormFieldDescriptor[] => [
+  { prop: 'contactId', label: '岗位联系人', type: 'select', options: contactOptions.value },
   {
     prop: 'positionName',
     label: '岗位名称',
@@ -248,6 +287,7 @@ const positionFillFields = (): FormFieldDescriptor[] => [
     prop: 'interviewMethod',
     label: '面试方式',
     type: 'select',
+    valueType: 'array',
     options: interviewMethodOptions,
   },
   { prop: 'interviewLocation', label: '面试地点', type: 'input' },
@@ -307,6 +347,7 @@ const interviewFillFields = (): FormFieldDescriptor[] => [
     prop: 'interviewMethod',
     label: '面试方式',
     type: 'select',
+    valueType: 'array',
     options: interviewMethodOptions,
   },
   { prop: 'remark', label: '备注', type: 'textarea' },
@@ -644,7 +685,12 @@ const handleSearch = async () => {
     );
     if (response.code === 200) {
       searchResults.value = response.data.map((item) => ({
+        ...item,
         id: item.id,
+        contactId: item.contactId ?? null,
+        contactPerson: item.contactPerson || '',
+        contactPhone: item.contactPhone || '',
+        contactEmail: item.contactEmail || '',
         positionName: item.positionName,
         department: item.department || '',
         workLocation: formatWorkLocation(item),
@@ -691,6 +737,7 @@ const handleReset = () => {
 };
 
 const handlePublish = () => {
+  void fetchContacts();
   dialogTitle.value = '发布岗位';
   dialogType.value = 'create';
 
@@ -700,7 +747,7 @@ const handlePublish = () => {
   // 从 localStorage 读取面试信息模板
   let interviewTime = '';
   let interviewLocation = '';
-  let interviewMethod = '线下';
+  let interviewMethod = ['线下'];
   let remark = '';
   const savedTemplate = localStorage.getItem('interviewTemplate');
   hasInterviewTemplate.value = false;
@@ -709,7 +756,7 @@ const handlePublish = () => {
       const template = JSON.parse(savedTemplate);
       interviewTime = template.interviewTime || '';
       interviewLocation = template.interviewLocation || '';
-      interviewMethod = template.interviewMethod || '线下';
+      interviewMethod = normalizeInterviewMethods(template.interviewMethod ?? '线下');
       remark = template.remark || '';
       hasInterviewTemplate.value = true;
     } catch (e) {
@@ -719,6 +766,7 @@ const handlePublish = () => {
 
   positionForm.value = {
     id: null,
+    contactId: 0,
     positionName: '',
     department: '',
     positionType: '',
@@ -763,14 +811,14 @@ const handleInterviewInfo = () => {
       interviewForm.value = {
         interviewTime: template.interviewTime || '',
         interviewLocation: template.interviewLocation || '',
-        interviewMethod: template.interviewMethod || '线下',
+        interviewMethod: normalizeInterviewMethods(template.interviewMethod ?? '线下'),
         remark: template.remark || '',
       };
     } catch {
       interviewForm.value = {
         interviewTime: '',
         interviewLocation: '',
-        interviewMethod: '线下',
+        interviewMethod: ['线下'],
         remark: '',
       };
     }
@@ -778,7 +826,7 @@ const handleInterviewInfo = () => {
     interviewForm.value = {
       interviewTime: '',
       interviewLocation: '',
-      interviewMethod: '线下',
+      interviewMethod: ['线下'],
       remark: '',
     };
   }
@@ -899,6 +947,7 @@ const handleEdit = (row) => {
 
   positionForm.value = {
     ...row,
+    contactId: row.contactId || 0,
     salaryMin: row.salaryMin || '',
     salaryMax: row.salaryMax || '',
     salaryUnit: normalizeSalaryUnit(row.salaryUnit),
@@ -910,7 +959,7 @@ const handleEdit = (row) => {
     addressCode: addressCodes,
     interviewTime: row.interviewTime || '',
     interviewLocation: row.interviewLocation || '',
-    interviewMethod: row.interviewMethod || '线下',
+    interviewMethod: normalizeInterviewMethods(row.interviewMethod),
     interviewRemark: row.interviewRemark || '',
     internshipEnvironment: row.internshipEnvironment || '',
     providesAccommodation: row.providesAccommodation || 0,
@@ -924,6 +973,7 @@ const handleEdit = (row) => {
   aiParseNotices.value = [];
   dialogVisible.value = true;
   registerPositionForm('编辑岗位');
+  void fetchContacts();
 };
 
 const handlePause = async (row) => {
@@ -1052,6 +1102,7 @@ const handleSave = async () => {
   try {
     const positionData = {
       positionName: positionForm.value.positionName,
+      contactId: positionForm.value.contactId || null,
       department: positionForm.value.department,
       positionType: positionForm.value.positionType,
       province: positionForm.value.province,
@@ -1067,7 +1118,7 @@ const handleSave = async () => {
       status: positionForm.value.status,
       interviewTime: positionForm.value.interviewTime || null,
       interviewLocation: positionForm.value.interviewLocation || null,
-      interviewMethod: positionForm.value.interviewMethod || null,
+      interviewMethod: serializeInterviewMethods(positionForm.value.interviewMethod),
       interviewRemark: positionForm.value.interviewRemark || null,
       internshipEnvironment: positionForm.value.internshipEnvironment || null,
       providesAccommodation: positionForm.value.providesAccommodation || 0,
@@ -1112,6 +1163,7 @@ const handleSave = async () => {
         object: editingPositionId ? { type: 'company_job', id: String(editingPositionId) } : null,
       }, fillInstance, savedValues);
       dialogVisible.value = false;
+      if (hasSearched.value) await handleSearch();
     }
   } catch (error) {
     ElMessage.error('操作失败');
@@ -1257,6 +1309,7 @@ watch(
   { flush: 'post' },
 );
 const handleParsePosting = async () => {
+  if (parsingPosting.value || !dialogVisible.value || !authStore.token) return;
   const text = postingText.value.trim();
   if (!text) {
     ElMessage.warning('请先粘贴岗位内容');
@@ -1265,13 +1318,22 @@ const handleParsePosting = async () => {
 
   parsingPosting.value = true;
   aiParseNotices.value = [];
+  const controller = new AbortController();
+  postingParseController = controller;
+  const form = positionForm.value, revision = postingFormRevision, owner = postingOwner();
+  const isCurrent = () => !controller.signal.aborted && postingParseController === controller
+    && dialogVisible.value && positionForm.value === form && postingFormRevision === revision && postingOwner() === owner;
   try {
-    const response = await jobPostingAiService.parseJobPosting(text);
+    const response = await jobPostingAiService.parseJobPosting(text, controller.signal);
+    if (!isCurrent()) return;
     if (response.code !== 200 || !response.data) {
       ElMessage.error(response.message || 'AI识别失败');
       return;
     }
 
+    // Stop tracking this completed request before synchronously applying its accepted fields.
+    postingParseController = null;
+    parsingPosting.value = false;
     const result = response.data;
     let filledCount = 0;
     const conflictFields = new Set<string>();
@@ -1320,10 +1382,14 @@ const handleParsePosting = async () => {
     directFields.forEach((field) => {
       const replaceDefault =
         field === 'interviewMethod' &&
-        positionForm.value.interviewMethod === '线下' &&
+        positionForm.value.interviewMethod.length === 1 &&
+        positionForm.value.interviewMethod[0] === '线下' &&
         !hasInterviewTemplate.value &&
         !isAiFilled('interviewMethod');
-      const decision = fillField(field, result[field], field, replaceDefault);
+      const value = field === 'interviewMethod'
+        ? normalizeInterviewMethods(result[field])
+        : result[field];
+      const decision = fillField(field, value, field, replaceDefault);
       if (field === 'department' && decision === 'fill') {
         void handleDepartmentChange(result[field]);
       }
@@ -1483,9 +1549,9 @@ const handleParsePosting = async () => {
       ElMessage.info('AI没有回填新字段，请手动填写');
     }
   } catch (error: any) {
-    ElMessage.error(error?.response?.data?.message || 'AI识别失败，请稍后重试');
+    if (isCurrent()) ElMessage.error(error?.response?.data?.message || 'AI识别失败，请稍后重试');
   } finally {
-    parsingPosting.value = false;
+    if (postingParseController === controller) { postingParseController = null; parsingPosting.value = false; }
   }
 };
 
@@ -1957,6 +2023,19 @@ useAgentPageContext(() => ({
             </div>
           </el-alert>
         </div>
+        <el-form-item label="岗位联系人">
+          <div style="width: 100%">
+            <el-select v-model="positionForm.contactId" :loading="contactsLoading" placeholder="请选择岗位联系人" style="width: 100%">
+              <el-option v-for="contact in contactOptions" :key="contact.value" :label="contact.label" :value="contact.value" />
+            </el-select>
+            <div class="position-contact-tip">
+              <span v-if="selectedContact">电话：{{ selectedContact.phone }}<template v-if="selectedContact.email">　邮箱：{{ selectedContact.email }}</template></span>
+              <span v-else>未单独选择时，使用企业基础信息中的原联系人。</span>
+              <el-button type="primary" link @click="router.push({ name: 'CompanyInfo', query: { tab: 'contacts' } })">管理联系人</el-button>
+            </div>
+            <el-alert v-if="contactsError" :title="contactsError" type="error" :closable="false"><el-button link type="primary" @click="fetchContacts">重新加载联系人</el-button></el-alert>
+          </div>
+        </el-form-item>
         <el-form-item
           label="岗位类别"
           required
@@ -2206,7 +2285,9 @@ useAgentPageContext(() => ({
         >
           <el-select
             v-model="positionForm.interviewMethod"
-            placeholder="请选择面试方式（选填）"
+            multiple
+            clearable
+            placeholder="请选择面试方式（可多选，选填）"
             style="width: 100%"
           >
             <el-option label="线下" value="线下" />
@@ -2270,7 +2351,9 @@ useAgentPageContext(() => ({
         <el-form-item label="面试方式">
           <el-select
             v-model="interviewForm.interviewMethod"
-            placeholder="请选择面试方式"
+            multiple
+            clearable
+            placeholder="请选择面试方式（可多选）"
             style="width: 100%"
           >
             <el-option label="线下" value="线下" />
@@ -2301,6 +2384,7 @@ useAgentPageContext(() => ({
   </div>
 </template>
 <style scoped>
+.position-contact-tip { color: #909399; font-size: 12px; line-height: 1.8; margin-top: 6px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
 .recruitment-management {
   padding: 0;
 }

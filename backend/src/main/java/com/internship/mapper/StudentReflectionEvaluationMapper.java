@@ -13,6 +13,8 @@ public interface StudentReflectionEvaluationMapper {
     StudentReflectionEvaluation findById(@Param("id") Long id);
     
     StudentReflectionEvaluation findByReflectionId(@Param("reflectionId") Long reflectionId);
+
+    StudentReflectionEvaluation lockByReflectionId(@Param("reflectionId") Long reflectionId);
     
     StudentReflectionEvaluation findByStudentId(@Param("studentId") Long studentId);
     

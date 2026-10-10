@@ -4,6 +4,7 @@ import com.internship.entity.InterviewInvitation;
 import com.internship.entity.Result;
 import com.internship.entity.StudentJobApplication;
 import com.internship.entity.User;
+import com.internship.entity.dto.StudentPositionKey;
 import com.internship.service.DirectHireService;
 import com.internship.service.InterviewInvitationService;
 import com.internship.service.StudentJobApplicationService;
@@ -19,8 +20,14 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.List;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -65,7 +72,8 @@ class StudentDirectHirePresentationTest {
         invitation.setInterviewMethod("direct_hire");
         invitation.setStatus("interview_passed");
         when(invitationService.findByStudentId(400L)).thenReturn(List.of(invitation));
-        when(directHireService.isDirectHire(400L, 300L)).thenReturn(true);
+        when(directHireService.findDirectHirePairs(List.of(new StudentPositionKey(400L, 300L))))
+                .thenReturn(Set.of(new StudentPositionKey(400L, 300L)));
 
         StudentInterviewController controller = new StudentInterviewController();
         ReflectionTestUtils.setField(controller, "userService", userService);
@@ -76,6 +84,7 @@ class StudentDirectHirePresentationTest {
         InterviewInvitation returned = ((List<InterviewInvitation>) result.getData()).get(0);
 
         assertTrue(returned.getDirectHire());
+        verify(directHireService, never()).isDirectHire(any(), any());
     }
 
     @Test
@@ -86,7 +95,8 @@ class StudentDirectHirePresentationTest {
         application.setPositionId(300L);
         application.setStatus("interview_passed");
         when(applicationService.findByStudentId(400L)).thenReturn(List.of(application));
-        when(directHireService.isDirectHire(400L, 300L)).thenReturn(true);
+        when(directHireService.findDirectHirePairs(List.of(new StudentPositionKey(400L, 300L))))
+                .thenReturn(Set.of(new StudentPositionKey(400L, 300L)));
 
         StudentJobApplicationController controller = new StudentJobApplicationController();
         ReflectionTestUtils.setField(controller, "userService", userService);
@@ -97,5 +107,32 @@ class StudentDirectHirePresentationTest {
         StudentJobApplication returned = ((List<StudentJobApplication>) result.getData()).get(0);
 
         assertTrue(returned.getDirectHire());
+        verify(directHireService, never()).isDirectHire(any(), any());
+    }
+
+    @Test
+    void filteredHistoryUsesLatestPairFlagInsteadOfDisplayedInvitationMethod() {
+        InterviewInvitation olderDirectHire = new InterviewInvitation();
+        olderDirectHire.setId(500L);
+        olderDirectHire.setStudentId(400L);
+        olderDirectHire.setPositionId(300L);
+        olderDirectHire.setInterviewMethod("direct_hire");
+        olderDirectHire.setStatus("interview_passed");
+        when(invitationService.findByStudentIdAndStatus(400L, "interview_passed"))
+                .thenReturn(List.of(olderDirectHire));
+        when(directHireService.findDirectHirePairs(List.of(new StudentPositionKey(400L, 300L))))
+                .thenReturn(Set.of());
+        StudentInterviewController controller = new StudentInterviewController();
+        ReflectionTestUtils.setField(controller, "userService", userService);
+        ReflectionTestUtils.setField(controller, "interviewInvitationService", invitationService);
+        ReflectionTestUtils.setField(controller, "directHireService", directHireService);
+
+        Result result = controller.list(1);
+
+        assertEquals(List.of(olderDirectHire), result.getData());
+        assertFalse(olderDirectHire.getDirectHire());
+        assertEquals("interview_passed", olderDirectHire.getStatus());
+        verify(invitationService, never()).findByStudentId(any());
+        verify(directHireService, never()).isDirectHire(any(), any());
     }
 }

@@ -361,7 +361,6 @@ const addTagToForm = (tag: string): void => {
   // 自动标签联动对应状态字段，保存后标签重建（rebuildTags）才能派生出来，不会被清掉
   if (tag === '实习基地') companyForm.value.isInternshipBase = 1
   if (tag === '接受兜底') companyForm.value.acceptBackup = 1
-  if (tag === '学生自主联系') companyForm.value.cooperationMode = 'student_contact'
   // companyTag 可能是搜索多选写入的数组，先归一为字符串再拆分（数组 join 后拆分与原字符串语义一致）
   const formTagRaw: string | string[] | null | undefined = companyForm.value.companyTag
   const formTagStr: string = Array.isArray(formTagRaw) ? formTagRaw.join(',') : (formTagRaw ?? '')
@@ -566,9 +565,12 @@ const handleImportExcel = async (): Promise<void> => {
     const result = response as unknown as { code?: number; data?: unknown; msg?: string; message?: string }
 
     if (result?.code === 200) {
-      const importResult = (result.data ?? {}) as { successCount?: unknown; failCount?: unknown; failList?: unknown }
+      const importResult = (result.data ?? {}) as { successCount?: unknown; createdCount?: unknown; updatedCount?: unknown; contactCount?: unknown; failCount?: unknown; failList?: unknown }
       const successCount: number = typeof importResult.successCount === 'number' ? importResult.successCount : 0
       const failCount: number = typeof importResult.failCount === 'number' ? importResult.failCount : 0
+      const createdCount = typeof importResult.createdCount === 'number' ? importResult.createdCount : successCount
+      const updatedCount = typeof importResult.updatedCount === 'number' ? importResult.updatedCount : 0
+      const contactCount = typeof importResult.contactCount === 'number' ? importResult.contactCount : 0
       const failRaw: unknown = importResult.failList
       const failList: Array<{ rowNum?: unknown; errorMsg?: unknown }> = Array.isArray(failRaw)
         ? (failRaw as Array<{ rowNum?: unknown; errorMsg?: unknown }>)
@@ -580,11 +582,11 @@ const handleImportExcel = async (): Promise<void> => {
       if (credentials.length > 0) {
         await showInitialCredentials(credentials)
       }
-      if (successCount > credentials.length) {
+      if (createdCount > credentials.length) {
         ElMessage.warning('部分成功账号未返回初始凭据，请通过重置密码流程处理')
       }
       
-      let message = `导入完成，成功: ${successCount} 条，失败: ${failCount} 条`
+      let message = `导入完成：新增 ${createdCount} 家企业，更新 ${updatedCount} 家企业，处理 ${contactCount} 位联系人，失败 ${failCount} 行`
       
       if (failList.length > 0) {
         let errorDetails = '\n失败详情:\n'
@@ -756,7 +758,6 @@ const getAccountStatusTagType = (status: number | string): string => {
 const getTagType = (tag: string): string => {
   const tagMap = {
     '校企双向选择': 'primary',
-    '学生自主联系': 'success',
     '接受兜底': 'warning',
     '国家级': 'danger',
     '省级': 'warning'
@@ -791,23 +792,11 @@ const getFullAddress = (company: CompanyRow): string => {
   return detail || company.address || '-'
 }
 
-// 企业标签合并区：合作模式拆解 + 实习基地/已签协议/校友单位 + 老标签体系
+// 审核通过的系统内企业统一属于校企合作，其他标签按对应字段显示。
 const getCompanyTagList = (company: CompanyRow): Array<{ text: string; type: string }> => {
   const tags: Array<{ text: string; type: string }> = []
-  const modeMap: Record<string, { text: string; type: string }> = {
-    '双向': { text: '校企双向选择', type: 'success' },
-    '自主': { text: '学生自主联系', type: 'warning' },
-    '兜底': { text: '接受兜底', type: 'danger' },
-    mutual_choice: { text: '校企双向选择', type: 'success' },
-    student_contact: { text: '学生自主联系', type: 'warning' }
-  }
-  const hasBackup = company.acceptBackup === 1
-  if (company.cooperationMode) {
-    company.cooperationMode.split(',').forEach((m: string) => {
-      const t = modeMap[m.trim()]
-      if (t) tags.push(t)
-    })
-  }
+  const hasBackup = company.acceptBackup === 1 || String(company.cooperationMode || '').split(',').some(mode => mode.trim() === '兜底')
+  if (company.auditStatus === 1) tags.push({ text: '校企双向选择', type: 'success' })
   if (company.isInternshipBase === 1) tags.push({ text: '实习基地', type: 'success' })
   if (hasBackup && !tags.some(t => t.text === '接受兜底')) tags.push({ text: '接受兜底', type: 'danger' })
   if (company.hasTrainingBaseAgreement === 1) tags.push({ text: '已签协议', type: 'info' })
@@ -1173,7 +1162,7 @@ useAgentPageContext(() => ({
           <el-input v-model="companyForm.companyTag" placeholder="请输入标签，多个标签用逗号分隔，例如：校企双向选择，接受兜底" />
           <div class="common-tags" style="margin-top: 8px;">
             <el-tag
-              v-for="tag in ['校企双向选择', '学生自主联系', '接受兜底', '实习基地']"
+              v-for="tag in ['校企双向选择', '接受兜底', '实习基地']"
               :key="tag"
               :type="getTagType(tag)"
               size="small"
@@ -1406,7 +1395,7 @@ useAgentPageContext(() => ({
           </div>
         </div>
         <div class="import-tip">
-          提示：请先下载导入模板，按照模板格式填写数据后再导入
+          支持企业导入模板和招聘会报名表。同名企业合并到原账号，非空资料按表格更新，原密码和历史实习关联保留。多位联系人可分行填写，或在同一行按相同顺序用换行、顿号分隔姓名和电话。
         </div>
       </div>
       <template #footer>

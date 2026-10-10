@@ -5,6 +5,7 @@ import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
 import java.util.List;
+import java.util.Date;
 
 @Mapper
 public interface InternshipApplicationMapper {
@@ -30,6 +31,17 @@ public interface InternshipApplicationMapper {
                                                @Param("status") String status);
     
     int updateViewed(@Param("id") Long id, @Param("viewed") Boolean viewed);
+
+    List<InternshipApplicationEntity> findActivityPage(@Param("companyId") Long companyId,
+            @Param("unreadOnly") boolean unreadOnly, @Param("offset") int offset, @Param("limit") int limit);
+
+    long countActivities(@Param("companyId") Long companyId, @Param("unreadOnly") boolean unreadOnly);
+
+    List<InternshipApplicationEntity> findActivityAttempts(@Param("companyId") Long companyId,
+            @Param("studentId") Long studentId, @Param("positionId") Long positionId);
+
+    int readActivityVersion(@Param("id") Long id, @Param("companyId") Long companyId,
+            @Param("status") String status, @Param("updateTime") Date updateTime);
     
     int deleteById(@Param("id") Long id);
     

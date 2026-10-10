@@ -155,14 +155,13 @@
                   />
                   <el-button 
                     type="primary" 
-                    @click="sendMessage" 
-                    :loading="loading" 
-                    :disabled="!inputMessage.trim()" 
+                    @click="loading ? stopChat() : sendMessage()"
+                    :disabled="!loading && !inputMessage.trim()"
                     class="send-btn"
                     size="large"
                   >
                     <el-icon v-if="!loading"><Promotion /></el-icon>
-                    <span v-else>测试中</span>
+                    <span v-else>停止</span>
                   </el-button>
                 </div>
               </div>
@@ -439,15 +438,25 @@
 
 <script lang="ts" setup>
 import logger from '@/utils/logger'
-import { ref, reactive, onMounted, nextTick, computed } from 'vue'
+import { ref, reactive, onMounted, onBeforeUnmount, nextTick, computed, watch } from 'vue'
 import { ElMessage, ElNotification } from 'element-plus'
 import { Delete, Promotion, Refresh, Setting, Download, Timer, ChatDotRound, Switch, CircleCheck, DataLine, Bottom, Document, MagicStick, UploadFilled, Loading, InfoFilled } from '@element-plus/icons-vue'
 import aiModelService from '@/api/aiModel'
 import request from '@/utils/request'
 import html2pdf from 'html2pdf.js/dist/html2pdf.bundle.min.js'
 import { useAuthStore } from '@/store/auth'
+import { readAIChatStream } from '@/utils/aiTestStream'
 
 const authStore = useAuthStore()
+const testOwner = computed(() => authStore.token && authStore.user?.id != null
+  ? `${authStore.role || ''}:${authStore.user.id}:${authStore.user.username || ''}` : '')
+const testCacheKey = (kind: string) => testOwner.value ? `${kind}:${encodeURIComponent(testOwner.value)}` : null
+let testGeneration = 0
+let pageActive = true
+let chatController: AbortController | null = null
+let analysisController: AbortController | null = null
+const stopChat = () => chatController?.abort()
+
 
 const inputMessage = ref('')
 const loading = ref(false)
@@ -547,189 +556,67 @@ const confirmModelSelection = () => {
 }
 
 const sendMessage = async () => {
-  if (!inputMessage.value.trim() || loading.value) return
-
+  if (!inputMessage.value.trim() || loading.value || !testOwner.value) return
   if (!currentModel.value) {
     ElMessage.warning('请先选择AI模型')
     showModelSelector.value = true
     return
   }
-
-  const userMessage = {
-    role: 'user',
-    content: inputMessage.value.trim(),
-    timestamp: new Date()
-  }
-
-  messages.value.push(userMessage)
+  const owner = testOwner.value, generation = testGeneration
+  const controller = new AbortController()
+  chatController = controller
+  const isCurrent = () => pageActive && generation === testGeneration && owner === testOwner.value
+  const currentInput = inputMessage.value.trim()
+  messages.value.push({ role: 'user', content: currentInput, timestamp: new Date() })
   saveChatMessages()
-  const currentInput = inputMessage.value
   inputMessage.value = ''
   loading.value = true
   streamingMessage.value = ''
-
   const startTime = Date.now()
   testStats.totalTests++
-
   scrollToBottom()
-
   try {
-    await sendStreamingMessage(currentInput)
-    const endTime = Date.now()
-    const responseTime = endTime - startTime
-    
+    await sendStreamingMessage(currentInput, controller.signal, isCurrent)
+    if (!isCurrent()) return
+    const responseTime = Date.now() - startTime
     updateTestStats(responseTime, true)
-    
-    ElNotification({
-      title: '测试成功',
-      message: `响应时间：${responseTime}ms`,
-      type: 'success',
-      duration: 2000
-    })
-  } catch (error) {
-    logger.error('发送消息失败:', error)
-    const errorMessage = {
-      role: 'assistant',
-      content: '抱歉，测试失败。请检查模型配置或网络连接。',
-      timestamp: new Date()
+    ElNotification({ title: '测试成功', message: `响应时间：${responseTime}ms`, type: 'success', duration: 2000 })
+  } catch (error: any) {
+    if (!isCurrent()) return
+    if (controller.signal.aborted) {
+      testStats.totalTests--
+      ElMessage.info('测试已停止')
+      return
     }
-    messages.value.push(errorMessage)
+    logger.error('发送消息失败:', error)
+    messages.value.push({ role: 'assistant', content: error.message || '测试失败，请检查模型配置或网络连接。', timestamp: new Date() })
     saveChatMessages()
-    
     updateTestStats(0, false)
-    
-    ElMessage.error('测试失败，请检查模型配置或网络连接')
+    ElMessage.error(error.message || '测试失败，请检查模型配置或网络连接')
   } finally {
-    loading.value = false
-    scrollToBottom()
+    if (isCurrent() && chatController === controller) {
+      chatController = null
+      loading.value = false
+      streamingMessage.value = ''
+      scrollToBottom()
+    }
   }
 }
 
-const sendStreamingMessage = (message) => {
-  return new Promise<void>((resolve, reject) => {
-    const token = authStore.token
-    let controller = new AbortController()
-    let timeoutId = null
-
-    timeoutId = setTimeout(() => {
-      controller.abort()
-      ElMessage.warning('请求超时，请重试')
-      reject(new Error('请求超时'))
-    }, 60000)
-
-    const headers = {
-      'Content-Type': 'application/json'
+const sendStreamingMessage = async (message: string, signal: AbortSignal, isCurrent: () => boolean) => {
+  const answer = await readAIChatStream({
+    message, model: currentModel.value.modelCode, token: authStore.token,
+    context: messages.value.slice(0, -1).slice(-10).map(msg => ({ role: msg.role, content: msg.content })), signal,
+    onChunk: text => {
+      if (!isCurrent()) return
+      streamingMessage.value = text
+      if (autoScrollEnabled.value) nextTick(() => { if (isCurrent()) scrollToBottom() })
     }
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`
-    }
-
-    const context = messages.value.slice(-10).map(msg => ({
-      role: msg.role,
-      content: msg.content
-    }))
-
-    fetch('/api/ai/chat/stream', {
-      method: 'POST',
-      headers: headers,
-      body: JSON.stringify({ 
-        message: message,
-        context: context,
-        model: currentModel.value.modelCode
-      }),
-      signal: controller.signal
-    })
-      .then(response => {
-        clearTimeout(timeoutId)
-
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`)
-        }
-
-        if (!response.body) {
-          throw new Error('Response body is null')
-        }
-
-        const reader = response.body.getReader()
-        const decoder = new TextDecoder()
-        let buffer = ''
-
-        const processStream = ({ done, value }) => {
-          if (done) {
-            const aiMessage = {
-              role: 'assistant',
-              content: streamingMessage.value,
-              timestamp: new Date()
-            }
-            messages.value.push(aiMessage)
-            streamingMessage.value = ''
-            saveChatMessages()
-            resolve()
-            return
-          }
-
-          buffer += decoder.decode(value, { stream: true })
-
-          const lines = buffer.split('\n')
-          buffer = lines.pop()
-
-          for (const line of lines) {
-            if (!line.trim()) continue
-
-            try {
-              if (line.startsWith('event:')) {
-                continue
-              } else if (line.startsWith('data:')) {
-                const jsonStr = line.substring(5).trim()
-                const data = JSON.parse(jsonStr)
-
-                if (data.type === 'chunk') {
-                  streamingMessage.value += data.content || ''
-                  if (autoScrollEnabled.value) {
-                    nextTick(() => scrollToBottom())
-                  }
-                } else if (data.type === 'end') {
-                  const aiMessage = {
-                    role: 'assistant',
-                    content: streamingMessage.value,
-                    timestamp: new Date()
-                  }
-                  messages.value.push(aiMessage)
-                  streamingMessage.value = ''
-                  loading.value = false
-                  saveChatMessages()
-                  reader.cancel()
-                  resolve()
-                  return
-                } else if (data.type === 'error') {
-                  ElMessage.error(data.message || '生成过程中发生错误')
-                  reader.cancel()
-                  reject(new Error(data.message))
-                  return
-                }
-              }
-            } catch (error) {
-              logger.error('解析流式数据失败:', error)
-            }
-          }
-
-          reader.read().then(processStream)
-        }
-
-        reader.read().then(processStream)
-      })
-      .catch(error => {
-        clearTimeout(timeoutId)
-        loading.value = false
-        if (error.name === 'AbortError') {
-          logger.log('请求已超时中止')
-        } else {
-          logger.error('流式连接错误:', error)
-          ElMessage.error('连接中断或服务器拒绝访问，请重试')
-        }
-        reject(error)
-      })
   })
+  if (!isCurrent() || signal.aborted) throw new DOMException('已停止测试', 'AbortError')
+  messages.value.push({ role: 'assistant', content: answer, timestamp: new Date() })
+  streamingMessage.value = ''
+  saveChatMessages()
 }
 
 const updateTestStats = (responseTime, success) => {
@@ -756,7 +643,8 @@ const selectTestQuestion = (question) => {
 const clearMessages = () => {
   messages.value = []
   streamingMessage.value = ''
-  localStorage.removeItem('aiTestChatMessages')
+  const key = testCacheKey('aiTestChatMessages')
+  if (key) localStorage.removeItem(key)
   
   nextTick(() => {
     if (messagesScrollbar.value) {
@@ -928,7 +816,8 @@ const downloadPDF = () => {
 const resetAnalysis = () => {
   analysisResult.value = null
   uploadedFile.value = null
-  localStorage.removeItem('aiTestAnalysisResult')
+  const key = testCacheKey('aiTestAnalysisResult')
+  if (key) localStorage.removeItem(key)
   if (uploadRef.value) {
     uploadRef.value.clearFiles()
   }
@@ -973,6 +862,7 @@ const formatFileSize = (bytes) => {
 }
 
 const analyzeReflection = async () => {
+  if (analyzing.value || !testOwner.value) return
   if (!uploadedFile.value) {
     ElMessage.warning('请先上传文件')
     return
@@ -984,6 +874,11 @@ const analyzeReflection = async () => {
     return
   }
 
+  const owner = testOwner.value, generation = testGeneration
+  const controller = new AbortController()
+  analysisController = controller
+  const isCurrent = () => pageActive && generation === testGeneration && owner === testOwner.value && !controller.signal.aborted
+  analyzing.value = true
   analysisProgressVisible.value = true
 
   try {
@@ -999,14 +894,17 @@ const analyzeReflection = async () => {
       headers: {
         'Content-Type': 'multipart/form-data'
       },
-      timeout: 300000
+      timeout: 300000,
+      signal: controller.signal
     } as any)
 
+    if (!isCurrent()) return
     if (response.code === 200) {
       const analysisData: unknown = response.data !== null && typeof response.data === 'object'
         ? (response.data as { analysis?: unknown }).analysis
         : undefined
-      await streamDisplayAnalysisResult(analysisData)
+      await streamDisplayAnalysisResult(analysisData, isCurrent)
+      if (!isCurrent()) return
       analysisProgressVisible.value = false
       ElMessage.success(`使用 ${formatModelCode(currentModel.value.modelCode)} 分析完成`)
     } else {
@@ -1014,18 +912,22 @@ const analyzeReflection = async () => {
       ElMessage.error(response.message || '分析失败')
     }
   } catch (error) {
+    if (!isCurrent()) return
     logger.error('上传并分析实习心得文件失败:', error)
     analysisProgressVisible.value = false
     
     if (error.response?.data?.message) {
-      ElMessage.error(error.response.message)
+      ElMessage.error(error.response.data.message)
     } else {
       ElMessage.error('上传并分析失败，请稍后重试')
     }
+  } finally {
+    if (isCurrent()) { analyzing.value = false; analysisProgressVisible.value = false; analysisController = null }
   }
 }
 
-const streamDisplayAnalysisResult = async (fullAnalysis) => {
+const streamDisplayAnalysisResult = async (fullAnalysis, isCurrent: () => boolean) => {
+  if (!fullAnalysis || typeof fullAnalysis !== 'object') throw new Error('分析结果格式异常')
   const displayOrder = [
     { key: 'keywords', delay: 300 },
     { key: 'score', delay: 200 },
@@ -1043,11 +945,13 @@ const streamDisplayAnalysisResult = async (fullAnalysis) => {
   
   for (const item of displayOrder) {
     await new Promise<void>(resolve => setTimeout(resolve, item.delay))
+    if (!isCurrent()) return
     result[item.key] = fullAnalysis[item.key]
     analysisResult.value = { ...result }
   }
 
-  localStorage.setItem('aiTestAnalysisResult', JSON.stringify(fullAnalysis))
+  const key = testCacheKey('aiTestAnalysisResult')
+  if (key && isCurrent()) { try { localStorage.setItem(key, JSON.stringify(fullAnalysis)) } catch { /* storage may be full */ } }
 }
 
 const getScoreTagType = (score) => {
@@ -1101,7 +1005,9 @@ onMounted(() => {
 
 const loadSavedAnalysisResult = () => {
   try {
-    const savedResult = localStorage.getItem('aiTestAnalysisResult')
+    analysisResult.value = null
+    const key = testCacheKey('aiTestAnalysisResult')
+    const savedResult = key ? localStorage.getItem(key) : null
     if (savedResult) {
       analysisResult.value = JSON.parse(savedResult)
     }
@@ -1140,7 +1046,8 @@ const fetchCategoryWeights = async () => {
 
 const saveChatMessages = () => {
   try {
-    localStorage.setItem('aiTestChatMessages', JSON.stringify(messages.value))
+    const key = testCacheKey('aiTestChatMessages')
+    if (key && pageActive) localStorage.setItem(key, JSON.stringify(messages.value))
   } catch (error) {
     logger.error('保存对话消息失败:', error)
   }
@@ -1148,7 +1055,9 @@ const saveChatMessages = () => {
 
 const loadChatMessages = () => {
   try {
-    const savedMessages = localStorage.getItem('aiTestChatMessages')
+    messages.value = []
+    const key = testCacheKey('aiTestChatMessages')
+    const savedMessages = key ? localStorage.getItem(key) : null
     if (savedMessages) {
       messages.value = JSON.parse(savedMessages)
     }
@@ -1156,6 +1065,18 @@ const loadChatMessages = () => {
     logger.error('加载对话消息失败:', error)
   }
 }
+// Do not migrate unscoped legacy caches: their owner cannot be verified.
+const resetTestAccount = () => {
+  testGeneration++
+  chatController?.abort(); analysisController?.abort()
+  chatController = null; analysisController = null
+  loading.value = false; analyzing.value = false; analysisProgressVisible.value = false
+  messages.value = []; streamingMessage.value = ''; inputMessage.value = ''
+  analysisResult.value = null; uploadedFile.value = null
+  Object.assign(testStats, { totalTests: 0, successTests: 0, failedTests: 0, avgResponseTime: 0, minResponseTime: Infinity, maxResponseTime: 0, responseTimes: [] })
+}
+watch(testOwner, () => { resetTestAccount(); loadChatMessages(); loadSavedAnalysisResult() }, { flush: 'sync' })
+onBeforeUnmount(() => { pageActive = false; resetTestAccount() })
 </script>
 
 <style scoped>

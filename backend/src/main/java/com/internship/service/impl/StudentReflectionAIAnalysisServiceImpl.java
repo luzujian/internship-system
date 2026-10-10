@@ -5,8 +5,11 @@ import com.internship.config.DynamicChatClientFactory;
 import com.internship.entity.*;
 import com.internship.enums.AiGradeEnum;
 import com.internship.mapper.StudentReflectionAIAnalysisMapper;
+import com.internship.mapper.InternshipReflectionMapper;
+import com.internship.agent.business.AgentException;
 import com.internship.service.CounselorAISettingsService;
 import com.internship.service.InternshipReflectionService;
+import com.internship.service.InternshipProgressRecordService;
 import com.internship.service.StudentReflectionAIAnalysisService;
 import com.internship.util.AiServiceCircuitBreaker;
 import com.internship.websocket.AnnouncementWebSocketHandler;
@@ -15,17 +18,19 @@ import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 学生实习心得 AI 分析服务实现类
  * 【AI 评分工程化方案】
  * 1. 可配置评分规则引擎 - 支持辅导员自定义评分维度和权重
- * 2. AI 响应多层容错解析 - 处理 markdown、格式错误、自动降级计算
+ * 2. 严格验证 AI 响应 - 支持 JSON 代码块，拒绝缺失或错误评分
  * 3. 熔断器 + 降级方案 - 连续失败 5 次后熔断 5 分钟，不可用时友好提示
  */
 @Slf4j
@@ -56,7 +61,16 @@ public class StudentReflectionAIAnalysisServiceImpl implements StudentReflection
     @Autowired
     private TransactionTemplate transactionTemplate;
 
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    @Autowired
+    private InternshipReflectionMapper reflectionMapper;
+
+    @Autowired
+    private InternshipProgressRecordService progressRecordService;
+
+    private final Map<Long, Object> runningAnalyses = new ConcurrentHashMap<>();
+    private final ObjectMapper objectMapper = new ObjectMapper()
+            .enable(com.fasterxml.jackson.core.JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
+            .enable(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
 
     private static final String SYSTEM_PROMPT = "你是一位专业的实习指导教师，请仔细分析学生实习心得，根据内容质量给出客观、公正的评价和评分。";
 
@@ -112,163 +126,152 @@ public class StudentReflectionAIAnalysisServiceImpl implements StudentReflection
     }
 
     @Override
-    @Transactional(rollbackFor = Exception.class)
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public Map<String, Object> analyzeReflection(Long reflectionId, Long counselorId) {
-        return Map.of();
+        InternshipReflection reflection = internshipReflectionService.findById(reflectionId);
+        if (reflection == null) return failure("实习心得不存在", false);
+        return analyzeReflectionContent(reflection.getContent(), counselorId, reflection.getStudentId(), reflectionId);
     }
 
-    /**
-     * 【核心方法】AI 分析实习心得内容
-     * 集成熔断器降级处理
-     */
+    /** Network work runs outside a database transaction; only the version-checked write is transactional. */
     @Override
-    @Transactional(rollbackFor = Exception.class)
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public Map<String, Object> analyzeReflectionContent(String content, Long counselorId, Long studentId, Long reflectionId) {
-        Map<String, Object> result = new HashMap<>();
-
-        // 【空内容检查】
-        if (content == null || content.trim().isEmpty()) {
-            result.put("success", false);
-            result.put("message", "实习心得内容不能为空");
-            return result;
+        if (reflectionId == null || studentId == null || counselorId == null || content == null || content.isBlank()) {
+            return failure("实习心得及辅导员信息不完整", false);
         }
-
-        // 【熔断器检查】AI 服务不可用时直接返回降级结果
-        if (!circuitBreaker.allowRequest(counselorId)) {
-            log.warn("AI 服务当前不可用（辅导员ID: {}），返回降级结果", counselorId);
-            return buildFallbackResult();
+        Object claim = new Object();
+        if (runningAnalyses.putIfAbsent(reflectionId, claim) != null) {
+            return deferred("该心得正在分析，请稍后查看结果");
         }
-
         try {
-            // 【内容验证】先检查内容是否是实习心得
-            Map<String, Object> validationResult = validateReflectionContent(content, counselorId);
-            boolean isReflection = (boolean) validationResult.getOrDefault("isReflection", true);
-            if (!isReflection) {
-                // 内容不是实习心得，更新状态为草稿
-                log.info("AI分析判定内容不是实习心得，反射ID: {}，原因: {}", reflectionId, validationResult.get("reason"));
-
-                // 使用编程式事务确保数据库更新和WebSocket发送在事务提交后执行
-                final Long finalStudentId = studentId;
-                Boolean updateSuccess = transactionTemplate.execute(status -> {
-                    try {
-                        InternshipReflection reflection = internshipReflectionService.findById(reflectionId);
-                        if (reflection != null) {
-                            reflection.setStatus(0);
-                            reflection.setRemark("0"); // 设置为草稿状态
-                            internshipReflectionService.updateById(reflection);
-                        }
-                        return true;
-                    } catch (Exception e) {
-                        log.warn("更新实习心得状态为草稿失败: {}", e.getMessage());
-                        return false;
-                    }
-                });
-
-                result.put("success", false);
-                result.put("isNotReflection", true);
-                result.put("message", "您提交的内容不是实习心得，已被退回草稿，请修改后重新提交");
-
-                // 【WebSocket推送】通知学生内容被退回（只在更新成功时发送）
-                if (Boolean.TRUE.equals(updateSuccess)) {
-                    webSocketHandler.sendAIAnalysisResultToUser(finalStudentId, reflectionId, false, true,
-                        "您提交的内容不是实习心得，已被退回草稿，请修改后重新提交");
-                }
-
-                return result;
+            SubmissionSnapshot captured = transactionTemplate.execute(transaction -> {
+                InternshipReflection current = reflectionMapper.lockById(reflectionId);
+                if (!submitted(current) || !Objects.equals(studentId, current.getStudentId())
+                        || !Objects.equals(content, current.getContent())
+                        || reflectionMapper.hasManualEvaluation(reflectionId)) return null;
+                InternshipReflection copy = new InternshipReflection();
+                org.springframework.beans.BeanUtils.copyProperties(current, copy);
+                return new SubmissionSnapshot(copy, reflectionMapper.latestSubmissionEventId(reflectionId, studentId));
+            });
+            if (captured == null) return staleResult();
+            InternshipReflection snapshot = captured.reflection();
+            Long submissionVersion = captured.version();
+            if (!circuitBreaker.allowRequest(counselorId)) {
+                Map<String, Object> fallback = buildFallbackResult();
+                fallback.put("retryable", true);
+                fallback.put("deferred", true);
+                return fallback;
             }
-
-            // 【可配置评分规则】从数据库获取辅导员自定义评分规则
-            List<CounselorScoringRule> scoringRules = counselorAISettingsService.getScoringRules(counselorId);
-
-            // 【规则有效性验证】检查规则是否为有效的多维度配置
-            if (scoringRules == null || scoringRules.isEmpty() || !isValidMultiDimensionalRules(scoringRules)) {
-                log.warn("辅导员ID: {} 的评分规则配置无效（共{}条规则），使用默认规则", counselorId,
-                    scoringRules == null ? 0 : scoringRules.size());
-                scoringRules = getDefaultScoringRules();
+            Map<String, Object> validation = validateReflectionContent(content, counselorId);
+            if (!Boolean.TRUE.equals(validation.get("isReflection"))) {
+                boolean applied = persistResult(snapshot, submissionVersion, null);
+                if (!applied) return staleResult();
+                circuitBreaker.recordSuccess(counselorId);
+                notifyResult(studentId, reflectionId, false, true, "您提交的内容不是实习心得，已退回草稿，请修改后重新提交");
+                return Map.of("success", false, "isNotReflection", true, "retryable", false,
+                        "message", "您提交的内容不是实习心得，已退回草稿，请修改后重新提交");
             }
-
-            String prompt = buildAnalysisPrompt(content, scoringRules);
-
+            List<CounselorScoringRule> rules = counselorAISettingsService.getScoringRules(counselorId);
+            if (!isValidMultiDimensionalRules(rules)) rules = getDefaultScoringRules();
             CounselorAISettings settings = counselorAISettingsService.findByCounselorId(counselorId);
-            String modelCode = (settings != null && settings.getAiModelCode() != null)
-                ? settings.getAiModelCode() : "deepseek-flash";
-
-            ChatClient chatClient = chatClientFactory.createChatClient(modelCode, SYSTEM_PROMPT);
-
-            String aiResponse = chatClient.prompt()
-                    .user(prompt)
-                    .call()
-                    .content();
-
-            log.debug("AI 分析响应已返回：counselorId={}, model={}, length={}",
-                    counselorId, modelCode, aiResponse != null ? aiResponse.length() : 0);
-
-            // 【多层容错解析】解析 AI 响应，支持降级计算
-            Map<String, Object> analysisData = parseAIResponse(aiResponse, scoringRules, counselorId);
-
+            String requestedModel = settings != null && settings.getAiModelCode() != null
+                    ? settings.getAiModelCode() : "deepseek-flash";
+            String modelCode = chatClientFactory.resolveModelCode(requestedModel);
+            ChatClient client = chatClientFactory.createChatClient(modelCode, SYSTEM_PROMPT);
+            String response = client.prompt().user(buildAnalysisPrompt(content, rules)).call().content();
+            Map<String, Object> data = parseAIResponse(response, rules, counselorId);
             StudentReflectionAIAnalysis analysis = new StudentReflectionAIAnalysis();
             analysis.setReflectionId(reflectionId);
             analysis.setStudentId(studentId);
             analysis.setCounselorId(counselorId);
-            analysis.setOverallAnalysis((String) analysisData.get("overallAnalysis"));
-            analysis.setKeywords((List<String>) analysisData.get("keywords"));
-            analysis.setSentimentPositive((Integer) analysisData.get("sentimentPositive"));
-            analysis.setSentimentNeutral((Integer) analysisData.get("sentimentNeutral"));
-            analysis.setSentimentNegative((Integer) analysisData.get("sentimentNegative"));
-            // 【修复】将 scoreDetails 从 Map{ruleCode: score} 转换为 List{ruleName, ruleCode, score} 格式
-            analysis.setScoreDetails(convertScoreDetailsForFrontend((Map<String, Object>) analysisData.get("scoreDetails"), scoringRules));
-            analysis.setTotalScore((BigDecimal) analysisData.get("totalScore"));
-            analysis.setGrade((String) analysisData.get("grade"));
-            analysis.setAnalysisReport((String) analysisData.get("analysisReport"));
+            analysis.setOverallAnalysis((String) data.get("overallAnalysis"));
+            analysis.setKeywords((List<String>) data.get("keywords"));
+            analysis.setSentimentPositive((Integer) data.get("sentimentPositive"));
+            analysis.setSentimentNeutral((Integer) data.get("sentimentNeutral"));
+            analysis.setSentimentNegative((Integer) data.get("sentimentNegative"));
+            analysis.setScoreDetails(convertScoreDetailsForFrontend((Map<String, Object>) data.get("scoreDetails"), rules));
+            analysis.setTotalScore((BigDecimal) data.get("totalScore"));
+            analysis.setGrade((String) data.get("grade"));
+            analysis.setAnalysisReport((String) data.get("analysisReport"));
             analysis.setAiModelCode(modelCode);
-            analysis.setAnalysisTime(new Date());
-            analysis.setCreateTime(new Date());
-            analysis.setUpdateTime(new Date());
-
-            // 删除旧的分析记录（如果存在），避免重复插入
-            deleteByReflectionId(reflectionId);
-            insert(analysis);
-
-            // 更新实习心得状态为已分析
-            try {
-                InternshipReflection reflection = internshipReflectionService.findById(reflectionId);
-                if (reflection != null) {
-                    reflection.setStatus(1);
-                    reflection.setRemark(null); // 清除草稿状态
-                    internshipReflectionService.updateById(reflection);
-                }
-            } catch (Exception e) {
-                log.warn("更新实习心得状态失败: {}", e.getMessage());
-            }
-
-            // 【熔断器】调用成功，重置失败计数
+            Date now = new Date();
+            analysis.setAnalysisTime(now);
+            analysis.setCreateTime(now);
+            analysis.setUpdateTime(now);
+            if (!persistResult(snapshot, submissionVersion, analysis)) return staleResult();
             circuitBreaker.recordSuccess(counselorId);
-
-            result.put("success", true);
-            result.put("data", analysis);
-
-            // 【WebSocket推送】通知学生AI分析完成
-            webSocketHandler.sendAIAnalysisResultToUser(studentId, reflectionId, true, false,
-                "AI分析完成，您的实习心得已通过分析");
-
-            return result;
+            notifyResult(studentId, reflectionId, true, false, "AI分析已完成，可查看分析结果");
+            return Map.of("success", true, "data", analysis);
+        } catch (AgentException e) {
+            // Local admission control is not an upstream outage and must not trip the circuit breaker.
+            return deferred(e.getMessage());
         } catch (Exception e) {
-            log.error("AI 分析失败（辅导员ID: {}）：{}", counselorId, e.getMessage(), e);
+            log.warn("AI分析失败：reflectionId={}, type={}", reflectionId, e.getClass().getSimpleName());
+            if (isAIRelatedException(e)) circuitBreaker.recordFailure(counselorId);
+            return failure("心得已提交，AI分析暂未完成，可稍后重试或由教师人工批阅，无需重复提交", true);
+        } finally {
+            runningAnalyses.remove(reflectionId, claim);
+        }
+    }
 
-            // 【熔断器】仅对 AI 相关异常（网络、超时、解析等）记录失败
-            // 业务异常（如数据库错误）不触发熔断
-            if (isAIRelatedException(e)) {
-                circuitBreaker.recordFailure(counselorId);
+    private boolean persistResult(InternshipReflection snapshot, Long submissionVersion, StudentReflectionAIAnalysis analysis) {
+        return Boolean.TRUE.equals(transactionTemplate.execute(transaction -> {
+            InternshipReflection current = reflectionMapper.lockById(snapshot.getId());
+            if (!submitted(current) || reflectionMapper.hasManualEvaluation(snapshot.getId())
+                    || !Objects.equals(snapshot.getStudentId(), current.getStudentId())
+                    || !Objects.equals(snapshot.getContent(), current.getContent())
+                    || !Objects.equals(snapshot.getSubmitTime(), current.getSubmitTime())
+                    || !Objects.equals(snapshot.getUpdateTime(), current.getUpdateTime())
+                    || !Objects.equals(snapshot.getStatus(), current.getStatus())
+                    || !Objects.equals(submissionVersion,
+                            reflectionMapper.latestSubmissionEventId(snapshot.getId(), snapshot.getStudentId()))) return false;
+            // The row lock serializes withdrawal/review/resubmission with this short write, never with the API wait.
+            analysisMapper.deleteByReflectionId(snapshot.getId());
+            if (analysis != null && analysisMapper.insert(analysis) != 1) {
+                throw new IllegalStateException("保存AI分析结果失败");
             }
+            if (reflectionMapper.completeAiAnalysis(snapshot.getId(), analysis != null, new Date()) != 1) {
+                throw new IllegalStateException("保存心得分析状态失败");
+            }
+            if (analysis == null) {
+                // Draft state and submission lifecycle must change together, so the student can resubmit.
+                com.internship.service.InternshipProgressEvents.append(progressRecordService,
+                        snapshot.getStudentId(), "reflection_withdrawn", "AI已退回实习心得草稿",
+                        "提交内容未通过实习心得验证，请修改后重新提交", "draft", snapshot.getId(), new Date());
+            }
+            return true;
+        }));
+    }
 
-            result.put("success", false);
-            result.put("message", "AI 分析失败：" + e.getMessage());
+    private record SubmissionSnapshot(InternshipReflection reflection, Long version) { }
 
-            // 【WebSocket推送】通知学生AI分析失败
-            webSocketHandler.sendAIAnalysisResultToUser(studentId, reflectionId, false, false,
-                "AI分析失败，请稍后重试或联系教师");
+    private static boolean submitted(InternshipReflection reflection) {
+        return reflection != null && !Integer.valueOf(1).equals(reflection.getDeleted())
+                && reflection.getRemark() == null && reflection.getSubmitTime() != null
+                && reflection.getContent() != null && !reflection.getContent().isBlank()
+                && (Integer.valueOf(0).equals(reflection.getStatus()) || Integer.valueOf(1).equals(reflection.getStatus()));
+    }
 
-            return buildFallbackResult();
+    private static Map<String, Object> failure(String message, boolean retryable) {
+        return Map.of("success", false, "message", message, "retryable", retryable);
+    }
+
+    private static Map<String, Object> deferred(String message) {
+        return Map.of("success", false, "message", message, "retryable", true, "deferred", true);
+    }
+
+    private static Map<String, Object> staleResult() {
+        return Map.of("success", false, "stale", true, "retryable", false,
+                "message", "心得已撤回、重交或进入批阅，本次旧分析结果已忽略");
+    }
+
+    private void notifyResult(Long studentId, Long reflectionId, boolean success, boolean isNotReflection, String message) {
+        try {
+            webSocketHandler.sendAIAnalysisResultToUser(studentId, reflectionId, success, isNotReflection, message);
+        } catch (Exception e) {
+            // A notification outage must never turn a committed grade into a failed/retried analysis.
+            log.warn("推送AI分析通知失败：reflectionId={}", reflectionId);
         }
     }
 
@@ -305,10 +308,10 @@ public class StudentReflectionAIAnalysisServiceImpl implements StudentReflection
      * 这是有效的配置，应该被使用
      */
     private boolean isValidMultiDimensionalRules(List<CounselorScoringRule> scoringRules) {
-        if (scoringRules == null || scoringRules.size() < 2) {
-            return false;
-        }
-        return true;
+        return scoringRules != null && !scoringRules.isEmpty() && scoringRules.stream().allMatch(rule ->
+                rule.getCategory() != null && !rule.getCategory().isBlank() && rule.getRuleName() != null
+                && rule.getMinScore() != null && rule.getMaxScore() != null
+                && rule.getMinScore() >= 0 && rule.getMaxScore() <= 100 && rule.getMinScore() <= rule.getMaxScore());
     }
 
     /**
@@ -397,87 +400,75 @@ public class StudentReflectionAIAnalysisServiceImpl implements StudentReflection
     }
 
     /**
-     * 【多层容错解析】AI 响应解析，支持多种格式和降级计算
+     * 严格解析 AI 分析结果，评分由有效规则及权重计算
      */
     private Map<String, Object> parseAIResponse(String aiResponse, List<CounselorScoringRule> scoringRules, Long counselorId) {
-        Map<String, Object> result = new HashMap<>();
-
         try {
-            // 第一层：提取 JSON（处理 markdown 代码块）
-            String jsonStr = aiResponse.trim();
-
-            // 查找 JSON 代码块的起始和结束位置
-            int jsonBlockStart = -1;
-            int jsonBlockEnd = -1;
-
-            if (jsonStr.contains("```json")) {
-                // 格式：```json ... ```
-                jsonBlockStart = jsonStr.indexOf("```json") + 7;
-                // 从起始位置之后查找结束标记
-                int closingMarker = jsonStr.indexOf("```", jsonBlockStart);
-                if (closingMarker > jsonBlockStart) {
-                    jsonBlockEnd = closingMarker;
-                }
-            } else if (jsonStr.contains("```")) {
-                // 格式：``` ... ```
-                jsonBlockStart = jsonStr.indexOf("```") + 3;
-                int closingMarker = jsonStr.indexOf("```", jsonBlockStart);
-                if (closingMarker > jsonBlockStart) {
-                    jsonBlockEnd = closingMarker;
+            Map<String, Object> data = readJsonResponse(aiResponse);
+            if (!(data.get("keywords") instanceof List<?> keywords)
+                    || keywords.stream().anyMatch(word -> !(word instanceof String) || ((String) word).isBlank())
+                    || !(data.get("overallAnalysis") instanceof String summary) || summary.isBlank()
+                    || !(data.get("analysisReport") instanceof String report) || report.isBlank()
+                    || !(data.get("scoreDetails") instanceof Map<?, ?> details) || details.isEmpty()) {
+                throw new IllegalArgumentException("AI JSON缺少有效的分析及评分字段");
+            }
+            int positive = percentage(data.get("sentimentPositive"));
+            int neutral = percentage(data.get("sentimentNeutral"));
+            int negative = percentage(data.get("sentimentNegative"));
+            if (positive + neutral + negative != 100) throw new IllegalArgumentException("AI JSON情绪比例无效");
+            Map<String, Object> scores = (Map<String, Object>) details;
+            Map<String, Set<String>> accepted = new LinkedHashMap<>();
+            for (CounselorScoringRule rule : scoringRules) {
+                if (Integer.valueOf(1).equals(rule.getStatus())) {
+                    accepted.computeIfAbsent(rule.getCategory(), key -> new HashSet<>()).add(rule.getRuleName());
                 }
             }
-
-            // 如果找到有效的代码块，则提取内容；否则使用原文本
-            if (jsonBlockStart > 0 && jsonBlockEnd > jsonBlockStart) {
-                jsonStr = jsonStr.substring(jsonBlockStart, jsonBlockEnd);
+            if (!scores.keySet().equals(accepted.keySet())) throw new IllegalArgumentException("AI JSON评分维度不完整");
+            for (Map.Entry<String, Set<String>> category : accepted.entrySet()) {
+                if (!(scores.get(category.getKey()) instanceof String selected)
+                        || !category.getValue().contains(selected)) throw new IllegalArgumentException("AI JSON评分等级无效");
             }
-
-            jsonStr = jsonStr.trim();
-
-            // 第二层：JSON 解析
-            @SuppressWarnings("unchecked")
-            Map<String, Object> data = objectMapper.readValue(jsonStr, Map.class);
-
-            result.put("keywords", data.get("keywords"));
-            result.put("overallAnalysis", data.get("overallAnalysis"));
-            result.put("sentimentPositive", data.get("sentimentPositive"));
-            result.put("sentimentNeutral", data.get("sentimentNeutral"));
-            result.put("sentimentNegative", data.get("sentimentNegative"));
-            result.put("scoreDetails", data.get("scoreDetails"));
-            result.put("analysisReport", data.get("analysisReport"));
-
-            // 第三层：分数验证，AI 未返回总分时自动降级计算
-            Object totalScoreObj = data.get("totalScore");
-            BigDecimal totalScore;
-            if (totalScoreObj instanceof Number) {
-                totalScore = new BigDecimal(totalScoreObj.toString());
-            } else {
-                totalScore = calculateWeightedScore((Map<String, Object>) data.get("scoreDetails"), scoringRules, counselorId);
+            if (data.containsKey("totalScore")) {
+                Object value = data.get("totalScore");
+                if (!(value instanceof Number)) throw new IllegalArgumentException("AI JSON总分无效");
+                BigDecimal supplied = new BigDecimal(value.toString());
+                if (supplied.signum() < 0 || supplied.compareTo(BigDecimal.valueOf(100)) > 0) {
+                    throw new IllegalArgumentException("AI JSON总分超出范围");
+                }
             }
+            // Grades use configured category weights, not an unverified model-supplied aggregate.
+            BigDecimal totalScore = calculateWeightedScore(scores, scoringRules, counselorId);
+            Map<String, Object> result = new HashMap<>(data);
+            result.put("sentimentPositive", positive);
+            result.put("sentimentNeutral", neutral);
+            result.put("sentimentNegative", negative);
             result.put("totalScore", totalScore.setScale(2, RoundingMode.HALF_UP));
-
-            // 第四层：等级判定，AI 未返回时使用枚举计算
-            String grade = (String) data.get("grade");
-            if (grade == null || grade.isEmpty()) {
-                grade = AiGradeEnum.getNameByScore(totalScore.doubleValue());
-            }
-            result.put("grade", grade);
-
+            result.put("grade", AiGradeEnum.getNameByScore(totalScore.doubleValue()));
+            return result;
         } catch (Exception e) {
-            log.error("解析 AI 响应失败：{}", e.getMessage(), e);
-            // 降级方案：返回默认结构，标记为解析失败
-            result.put("keywords", new ArrayList<>());
-            result.put("overallAnalysis", "AI 分析结果解析失败");
-            result.put("sentimentPositive", 50);
-            result.put("sentimentNeutral", 30);
-            result.put("sentimentNegative", 20);
-            result.put("scoreDetails", new HashMap<>());
-            result.put("totalScore", BigDecimal.ZERO);
-            result.put("grade", "未评级");
-            result.put("analysisReport", "AI 分析结果解析失败，请重新分析");
+            throw new IllegalArgumentException("AI JSON分析结果无效", e);
         }
+    }
 
-        return result;
+    private static int percentage(Object value) {
+        if (!(value instanceof Number number)) throw new IllegalArgumentException("AI JSON情绪比例缺失");
+        BigDecimal parsed = new BigDecimal(number.toString());
+        int integer = parsed.intValueExact();
+        if (integer < 0 || integer > 100) throw new IllegalArgumentException("AI JSON情绪比例超出范围");
+        return integer;
+    }
+
+    private Map<String, Object> readJsonResponse(String response) throws com.fasterxml.jackson.core.JsonProcessingException {
+        if (response == null || response.isBlank()) throw new IllegalArgumentException("AI JSON响应为空");
+        String json = response.trim();
+        if (json.startsWith("```")) {
+            int firstLine = json.indexOf('\n');
+            if (firstLine < 0 || !json.endsWith("```")) throw new IllegalArgumentException("AI JSON代码块不完整");
+            String language = json.substring(3, firstLine).trim();
+            if (!language.isEmpty() && !"json".equalsIgnoreCase(language)) throw new IllegalArgumentException("AI JSON代码块无效");
+            json = json.substring(firstLine + 1, json.length() - 3).trim();
+        }
+        return objectMapper.readValue(json, new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
     }
 
     /**
@@ -508,7 +499,7 @@ public class StudentReflectionAIAnalysisServiceImpl implements StudentReflection
             List<CounselorCategoryWeight> weights = counselorAISettingsService.getCategoryWeights(counselorId);
             if (weights != null) {
                 for (CounselorCategoryWeight cw : weights) {
-                    if (cw.getCategoryCode() != null && cw.getWeight() != null) {
+                    if (Integer.valueOf(1).equals(cw.getStatus()) && cw.getCategoryCode() != null && cw.getWeight() != null && cw.getWeight() > 0) {
                         categoryWeight.put(cw.getCategoryCode(), cw.getWeight());
                     }
                 }
@@ -551,8 +542,8 @@ public class StudentReflectionAIAnalysisServiceImpl implements StudentReflection
             }
         }
 
-        if (totalWeight == 0) {
-            return BigDecimal.ZERO;
+        if (totalWeight <= 0) {
+            throw new IllegalArgumentException("AI评分权重配置无效");
         }
 
         return totalWeightedScore.divide(new BigDecimal(totalWeight), 2, RoundingMode.HALF_UP);
@@ -669,83 +660,18 @@ public class StudentReflectionAIAnalysisServiceImpl implements StudentReflection
             log.debug("AI 内容验证响应已返回：length={}",
                     aiResponse != null ? aiResponse.length() : 0);
 
-            // 检查 AI 响应是否为空
-            if (aiResponse == null || aiResponse.trim().isEmpty()) {
-                log.warn("AI 内容验证响应为空，使用默认结果");
-                result.put("isReflection", true);
-                result.put("reason", "AI 响应为空，默认通过");
-                return result;
+            Map<String, Object> validationData = readJsonResponse(aiResponse);
+            if (!(validationData.get("isReflection") instanceof Boolean)) {
+                throw new IllegalArgumentException("AI JSON内容验证缺少布尔判断");
             }
-
-            Map<String, Object> validationData = parseSimpleAIResponse(aiResponse);
-
-            Object isReflectionObj = validationData.get("isReflection");
-            boolean isReflection = true;
-
-            if (isReflectionObj instanceof Boolean) {
-                isReflection = (Boolean) isReflectionObj;
-            } else if (isReflectionObj instanceof String) {
-                isReflection = Boolean.parseBoolean((String) isReflectionObj);
-            }
-
-            result.put("isReflection", isReflection);
+            result.put("isReflection", validationData.get("isReflection"));
             result.put("reason", validationData.get("reason"));
-
             return result;
+        } catch (AgentException e) {
+            throw e;
         } catch (Exception e) {
-            log.error("内容验证失败: content长度={}, counselorId={}, 错误: {}", content != null ? content.length() : 0, counselorId, e.getMessage(), e);
-            result.put("isReflection", true);
-            result.put("reason", "验证失败，默认认为是实习心得");
-            return result;
+            throw new IllegalArgumentException("AI内容验证失败", e);
         }
-    }
-
-    /**
-     * 【简单响应解析】用于内容验证的JSON解析
-     */
-    private Map<String, Object> parseSimpleAIResponse(String aiResponse) {
-        Map<String, Object> result = new HashMap<>();
-
-        try {
-            String jsonStr = aiResponse.trim();
-
-            // 查找 JSON 代码块的起始和结束位置
-            int jsonBlockStart = -1;
-            int jsonBlockEnd = -1;
-
-            if (jsonStr.contains("```json")) {
-                jsonBlockStart = jsonStr.indexOf("```json") + 7;
-                int closingMarker = jsonStr.indexOf("```", jsonBlockStart);
-                if (closingMarker > jsonBlockStart) {
-                    jsonBlockEnd = closingMarker;
-                }
-            } else if (jsonStr.contains("```")) {
-                jsonBlockStart = jsonStr.indexOf("```") + 3;
-                int closingMarker = jsonStr.indexOf("```", jsonBlockStart);
-                if (closingMarker > jsonBlockStart) {
-                    jsonBlockEnd = closingMarker;
-                }
-            }
-
-            if (jsonBlockStart > 0 && jsonBlockEnd > jsonBlockStart) {
-                jsonStr = jsonStr.substring(jsonBlockStart, jsonBlockEnd);
-            }
-
-            jsonStr = jsonStr.trim();
-
-            @SuppressWarnings("unchecked")
-            Map<String, Object> data = objectMapper.readValue(jsonStr, Map.class);
-
-            result.put("isReflection", data.get("isReflection"));
-            result.put("reason", data.get("reason"));
-
-        } catch (Exception e) {
-            log.error("解析验证响应失败：{}", e.getMessage(), e);
-            result.put("isReflection", true);
-            result.put("reason", "解析失败，默认通过");
-        }
-
-        return result;
     }
 
     /**
@@ -753,37 +679,23 @@ public class StudentReflectionAIAnalysisServiceImpl implements StudentReflection
      */
     private List<CounselorScoringRule> getDefaultScoringRules() {
         List<CounselorScoringRule> rules = new ArrayList<>();
-
-        CounselorScoringRule rule1 = new CounselorScoringRule();
-        rule1.setRuleName("实习态度");
-        rule1.setRuleCode("attitude");
-        rule1.setWeight(30);
-        rule1.setMinScore(0);
-        rule1.setMaxScore(100);
-        rule1.setDescription("实习态度是否端正，是否积极主动");
-        rule1.setStatus(1);
-        rules.add(rule1);
-
-        CounselorScoringRule rule2 = new CounselorScoringRule();
-        rule2.setRuleName("专业能力");
-        rule2.setRuleCode("professional");
-        rule2.setWeight(40);
-        rule2.setMinScore(0);
-        rule2.setMaxScore(100);
-        rule2.setDescription("专业知识和技能的应用能力");
-        rule2.setStatus(1);
-        rules.add(rule2);
-
-        CounselorScoringRule rule3 = new CounselorScoringRule();
-        rule3.setRuleName("心得质量");
-        rule3.setRuleCode("report");
-        rule3.setWeight(30);
-        rule3.setMinScore(0);
-        rule3.setMaxScore(100);
-        rule3.setDescription("实习心得的内容质量和反思深度");
-        rule3.setStatus(1);
-        rules.add(rule3);
-
+        String[] categories = {"attitude", "ability", "report"};
+        String[] labels = {"优秀", "良好", "中等", "及格", "不及格"};
+        int[][] bounds = {{90, 100}, {80, 89}, {70, 79}, {60, 69}, {0, 59}};
+        int[] weights = {30, 40, 30};
+        for (int category = 0; category < categories.length; category++) {
+            for (int level = 0; level < labels.length; level++) {
+                CounselorScoringRule rule = new CounselorScoringRule();
+                rule.setCategory(categories[category]);
+                rule.setRuleCode(categories[category] + "_" + level);
+                rule.setRuleName(labels[level]);
+                rule.setWeight(weights[category]);
+                rule.setMinScore(bounds[level][0]);
+                rule.setMaxScore(bounds[level][1]);
+                rule.setStatus(1);
+                rules.add(rule);
+            }
+        }
         return rules;
     }
 }

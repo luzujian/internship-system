@@ -155,9 +155,9 @@
       "整体流程",
       "主要功能"
     ],
-    "rules": "系统围绕学生实习从准备、岗位对接、实习确认到过程管理与材料收集形成闭环。主线为：企业发布岗位，学生投递，企业处理申请并安排面试或免面试录用，学生选择 Offer 并提交实习确认，企业最终确认接收后更新当前实习及岗位名额。实习期间学生提交心得与实习鉴定材料，教师按职责和负责范围跟进、批阅及核对材料。自主实习、考研延期是独立申请分支；换岗通过申请新岗位、选择新 Offer 并完成新确认办理。管理员负责账号、权限、系统配置等管理。申请通过、面试通过、学生提交确认不等于企业已确认接收。解释流程不表示已提交、审核、发布或发送通知；个人当前状态、是否符合条件和具体截止日期需要另外查询真实记录。",
+    "rules": "系统围绕学生实习从准备、岗位对接、实习确认到过程管理与材料收集形成闭环。主线为：企业发布岗位，学生投递，企业处理申请并安排面试或免面试录用，学生选择 Offer 并提交实习确认，企业最终确认接收后更新当前实习及岗位名额。实习期间学生提交心得，实习结束后在开放窗口提交鉴定材料，教师按职责和负责范围跟进、批阅及核对材料。自主实习、考研延期是独立申请分支；换岗通过申请新岗位、选择新 Offer 并完成新确认办理。管理员负责账号、权限、系统配置等管理。申请通过、面试通过、学生提交确认不等于企业已确认接收。解释流程不表示已提交、审核、发布或发送通知；个人当前状态、是否符合条件和具体截止日期需要另外查询真实记录。",
     "source": "StudentJobApplicationServiceImpl / StudentInternshipConfirmationController / InternshipConfirmationWorkflowService / TeacherInternshipAppraisalServiceImpl / AgentReadTools",
-    "verifiedAt": "2026-09-20",
+    "verifiedAt": "2026-10-08",
     "verifyLevel": "CODE_TRACED"
   },
   {
@@ -242,25 +242,25 @@
       "teacher",
       "admin"
     ],
-    "rules": "辅导员：本人负责班级的自主实习待审、本班待批改心得、本班实习鉴定未提交。系室教师：本系考研延迟待审、本系鉴定未提交与本系看板。全校企业注册审核数量不属于本系学生待办，助手不返回。学院教师：不参与学生申请与企业审核，只输出本院鉴定未提交与本院看板。首页原有待审核数字未按教师范围过滤，不能当作个人待办数。鉴定未提交只是名单与提示，不代表逾期或违规；未到截止不能称逾期。助手只给统计、名单与建议，不代为审批或发送提醒。",
-    "source": "HomeServiceImpl / ApprovalController / TeacherInternshipAppraisalServiceImpl",
-    "verifiedAt": "2026-09-15",
-    "verifyLevel": "RUNTIME_VERIFIED"
+    "rules": "教师待办按实际教师类型、业务权限及负责范围统计。辅导员处理本人负责班级的自主实习待审、获准批阅的心得和鉴定提交跟进；系室与学院教师按获准的申请类型处理负责范围内的延期等申请，并在已有权限内使用看板和鉴定收集。企业资质审核另需独立审核权限，不能用全校企业数量替代当前教师学生待办。平台岗位实习确认由学生提交、企业最终确认。未到截止的未提交不能称逾期，知识规则不能替代个人最新待办查询。",
+    "source": "ApprovalController / TeacherInternshipAppraisalController / AgentReadTools",
+    "verifiedAt": "2026-10-08",
+    "verifyLevel": "CODE_TRACED"
   },
   {
     "id": "capabilities",
     "category": "rule",
-    "title": "只读助手使用范围",
+    "title": "AI助手的查询、知识与确认操作范围",
     "roles": [
       "student",
       "teacher",
       "company",
       "admin"
     ],
-    "rules": "当前版本可以查询：学生本人资料、本人待办与申请进度、可见岗位与详情；教师负责范围内的本期心得、鉴定提交情况、按角色区分的待办与看板统计；企业本企业岗位、本企业收到的申请、待本企业确认的实习确认表；管理员待审核企业名单与系统总量。所有身份与数据范围由后端校验，企业只能看到本企业数据，教师空范围不能扩大到全校。助手不提交申请、不审批、不删除、不发布、不改草稿、不代发提醒，用户仍可到原页面办理。缺信息时先澄清，查询失败不能伪装为无记录。智能填表能力只把语音或文字内容填入当前打开的表单字段，不代替用户点击提交。",
-    "source": "AgentReadTools allowlist / phase3 scope",
-    "verifiedAt": "2026-09-15",
-    "verifyLevel": "RUNTIME_VERIFIED"
+    "rules": "AI按当前登录身份提供已接入的查询和辅助能力。学生查本人业务及可见岗位，教师查实际负责范围，企业查本企业业务，管理员查已提供的管理计数和待审核企业。系统知识按角色、教师业务权限和学生菜单范围检索，管理员可了解全系统规则；知识可见不新增业务数据查询权限。填表只写入当前表单，正式提交仍由用户办理。学生投递或撤回、教师单次提醒和自动跟进等能力按已授权的预览、确认及实际回执流程执行，不能凭一句对话声称业务已完成。查询失败、无权限、无匹配记录和未接入能力应分别说明，缺信息不猜测。",
+    "source": "AgentReadTools / AgentCapabilityService / FillIntentService / AgentActionService / TeacherReminderExecuteService",
+    "verifiedAt": "2026-10-08",
+    "verifyLevel": "CODE_TRACED"
   },
   {
     "id": "self-practice-entry",
@@ -270,9 +270,9 @@
       "student",
       "teacher"
     ],
-    "steps": "学生端首页点击「自主实习」按钮打开申请弹窗；填写实习单位、实习岗位、单位所在城市、人事经理姓名、人事经理联系电话、申请理由，上传个人申请书与单位实习接收函后提交。提交后由负责该学生班级的辅导员在教师端「审核管理」审批。注意：实习单位输入时会自动匹配校企合作单位，系统内已审核的校企合作企业也可以作为自主实习单位提交；若填写名称与系统企业相近但不一致，必须从下拉候选中选择系统登记的标准企业名称，防止同一企业因名称不一致产生错误；申请单位为校企合作企业时，教师端审核列表与详情会显示“校企合作企业”标识。",
+    "steps": "学生端首页点击「自主实习」按钮打开申请弹窗；填写实习单位、实习岗位、单位所在城市、人事经理姓名、人事经理联系电话、申请理由，上传个人申请书、单位实习接收函及至少一份已盖章的实习协议后提交。协议支持多个DOC、DOCX或PDF文件，单个不超过20MB，全部上传成功后才能提交。新申请和重新提交均必填；同单位重提可保留原协议，更换单位须重新上传。提交后由负责该学生班级的辅导员在教师端「审核管理」审批。注意：实习单位输入时会自动匹配校企合作单位，系统内已审核的校企合作企业也可以作为自主实习单位提交；若填写名称与系统企业相近但不一致，必须从下拉候选中选择系统登记的标准企业名称，防止同一企业因名称不一致产生错误；申请单位为校企合作企业时，教师端审核列表与详情会显示“校企合作企业”标识。",
     "source": "student/Home.vue 自主实习弹窗 / ApprovalController",
-    "verifiedAt": "2026-09-15",
+    "verifiedAt": "2026-10-09",
     "verifyLevel": "CODE_TRACED"
   },
   {
@@ -300,7 +300,10 @@
     "steps": "学生端左侧菜单「职位浏览」进入岗位列表；可按关键词、城市、地区、类别筛选；点击岗位卡片查看详情并点击「申请」提交岗位申请。申请提交后等待企业处理：企业同意后会收到面试邀请；面试通过或企业直接录取即获得可确认的Offer。同一岗位存在处理中的申请时不能重复投递。",
     "source": "student/Jobs.vue / StudentJobApplicationServiceImpl",
     "verifiedAt": "2026-09-15",
-    "verifyLevel": "CODE_TRACED"
+    "verifyLevel": "CODE_TRACED",
+    "studentMenus": [
+      "/student/jobs"
+    ]
   },
   {
     "id": "company-job-entry",
@@ -325,10 +328,13 @@
       "company",
       "teacher"
     ],
-    "steps": "第一步：学生获得面试通过的Offer（面试邀请状态为面试通过）。第二步：在学生端「实习确认」页面选择该Offer并填写确认表提交；提交后状态为待企业确认，此时原实习不变、名额不变。第三步：等待接收企业在企业端「实习确认」页面确认接收。第四步：企业确认后系统在同一事务内归档原实习（如有）、释放原岗位名额、占用新岗位名额并生成新的当前实习记录。全局实习结束日之后企业不能再确认新实习。学生可撤回待确认的确认表，撤回不改变原实习。",
+    "steps": "第一步：学生获得面试通过的Offer（面试邀请状态为面试通过）。第二步：在学生端「实习确认」页面选择该Offer并填写确认表，上传至少一份已盖章的实习协议后提交，支持多个DOC、DOCX或PDF文件，单个不超过20MB，上传未完成或失败时不能提交。提交后状态为待企业确认，此时原实习不变、名额不变。第三步：等待接收企业在企业端「实习确认」页面确认接收。第四步：企业确认后系统在同一事务内归档原实习（如有）、释放原岗位名额、占用新岗位名额并生成新的当前实习记录。全局实习结束日之后企业不能再确认新实习。学生可撤回待确认的确认表，撤回不改变原实习。协议查看、补交和更正在确认记录的「实习协议」入口办理。",
     "source": "StudentInternshipConfirmationController / InternshipConfirmationWorkflowService",
-    "verifiedAt": "2026-09-15",
-    "verifyLevel": "RUNTIME_VERIFIED"
+    "verifiedAt": "2026-10-09",
+    "verifyLevel": "CODE_TRACED",
+    "studentMenus": [
+      "/student/internship-confirmation-form"
+    ]
   },
   {
     "id": "reflection-howto",
@@ -338,10 +344,19 @@
       "student",
       "teacher"
     ],
-    "steps": "学生端「实习心得」页面按期次撰写提交。期次由全局实习日历按心得周期自动计算（每周期一期，换岗不重置）。提交条件：已有企业确认的实习记录、当前日期在实习日历内、存在覆盖当天的有效实习经历。支持保存草稿后正式提交。教师端「智慧评分」查看并批阅。",
-    "source": "student/Internships.vue / InternshipReflectionServiceImpl",
-    "verifiedAt": "2026-09-15",
-    "verifyLevel": "CODE_TRACED"
+    "steps": "学生端「实习心得」页面按期次提交，可填写正文后提交，或上传Word文档并提交。期次由全局实习日历按心得周期自动计算（每周期一期，换岗不重置）。提交条件：已有当前有效实习经历（平台实习经企业确认，自主实习经负责辅导员批准落实）、当前日期在实习日历内、存在覆盖当天的有效实习经历。草稿可能来自撤回或内容无效退回，没有单独保存草稿按钮；AI待分析不等于提交失败。教师端「智慧评分」查看并批阅。",
+    "source": "student/Internships.vue / StudentInternshipReflectionController / InternshipReflectionServiceImpl",
+    "verifiedAt": "2026-10-08",
+    "verifyLevel": "CODE_TRACED",
+    "permissionAny": {
+      "teacher": [
+        "menu:evaluation",
+        "view:reflection"
+      ]
+    },
+    "studentMenus": [
+      "/student/internships"
+    ]
   },
   {
     "id": "appraisal-howto",
@@ -351,10 +366,18 @@
       "student",
       "teacher"
     ],
-    "steps": "学生端「实习鉴定」页面上传鉴定材料并提交。时间窗口：全局实习结束日当天或之后、且学生真实实习状态已显示为“已结束”后，至鉴定表截止日当天 23:59:59 前。要求至少上传一份鉴定文件；若实习企业为系统内企业，需对该企业填写1至5星推荐评分；自主实习企业无系统记录时无需评分。教师端「鉴定表收集」查看、预览、下载与导出。退回的鉴定表需修改后重新提交。 获取入口：学生端个人中心的资源中心下载鉴定表模板；办理入口：学生端实习鉴定页面。页面结构是先查看提交状态与窗口，再选择对应实习公司，上传PDF、DOC或DOCX文件，系统内企业填写1至5星推荐指数，最后点击提交最终材料。自主实习且没有系统企业记录时不需要推荐评分。这里描述的是当前页面已核实的操作结构，不代表模型知道下载文件内部的每个字段版式；需要精确字段时应打开模板查看。",
+    "steps": "学生端「实习鉴定」页面上传鉴定材料并提交。时间窗口：全局实习结束日当天或之后、且学生真实实习状态已显示为“已结束”后，至鉴定表截止日当天 23:59:59 前。要求至少上传一份鉴定文件；若实习企业为系统内企业，需对该企业填写1至5星推荐评分；自主实习企业无系统记录时无需评分。教师端「实习材料收集」的「实习鉴定表」页签查看、预览、下载与导出。退回的鉴定表需修改后重新提交。 获取入口：学生端个人中心的资源中心下载鉴定表模板；办理入口：学生端实习鉴定页面。页面结构是先查看提交状态与窗口，再选择对应实习公司，上传PDF、DOC或DOCX文件，系统内企业填写1至5星推荐指数，最后点击提交最终材料。自主实习且没有系统企业记录时不需要推荐评分。这里描述的是当前页面已核实的操作结构，不代表模型知道下载文件内部的每个字段版式；需要精确字段时应打开模板查看。",
     "source": "student/InternshipAppraisal.vue / TeacherInternshipAppraisalController",
-    "verifiedAt": "2026-09-15",
-    "verifyLevel": "CODE_TRACED"
+    "verifiedAt": "2026-10-09",
+    "verifyLevel": "CODE_TRACED",
+    "permissionAny": {
+      "teacher": [
+        "menu:appraisal-collection"
+      ]
+    },
+    "studentMenus": [
+      "/student/internship-appraisal"
+    ]
   },
   {
     "id": "company-confirm-howto",
@@ -367,7 +390,12 @@
     "steps": "企业端首页或「实习确认」页面查看待本企业处理的实习确认表；核对学生、岗位与名额后点击确认接收。系统自动：检查岗位剩余名额、归档学生原实习记录（如有）、释放原岗位名额、扣减新岗位名额、生成新的实习记录并写入进度。若拒绝，学生保留原实习不变。全局实习结束日之后不能再确认新实习。",
     "source": "company/InternshipConfirm.vue / InternshipConfirmationWorkflowService",
     "verifiedAt": "2026-09-15",
-    "verifyLevel": "CODE_TRACED"
+    "verifyLevel": "CODE_TRACED",
+    "permissionAny": {
+      "teacher": [
+        "menu:company-list"
+      ]
+    }
   },
   {
     "id": "self-practice-material",
@@ -378,9 +406,9 @@
       "teacher",
       "admin"
     ],
-    "rules": "自主实习申请需准备：①个人申请书（PDF/Word/图片，说明自主实习原因）；②单位实习接收函（PDF/Word/图片，单位盖章有效）；③实习单位全称、实习岗位名称、单位所在城市；④人事经理姓名与联系电话。规则：系统内已审核的校企合作企业也可以作为自主实习单位提交，但名称与系统企业相近时必须选择系统登记的标准企业名称，防止同一企业不同名称；材料上传后由负责班级的辅导员审核，教师端会显示“校企合作企业”标识。",
+    "rules": "自主实习申请需准备：①个人申请书（PDF/Word/图片，说明自主实习原因）；②单位实习接收函（PDF/Word/图片，单位盖章有效）；③实习单位全称、实习岗位名称、单位所在城市；④人事经理姓名与联系电话；⑤至少一份盖章实习协议，支持多个DOC、DOCX或PDF文件，单个不超过20MB。新申请和重新提交均须成功上传协议；同单位重新提交可保留原协议，更换单位须重新上传。规则：系统内已审核的校企合作企业也可以作为自主实习单位提交，但名称与系统企业相近时必须选择系统登记的标准企业名称，防止同一企业不同名称；申请材料由负责班级的辅导员审核，协议在「实习材料收集」中收集，不增加协议审核环节。",
     "source": "student/Home.vue 自主实习弹窗材料上传字段",
-    "verifiedAt": "2026-09-15",
+    "verifiedAt": "2026-10-09",
     "verifyLevel": "CODE_TRACED"
   },
   {
@@ -409,7 +437,15 @@
     "rules": "实习鉴定表需准备：①至少一份鉴定材料文件（大小不超过系统限制）；②若实习企业为系统内企业，需填写对该企业的1至5星推荐评分；③自主实习且企业无系统记录时无需评分。提交窗口：全局实习结束日至鉴定表截止日之间。被退回的鉴定表修改后可重新提交。 模板下载在学生端个人中心资源中心，鉴定材料办理在学生端实习鉴定页面。",
     "source": "student/InternshipAppraisal.vue / InternshipAppraisalSubmission",
     "verifiedAt": "2026-09-15",
-    "verifyLevel": "CODE_TRACED"
+    "verifyLevel": "CODE_TRACED",
+    "studentMenus": [
+      "/student/internship-appraisal"
+    ],
+    "permissionAny": {
+      "teacher": [
+        "menu:appraisal-collection"
+      ]
+    }
   },
   {
     "id": "confirm-rejected-branch",
@@ -420,9 +456,9 @@
       "company",
       "teacher"
     ],
-    "rules": "企业拒绝实习确认表后：学生的原实习保持不变（如有），确认表状态更新为已拒绝并保留记录。学生可以重新提交该确认表、选择其他Offer，或继续当前实习。拒绝不释放也不占用任何名额。",
+    "rules": "企业拒绝实习确认表后：学生的原实习保持不变（如有），确认表更新为已拒绝并保留历史记录，不能直接重新提交这份旧确认表。同一Offer仍关联已处理确认记录时不能重复提交；学生可选择其他有效Offer，或继续原实习。学生主动撤回待确认表与企业拒绝不同，撤回按实际清理结果允许重新选择该岗位。拒绝不释放也不占用任何名额。",
     "source": "InternshipConfirmationWorkflowService",
-    "verifiedAt": "2026-09-15",
+    "verifiedAt": "2026-10-08",
     "verifyLevel": "CODE_TRACED"
   },
   {
@@ -462,9 +498,9 @@
       "teacher",
       "company"
     ],
-    "rules": "自主实习：单位在系统企业库之外，由辅导员批准后直接建立实习记录，无企业确认环节、无平台岗位名额占用。平台岗位：单位为系统内企业，走岗位申请→Offer→企业确认流程。已审核合作企业必须走平台岗位流程，不能按自主实习提交。",
+    "rules": "自主实习：学生自行填写单位与岗位并提交材料，经负责辅导员批准后落实实习，无企业再次确认环节、无平台岗位名额占用。系统外单位和符合当前规则的系统内已审核合作企业都可申请自主实习；匹配系统企业时需选择标准企业名称。平台岗位是另一分支，走岗位申请→Offer→学生确认→企业最终确认流程，不能把这两条分支混为一谈。",
     "source": "StudentApplicationServiceImpl / Home.vue 合作企业拦截",
-    "verifiedAt": "2026-09-15",
+    "verifiedAt": "2026-10-08",
     "verifyLevel": "CODE_TRACED"
   },
   {
@@ -492,7 +528,10 @@
     "rules": "同一岗位存在处理中的活动申请（pending、已同意、面试中）时，系统禁止重复投递，防止占用企业处理队列。申请被拒绝或面试未通过（终态）后可以重新投递。若想更换岗位，直接投递其他岗位即可；若想换实习单位，走换岗流程（新Offer+新确认表）。",
     "source": "StudentJobApplicationServiceImpl.create 重复校验",
     "verifiedAt": "2026-09-15",
-    "verifyLevel": "CODE_TRACED"
+    "verifyLevel": "CODE_TRACED",
+    "studentMenus": [
+      "/student/jobs"
+    ]
   },
   {
     "id": "faq-pending-not-success",
@@ -502,10 +541,13 @@
       "student",
       "company"
     ],
-    "rules": "申请状态为pending只表示等待相应处理方（企业或教师）处理，不代表申请成功。岗位申请需企业同意并面试通过才算获得Offer；普通申请需对应教师审批通过才生效。查询进度时应分别看申请状态、面试邀请状态与确认记录。",
+    "rules": "待处理申请只表示等待相应企业或教师处理，不代表已经成功。岗位申请经面试通过或企业免面试直接录取后才获得有效Offer，仍需学生提交实习确认及企业最终确认；普通申请需对应教师按类型审批通过才生效。查询进度时应分别看申请、面试、录用机会及确认记录。",
     "source": "StudentJobApplicationServiceImpl / ApprovalController",
-    "verifiedAt": "2026-09-15",
-    "verifyLevel": "CODE_TRACED"
+    "verifiedAt": "2026-10-08",
+    "verifyLevel": "CODE_TRACED",
+    "studentMenus": [
+      "/student/applications"
+    ]
   },
   {
     "id": "faq-confirm-not-effect",
@@ -519,7 +561,10 @@
     "rules": "学生提交实习确认表后状态为待企业确认，此时原实习不变、名额不变、学生当前状态不变。只有企业实际点击确认接收后，新实习才生效（系统原子切换经历与名额）。学生可在企业确认前撤回确认表。",
     "source": "InternshipConfirmationWorkflowService",
     "verifiedAt": "2026-09-15",
-    "verifyLevel": "CODE_TRACED"
+    "verifyLevel": "CODE_TRACED",
+    "studentMenus": [
+      "/student/internship-confirmation-form"
+    ]
   },
   {
     "id": "faq-account-locked",
@@ -544,10 +589,10 @@
       "student",
       "teacher"
     ],
-    "rules": "学生端实习心得菜单受系统配置控制，可能被管理员隐藏。菜单关闭即表示该业务停办：首页待办不再提示心得任务，教师自动提醒也匹配不到心得未交候选人，这是产品意图而非缺陷。如需恢复提醒，先恢复菜单可见。其他看不到心得待办的原因还包括：尚无企业确认的实习记录、当前不在实习日历期内。具体以首页待办列表为准。",
+    "rules": "学生端实习心得菜单受系统配置控制，可能被隐藏。隐藏后首页不再提示对应心得待办，实习计划与自动跟进应按实际配置及任务结果解释，不代表历史心得已删除。其他没有心得待办的原因还包括：尚无当前有效实习经历、当前不在统一日历期内或当期已提交。有效经历可来自平台企业确认或辅导员批准的自主实习，不能一概要求企业再次确认。当前是否有待办以本人真实结果为准；菜单开放与可提交资格不同，无权限时联系负责老师或管理员核对。",
     "source": "StudentHomeTodoServiceImpl.addReflectionSubmission isStudentMenuVisible / STUDENT_MENU_CONFIG / cron-wakeup.json A4实测",
-    "verifiedAt": "2026-09-18",
-    "verifyLevel": "RUNTIME_VERIFIED"
+    "verifiedAt": "2026-10-08",
+    "verifyLevel": "CODE_TRACED"
   },
   {
     "id": "ai-assistant-scope",
@@ -559,7 +604,7 @@
       "company",
       "admin"
     ],
-    "steps": "侧栏助手可以做：查询本人或授权范围内的真实业务状态（申请、面试、确认、心得、鉴定、岗位/申请统计、待办）；解释系统功能、流程、规则与页面字段含义；在当前打开的表单上，把语音或文字内容填入字段（不代替点击提交）。助手不能做：审批、发布公告、删除数据、代上传文件、绕过菜单与数据权限。投递与撤回岗位需在确认弹窗中确认后才会执行，且需管理员开通投递执行能力。回答默认简短，未开通的能力会明确说明“未开通”，不会假装可用。",
+    "steps": "侧栏助手可查询当前账号授权范围内的真实业务状态，解释当前端的系统功能、流程、规则与页面字段含义；已启用辅助填表时，可把文字或语音内容填入当前表单，最终保存或提交仍由用户确认。学生投递与撤回岗位需在确认弹窗中确认后执行。介绍能力以my_permissions返回的当前端可用查询和已启用能力为准，只讲当前用户可使用的事项。回复直接回答当前问题，不主动附带其他角色的功能、关闭的能力或无关限制。用户明确询问某项功能或限制直接影响本次操作时，再说明这一项的实际边界；不能声称已审批、发布、删除或绕过权限。",
     "source": "AgentController / AgentReadTools / FillIntentService",
     "verifiedAt": "2026-09-16",
     "verifyLevel": "RUNTIME_VERIFIED"
@@ -590,7 +635,13 @@
     "steps": "学生可在侧栏询问“我现在在哪个阶段、还缺什么、下一步做什么”。计划由服务端按真实业务状态推导并持久化：资料准备→寻找实习→申请与面试→实习确认→待到岗→实习进行→实习结束，另有中断与延期分支。已完成事项不会重复安排；自主实习、换岗、延迟会调整路线。重新登录后计划继续有效。计划只是行动指引，办理仍需在原页面按流程操作。",
     "source": "StudentPlanService / student_internship_plan",
     "verifiedAt": "2026-09-16",
-    "verifyLevel": "RUNTIME_VERIFIED"
+    "verifyLevel": "RUNTIME_VERIFIED",
+    "permissionAny": {
+      "teacher": [
+        "menu:student-tracking",
+        "view:student_tracking"
+      ]
+    }
   },
   {
     "id": "teacher-auto-task-howto",
@@ -603,7 +654,13 @@
     "steps": "获授权的辅导员、系教师、学院教师可在AI侧栏描述自动提醒，先核对对象、内容、渠道与时间，确认创建后再启用。可以按指定日期、每天或每周的时间向负责范围内的指定学生或全部学生发送自定义提醒；用户名、学号或姓名由服务端核对，重名需要明确选择。只有明确要求按业务状态筛选时，才使用心得未提交、鉴定缺交、Offer待确认条件，材料类可设置截止前提醒窗口。单纯定时发送请返岗等文案，不要求系统检测返岗状态；系统没有考勤依据时不能声称能判断是否返岗。通知渠道为站内提醒或邮件，未配置或未授权时不可使用。启用不会提前发送，立即运行是独立操作。后台每分钟检查，到达计划时间再执行；同事项受共享提醒间隔限制，权限或学生负责范围变化后暂停相关执行，发送结果未知时停止自动重发。任务管理入口在侧栏顶部，支持暂停、启用、运行和删除。",
     "source": "TeacherAutoTaskService / TeacherAutoTaskScheduler",
     "verifiedAt": "2026-09-21",
-    "verifyLevel": "CODE_TRACED"
+    "verifyLevel": "CODE_TRACED",
+    "permissionAny": {
+      "teacher": [
+        "menu:student-tracking",
+        "view:student_tracking"
+      ]
+    }
   },
   {
     "id": "teacher-internship-summary",
@@ -616,12 +673,26 @@
     "steps": "教师可在侧栏用自然语言询问学生实习情况。学院教师可查询本学院及其系、班级；系教师仅能查询本系及其班级，不能查询全院或同院其他系；辅导员仅能查询本人负责班级。统计由后端基于真实学生与实习状态计算：尚无Offer=未投递+无Offer；已落实=已确定+实习中+已结束；重点关注=中断、延期、未投递、无Offer、待确认。默认只回答当前问题，不附加未询问的提醒；用户要求名单或详情时才分页展开，可基于上一轮范围继续追问。名称有歧义时先确认；无权限或能力未开通时明确说明，不猜测数据。",
     "source": "TeacherInternshipSummaryService / AgentReadMapper",
     "verifiedAt": "2026-09-16",
-    "verifyLevel": "RUNTIME_VERIFIED"
+    "verifyLevel": "RUNTIME_VERIFIED",
+    "permissionAny": {
+      "teacher": [
+        "menu:student-tracking",
+        "view:student_tracking"
+      ]
+    }
   },
   {
     "id": "teacher-single-reminder-howto",
     "category": "howto",
-    "title": "教师给单个学生发邮件提醒", "keywords": ["发邮件", "邮件提醒", "站内提醒", "单次提醒", "给学生发消息", "告诉学生"],
+    "title": "教师给单个学生发邮件提醒",
+    "keywords": [
+      "发邮件",
+      "邮件提醒",
+      "站内提醒",
+      "单次提醒",
+      "给学生发消息",
+      "告诉学生"
+    ],
     "roles": [
       "teacher",
       "admin"
@@ -629,7 +700,13 @@
     "steps": "教师在AI侧栏说给某个学生发邮件或站内提醒时，助手先用teacher_reminder_draft按学号或姓名核验该生是否在负责范围内，并把教师原话生成可编辑的提醒草稿，同时如实标注邮箱是否可用。侧栏随即显示确认卡，列出学生、班级、渠道与正文；教师在确认卡上点确认后由系统真实发送。邮件发到学生绑定邮箱并带教师署名，站内提醒写入学生待确认提醒并实时推送，两者都有审计与回执。未确认前不发送。学生不在负责范围内时如实说明。只是重复或定时跟进，才改用侧栏自动跟进预览确认后创建任务。生活类的一次性叮嘱用单次发送即可，不要建成自动化任务。",
     "source": "ReminderController / ReminderServiceImpl / TeacherStudentManagement.vue",
     "verifiedAt": "2026-09-22",
-    "verifyLevel": "CODE_TRACED"
+    "verifyLevel": "CODE_TRACED",
+    "permissionAny": {
+      "teacher": [
+        "menu:student-tracking",
+        "view:student_tracking"
+      ]
+    }
   },
   {
     "id": "ai-capability-control",
@@ -641,9 +718,61 @@
       "company",
       "admin"
     ],
-    "steps": "AI能力（对话问答、语音输入、智能填表、实习规划、教师实习简报、投递执行、自动任务、自动通知）由管理员在「权限管理」页按角色分配，必要时可对具体用户单独调整。能力授权叠加在原业务权限之上，只收窄不放大：即使开通智能填表，用户也只能填写自己本来就有权提交的表单。若侧栏提示“未开通某能力”，请联系管理员；管理员只读身份只保留对话问答。",
-    "source": "AgentCapabilityService / AGENT_CAPABILITIES_CONFIG",
-    "verifiedAt": "2026-09-16",
-    "verifyLevel": "RUNTIME_VERIFIED"
+    "steps": "用户询问某项AI能力不可用的原因时，先核对my_permissions返回的当前账号实际授权，仅解释被问到的功能。适用于当前端但被关闭的能力可联系管理员核对；其他角色专属功能不应描述为当前端等待开通的功能。泛问助手能做什么时只介绍当前端已可用的事项，不列关闭清单。能力授权叠加在原业务权限之上，只收窄不放大：开通智能填表后仍只能填写本来有权办理的表单。只读身份受对应能力和操作限制，不能用知识咨询绕过业务授权。",
+    "source": "AgentCapabilityService / AgentIdentityService",
+    "verifiedAt": "2026-10-08",
+    "verifyLevel": "CODE_TRACED"
+  },
+  {
+    "id": "internship-agreement-material",
+    "category": "material",
+    "title": "盖章实习协议上传、补交与更正",
+    "roles": [
+      "student",
+      "teacher",
+      "admin"
+    ],
+    "keywords": [
+      "实习协议",
+      "盖章",
+      "多文件",
+      "补交协议",
+      "更正协议",
+      "协议版本"
+    ],
+    "rules": "学生提交平台实习确认表、自主实习申请及重新提交时，须至少成功上传一份已盖章的实习协议。请上传已盖章的实习协议，支持 Word（DOC、DOCX）和 PDF，可上传多个文件，单个文件不超过 20MB。上传过程中或存在失败文件时不能提交，可逐文件重试或移除。历史未交协议不影响已生效实习，可补交；已有协议可更正，提交完整文件清单并保留旧版本和原文件，不改变业务状态。同单位重提可保留原协议，更换单位须重新上传。平台协议入口在确认记录；自主实习入口在申请结果及申请详情。撤回、拒绝记录保留查看，协议修改随原申请重新提交办理。本功能没有新增协议截止日期或辅导员协议审核环节。AI可以说明流程，不能代替学生上传文件，也不能仅凭知识判断本人是否已交。",
+    "source": "InternshipAgreementService / InternshipAgreementDialog.vue / InternshipAgreementUpload.vue",
+    "verifiedAt": "2026-10-09",
+    "verifyLevel": "CODE_TRACED",
+    "permissionAny": {
+      "teacher": [
+        "menu:appraisal-collection"
+      ]
+    }
+  },
+  {
+    "id": "internship-material-collection",
+    "category": "howto",
+    "title": "教师实习材料收集、历史版本与导出",
+    "roles": [
+      "teacher",
+      "admin"
+    ],
+    "keywords": [
+      "实习材料收集",
+      "鉴定表收集",
+      "实习协议",
+      "导出",
+      "历史版本"
+    ],
+    "steps": "教师原「鉴定表收集」菜单显示为「实习材料收集」，保留原权限及路由，页内有「实习协议」和「实习鉴定表」两个页签，原链接默认打开鉴定表。协议按每次实习记录收集，自主实习批准生成的确认记录归并到原申请，未申请实习的学生不算未交协议。按姓名或学号、班级、来源、协议提交状态、业务状态筛选；默认包含待审核、已生效和已结束记录，撤回、拒绝通过历史筛选查看。详情默认最新版，可切换历史版本，预览或下载。全部导出针对当前页签和筛选范围的全部记录，不受分页限制，协议只导出最新版；ZIP按班级、学号姓名、来源单位记录编号、版本组织，读取失败附失败清单。辅导员只看负责班级，院系教师沿用已有范围，文件读取和导出同样受范围约束。协议收集不增加审核操作。具体名单和提交状态以页面真实结果为准，知识说明不新增AI查询工具。",
+    "source": "TeacherInternshipAgreementController / InternshipAgreementCollection.vue / InternshipAppraisalCollection.vue",
+    "verifiedAt": "2026-10-09",
+    "verifyLevel": "CODE_TRACED",
+    "permissionAny": {
+      "teacher": [
+        "menu:appraisal-collection"
+      ]
+    }
   }
 ]

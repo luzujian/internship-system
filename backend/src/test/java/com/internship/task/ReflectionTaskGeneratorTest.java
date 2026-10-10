@@ -87,6 +87,30 @@ class ReflectionTaskGeneratorTest {
         verify(reflectionMapper, never()).insert(any());
     }
 
+    @Test
+    void inProgressPlacementReceivesCurrentPeriodTask() {
+        LocalDate today = LocalDate.now(ReflectionTaskGenerator.BUSINESS_ZONE);
+        InternshipCalendar calendar = new InternshipCalendar();
+        calendar.setStartDate(today.minusDays(1).toString());
+        calendar.setEndDate(today.plusDays(20).toString());
+        calendar.setReportCycle(7);
+        when(calendarService.getCalendar()).thenReturn(calendar);
+        InternshipStageAssignment active = placement(1L, 42L, today.minusDays(1), today.plusDays(20));
+        active.setStatus("IN_PROGRESS");
+        when(assignmentService.findByStudentId(42L)).thenReturn(List.of(active));
+        when(counselorAISettingsService.isAiScoringEnabled(9L)).thenReturn(true);
+        User student = new User();
+        student.setId(42L);
+        when(userService.findById(42L)).thenReturn(student);
+
+        generator.generateNextTask(42L, 9L);
+
+        ArgumentCaptor<InternshipReflection> captor = ArgumentCaptor.forClass(InternshipReflection.class);
+        verify(reflectionMapper).insert(captor.capture());
+        assertEquals(1L, captor.getValue().getStageAssignmentId());
+        assertEquals(1, captor.getValue().getPeriodNumber());
+    }
+
     private InternshipStageAssignment placement(Long id, Long studentId, LocalDate start, LocalDate end) {
         InternshipStageAssignment assignment = new InternshipStageAssignment();
         assignment.setId(id);

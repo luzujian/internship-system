@@ -133,7 +133,7 @@ class StudentInternshipConfirmationOfferContractTest {
         when(applicationService.findByCompanyId(20L)).thenReturn(List.of());
         when(confirmationRecordService.findByCompanyIdAndStatus(20L, 0)).thenReturn(List.of());
 
-        Result result = controller.submitOffer(Map.of("offerId", 101L, "remark", "接受"));
+        Result result = controller.submitOffer(Map.of("offerId", 101L, "remark", "接受", "agreementFileIds", List.of(601L)));
 
         assertEquals(200, result.getCode());
         Map<?, ?> data = (Map<?, ?>) result.getData();

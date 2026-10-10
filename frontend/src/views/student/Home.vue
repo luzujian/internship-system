@@ -276,7 +276,7 @@
           </el-icon>
           <div class="delay-state-title">{{ studentApplicationStatusText[selfPracticeApplication?.status] || '等待教师审核' }}</div>
           <div class="delay-state-detail">
-            {{ selfPracticeApplication?.status === 'approved' ? '自主实习申请已通过，请按后续实习安排继续办理。' : '教师尚未进行通过或驳回操作，可撤回后重新提交。' }}
+            {{ selfPracticeApplication?.status === 'approved' ? '自主实习申请已通过。如需更换实习单位，可点击“再次申请”；新申请审核通过后才会切换当前实习。' : '教师尚未进行通过或驳回操作，可撤回后重新提交。' }}
           </div>
           <div class="delay-state-meta">
             <span>实习单位：{{ selfPracticeApplication?.company || '-' }}</span>
@@ -401,6 +401,10 @@
                 <div class="el-upload__text">点击或拖拽上传企业实习接收函</div>
               </el-upload>
             </el-form-item>
+            <el-form-item label="盖章实习协议" required>
+              <InternshipAgreementUpload ref="selfPracticeAgreementUploader" v-model="selfPracticeAgreementFiles"
+                :disabled="onboardingSubmitting" :company-key="selfPracticeForm.company" />
+            </el-form-item>
           </el-form>
         </div>
       </div>
@@ -415,6 +419,7 @@
         </template>
         <template v-else-if="selfPracticeApplicationView === 'result'">
           <el-button @click="showSelfPracticeDialog = false">关闭</el-button>
+          <el-button @click="selfPracticeAgreementVisible = true">实习协议</el-button>
           <el-button
             v-if="selfPracticeApplication?.status === 'pending'"
             type="danger"
@@ -422,6 +427,11 @@
             :loading="withdrawingSelfPracticeApplication"
             @click="withdrawSelfPracticeApplication"
           >撤回申请</el-button>
+          <el-button
+            v-else-if="selfPracticeApplication?.status === 'approved'"
+            type="primary"
+            @click="startNewSelfPracticeApplication"
+          >再次申请</el-button>
         </template>
         <template v-else>
           <el-button @click="showSelfPracticeDialog = false">取消</el-button>
@@ -435,6 +445,8 @@
       </template>    </el-dialog>
 
     <!-- 考研延迟申请弹窗 -->
+    <InternshipAgreementDialog v-if="selfPracticeApplication?.id" v-model="selfPracticeAgreementVisible"
+      source-type="SELF_PRACTICE" :source-id="Number(selfPracticeApplication.id)" />
     <el-dialog
       v-model="showDelayDialog"
       width="500px"
@@ -555,6 +567,9 @@ import { useRouter, useRoute } from 'vue-router'
 import { useFormContext } from '@/agent/formContext'
 import { useAuthStore } from '@/store/auth'
 import request from '@/utils/request'
+import InternshipAgreementUpload from '@/components/student/InternshipAgreementUpload.vue'
+import InternshipAgreementDialog from '@/components/student/InternshipAgreementDialog.vue'
+import { getAgreementDetail, toAgreementUploadFiles, type AgreementUploadFile } from '@/api/internshipAgreements'
 import { getProgressList } from '@/api/studentHome'
 import { getAnnouncementsForUser, markAnnouncementRead, type Announcement } from '@/api/announcement'
 import StudentAnnouncementMessageItem from '@/components/student/StudentAnnouncementMessageItem.vue'
@@ -620,6 +635,7 @@ interface StudentTodoRow {
 }
 // 自主实习/延迟申请载荷
 interface OnboardingApplication {
+  agreementFileIds?: number[]
   applicationType: string
   studentName: string
   studentUserId: string
@@ -1079,7 +1095,11 @@ const selfPracticeApplicationLoading = ref(false)
 const selfPracticeApplicationError = ref('')
 const withdrawingSelfPracticeApplication = ref(false)
 const selfPracticeApplicationView = computed(() => studentApplicationDialogMode(selfPracticeApplication.value?.status))
+const selfPracticeAgreementFiles = ref<AgreementUploadFile[]>([])
+const selfPracticeAgreementUploader = ref<InstanceType<typeof InternshipAgreementUpload> | null>(null)
+const selfPracticeAgreementVisible = ref(false)
 const selfPracticeForm = ref({
+  agreementFileIds: [] as number[],
   company: '',
   positionName: '',
   companyCity: '',
@@ -1091,6 +1111,9 @@ const selfPracticeForm = ref({
 })
 const delayForm = ref({ reason: '', materialUrl: '' })
 const selfPracticeFileList = ref<UploadUserFile[]>([])
+watch(selfPracticeAgreementFiles, files => {
+  selfPracticeForm.value.agreementFileIds = files.filter(file => file.status === 'success').map(file => file.uploadId)
+}, { flush: 'sync' })
 const selfPracticeAcceptanceFileList = ref<UploadUserFile[]>([])
 const delayFileList = ref([])
 const delayApplication = ref(null)
@@ -1102,6 +1125,7 @@ const delayApplicationView = computed(() => delayDialogMode(delayApplication.val
 // ===== 智能填表：向 AI 侧栏声明表单结构（不含用户已填值；上传字段只说明需手动上传） =====
 const formContext = useFormContext()
 const selfPracticeFields: FormFieldDescriptor[] = [
+  { prop: 'agreementFileIds', label: '盖章实习协议', type: 'upload', required: true },
   { prop: 'company', label: '实习单位', type: 'input', required: true, patternHint: '系统外企业可直接填写；系统内已登记的校企合作企业也可申请，名称相近时需从下拉候选选择标准名称' },
   { prop: 'positionName', label: '实习岗位', type: 'input', required: true },
   { prop: 'companyCity', label: '单位所在城市', type: 'input', required: true, patternHint: '示例：广东省广州市' },
@@ -1185,7 +1209,10 @@ const queryCooperativeCompanies = async (queryString, callback) => {
 }
 
 const resetSelfPracticeForm = (application?: StudentApplicationRecord | null) => {
+  selfPracticeAgreementUploader.value?.reset()
+  selfPracticeAgreementFiles.value = []
   selfPracticeForm.value = {
+    agreementFileIds: [],
     company: application?.company || '',
     positionName: application?.positionName || '',
     companyCity: application?.companyCity || '',
@@ -1230,6 +1257,9 @@ const loadSelfPracticeApplication = async () => {
     selfPracticeApplication.value = latestStudentApplication(response.data, 'selfPractice')
     if (selfPracticeApplicationView.value === 'form' && selfPracticeApplication.value) {
       resetSelfPracticeForm(selfPracticeApplication.value)
+      const agreementResponse: any = await getAgreementDetail('student', 'SELF_PRACTICE', Number(selfPracticeApplication.value.id))
+      if (agreementResponse.code !== 200) throw new Error(agreementResponse.message || '协议加载失败')
+      selfPracticeAgreementFiles.value = toAgreementUploadFiles(agreementResponse.data?.versions[0]?.files || [])
     }
     registerSelfPracticeForm()
   } catch (error) {
@@ -1248,6 +1278,12 @@ const openSelfPracticeDialog = async () => {
   showSelfPracticeDialog.value = true
   formContext.unregister('home:self-practice')
   await loadSelfPracticeApplication()
+}
+const startNewSelfPracticeApplication = () => {
+  if (selfPracticeApplication.value?.status !== 'approved') return
+  selfPracticeApplication.value = null
+  resetSelfPracticeForm()
+  registerSelfPracticeForm()
 }
 const resetDelayForm = (application?: StudentApplicationRecord | null) => {
   delayForm.value = delayFormFromApplication(application)
@@ -1444,6 +1480,7 @@ const submitOnboardingApplication = async (type) => {
       ElMessage.error('请填写申请理由')
       return
     }
+    if (!selfPracticeAgreementUploader.value?.validate()) return
   } else if (type === 'delay') {
     if (!delayForm.value.reason) {
       ElMessage.error('请填写申请理由')
@@ -1467,6 +1504,7 @@ const submitOnboardingApplication = async (type) => {
     }
 
     if (type === 'selfPractice') {
+      applicationData.agreementFileIds = selfPracticeAgreementFiles.value.map(file => file.uploadId)
       applicationData.company = selfPracticeForm.value.company.trim()
       applicationData.positionName = selfPracticeForm.value.positionName.trim()
       applicationData.companyCity = selfPracticeForm.value.companyCity.trim()
@@ -1490,6 +1528,7 @@ const submitOnboardingApplication = async (type) => {
       ? await request.put(`/student/applications/${studentApplicationResubmitId}/resubmit`, applicationData)
       : await request.post('/student/applications', applicationData)
     if (response.code === 200) {
+      if (type === 'selfPractice') selfPracticeAgreementUploader.value?.markCommitted()
       operation.complete({ status: 'submitted', label: '申请已提交，等待审核', url: '/student/applications' })
       ElMessage.success(response.message || (studentApplicationResubmitId ? '申请已重新提交' : '申请提交成功'))
       scheduleProgressRefresh()

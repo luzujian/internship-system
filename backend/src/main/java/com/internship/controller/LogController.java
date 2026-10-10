@@ -17,6 +17,8 @@ import com.internship.mapper.SecurityEventLogMapper;
 import com.internship.service.AuditLogService;
 import com.internship.service.LogOperatorNameResolver;
 import com.internship.service.SystemConfigService;
+import com.internship.task.LogRetentionTask;
+import com.internship.exception.BusinessException;
 import com.internship.utils.CurrentHolder;
 import jakarta.servlet.http.HttpServletResponse;
 import org.apache.poi.ss.usermodel.Cell;
@@ -32,6 +34,7 @@ import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -46,6 +49,11 @@ import java.io.IOException;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
+import java.time.format.ResolverStyle;
 import java.util.Arrays;
 import java.util.Calendar;
 import java.util.Date;
@@ -70,8 +78,6 @@ public class LogController {
     private static final int DEFAULT_RANGE_DAYS = 7;
     /** 分页大小上限 */
     private static final int MAX_PAGE_SIZE = 100;
-    /** 留存清理分批大小 */
-    private static final int RETENTION_BATCH_SIZE = 5000;
 
     /** 操作日志排序字段白名单 */
     private static final Set<String> OPERATE_SORT_FIELDS = new HashSet<>(Arrays.asList(
@@ -109,6 +115,9 @@ public class LogController {
     @Autowired
     private com.internship.task.AuditIntegrityTask auditIntegrityTask;
 
+    @Autowired
+    private LogRetentionTask logRetentionTask;
+
     // ================================================================
     // P1 统一日志中心 API
     // ================================================================
@@ -117,7 +126,7 @@ public class LogController {
      * 顶部统计：今日操作、失败操作、登录失败、高风险事件
      */
     @GetMapping("/summary")
-    @PreAuthorize("hasAuthority('log:view')")
+    @PreAuthorize("hasAuthority('log:view') or hasAuthority('log:login:view') or hasAuthority('log:security:view')")
     public Result getSummary() {
         try {
             Calendar cal = Calendar.getInstance();
@@ -129,10 +138,10 @@ public class LogController {
             Date now = new Date();
 
             Map<String, Object> summary = new LinkedHashMap<>();
-            summary.put("todayOperations", operateLogMapper.countByTimeRange(todayStart, now, null));
-            summary.put("todayFailedOperations", operateLogMapper.countByTimeRange(todayStart, now, "FAILURE"));
-            summary.put("todayFailedLogins", loginLogMapper.countByTimeRange(todayStart, now, "FAILURE"));
-            summary.put("todayHighRiskEvents", securityEventLogMapper.countHighRiskByTimeRange(todayStart, now));
+            summary.put("todayOperations", hasAuthority("log:view") ? operateLogMapper.countByTimeRange(todayStart, now, null) : null);
+            summary.put("todayFailedOperations", hasAuthority("log:view") ? operateLogMapper.countByTimeRange(todayStart, now, "FAILURE") : null);
+            summary.put("todayFailedLogins", hasAuthority("log:login:view") ? loginLogMapper.countByTimeRange(todayStart, now, "FAILURE") : null);
+            summary.put("todayHighRiskEvents", hasAuthority("log:security:view") ? securityEventLogMapper.countHighRiskByTimeRange(todayStart, now) : null);
             return Result.success(summary);
         } catch (Exception e) {
             log.error("获取日志统计失败：{}", e.getMessage(), e);
@@ -165,7 +174,7 @@ public class LogController {
             LogQueryParams q = buildQueryParams(startTime, endTime, operatorName, role, module, action,
                     result, riskLevel, ip, targetId, requestId, sortField, sortOrder, OPERATE_SORT_FIELDS, "operate_time");
 
-            PageHelper.startPage(Math.max(page, 1), Math.min(pageSize, MAX_PAGE_SIZE));
+            startLogPage(page, pageSize);
             List<OperateLog> logs = operateLogMapper.selectByFilter(q);
             PageInfo<OperateLog> pageInfo = new PageInfo<>(logs);
 
@@ -177,6 +186,8 @@ public class LogController {
         } catch (Exception e) {
             log.error("查询操作日志失败：{}", e.getMessage(), e);
             return Result.error("查询操作日志失败");
+        } finally {
+            PageHelper.clearPage();
         }
     }
 
@@ -202,7 +213,7 @@ public class LogController {
             LogQueryParams q = buildQueryParams(startTime, endTime, operatorName, role, null, null,
                     result, riskLevel, ip, null, requestId, sortField, sortOrder, LOGIN_SORT_FIELDS, "login_time");
 
-            PageHelper.startPage(Math.max(page, 1), Math.min(pageSize, MAX_PAGE_SIZE));
+            startLogPage(page, pageSize);
             List<LoginLog> logs = loginLogMapper.selectByFilter(q);
             PageInfo<LoginLog> pageInfo = new PageInfo<>(logs);
 
@@ -213,6 +224,8 @@ public class LogController {
         } catch (Exception e) {
             log.error("查询登录日志失败：{}", e.getMessage(), e);
             return Result.error("查询登录日志失败");
+        } finally {
+            PageHelper.clearPage();
         }
     }
 
@@ -240,7 +253,7 @@ public class LogController {
             LogQueryParams q = buildQueryParams(startTime, endTime, operatorName, role, null, action,
                     result, riskLevel, ip, targetId, requestId, sortField, sortOrder, SECURITY_SORT_FIELDS, "event_time");
 
-            PageHelper.startPage(Math.max(page, 1), Math.min(pageSize, MAX_PAGE_SIZE));
+            startLogPage(page, pageSize);
             List<SecurityEventLog> logs = securityEventLogMapper.selectByFilter(q);
             PageInfo<SecurityEventLog> pageInfo = new PageInfo<>(logs);
 
@@ -251,6 +264,8 @@ public class LogController {
         } catch (Exception e) {
             log.error("查询安全事件失败：{}", e.getMessage(), e);
             return Result.error("查询安全事件失败");
+        } finally {
+            PageHelper.clearPage();
         }
     }
 
@@ -326,7 +341,7 @@ public class LogController {
      * 筛选选项（操作类型/模块/事件类型/角色/风险等级），由后端返回，前端不再硬编码
      */
     @GetMapping("/options")
-    @PreAuthorize("hasAuthority('log:view')")
+    @PreAuthorize("hasAuthority('log:view') or hasAuthority('log:login:view') or hasAuthority('log:security:view')")
     public Result getOptions() {
         try {
             Map<String, Object> options = new LinkedHashMap<>();
@@ -335,18 +350,20 @@ public class LogController {
                     "CREATE", "UPDATE", "DELETE", "READ", "IMPORT", "EXPORT", "UPLOAD",
                     "AUDIT", "CLEAN", "LOGIN", "LOGOUT", "SWITCH_ROLE", "BACKUP", "RESTORE",
                     "RESET_PASSWORD", "ASSIGN", "DOWNLOAD", "VERIFY"));
-            actions.addAll(operateLogMapper.selectDistinctOperationTypes());
+            if (hasAuthority("log:view")) {
+                actions.addAll(operateLogMapper.selectDistinctOperationTypes());
+            }
             options.put("actions", actions);
 
-            Set<String> modules = new java.util.LinkedHashSet<>(operateLogMapper.selectDistinctModules());
+            Set<String> modules = new java.util.LinkedHashSet<>(hasAuthority("log:view") ? operateLogMapper.selectDistinctModules() : List.of());
             options.put("modules", modules);
 
-            Set<String> eventTypes = new java.util.LinkedHashSet<>(securityEventLogMapper.selectDistinctEventTypes());
+            Set<String> eventTypes = new java.util.LinkedHashSet<>(hasAuthority("log:security:view") ? securityEventLogMapper.selectDistinctEventTypes() : List.of());
             options.put("eventTypes", eventTypes);
 
-            options.put("roles", Arrays.asList("STUDENT", "TEACHER", "ADMIN", "COMPANY", "UNKNOWN"));
+            options.put("roles", Arrays.asList("STUDENT", "TEACHER", "ADMIN", "COMPANY", "SYSTEM", "UNKNOWN"));
             options.put("riskLevels", Arrays.asList("LOW", "MEDIUM", "HIGH", "CRITICAL"));
-            options.put("results", Arrays.asList("SUCCESS", "FAILURE"));
+            options.put("results", Arrays.asList("SUCCESS", "FAILURE", "ATTEMPTED"));
             return Result.success(options);
         } catch (Exception e) {
             log.error("获取日志筛选选项失败：{}", e.getMessage(), e);
@@ -394,34 +411,25 @@ public class LogController {
                     "login-events".equals(category) ? LOGIN_SORT_FIELDS : "security-events".equals(category) ? SECURITY_SORT_FIELDS : OPERATE_SORT_FIELDS,
                     "login-events".equals(category) ? "login_time" : "security-events".equals(category) ? "event_time" : "operate_time");
 
-            long total;
-            List<?> rows;
-            switch (category) {
-                case "operations" -> {
-                    total = operateLogMapper.countByFilter(q);
-                    rows = operateLogMapper.selectByFilter(q);
-                }
-                case "login-events" -> {
-                    total = loginLogMapper.countByFilter(q);
-                    rows = loginLogMapper.selectByFilter(q);
-                }
-                case "security-events" -> {
-                    total = securityEventLogMapper.countByFilter(q);
-                    rows = securityEventLogMapper.selectByFilter(q);
-                }
-                default -> {
-                    response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
-                    response.setContentType("application/json;charset=UTF-8");
-                    response.getWriter().write("{\"code\":400,\"message\":\"不支持的日志类别\"}");
-                    return;
-                }
-            }
-
+            long total = switch (category) {
+                case "operations" -> operateLogMapper.countByFilter(q);
+                case "login-events" -> loginLogMapper.countByFilter(q);
+                case "security-events" -> securityEventLogMapper.countByFilter(q);
+                default -> throw new IllegalArgumentException("不支持的日志类别");
+            };
             if (total > EXPORT_MAX_ROWS) {
-                response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
-                response.setContentType("application/json;charset=UTF-8");
-                response.getWriter().write("{\"code\":400,\"message\":\"导出数据超过上限" + EXPORT_MAX_ROWS + "条，请缩小时间范围\"}");
-                return;
+                throw new IllegalArgumentException("导出数据超过上限" + EXPORT_MAX_ROWS + "条，请缩小时间范围");
+            }
+            // 先检查数量，再以数据库 LIMIT 读取；额外一条用于检测统计后新增的数据。
+            q.setLimit(EXPORT_MAX_ROWS + 1);
+            List<?> rows = switch (category) {
+                case "operations" -> operateLogMapper.selectByFilter(q);
+                case "login-events" -> loginLogMapper.selectByFilter(q);
+                case "security-events" -> securityEventLogMapper.selectByFilter(q);
+                default -> throw new IllegalArgumentException("不支持的日志类别");
+            };
+            if (rows.size() > EXPORT_MAX_ROWS) {
+                throw new IllegalArgumentException("导出数据超过上限" + EXPORT_MAX_ROWS + "条，请缩小时间范围");
             }
 
             String fileName = URLEncoder.encode("日志导出_" + category + "_" +
@@ -432,17 +440,26 @@ public class LogController {
             writeXlsx(category, rows, response);
 
             // 导出行为本身记录审计（筛选摘要、行数、执行人）
-            recordExportAudit(category, exportRequest, total);
+            recordExportAudit(category, exportRequest, rows.size(), "SUCCESS");
         } catch (IllegalArgumentException e) {
-            response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
-            response.setContentType("application/json;charset=UTF-8");
-            response.getWriter().write("{\"code\":400,\"message\":\"" + e.getMessage() + "\"}");
+            recordExportAudit(category, exportRequest, 0, "FAILURE");
+            writeExportError(response, HttpServletResponse.SC_BAD_REQUEST, e.getMessage());
         } catch (Exception e) {
             log.error("导出日志失败：{}", e.getMessage(), e);
-            response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
-            response.setContentType("application/json;charset=UTF-8");
-            response.getWriter().write("{\"code\":500,\"message\":\"导出日志失败\"}");
+            recordExportAudit(category, exportRequest, 0, "FAILURE");
+            writeExportError(response, HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "导出日志失败");
         }
+    }
+
+    private void writeExportError(HttpServletResponse response, int status, String message) throws IOException {
+        if (response.isCommitted()) {
+            return;
+        }
+        response.reset();
+        response.setStatus(status);
+        response.setContentType("application/json;charset=UTF-8");
+        response.getWriter().write(new com.fasterxml.jackson.databind.ObjectMapper()
+                .writeValueAsString(new Result(status, message, null)));
     }
 
     // ================================================================
@@ -459,7 +476,8 @@ public class LogController {
             Map<String, Object> report = auditIntegrityTask.verifyAll(true);
             boolean passed = Boolean.TRUE.equals(report.get("passed"));
             if (!passed) {
-                log.warn("手动完整性校验发现问题: totalIssues={}", report.get("totalIssues"));
+                log.warn("手动完整性校验未完整通过: status={}, totalIssues={}, totalWarnings={}",
+                        report.get("status"), report.get("totalIssues"), report.get("totalWarnings"));
             }
             return Result.success(report);
         } catch (Exception e) {
@@ -499,30 +517,49 @@ public class LogController {
     @Log(operationType = "UPDATE", module = "LOG_MANAGEMENT", description = "更新日志留存策略",
             riskLevel = "HIGH", targetType = "RETENTION_POLICY", critical = true)
     @PreAuthorize("hasAuthority('log:retention:manage')")
+    @Transactional(rollbackFor = Exception.class)
     public Result updateRetentionPolicies(@RequestBody Map<String, Integer> policies) {
+        Integer highRiskDays;
+        Integer normalDays;
+        Integer loginDays;
         try {
-            Integer highRiskDays = policies.get("highRiskDays");
-            Integer normalDays = policies.get("normalDays");
-            Integer loginDays = policies.get("loginDays");
-
+            if (policies == null || policies.isEmpty()) {
+                return Result.error("请填写留存策略");
+            }
+            highRiskDays = policies.get("highRiskDays");
+            normalDays = policies.get("normalDays");
+            loginDays = policies.get("loginDays");
+            if (highRiskDays == null && normalDays == null && loginDays == null) {
+                return Result.error("请填写有效的留存策略");
+            }
+            for (Integer days : new Integer[]{highRiskDays, normalDays, loginDays}) {
+                if (days != null) {
+                    validateRetentionDays(days);
+                }
+            }
+            int effectiveHighRisk = highRiskDays != null ? highRiskDays : getRetentionConfig(RETENTION_HIGH_RISK_DAYS_KEY, 365);
+            int effectiveNormal = normalDays != null ? normalDays : getRetentionConfig(RETENTION_NORMAL_DAYS_KEY, 180);
+            if (effectiveHighRisk < effectiveNormal) {
+                return Result.error("高风险日志留存时间不能短于普通业务日志");
+            }
+        } catch (IllegalArgumentException e) {
+            return Result.error(e.getMessage());
+        }
+        try {
             if (highRiskDays != null) {
-                validateRetentionDays(highRiskDays);
                 saveRetentionConfig(RETENTION_HIGH_RISK_DAYS_KEY, highRiskDays, "高风险事件留存天数");
             }
             if (normalDays != null) {
-                validateRetentionDays(normalDays);
                 saveRetentionConfig(RETENTION_NORMAL_DAYS_KEY, normalDays, "普通业务日志留存天数");
             }
             if (loginDays != null) {
-                validateRetentionDays(loginDays);
                 saveRetentionConfig(RETENTION_LOGIN_DAYS_KEY, loginDays, "登录日志留存天数");
             }
             return getRetentionPolicies();
-        } catch (IllegalArgumentException e) {
-            return Result.error(e.getMessage());
         } catch (Exception e) {
             log.error("更新留存策略失败：{}", e.getMessage(), e);
-            return Result.error("更新留存策略失败");
+            // 让异常穿过事务代理，避免三项配置只保存一部分。
+            throw new BusinessException("更新留存策略失败");
         }
     }
 
@@ -543,10 +580,10 @@ public class LogController {
 
             Map<String, Object> preview = new LinkedHashMap<>();
             preview.put("operateLogNormal", operateLogMapper.countBeforeTimeExcludeHighRisk(normalBefore));
-            preview.put("operateLogHighRisk", operateLogMapper.countBeforeTime(highRiskBefore));
+            preview.put("operateLogHighRisk", operateLogMapper.countBeforeTimeHighRisk(highRiskBefore));
             preview.put("loginLog", loginLogMapper.countBeforeTime(loginBefore));
             preview.put("securityEventNormal", securityEventLogMapper.countBeforeTimeExcludeHighRisk(normalBefore));
-            preview.put("securityEventHighRisk", securityEventLogMapper.countBeforeTime(highRiskBefore));
+            preview.put("securityEventHighRisk", securityEventLogMapper.countBeforeTimeHighRisk(highRiskBefore));
             return Result.success(preview);
         } catch (Exception e) {
             log.error("留存清理预览失败：{}", e.getMessage(), e);
@@ -566,34 +603,14 @@ public class LogController {
         if (reason == null || reason.trim().isEmpty()) {
             return Result.error("必须填写清理原因");
         }
+        reason = reason.trim();
+        if (reason.length() > 500) {
+            return Result.error("清理原因不能超过500字");
+        }
         String operator = currentUsername();
         try {
-            int highRiskDays = getRetentionConfig(RETENTION_HIGH_RISK_DAYS_KEY, 365);
-            int normalDays = getRetentionConfig(RETENTION_NORMAL_DAYS_KEY, 180);
-            int loginDays = getRetentionConfig(RETENTION_LOGIN_DAYS_KEY, 180);
-
             recordRetentionEvent("RETENTION_CLEAN", "ATTEMPTED", operator, reason, 0);
-
-            long totalDeleted = 0;
-            // 普通业务日志（非高风险）
-            totalDeleted += deleteInBatches(
-                    before -> operateLogMapper.deleteBeforeTimeBatchExcludeHighRisk(before, RETENTION_BATCH_SIZE),
-                    daysBefore(normalDays));
-            // 登录日志
-            totalDeleted += deleteInBatches(
-                    before -> loginLogMapper.deleteBeforeTimeBatch(before, RETENTION_BATCH_SIZE),
-                    daysBefore(loginDays));
-            // 安全事件（非高风险）
-            totalDeleted += deleteInBatches(
-                    before -> securityEventLogMapper.deleteBeforeTimeBatchExcludeHighRisk(before, RETENTION_BATCH_SIZE),
-                    daysBefore(normalDays));
-            // 高风险记录按更长留存（此时非高风险旧数据已清理，剩余删除即高风险到期数据）
-            totalDeleted += deleteInBatches(
-                    before -> operateLogMapper.deleteBeforeTimeBatch(before, RETENTION_BATCH_SIZE),
-                    daysBefore(highRiskDays));
-            totalDeleted += deleteInBatches(
-                    before -> securityEventLogMapper.deleteBeforeTimeBatch(before, RETENTION_BATCH_SIZE),
-                    daysBefore(highRiskDays));
+            long totalDeleted = logRetentionTask.cleanupExpiredLogs();
 
             recordRetentionEvent("RETENTION_CLEAN", "SUCCESS", operator, reason, totalDeleted);
 
@@ -618,6 +635,7 @@ public class LogController {
     @PreAuthorize("hasAuthority('log:view')")
     public Result getRecentLogs() {
         try {
+            PageHelper.startPage(1, 10, false);
             List<OperateLog> logs = operateLogMapper.selectAll("operate_time", "desc");
             int limit = Math.min(logs.size(), 10);
             List<OperateLog> recentLogs = logs.subList(0, limit);
@@ -626,6 +644,8 @@ public class LogController {
         } catch (Exception e) {
             log.error("获取最近的操作日志失败: {}", e.getMessage(), e);
             return Result.error("获取最近的操作日志失败");
+        } finally {
+            PageHelper.clearPage();
         }
     }
 
@@ -652,7 +672,7 @@ public class LogController {
             String safeSortField = allowedSortFields.contains(dbSortField) ? dbSortField : "id";
             String safeSortOrder = allowedSortOrders.contains(sortOrder.toLowerCase()) ? sortOrder.toLowerCase() : "desc";
 
-            PageHelper.startPage(page, pageSize);
+            startLogPage(page, pageSize);
             List<OperateLog> logs;
             if (operatorName != null || operatorRole != null || operationType != null || module != null) {
                 logs = operateLogMapper.selectByConditions(operatorName, operatorRole, operationType, module, safeSortField, safeSortOrder);
@@ -666,6 +686,8 @@ public class LogController {
         } catch (Exception e) {
             log.error("获取操作日志失败: {}", e.getMessage(), e);
             return Result.error("获取操作日志失败");
+        } finally {
+            PageHelper.clearPage();
         }
     }
 
@@ -680,57 +702,7 @@ public class LogController {
     public Result manualCleanOperationLogs(
             @RequestParam(required = false) String operatorRole,
             @RequestParam(required = false, defaultValue = "false") boolean deleteAll) {
-        try {
-            if (operatorRole != null && !operatorRole.isEmpty()) {
-                int totalCount = operateLogMapper.countByRole(operatorRole);
-
-                if (totalCount == 0) {
-                    return Result.error(getRoleName(operatorRole) + "暂无日志数据，无需清理");
-                }
-
-                if (deleteAll) {
-                    operateLogMapper.deleteAllLogsByRole(operatorRole);
-                    return Result.success(getRoleName(operatorRole) + "日志全量清理成功，删除了全部" + totalCount + "条日志");
-                } else {
-                    final int KEEP_COUNT = getKeepCountByRole(operatorRole);
-                    if (totalCount < KEEP_COUNT) {
-                        return Result.error(getRoleName(operatorRole) + "日志数量不足，当前" + totalCount + "条，未达到清理阈值（保留数量" + KEEP_COUNT + "条）");
-                    }
-                    List<Long> keepIds = operateLogMapper.getKeepLogIdsByRole(operatorRole, KEEP_COUNT);
-                    int deletedCount = operateLogMapper.cleanOldLogsByRole(operatorRole, keepIds);
-                    if (deletedCount > 0) {
-                        return Result.success(getRoleName(operatorRole) + "日志清理成功，删除了" + deletedCount + "条旧日志");
-                    } else {
-                        return Result.error(getRoleName(operatorRole) + "日志已清理完成，当前共" + totalCount + "条日志（未超过保留数量" + KEEP_COUNT + "条）");
-                    }
-                }
-            } else {
-                int totalCount = operateLogMapper.countTotal();
-
-                if (totalCount == 0) {
-                    return Result.error("暂无日志数据，无需清理");
-                }
-
-                if (deleteAll) {
-                    operateLogMapper.deleteAllLogs();
-                    return Result.success("日志全量清理成功，删除了全部" + totalCount + "条日志");
-                } else {
-                    final int KEEP_COUNT = 200;
-                    if (totalCount < KEEP_COUNT) {
-                        return Result.error("日志数量不足，当前" + totalCount + "条，未达到清理阈值" + KEEP_COUNT + "条");
-                    }
-                    int deletedCount = operateLogMapper.cleanOldLogs(KEEP_COUNT);
-                    if (deletedCount > 0) {
-                        return Result.success("日志清理成功，删除了" + deletedCount + "条旧日志");
-                    } else {
-                        return Result.error("日志已清理完成，当前共" + totalCount + "条日志（未超过保留数量" + KEEP_COUNT + "条）");
-                    }
-                }
-            }
-        } catch (Exception e) {
-            log.error("清理操作日志失败: {}", e.getMessage(), e);
-            return Result.error("清理操作日志失败");
-        }
+        return Result.error("按数量清理和全量清空已停用，请使用日志留存策略预览并清理到期记录");
     }
 
     /**
@@ -742,33 +714,7 @@ public class LogController {
     @DeleteMapping("/operation/clean/auto")
     @PreAuthorize("hasAuthority('log:delete')")
     public Result autoCleanOperationLogs() {
-        try {
-            StringBuilder result = new StringBuilder();
-            String[] roles = {"STUDENT", "TEACHER", "ADMIN", "COMPANY"};
-            boolean cleaned = false;
-
-            for (String role : roles) {
-                int totalCount = operateLogMapper.countByRole(role);
-                int threshold = getThresholdByRole(role);
-                int keepCount = getKeepCountByRole(role);
-
-                if (totalCount >= threshold) {
-                    List<Long> keepIds = operateLogMapper.getKeepLogIdsByRole(role, keepCount);
-                    int deletedCount = operateLogMapper.cleanOldLogsByRole(role, keepIds);
-                    result.append(getRoleName(role)).append("日志清理成功，删除了").append(deletedCount).append("条；");
-                    cleaned = true;
-                }
-            }
-
-            if (cleaned) {
-                return Result.success(result.toString());
-            } else {
-                return Result.success("所有角色日志数量均未达到清理阈值");
-            }
-        } catch (Exception e) {
-            log.error("自动清理操作日志失败: {}", e.getMessage(), e);
-            return Result.error("自动清理操作日志失败");
-        }
+        return Result.error("按数量清理已停用，请使用日志留存策略预览并清理到期记录");
     }
 
     // ================================================================
@@ -824,13 +770,21 @@ public class LogController {
 
     private Date[] parseTimeRange(String startTime, String endTime) {
         try {
-            SimpleDateFormat format = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
-            Date start = startTime != null && !startTime.isEmpty() ? format.parse(startTime) : null;
-            Date end = endTime != null && !endTime.isEmpty() ? format.parse(endTime) : null;
+            DateTimeFormatter format = DateTimeFormatter.ofPattern("uuuu-MM-dd HH:mm:ss")
+                    .withResolverStyle(ResolverStyle.STRICT);
+            Date start = trimToNull(startTime) == null ? null
+                    : Date.from(LocalDateTime.parse(startTime, format).atZone(ZoneId.systemDefault()).toInstant());
+            Date end = trimToNull(endTime) == null ? null
+                    : Date.from(LocalDateTime.parse(endTime, format).atZone(ZoneId.systemDefault()).toInstant());
             return normalizeTimeRange(start, end);
-        } catch (java.text.ParseException e) {
+        } catch (DateTimeParseException e) {
             throw new IllegalArgumentException("时间格式错误，正确格式：yyyy-MM-dd HH:mm:ss");
         }
+    }
+
+    private void startLogPage(Integer page, Integer pageSize) {
+        PageHelper.startPage(page == null ? 1 : Math.max(page, 1),
+                pageSize == null ? 20 : Math.max(1, Math.min(pageSize, MAX_PAGE_SIZE)));
     }
 
     private <T> PageResult<T> toPageResult(PageInfo<T> pageInfo) {
@@ -928,11 +882,11 @@ public class LogController {
 
             String[] headers;
             if ("login-events".equals(category)) {
-                headers = new String[]{"ID", "时间", "用户名", "用户类型", "状态", "风险等级", "IP地址", "设备类别", "错误码"};
+                headers = new String[]{"ID", "时间", "用户名", "用户类型", "状态", "风险等级", "IP地址", "设备类别", "错误码", "请求ID"};
             } else if ("security-events".equals(category)) {
-                headers = new String[]{"ID", "时间", "用户名", "角色", "事件类型", "结果", "风险等级", "IP地址", "请求路径", "描述"};
+                headers = new String[]{"ID", "时间", "用户名", "角色", "事件类型", "结果", "风险等级", "IP地址", "请求路径", "描述", "请求ID"};
             } else {
-                headers = new String[]{"ID", "时间", "操作人", "角色", "模块", "动作", "结果", "风险等级", "目标类型", "目标ID", "IP地址", "耗时(ms)", "描述"};
+                headers = new String[]{"ID", "时间", "操作人", "角色", "模块", "动作", "结果", "风险等级", "目标类型", "目标ID", "IP地址", "耗时(ms)", "描述", "请求ID"};
             }
 
             Row headerRow = sheet.createRow(0);
@@ -953,20 +907,20 @@ public class LogController {
                             safeStr(ol.getOperatorName()), safeStr(ol.getOperatorRole()), safeStr(ol.getModule()),
                             safeStr(ol.getOperationType()), safeStr(ol.getOperationResult()), safeStr(ol.getRiskLevel()),
                             safeStr(ol.getTargetType()), safeStr(ol.getTargetId()), safeStr(exportIp(ol.getIpAddress())),
-                            ol.getDurationMs() != null ? String.valueOf(ol.getDurationMs()) : "", safeStr(ol.getDescription())
+                            ol.getDurationMs() != null ? String.valueOf(ol.getDurationMs()) : "", safeStr(ol.getDescription()), safeStr(ol.getRequestId())
                     };
                 } else if (row instanceof LoginLog ll) {
                     values = new String[]{
                             safeStr(ll.getId()), ll.getLoginTime() != null ? timeFormat.format(ll.getLoginTime()) : "",
                             safeStr(ll.getUserName()), safeStr(ll.getUserType()), safeStr(ll.getLoginStatus()),
-                            safeStr(ll.getRiskLevel()), safeStr(exportIp(ll.getIpAddress())), safeStr(ll.getDeviceType()), safeStr(ll.getErrorCode())
+                            safeStr(ll.getRiskLevel()), safeStr(exportIp(ll.getIpAddress())), safeStr(ll.getDeviceType()), safeStr(ll.getErrorCode()), safeStr(ll.getRequestId())
                     };
                 } else if (row instanceof SecurityEventLog se) {
                     values = new String[]{
                             safeStr(se.getId()), se.getEventTime() != null ? timeFormat.format(se.getEventTime()) : "",
                             safeStr(se.getUsername()), safeStr(se.getUserRole()), safeStr(se.getEventType()),
                             safeStr(se.getResult()), safeStr(se.getRiskLevel()), safeStr(exportIp(se.getIpAddress())),
-                            safeStr(se.getRequestPath()), safeStr(se.getDescription())
+                            safeStr(se.getRequestPath()), safeStr(se.getDescription()), safeStr(se.getRequestId())
                     };
                 } else {
                     continue;
@@ -1020,10 +974,10 @@ public class LogController {
     }
 
     /** 记录导出最终结果审计 */
-    private void recordExportAudit(String category, LogExportRequest exportRequest, long rowCount) {
+    private void recordExportAudit(String category, LogExportRequest exportRequest, long rowCount, String result) {
         try {
             OperateLog auditLog = buildExportAuditLog(category, exportRequest, rowCount);
-            auditLog.setOperationResult("SUCCESS");
+            auditLog.setOperationResult(result);
             auditLogService.record(auditLog);
         } catch (Exception e) {
             log.error("记录导出审计失败：{}", e.getMessage());
@@ -1031,11 +985,16 @@ public class LogController {
     }
 
     private int getRetentionConfig(String key, int defaultValue) {
-        try {
-            Integer value = systemConfigService.getConfigValueAsInt(key);
-            return value != null ? value : defaultValue;
-        } catch (Exception e) {
+        String rawValue = systemConfigService.getConfigValue(key);
+        if (rawValue == null) {
             return defaultValue;
+        }
+        try {
+            int value = Integer.parseInt(rawValue.trim());
+            validateRetentionDays(value);
+            return value;
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("留存策略配置无效，请检查留存天数");
         }
     }
 
@@ -1049,7 +1008,9 @@ public class LogController {
         SystemConfig existing = systemConfigService.findByConfigKey(key);
         if (existing != null) {
             existing.setConfigValue(String.valueOf(days));
-            systemConfigService.update(existing);
+            if (systemConfigService.update(existing) != 1) {
+                throw new BusinessException("留存策略保存失败");
+            }
         } else {
             SystemConfig config = new SystemConfig();
             config.setConfigKey(key);
@@ -1058,7 +1019,9 @@ public class LogController {
             config.setConfigName(name);
             config.setDescription("审计日志留存策略（天）");
             config.setStatus(1);
-            systemConfigService.insert(config);
+            if (systemConfigService.insert(config) != 1) {
+                throw new BusinessException("留存策略保存失败");
+            }
         }
     }
 
@@ -1066,17 +1029,6 @@ public class LogController {
         Calendar cal = Calendar.getInstance();
         cal.add(Calendar.DAY_OF_MONTH, -days);
         return cal.getTime();
-    }
-
-    /** 分批删除直到无到期数据（避免长时间锁表） */
-    private long deleteInBatches(java.util.function.ToIntFunction<Date> deleteBatch, Date beforeTime) {
-        long total = 0;
-        int deleted;
-        do {
-            deleted = deleteBatch.applyAsInt(beforeTime);
-            total += deleted;
-        } while (deleted >= RETENTION_BATCH_SIZE);
-        return total;
     }
 
     /** 留存清理安全事件（先 ATTEMPTED 后结果，清理记录为新数据不会被同批删除） */
@@ -1095,42 +1047,4 @@ public class LogController {
         }
     }
 
-    /**
-     * 获取角色对应的清理阈值（旧按条数清理，废弃保留）
-     */
-    private int getThresholdByRole(String role) {
-        return switch (role) {
-            case "STUDENT" -> 500;
-            case "TEACHER" -> 300;
-            case "ADMIN" -> 200;
-            case "COMPANY" -> 300;
-            default -> 1000;
-        };
-    }
-
-    /**
-     * 获取角色对应的保留数量（旧按条数清理，废弃保留）
-     */
-    private int getKeepCountByRole(String role) {
-        return switch (role) {
-            case "STUDENT" -> 100;
-            case "TEACHER" -> 80;
-            case "ADMIN" -> 50;
-            case "COMPANY" -> 80;
-            default -> 200;
-        };
-    }
-
-    /**
-     * 获取角色中文名称
-     */
-    private String getRoleName(String role) {
-        return switch (role) {
-            case "STUDENT" -> "学生";
-            case "TEACHER" -> "教师";
-            case "ADMIN" -> "管理员";
-            case "COMPANY" -> "企业";
-            default -> role;
-        };
-    }
 }

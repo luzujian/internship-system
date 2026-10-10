@@ -116,6 +116,16 @@ public class AiServiceCircuitBreaker {
      * @param counselorId 辅导员ID，null表示全局调用
      */
     public void recordFailure(Long counselorId) {
+        // ConcurrentHashMap rejects null keys; null belongs to the separate global circuit.
+        if (counselorId == null) {
+            int count = failureCount.incrementAndGet();
+            log.error("AI 全局服务调用失败，连续失败次数：{}", count);
+            if (count >= FAILURE_THRESHOLD) {
+                circuitBreakTime = System.currentTimeMillis();
+                log.error("AI 全局服务连续失败 {} 次，已触发 {} 分钟熔断", count, CIRCUIT_BREAK_DURATION / 60000);
+            }
+            return;
+        }
         CircuitBreakState state = getOrCreateState(counselorId);
         int count = state.getFailureCount().incrementAndGet();
         log.error("AI 服务调用失败，辅导员ID: {}，连续失败次数：{}", counselorId, count);

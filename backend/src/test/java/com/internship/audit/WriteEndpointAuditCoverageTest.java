@@ -63,6 +63,7 @@ class WriteEndpointAuditCoverageTest {
             java.util.Map.entry("ChatController.markMessageAsRead", "页面点击类已读标记，按计划不入库"),
             java.util.Map.entry("ChatController.batchMarkAsRead", "页面点击类已读标记，按计划不入库"),
             java.util.Map.entry("CompanyController.markApplicationAsViewed", "页面点击类查看标记，按计划不入库"),
+            java.util.Map.entry("CompanyApplicationActivityController.read", "页面点击类已读标记，按计划不逐条写审计日志"),
 
             // ===== 预览类：只读计算，无状态变更 =====
             java.util.Map.entry("FreeInternshipReconciliationController.preview", "预览：只读计算，无状态变更"),

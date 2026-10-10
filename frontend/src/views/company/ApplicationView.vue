@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useAgentPageContext } from '@/agent/useAgentPageContext'
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Document, Download, Folder, Picture } from '@element-plus/icons-vue'
 import { createWorkbook, jsonToSheet, appendSheet, writeWorkbook, writeWorkbookToBuffer } from '../../utils/xlsx'
@@ -8,10 +9,15 @@ import { usePositionStore } from '../../store/position'
 import { useAuthStore } from '@/store/auth'
 import applicationApi from '@/api/InternshipApplicationService'
 import studentArchiveService from '@/api/StudentArchiveService'
-import { onNewApplication, offNewApplication } from '@/utils/websocket'
+import { onNewApplication, offNewApplication, onCompanyTodoUpdate, offCompanyTodoUpdate } from '@/utils/websocket'
+import { fetchCompanyActivityDetail, fetchActivityForApplication, markCompanyActivityRead,
+  type CompanyApplicationActivity } from '@/api/companyApplicationActivities'
+import { readCompanyActivity, activityStatusText, activityStatusType } from '@/utils/companyActivityFeed.mjs'
 
 const positionStore = usePositionStore()
 const authStore = useAuthStore()
+const route = useRoute()
+const router = useRouter()
 
 // 岗位申请在不同后端版本中岗位名称字段为 position（旧）或 positionName（新），本地行类型兼容两种形态
 interface ApplicationViewRow {
@@ -55,11 +61,19 @@ const searchForm = ref({
   status: ''
 })
 
+const currentApplicationRows = computed(() => {
+  const positionsById = new Map(positionStore.positions.map(position => [String(position.id), position]))
+  return asApplicationRows(positionStore.jobApplications).flatMap(application => {
+    const position = positionsById.get(String(application.positionId))
+    return position ? [{ ...application, positionName: position.positionName }] : []
+  })
+})
+
 const positionOptions = computed(() => {
   // 从岗位申请数据中提取所有出现过的岗位名称，确保包含历史岗位
   const jobApplicationPositions = new Set<string>()
   if (positionStore.jobApplications && Array.isArray(positionStore.jobApplications)) {
-    positionStore.jobApplications.forEach(item => {
+    currentApplicationRows.value.forEach(item => {
       if (item.positionName) {
         jobApplicationPositions.add(item.positionName)
       }
@@ -91,15 +105,24 @@ onMounted(() => {
   positionStore.fetchJobApplications()
   
   onNewApplication(handleNewApplication)
+  onCompanyTodoUpdate(handleNewApplication)
 })
 
 import { onUnmounted } from 'vue'
 onUnmounted(() => {
   offNewApplication(handleNewApplication)
+  offCompanyTodoUpdate(handleNewApplication)
+  activityRequest++
+  detailRequest++
 })
 
 const detailDialogVisible = ref(false)
 const currentStudent = ref(null)
+const activityReadError = ref('')
+const activityReadBusy = ref(false)
+const activityReadUnavailable = ref(false)
+let activityRequest = 0
+let detailRequest = 0
 const rejectDialogVisible = ref(false)
 const rejectSubmitting = ref(false)
 const rejectTarget = ref<ApplicationViewRow | null>(null)
@@ -123,9 +146,9 @@ const groupedApplications = computed(() => {
   }
 
   // 遍历申请列表，只将申请分配到当前存在的岗位组
-  if (positionStore.jobApplications && Array.isArray(positionStore.jobApplications)) {
-    asApplicationRows(positionStore.jobApplications).forEach(item => {
-      const positionName = item.position || item.positionName || ''
+  if (currentApplicationRows.value.length) {
+    currentApplicationRows.value.forEach(item => {
+      const positionName = item.positionName || ''
       // 只处理当前存在的岗位，忽略历史岗位的申请
       if (positionName && groups[positionName]) {
         groups[positionName].applications.push(item)
@@ -155,20 +178,7 @@ const groupedApplications = computed(() => {
 })
 
 const filteredTableData = computed(() => {
-  if (!positionStore.jobApplications || !Array.isArray(positionStore.jobApplications)) {
-    return []
-  }
-
-  // 获取当前所有岗位名称
-  const currentPositionNames = new Set(
-    positionStore.positions.map(pos => pos.positionName)
-  )
-
-  let data = asApplicationRows(positionStore.jobApplications).filter(item => {
-    // 只保留当前存在的岗位申请
-    const positionName = item.position || item.positionName || ''
-    return currentPositionNames.has(positionName)
-  })
+  let data = [...currentApplicationRows.value]
 
   if (searchForm.value.keyword) {
     data = data.filter(item =>
@@ -210,6 +220,7 @@ const handlePositionClick = (position) => {
 }
 
 const handleSearch = () => {
+  currentPage.value = 1
   // 筛选是本地操作，无需显示加载状态
   ElMessage.success('筛选已应用')
 }
@@ -372,11 +383,22 @@ const handleInterviewFail = async (row) => {
 }
 
 const handleViewDetail = async (row) => {
+  const requestId = ++detailRequest
   currentStudent.value = row
+  activityReadError.value = ''
+  activityReadUnavailable.value = false
+  studentArchives.value = []
   detailDialogVisible.value = true
+  const isCurrentStudent = () => (
+    requestId === detailRequest &&
+    String(currentStudent.value?.id) === String(row.id)
+    && String(currentStudent.value?.studentId) === String(row.studentId)
+  )
+
+  void acknowledgeActivity(row, requestId)
 
   // 获取学生申请材料
-  if (row.studentId) {
+  if (row.studentId && !row.historical) {
     try {
       interface StudentArchiveRow {
         id?: number | string
@@ -387,6 +409,7 @@ const handleViewDetail = async (row) => {
         code?: number
         data?: StudentArchiveRow[]
       }
+      if (!isCurrentStudent()) return
       if (response.code === 200) {
         studentArchives.value = Array.isArray(response.data) ? response.data : []
       } else {
@@ -394,12 +417,73 @@ const handleViewDetail = async (row) => {
       }
     } catch (error) {
       console.error('获取学生材料失败:', error)
-      studentArchives.value = []
+      if (isCurrentStudent()) studentArchives.value = []
     }
   }
 
   console.log('查看学生详情:', row)
 }
+
+const acknowledgeActivity = async (row, requestId: number) => {
+  activityReadBusy.value = true
+  try {
+    const activity: CompanyApplicationActivity | null = row.activity || await fetchActivityForApplication(Number(row.id))
+    if (requestId !== detailRequest) return
+    if (!activity) {
+      activityReadUnavailable.value = true
+      activityReadError.value = '这条申请暂时无法同步动态已读状态，请从首页打开对应动态。'
+      return
+    }
+    row.activity = activity
+    if (activity.status !== row.status) throw new Error('申请状态已更新，请重新打开详情')
+    await readCompanyActivity(activity, markCompanyActivityRead)
+  } catch (error) {
+    if (requestId === detailRequest) activityReadError.value = '详情已打开，已读状态保存失败，请重新读取后重试。'
+  } finally {
+    if (requestId === detailRequest) activityReadBusy.value = false
+  }
+}
+
+const openActivityDetail = async (value) => {
+  if (!value) return
+  const id = Number(value)
+  if (!Number.isSafeInteger(id) || id <= 0) { ElMessage.error('动态记录编号无效'); return }
+  const requestId = ++activityRequest
+  try {
+    const detail = await fetchCompanyActivityDetail(id)
+    if (requestId !== activityRequest) return
+    const snapshot = detail.snapshot
+    const row: ApplicationViewRow = detail.application ? { ...detail.application, applyDate: detail.application.applyDate || detail.application.createTime }
+      : { ...snapshot, id: `activity-${detail.activity.id}`, studentNo: snapshot.studentUserId,
+          applyDate: snapshot.applyTime || snapshot.createTime, selfIntroduction: snapshot.selfEvaluation, historical: true }
+    if (row.applyDate) row.applyDate = new Date(row.applyDate).toLocaleDateString('zh-CN')
+    if (detail.application) {
+      searchForm.value.keyword = row.studentNo || row.studentName || ''
+      searchForm.value.position = row.positionName || ''
+      currentPage.value = 1
+    }
+    await handleViewDetail({ ...row, activity: detail.activity })
+  } catch {
+    if (requestId === activityRequest) ElMessage.error('动态详情加载失败，请返回首页重试')
+  }
+}
+
+const retryActivityRead = () => {
+  if (currentStudent.value?.activity) return openActivityDetail(currentStudent.value.activity.id)
+  if (currentStudent.value) return handleViewDetail(currentStudent.value)
+}
+
+const closeActivityDetail = () => {
+  detailRequest++
+  activityRequest++
+  if (route.query.activityId) {
+    const query = { ...route.query }
+    delete query.activityId
+    void router.replace({ query })
+  }
+}
+
+watch(() => route.query.activityId, openActivityDetail, { immediate: true })
 
 // 下载申请材料
 const handleDownloadArchive = async (archive) => {
@@ -605,7 +689,7 @@ useAgentPageContext(() => {
   return {
   title: '申请查看',
   view: detailDialogVisible.value ? 'application-detail' : 'page',
-  object: (detailDialogVisible.value && (currentStudent.value as any)?.id) ? { type: 'company_application', id: String((currentStudent.value as any).id) } : null,
+  object: (detailDialogVisible.value && !currentStudent.value?.historical && (currentStudent.value as any)?.id) ? { type: 'company_application', id: String((currentStudent.value as any).id) } : null,
   filters: { keyword: searchForm.value.keyword, status: searchForm.value.status,
     positionId: positions.length === 1 ? String(positions[0].id) : '',
     visibleIds: paginatedTableData.value.slice(0, 20).map(row => String(row.id)) }
@@ -861,8 +945,16 @@ useAgentPageContext(() => {
       title="学生岗位申请详情"
       width="700px"
       :close-on-click-modal="false"
+      @close="closeActivityDetail"
     >
       <div v-if="currentStudent" class="student-detail">
+        <el-alert v-if="currentStudent.historical" type="info" :closable="false"
+          title="显示该次申请的历史记录，当前可处理的申请以列表为准。" style="margin-bottom: 16px" />
+        <el-alert v-if="activityReadError" type="warning" :closable="false" style="margin-bottom: 16px">
+          <template #title>{{ activityReadError }}</template>
+          <el-button v-if="activityReadUnavailable" link type="primary" @click="router.push('/company/dashboard')">返回首页</el-button>
+          <el-button v-else link type="primary" :loading="activityReadBusy" @click="retryActivityRead">重新读取</el-button>
+        </el-alert>
         <div class="detail-section">
           <h3 class="section-title">基本信息</h3>
           <el-descriptions :column="2" border>
@@ -888,15 +980,7 @@ useAgentPageContext(() => {
               {{ currentStudent.rejectReason }}
             </el-descriptions-item>
             <el-descriptions-item label="申请状态" :span="isMobile ? 1 : 2">
-              <el-tag v-if="currentStudent.status === 'pending'" type="warning">待审核</el-tag>
-              <el-tag v-else-if="currentStudent.status === 'approved'" type="success">已通过</el-tag>
-              <el-tag v-else-if="currentStudent.status === 'rejected'" type="danger">已拒绝</el-tag>
-              <el-tag v-else-if="currentStudent.status === 'interview_passed' && currentStudent.directHire" type="success">直接录取（免面试）</el-tag>
-              <el-tag v-else-if="currentStudent.status === 'interview_passed'" type="success">面试通过</el-tag>
-              <el-tag v-else-if="currentStudent.status === 'interview_failed'" type="danger">面试没通过</el-tag>
-              <el-tag v-else-if="currentStudent.status === 'withdrawn'" type="info">已撤回</el-tag>
-              <el-tag v-else-if="currentStudent.status === 'defaulted'" type="info">已失效</el-tag>
-              <el-tag v-else type="info">未知状态</el-tag>
+              <el-tag :type="activityStatusType(currentStudent.status)">{{ activityStatusText(currentStudent.status) }}</el-tag>
             </el-descriptions-item>
           </el-descriptions>
         </div>
@@ -909,7 +993,7 @@ useAgentPageContext(() => {
         </div>
 
         <!-- 申请材料区域 -->
-        <div class="detail-section">
+        <div v-if="!currentStudent.historical" class="detail-section">
           <h3 class="section-title">申请材料</h3>
           <div v-if="studentArchives.length > 0" class="archives-list">
             <div v-for="archive in studentArchives" :key="archive.id" class="archive-item">

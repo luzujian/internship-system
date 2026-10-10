@@ -1,6 +1,7 @@
 package com.internship.service;
 
 import com.internship.entity.InterviewInvitation;
+import com.internship.entity.dto.StudentPositionKey;
 
 import java.util.List;
 
@@ -13,6 +14,8 @@ public interface InterviewInvitationService {
     List<InterviewInvitation> findByStudentId(Long studentId);
 
     InterviewInvitation findByStudentAndPosition(Long studentId, Long positionId);
+
+    List<InterviewInvitation> findLatestForStudentPositions(List<StudentPositionKey> pairs);
 
     InterviewInvitation findById(Long id);
 

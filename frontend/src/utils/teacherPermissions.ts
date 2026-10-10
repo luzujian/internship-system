@@ -1,8 +1,10 @@
 /**
  * 教师端权限工具函数
- * 权限码由后端登录接口返回并存入 localStorage['teacherPermissions']
+ * 权限码由后端登录接口返回，优先使用当前标签页的认证身份。
  * 本模块不再维护硬编码权限矩阵，仅保留路由→权限码桥接映射
  */
+
+import { useAuthStore } from '@/store/auth'
 
 // 教师类型枚举
 export enum TeacherType {
@@ -49,10 +51,16 @@ const ALWAYS_ACCESSIBLE_ROUTES = new Set<string>([
 ])
 
 /**
- * 从 localStorage 获取后端返回的教师权限码列表
- * 登录时由 store/auth 存入，来源为 teacher_role_permission 表
+ * 从当前标签页获取后端返回的教师权限码列表。
+ * 仅在尚未恢复认证状态时兼容旧版 localStorage 缓存。
  */
 function getStoredTeacherPermissions(): string[] {
+  const auth = useAuthStore()
+  if (auth.isAuthenticated) {
+    if (!auth.role?.startsWith('ROLE_TEACHER')) return []
+    const permissions = auth.user?.permissions ?? auth.decodeToken(auth.token || '')?.permissions
+    return Array.isArray(permissions) ? permissions.filter((value): value is string => typeof value === 'string') : []
+  }
   try {
     const stored = localStorage.getItem('teacherPermissions')
     if (stored) {
@@ -88,6 +96,11 @@ export function hasRoutePermission(teacherType: TeacherType, routeName: string):
  * @returns 教师类型
  */
 export function getCurrentTeacherType(): TeacherType {
+  const auth = useAuthStore()
+  const currentType = auth.user?.teacherType || auth.role?.replace('ROLE_TEACHER_', '')
+  if (currentType === TeacherType.COLLEGE || currentType === TeacherType.DEPARTMENT || currentType === TeacherType.COUNSELOR) {
+    return currentType
+  }
   const teacherTypeFromStorage = localStorage.getItem('teacherType')
   if (teacherTypeFromStorage === 'COLLEGE') return TeacherType.COLLEGE
   if (teacherTypeFromStorage === 'DEPARTMENT') return TeacherType.DEPARTMENT

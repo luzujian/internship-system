@@ -6,6 +6,7 @@ import com.internship.entity.InternshipProgressRecord;
 import com.internship.entity.Position;
 import com.internship.entity.StudentInternshipStatus;
 import com.internship.entity.StudentJobApplication;
+import com.internship.entity.dto.StudentPositionKey;
 import com.internship.exception.BusinessException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -14,13 +15,22 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Set;
+import java.util.stream.LongStream;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -216,6 +226,71 @@ class DirectHireServiceTest {
         when(invitationService.findByStudentAndPosition(400L, 300L)).thenReturn(invitation);
 
         assertTrue(directHireService.isDirectHire(400L, 300L));
+    }
+
+    @Test
+    void batchLookupDeduplicatesPairsAndRetainsFalseForMissingOrNonDirectInvitations() {
+        StudentPositionKey direct = new StudentPositionKey(400L, 300L);
+        StudentPositionKey normal = new StudentPositionKey(400L, 301L);
+        StudentPositionKey missing = new StudentPositionKey(400L, 302L);
+        StudentPositionKey samePositionAnotherStudent = new StudentPositionKey(401L, 300L);
+        List<StudentPositionKey> expectedLookup = List.of(direct, normal, missing, samePositionAnotherStudent);
+        when(invitationService.findLatestForStudentPositions(expectedLookup)).thenReturn(List.of(
+                invitationFor(direct, "direct_hire"),
+                invitationFor(normal, "online"),
+                invitationFor(missing, null),
+                invitationFor(samePositionAnotherStudent, "DIRECT_HIRE")));
+
+        Set<StudentPositionKey> result = directHireService.findDirectHirePairs(Arrays.asList(
+                direct, direct, normal, missing, samePositionAnotherStudent,
+                new StudentPositionKey(null, 300L), new StudentPositionKey(400L, null), null));
+
+        assertEquals(Set.of(direct), result);
+        verify(invitationService).findLatestForStudentPositions(expectedLookup);
+        verify(invitationService, never()).findByStudentAndPosition(any(), any());
+    }
+
+    @Test
+    void batchLookupDoesNotQueryForEmptyOrOnlyNullKeys() {
+        assertTrue(directHireService.findDirectHirePairs(List.of()).isEmpty());
+        assertTrue(directHireService.findDirectHirePairs(Arrays.asList(
+                null, new StudentPositionKey(null, 1L), new StudentPositionKey(1L, null))).isEmpty());
+
+        verifyNoInteractions(invitationService);
+    }
+
+    @Test
+    void batchLookupBoundsQueriesAndCombinesAllResults() {
+        List<StudentPositionKey> requested = LongStream.rangeClosed(1, 401)
+                .mapToObj(id -> new StudentPositionKey(id, 300L)).toList();
+        List<Integer> batchSizes = new ArrayList<>();
+        when(invitationService.findLatestForStudentPositions(anyList())).thenAnswer(invocation -> {
+            List<StudentPositionKey> batch = invocation.getArgument(0);
+            batchSizes.add(batch.size());
+            return batch.stream().map(pair -> invitationFor(pair, "direct_hire")).toList();
+        });
+
+        assertEquals(Set.copyOf(requested), directHireService.findDirectHirePairs(requested));
+        assertEquals(List.of(200, 200, 1), batchSizes);
+        verify(invitationService, times(3)).findLatestForStudentPositions(anyList());
+        verify(invitationService, never()).findByStudentAndPosition(any(), any());
+    }
+
+    @Test
+    void batchLookupPropagatesReadFailureInsteadOfReturningIncorrectFlags() {
+        when(invitationService.findLatestForStudentPositions(anyList()))
+                .thenThrow(new IllegalStateException("database unavailable"));
+
+        assertThrows(IllegalStateException.class, () -> directHireService.findDirectHirePairs(
+                List.of(new StudentPositionKey(400L, 300L))));
+    }
+
+    private InterviewInvitation invitationFor(StudentPositionKey pair, String method) {
+        InterviewInvitation invitation = new InterviewInvitation();
+        invitation.setStudentId(pair.studentId());
+        invitation.setPositionId(pair.positionId());
+        invitation.setInterviewMethod(method);
+        return invitation;
     }
 
     private StudentJobApplication pendingApplication() {

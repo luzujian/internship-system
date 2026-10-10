@@ -223,6 +223,21 @@ class AgentReadToolsTest {
         when(capabilities.has(student,"internship_plan")).thenReturn(true);
         assertTrue(tools.specs(student).stream().anyMatch(spec -> spec.name().equals("student_plan")));
     }
+    @Test void companyPermissionsDoNotExposeOtherRolesCapabilitiesOrDisabledFeatureLists(){
+        Actor company=new Actor("company-7",7L,"ROLE_COMPANY","测试企业",null,null,null,false,Set.of());
+        when(capabilities.capabilitiesFor(company)).thenReturn(Map.of(
+                "agent_chat",true,"voice_input",false,"form_fill",true,
+                "internship_plan",false,"job_apply",false,"teacher_internship_summary",false,
+                "auto_task",false,"auto_task_notify",false));
+        ToolResult result=tools.execute(company,"my_permissions","{}");
+        assertEquals(Map.of("agent_chat",true,"voice_input",false,"form_fill",true),result.facts().get("aiCapabilities"));
+        assertEquals(List.of("对话问答","辅助填表"),result.facts().get("enabledFeatures"));
+        assertFalse(result.facts().containsKey("disabledFeatures"));
+        String serialized=tools.serialize(result);
+        for(String unrelated:List.of("teacher_internship_summary","auto_task","job_apply","internship_plan","教师简报","自动任务"))
+            assertFalse(serialized.contains(unrelated),unrelated);
+        assertTrue(result.warnings().stream().noneMatch(value->value.contains("未开通")));
+    }
     @Test void companyProfileUsesAuthenticatedCompanyAndRejectsForeignId(){
         Actor company=new Actor("ROLE_COMPANY",10L,"ROLE_COMPANY","测试",null,null,null,false,Set.of());
         CompanyInfoKnowledgeService source=mock(CompanyInfoKnowledgeService.class);

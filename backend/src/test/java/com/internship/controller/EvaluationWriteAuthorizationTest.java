@@ -1,15 +1,18 @@
 package com.internship.controller;
 
 import com.internship.entity.InternshipEvaluation;
+import com.internship.entity.InternshipReflection;
 import com.internship.entity.Result;
 import com.internship.entity.StudentReflectionEvaluation;
 import com.internship.service.CounselorAISettingsService;
 import com.internship.service.EvaluationAccessPolicy;
 import com.internship.service.InternshipEvaluationService;
 import com.internship.service.InternshipReflectionService;
+import com.internship.service.InternshipProgressRecordService;
 import com.internship.service.StudentReflectionEvaluationService;
 import com.internship.utils.CurrentHolder;
 import com.internship.entity.User;
+import com.internship.mapper.InternshipReflectionMapper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -21,9 +24,12 @@ import org.springframework.security.access.prepost.PreAuthorize;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Date;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
@@ -40,6 +46,8 @@ class EvaluationWriteAuthorizationTest {
     @Mock private InternshipReflectionService reflectionService;
     @Mock private StudentReflectionEvaluationService reflectionGrades;
     @Mock private CounselorAISettingsService settings;
+    @Mock private InternshipReflectionMapper reflectionMapper;
+    @Mock private InternshipProgressRecordService progressRecordService;
 
     @AfterEach
     void clear() {
@@ -82,6 +90,43 @@ class EvaluationWriteAuthorizationTest {
         assertEquals(200, result.getCode());
         verify(policy).requireStudent(7L, false);
         verify(grades).insert(any(InternshipEvaluation.class));
+    }
+
+    @Test
+    void manualScoreLocksTheCurrentReportBeforeAnyGradeWriteAndKeepsItUnpublished() {
+        login(23L, "ROLE_TEACHER_COUNSELOR");
+        InternshipReflection submitted = submitted();
+        when(reflectionService.calculatePeriodNumber(any(Date.class))).thenReturn(2);
+        when(reflectionService.list(7L, null, null, null)).thenReturn(List.of(submitted));
+        when(reflectionMapper.lockById(99L)).thenReturn(submitted);
+        when(settings.getCategoryWeights(23L)).thenReturn(List.of());
+        when(grades.insert(any(InternshipEvaluation.class))).thenReturn(1);
+
+        Result result = management.submitEvaluation(Map.of("studentId", 7, "comment", "good", "attitude", 90));
+        assertEquals(200, result.getCode());
+        var order = inOrder(reflectionMapper, grades, reflectionGrades);
+        order.verify(reflectionMapper).lockById(99L);
+        order.verify(grades).insert(any(InternshipEvaluation.class));
+        order.verify(reflectionGrades).findByReflectionId(99L);
+        order.verify(reflectionGrades).saveEvaluation(any(StudentReflectionEvaluation.class));
+        assertNull(submitted.getRemark());
+        verify(reflectionService, never()).updateById(any());
+        verify(grades, never()).publishGrades(any());
+    }
+
+    @Test
+    void reportWithdrawnBeforeManualLockCannotSaveAnOverallOrPeriodGrade() {
+        login(23L, "ROLE_TEACHER_COUNSELOR");
+        InternshipReflection original = submitted();
+        InternshipReflection current = submitted(); current.setRemark("0");
+        when(reflectionService.calculatePeriodNumber(any(Date.class))).thenReturn(2);
+        when(reflectionService.list(7L, null, null, null)).thenReturn(List.of(original));
+        when(reflectionMapper.lockById(99L)).thenReturn(current);
+
+        assertEquals(400, management.submitEvaluation(Map.of("studentId", 7, "comment", "good", "attitude", 90)).getCode());
+        verify(grades, never()).insert(any());
+        verify(grades, never()).update(any());
+        verify(reflectionGrades, never()).saveEvaluation(any());
     }
 
     @Test
@@ -155,5 +200,13 @@ class EvaluationWriteAuthorizationTest {
         actor.setId(id);
         actor.setRole(role);
         CurrentHolder.setUser(actor);
+    }
+
+    private InternshipReflection submitted() {
+        InternshipReflection reflection = new InternshipReflection();
+        reflection.setId(99L); reflection.setStudentId(7L); reflection.setPeriodNumber(2);
+        reflection.setContent("实习心得"); reflection.setSubmitTime(new Date());
+        reflection.setDeleted(0); reflection.setStatus(0);
+        return reflection;
     }
 }

@@ -94,14 +94,20 @@
     </select>
     
     <update id="updateStatus">
-        UPDATE internship_application SET status = #{status}, update_time = NOW()
+        UPDATE internship_application SET viewed = 0, status = #{status}, update_time = NOW()
         WHERE id = #{id}
-          AND status IN ('pending', 'approved', 'interview', 'pending_interview', 'interview_passed')
+          AND (
+              (#{status} IN ('approved', 'rejected') AND status = 'pending')
+              OR (#{status} IN ('interview_passed', 'interview_failed')
+                  AND status IN ('approved', 'interview', 'pending_interview'))
+          )
     </update>
 
     <update id="updateLatestStatusByStudentAndPosition">
         UPDATE internship_application
-        SET status = #{status}, update_time = NOW()
+        SET viewed = CASE WHEN status = #{status} THEN viewed ELSE 0 END,
+            update_time = CASE WHEN status = #{status} THEN update_time ELSE NOW() END,
+            status = #{status}
         WHERE id = (
             SELECT latest.id
             FROM (
@@ -117,7 +123,35 @@
     </update>
     
     <update id="updateViewed">
-        update internship_application set viewed = #{viewed}, viewed_time = NOW(), update_time = NOW() where id = #{id}
+        update internship_application set viewed = #{viewed}, viewed_time = NOW(), update_time = update_time where id = #{id}
+    </update>
+
+    <sql id="ActivityScope">
+        FROM internship_application WHERE company_id = #{companyId}
+        <if test="unreadOnly">AND COALESCE(viewed, 0) = 0</if>
+    </sql>
+
+    <select id="findActivityPage" resultMap="InternshipApplicationResultMap">
+        SELECT * <include refid="ActivityScope"/>
+        ORDER BY COALESCE(update_time, apply_time, create_time) DESC, id DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countActivities" resultType="long">
+        SELECT COUNT(*) <include refid="ActivityScope"/>
+    </select>
+
+    <select id="findActivityAttempts" resultMap="InternshipApplicationResultMap">
+        SELECT * FROM internship_application
+        WHERE company_id = #{companyId} AND student_id = #{studentId} AND position_id = #{positionId}
+        ORDER BY COALESCE(apply_time, create_time) DESC, id DESC
+    </select>
+
+    <update id="readActivityVersion">
+        UPDATE internship_application
+        SET viewed = 1, viewed_time = NOW(), update_time = update_time
+        WHERE id = #{id} AND company_id = #{companyId}
+          AND status = #{status} AND update_time &lt;=&gt; #{updateTime}
     </update>
     
     <delete id="deleteById">

@@ -59,11 +59,12 @@ public interface SecurityEventLogMapper {
             " and event_type in <foreach collection='q.actionList' item='action' open='(' separator=',' close=')'>#{action}</foreach>" +
             "</if>" +
             "<if test='q.result != null and q.result != \"\"'> and result = #{q.result}</if>" +
-            "<if test='q.riskLevel != null and q.riskLevel != \"\"'> and risk_level = #{q.riskLevel}</if>" +
+            "<if test='q.riskLevel != null and q.riskLevel != \"\"'> and (risk_level = #{q.riskLevel} or (#{q.riskLevel} = 'HIGH,CRITICAL' and risk_level in ('HIGH','CRITICAL')))</if>" +
             "<if test='q.ip != null and q.ip != \"\"'> and ip_address like concat('%', #{q.ip}, '%')</if>" +
             "<if test='q.targetId != null and q.targetId != \"\"'> and target_id = #{q.targetId}</if>" +
             "<if test='q.requestId != null and q.requestId != \"\"'> and request_id = #{q.requestId}</if>" +
-            " order by ${q.sortField} ${q.sortOrder}" +
+            " order by ${q.sortField} ${q.sortOrder}, id ${q.sortOrder}" +
+            "<if test='q.limit != null'> limit #{q.limit}</if>" +
             "</script>")
     List<SecurityEventLog> selectByFilter(@Param("q") LogQueryParams q);
 
@@ -79,7 +80,7 @@ public interface SecurityEventLogMapper {
             " and event_type in <foreach collection='q.actionList' item='action' open='(' separator=',' close=')'>#{action}</foreach>" +
             "</if>" +
             "<if test='q.result != null and q.result != \"\"'> and result = #{q.result}</if>" +
-            "<if test='q.riskLevel != null and q.riskLevel != \"\"'> and risk_level = #{q.riskLevel}</if>" +
+            "<if test='q.riskLevel != null and q.riskLevel != \"\"'> and (risk_level = #{q.riskLevel} or (#{q.riskLevel} = 'HIGH,CRITICAL' and risk_level in ('HIGH','CRITICAL')))</if>" +
             "<if test='q.ip != null and q.ip != \"\"'> and ip_address like concat('%', #{q.ip}, '%')</if>" +
             "<if test='q.targetId != null and q.targetId != \"\"'> and target_id = #{q.targetId}</if>" +
             "<if test='q.requestId != null and q.requestId != \"\"'> and request_id = #{q.requestId}</if>" +
@@ -127,6 +128,9 @@ public interface SecurityEventLogMapper {
     @Select("select count(*) from security_event_log where event_time < #{beforeTime}")
     long countBeforeTime(@Param("beforeTime") Date beforeTime);
 
+    @Select("select count(*) from security_event_log where event_time < #{beforeTime} and risk_level in ('HIGH','CRITICAL')")
+    long countBeforeTimeHighRisk(@Param("beforeTime") Date beforeTime);
+
     /**
      * P1 时间留存：统计指定时间之前的非高风险数据量（预览用）
      */
@@ -157,9 +161,16 @@ public interface SecurityEventLogMapper {
     @Select("select count(*) from security_event_log where entry_hash is not null")
     long countChained();
 
+    @Select("select count(*) from security_event_log where entry_hash is null")
+    long countUnchained();
+
     /**
      * P2 归档：分页取到期高风险记录（删除前归档用）
      */
     @Select("select * from security_event_log where event_time < #{beforeTime} and risk_level in ('HIGH','CRITICAL') and id > #{afterId} order by id asc limit #{limit}")
     List<SecurityEventLog> selectExpiredHighRiskBatch(@Param("beforeTime") Date beforeTime, @Param("afterId") long afterId, @Param("limit") int limit);
+
+    @Delete("<script>delete from security_event_log where risk_level in ('HIGH','CRITICAL') and id in " +
+            "<foreach collection='ids' item='id' open='(' separator=',' close=')'>#{id}</foreach></script>")
+    int deleteArchivedHighRisk(@Param("ids") List<Long> ids);
 }

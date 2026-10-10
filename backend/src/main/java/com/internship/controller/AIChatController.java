@@ -2,6 +2,7 @@ package com.internship.controller;
 
 
 import com.internship.agent.business.AgentResponseStandard;
+import com.internship.agent.business.AgentException;
 import com.internship.config.DynamicChatClientFactory;
 import com.internship.service.JobRecommendationAgentService;
 import org.springframework.ai.chat.client.ChatClient;
@@ -141,6 +142,8 @@ public class AIChatController {
             response.put("timestamp", System.currentTimeMillis());
 
             return ResponseEntity.ok(response);
+        } catch (AgentException e) {
+            throw e;
         } catch (Exception e) {
             Map<String, Object> errorResponse = new HashMap<>();
             errorResponse.put("success", false);
@@ -203,6 +206,7 @@ public class AIChatController {
                             Map<String, Object> errorData = new HashMap<>();
                             errorData.put("type", "error");
                             errorData.put("message", "推荐服务暂时不可用");
+                            addAgentErrorDetails(errorData, e);
                             emitter.send(SseEmitter.event()
                                     .data(errorData)
                                     .name("error"));
@@ -244,6 +248,7 @@ public class AIChatController {
                             Map<String, Object> errorData = new HashMap<>();
                             errorData.put("type", "error");
                             errorData.put("message", "生成过程中发生错误: " + error.getMessage());
+                            addAgentErrorDetails(errorData, error);
                             emitter.send(SseEmitter.event()
                                     .data(errorData)
                                     .name("error"));
@@ -269,6 +274,12 @@ public class AIChatController {
                     }
             ));
 
+        } catch (AgentException e) {
+            com.internship.agent.business.LegacyAiRequestLimiter.release(lease);
+            emitters.remove(emitter);
+            subscription.dispose();
+            emitter.complete();
+            throw e;
         } catch (Exception e) {
             com.internship.agent.business.LegacyAiRequestLimiter.release(lease);
             try {
@@ -286,6 +297,14 @@ public class AIChatController {
         }
 
         return emitter;
+    }
+
+    private void addAgentErrorDetails(Map<String, Object> errorData, Throwable error) {
+        if (error instanceof AgentException agentError) {
+            errorData.put("code", agentError.getHttpStatus());
+            errorData.put("status", agentError.getHttpStatus());
+            errorData.put("errorCode", agentError.getCode());
+        }
     }
 
     private List<Message> buildMessages(String userMessage, List<Map<String, String>> context) {

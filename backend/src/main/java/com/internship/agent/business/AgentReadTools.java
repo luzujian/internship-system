@@ -251,38 +251,39 @@ public class AgentReadTools {
         facts.put("businessPermissions", actor.permissions().stream().sorted().toList());
 
         Map<String,Object> capabilitiesMap = new LinkedHashMap<>();
-        caps.forEach((key, value) -> capabilitiesMap.put(key, value));
+        List<String> applicable = new ArrayList<>(List.of("agent_chat", "voice_input", "form_fill"));
+        if ("ROLE_STUDENT".equals(actor.role())) applicable.addAll(List.of("internship_plan", "job_apply"));
+        if (actor.role().startsWith("ROLE_TEACHER")) applicable.addAll(List.of("teacher_internship_summary", "auto_task", "auto_task_notify"));
+        for (String key : applicable) capabilitiesMap.put(key, Boolean.TRUE.equals(caps.get(key)));
         facts.put("aiCapabilities", capabilitiesMap);
         facts.put("availableQueries", specs(actor).stream().map(spec -> Map.of(
                 "name",spec.name(),"description",spec.description(),"parameters",readSchema(spec))).toList());
         facts.put("queryBoundary", "以上为当前身份已接入的查询入口，参数必须符合定义。未列出的查询不代表没有业务数据；读取结果不等于已执行业务操作。");
 
         List<String> enabled = new ArrayList<>();
-        List<String> disabled = new ArrayList<>();
-        if (Boolean.TRUE.equals(caps.get("agent_chat"))) enabled.add("对话问答"); else disabled.add("对话问答");
-        if (Boolean.TRUE.equals(caps.get("voice_input"))) enabled.add("语音输入"); else disabled.add("语音输入");
-        if (Boolean.TRUE.equals(caps.get("form_fill"))) enabled.add("辅助填表"); else disabled.add("辅助填表");
+        if (Boolean.TRUE.equals(caps.get("agent_chat"))) enabled.add("对话问答");
+        if (Boolean.TRUE.equals(caps.get("voice_input"))) enabled.add("语音输入");
+        if (Boolean.TRUE.equals(caps.get("form_fill"))) enabled.add("辅助填表");
         if ("ROLE_STUDENT".equals(actor.role())) {
-            if (Boolean.TRUE.equals(caps.get("internship_plan"))) enabled.add("实习计划"); else disabled.add("实习计划");
-            if (Boolean.TRUE.equals(caps.get("job_apply"))) enabled.add("岗位投递"); else disabled.add("岗位投递");
+            if (Boolean.TRUE.equals(caps.get("internship_plan"))) enabled.add("实习计划");
+            if (Boolean.TRUE.equals(caps.get("job_apply"))) enabled.add("岗位投递");
         }
         if (actor.role().startsWith("ROLE_TEACHER")) {
-            if (Boolean.TRUE.equals(caps.get("teacher_internship_summary"))) enabled.add("实习简报"); else disabled.add("实习简报");
+            if (Boolean.TRUE.equals(caps.get("teacher_internship_summary"))) enabled.add("实习简报");
             var policy = capabilities.effectiveAutomationPolicy(actor);
             Map<String,Object> autoInfo = policy.toMap();
             facts.put("automationPolicy", autoInfo);
-            if (policy.canManage()) enabled.add("自动跟进-创建与管理"); else disabled.add("自动跟进-创建与管理");
-            if (policy.canNotify()) enabled.add("自动跟进-通知发送"); else disabled.add("自动跟进-通知发送");
-            if (policy.canExecute()) enabled.add("自动跟进-完整执行"); else disabled.add("自动跟进-完整执行");
+            if (policy.canManage()) enabled.add("自动跟进-创建与管理");
+            if (policy.canNotify()) enabled.add("自动跟进-通知发送");
+            if (policy.canExecute()) enabled.add("自动跟进-完整执行");
         }
         if ("ROLE_ADMIN".equals(actor.role()) && !actor.readOnly()) enabled.add("AI权限配置");
         facts.put("enabledFeatures", enabled);
-        facts.put("disabledFeatures", disabled);
+        facts.put("presentationRule", "介绍能力时只使用当前端的enabledFeatures与availableQueries，不主动列出关闭或其他角色的功能。只有用户明确询问某项功能或本次操作受阻时，才说明该项限制。");
 
         List<String> warnings = new ArrayList<>();
         warnings.add("本结果是当前实时权限快照；权限可由管理员动态调整，涉及权限判断时应重新调用本工具。");
         if (actor.readOnly()) warnings.add("当前为只读身份，仅可使用对话问答。");
-        if (!disabled.isEmpty()) warnings.add("未开通功能：" + String.join("、", disabled) + "；不要建议用户使用未开通的功能。");
         return result("my_permissions", "当前用户权限", actor, List.of(), 0, facts, List.of(), warnings);
     }
 

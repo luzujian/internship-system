@@ -131,6 +131,10 @@
               <a v-if="currentInterview.website" :href="currentInterview.website" target="_blank" class="detail-link">{{ currentInterview.website }}</a>
               <span v-else class="detail-value">未提供</span>
             </div>
+            <div class="detail-item full-width">
+              <span class="detail-label">联系邮箱：</span>
+              <span class="detail-value">{{ currentInterview.contactEmail || '未提供' }}</span>
+            </div>
           </div>
         </div>
 
@@ -185,6 +189,7 @@ interface InterviewRow {
   contact_person?: string
   contactPhone?: string
   contact_phone?: string
+  contactEmail?: string
   website?: string
   remark?: string
   createTime?: string
@@ -202,6 +207,7 @@ interface InterviewDisplay {
   contactPerson?: string
   contactPhone?: string
   website?: string
+  contactEmail?: string
   interviewNotice?: string
   createTime?: string
 }
@@ -255,6 +261,7 @@ const fetchInterviews = async () => {
         directHire: item.directHire,
         contactPerson: item.contactPerson,
         contactPhone: item.contactPhone,
+        contactEmail: item.contactEmail,
         website: item.website,
         interviewNotice: item.remark || '',
         createTime: item.createTime

@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs'
 import vm from 'node:vm'
 import ts from 'typescript'
 import { parse } from '@vue/compiler-sfc'
+import { latestStudentApplication, studentApplicationDialogMode } from '../src/utils/studentApplication.js'
 
 const ref = value => ({ value })
 const noop = () => {}
@@ -17,7 +18,7 @@ function handler(file, name, scope) {
     const ast = ts.createSourceFile(file, script, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
     const declaration = ast.statements.filter(ts.isVariableStatement).flatMap(s => [...s.declarationList.declarations]).find(d => d.name.getText(ast) === name)
     assert.ok(declaration, `Missing original handler ${key}`)
-    compiled.set(key, ts.transpileModule(`const actual = ${declaration.initializer.getText(ast)}; actual`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText)
+    compiled.set(key, ts.transpileModule(`(${declaration.initializer.getText(ast)})`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText)
   }
   return vm.runInNewContext(compiled.get(key), scope)
 }
@@ -33,6 +34,8 @@ const onboarding = () => {
     // 与 Home.vue 中 ensureSelfPracticeCompanyName 的门禁语义一致：仅相近命中且未精确匹配时阻止提交
     ensureSelfPracticeCompanyName: async () => !(similarCooperativeCompanies.value.length > 0 && !matchedCooperativeCompany.value),
     selfPracticeForm: ref({ company: '实习单位', positionName: '实习岗位', companyCity: '北京', hrManagerName: '王老师', hrManagerPhone: '13812345678', reason: '申请自主实习' }),
+    selfPracticeAgreementFiles: ref([{ uploadId: 701, status: 'success' }]),
+    selfPracticeAgreementUploader: ref({ validate: () => true, markCommitted: noop, reset: noop }),
     delayForm: ref({ reason: '备考安排' }),
     onboardingSubmitting: ref(false),
     scheduleProgressRefresh: noop,
@@ -47,7 +50,7 @@ const onboarding = () => {
   }
 }
 const cases = [
-  ['confirmation:remark', 'InternshipConfirmationForm', 'confirmSelectedOffer', () => ({ selectedOffer: ref({ offerId: 3 }), pendingConfirmation: ref(null), submitting: ref(false), confirmationRemark: ref('按约实习'), selectedOfferId: ref('3'), route: { query: {} }, clearQuery: noop, fetchOffers: noop, fetchHistory: noop, fetchCurrentPlacement: noop })],
+  ['confirmation:remark', 'InternshipConfirmationForm', 'confirmSelectedOffer', () => ({ selectedOffer: ref({ offerId: 3 }), agreementFiles: ref([{ uploadId: 702, status: 'success' }]), agreementUploader: ref({ validate: () => true, markCommitted: noop }), pendingConfirmation: ref(null), submitting: ref(false), confirmationRemark: ref('按约实习'), selectedOfferId: ref('3'), route: { query: {} }, clearQuery: noop, fetchOffers: noop, fetchHistory: noop, fetchCurrentPlacement: noop })],
   ['confirmation:recall', 'InternshipConfirmationForm', 'submitRecall', () => ({ recallReason: ref('信息有误'), recallTarget: ref({ id: 3 }), recalling: ref(false), showRecallDialog: ref(true), fetchOffers: noop, fetchHistory: noop, fetchCurrentPlacement: noop }), 'showRecallDialog'],
   ['home:self-practice', 'Home', 'submitOnboardingApplication', onboarding, 'showSelfPracticeDialog', ['selfPractice']],
   ['home:delay', 'Home', 'submitOnboardingApplication', onboarding, 'showDelayDialog', ['delay']],
@@ -166,6 +169,7 @@ test('自主实习不伪造附件，相近合作企业需选标准名称，精�
   const ctx = fixture(item)
   await ctx.run()
   assert.deepEqual(Object.keys(ctx.calls[0][1].materials), [])
+  assert.equal(ctx.calls[0][1].agreementFileIds[0], 701)
 
   // 仅相近命中（疑似同一企业名称不一致）：阻止提交，不发起写请求
   const blocked = fixture(item)
@@ -180,6 +184,83 @@ test('自主实习不伪造附件，相近合作企业需选标准名称，精�
   await allowed.run()
   assert.equal(allowed.calls.length, 1)
   assert.equal(allowed.receipts.length, 1)
+})
+
+test('确认表和自主实习的协议校验未通过时不发请求、不产生提交回执', async () => {
+  for (const formId of ['confirmation:remark', 'home:self-practice']) {
+    const ctx = fixture(cases.find(entry => entry[0] === formId))
+    const uploader = formId === 'confirmation:remark' ? ctx.scope.agreementUploader : ctx.scope.selfPracticeAgreementUploader
+    uploader.value.validate = () => false
+    await ctx.run()
+    assert.deepEqual(ctx.calls, [])
+    assert.deepEqual(ctx.receipts, [])
+  }
+})
+
+test('自主实习通过后可新建申请，取消不改旧记录，提交不复用旧申请或附件', async () => {
+  const ctx = fixture(cases.find(entry => entry[0] === 'home:self-practice'))
+  const scope = ctx.scope
+  const previous = { id: 31, applicationType: 'selfPractice', status: 'approved', company: '原实习单位', materials: { '个人申请书': 'old-application.pdf', '实习接收函': 'old-acceptance.pdf' } }
+  const snapshot = structuredClone(previous)
+  let serverApplications = [previous]
+  const registered = []
+  Object.assign(scope, {
+    selfPracticeApplication: ref(previous),
+    selfPracticeApplicationLoading: ref(false),
+    selfPracticeApplicationError: ref(''),
+    selfPracticeFileList: ref([{ name: '原申请书' }]),
+    selfPracticeAcceptanceFileList: ref([{ name: '原接收函' }]),
+    selfPracticeFields: [],
+    latestStudentApplication,
+    selfPracticeApplicationView: { get value() { return studentApplicationDialogMode(scope.selfPracticeApplication.value?.status) } },
+    ensureProfileReady: async () => true
+  })
+  Object.assign(scope.formContext, { register: form => registered.push(form), unregister: noop })
+  scope.request.get = async () => ({ code: 200, data: serverApplications })
+  for (const name of ['resetSelfPracticeForm', 'registerSelfPracticeForm', 'loadSelfPracticeApplication']) {
+    scope[name] = handler('Home', name, scope)
+  }
+  const startNew = handler('Home', 'startNewSelfPracticeApplication', scope)
+  assert.equal(scope.selfPracticeApplicationView.value, 'result')
+  startNew()
+  assert.equal(scope.selfPracticeApplicationView.value, 'form')
+  assert.equal(scope.selfPracticeApplication.value, null)
+  assert.ok(Object.entries(scope.selfPracticeForm.value).filter(([key]) => key !== 'agreementFileIds').every(([, value]) => value === ''))
+  assert.equal(scope.selfPracticeForm.value.agreementFileIds.length, 0)
+  assert.equal(scope.selfPracticeFileList.value.length, 0)
+  assert.equal(scope.selfPracticeAcceptanceFileList.value.length, 0)
+  assert.equal(registered.at(-1).formId, 'home:self-practice')
+  assert.equal(registered.at(-1).getModel(), scope.selfPracticeForm.value)
+  assert.equal(ctx.calls.length, 0)
+
+  scope.showSelfPracticeDialog.value = false
+  await handler('Home', 'openSelfPracticeDialog', scope)()
+  assert.equal(scope.selfPracticeApplication.value, previous)
+  assert.equal(scope.selfPracticeApplicationView.value, 'result')
+  startNew()
+  Object.assign(scope.selfPracticeForm.value, { company: '新实习单位', positionName: '新岗位', companyCity: '广州', hrManagerName: '新联系人', hrManagerPhone: '13812345678', reason: '申请更换实习单位' })
+  scope.selfPracticeAgreementFiles.value = [{ uploadId: 703, status: 'success' }]
+  serverApplications = [...serverApplications, { id: 32, applicationType: 'selfPractice', status: 'pending', company: '新实习单位' }]
+  await ctx.run()
+  assert.equal(ctx.calls.length, 1)
+  assert.equal(ctx.calls[0][0], '/student/applications')
+  assert.equal(ctx.calls[0][1].company, '新实习单位')
+  assert.deepEqual(Object.keys(ctx.calls[0][1].materials), [])
+  assert.equal(scope.selfPracticeApplication.value.id, 32)
+  assert.equal(scope.selfPracticeApplicationView.value, 'result')
+  assert.equal(ctx.receipts[0].status, 'submitted')
+  assert.deepEqual(previous, snapshot)
+})
+
+test('待审核的自主实习申请不能打开第二张新申请表', () => {
+  const ctx = fixture(cases.find(entry => entry[0] === 'home:self-practice'))
+  const pending = { id: 32, status: 'pending' }
+  ctx.scope.selfPracticeApplication.value = pending
+  ctx.scope.resetSelfPracticeForm = () => assert.fail('待审核时不能清空申请表')
+  ctx.scope.registerSelfPracticeForm = () => assert.fail('待审核时不能登记新申请表')
+  handler('Home', 'startNewSelfPracticeApplication', ctx.scope)()
+  assert.equal(ctx.scope.selfPracticeApplication.value, pending)
+  assert.equal(ctx.calls.length, 0)
 })
 
 test('心得文本回执携带提交前快照，文件模式未上传文件不请求', async () => {

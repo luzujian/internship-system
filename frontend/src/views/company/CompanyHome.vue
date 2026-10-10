@@ -15,6 +15,9 @@ import { downloadAuthorizedFile } from '@/utils/authorizedFileDownload'
 import { sanitizeHTML } from '@/utils/sanitize'
 import { getPublisherNameText, getPublisherRoleDisplay } from '@/utils/studentAnnouncement'
 import { markAnnouncementRead } from '@/api/announcement'
+import { fetchCompanyActivities } from '@/api/companyApplicationActivities'
+import { createCompanyActivityFeed, activityStatusText as getStatusText,
+  activityStatusType as getStatusType, activityTitle, activityTimeText } from '@/utils/companyActivityFeed.mjs'
 import {
   DocumentChecked,
   User,
@@ -79,12 +82,12 @@ const statsData = ref([
     route: '/company/internship-confirm'
   },
   {
-    title: '已确认',
+    title: '当前实习学生',
     value: 0,
-    icon: markRaw(ChatDotRound),
+    icon: markRaw(User),
     color: '#F56C6C',
     bgGradient: 'linear-gradient(135deg, #F56C6C 0%, #f78989 100%)',
-    route: '/company/internship-confirm'
+    route: '/company/internship-students'
   }
 ])
 
@@ -115,7 +118,9 @@ const quickActions = ref([
   }
 ])
 
-const recentActivities = ref([])
+const activityFeed = createCompanyActivityFeed(fetchCompanyActivities)
+const activityState = activityFeed.state
+const recentActivities = computed(() => activityState.items)
 
 const notifications = ref([])
 
@@ -124,7 +129,7 @@ const unreadCount = computed(() => {
 })
 
 const unreadActivityCount = computed(() => {
-  return recentActivities.value.filter(a => !a.viewed).length
+  return activityState.unreadCount
 })
 
 const sortedNotifications = computed(() => {
@@ -139,7 +144,9 @@ const sortedNotifications = computed(() => {
   })
 })
 
+let statsRequest = 0
 const fetchStats = async () => {
+  const requestId = ++statsRequest
   console.log('开始获取统计数据')
   try {
     interface CompanyStatsRow {
@@ -149,8 +156,7 @@ const fetchStats = async () => {
       total_applications?: number
       pendingConfirmations?: number
       pending_confirmations?: number
-      confirmedConfirmations?: number
-      confirmed_confirmations?: number
+      currentInternshipStudents?: number
       [key: string]: unknown
     }
     const response = await request<CompanyStatsRow>({
@@ -158,69 +164,19 @@ const fetchStats = async () => {
       method: 'get'
     })
     console.log('统计数据响应:', response)
-    if (response.code === 200) {
+    if (response.code === 200 && requestId === statsRequest) {
       const statsRow = response.data as CompanyStatsRow
       statsData.value[0].value = statsRow.publishedPositions ?? statsRow.published_positions ?? 0
       statsData.value[1].value = statsRow.totalApplications ?? statsRow.total_applications ?? 0
       statsData.value[2].value = statsRow.pendingConfirmations ?? statsRow.pending_confirmations ?? 0
-      statsData.value[3].value = statsRow.confirmedConfirmations ?? statsRow.confirmed_confirmations ?? 0
+      statsData.value[3].value = statsRow.currentInternshipStudents ?? 0
     }
   } catch (error) {
     console.error('获取统计数据失败:', error)
   }
 }
 
-const fetchRecentActivities = async () => {
-  try {
-    interface RecentApplicationRow {
-      id?: number | string
-      studentName?: string
-      student_name?: string
-      positionName?: string
-      position_name?: string
-      applyTime?: string
-      apply_time?: string
-      createTime?: string
-      status?: string | number
-      viewed?: boolean
-      [key: string]: unknown
-    }
-    const response = await request<RecentApplicationRow[]>({
-      url: '/company/applications/recent',
-      method: 'get',
-      params: { limit: 10 }
-    })
-    console.log('最新动态响应数据:', response)
-    if (response.code === 200 && response.data) {
-      const activityRows = Array.isArray(response.data) ? response.data : []
-      recentActivities.value = activityRows
-        .map((app) => ({
-          id: app.id,
-          type: 'application',
-          title: `${app.studentName || '学生'} 申请了 ${app.positionName || '岗位'}`,
-          time: formatTime(app.applyTime || app.createTime),
-          status: app.status,
-          viewed: app.viewed !== undefined ? app.viewed : false
-        }))
-      console.log('处理后的最新动态数据:', recentActivities.value)
-    }
-  } catch (error) {
-    console.error('获取最新动态失败:', error)
-  }
-}
-
-const formatTime = (date) => {
-  if (!date) return '刚刚'
-  const now = new Date()
-  const time = new Date(date)
-  const diff = Math.floor((now.getTime() - time.getTime()) / 1000)
-
-  if (diff < 60) return '刚刚'
-  if (diff < 3600) return `${Math.floor(diff / 60)}分钟前`
-  if (diff < 86400) return `${Math.floor(diff / 3600)}小时前`
-  if (diff < 604800) return `${Math.floor(diff / 86400)}天前`
-  return time.toLocaleDateString()
-}
+const fetchRecentActivities = () => activityFeed.refresh()
 
 const fetchNotifications = async () => {
   try {
@@ -268,62 +224,8 @@ const handleNavigate = (route) => {
   router.push(route)
 }
 
-const handleViewRecentActivity = async (activity) => {
-  // 点击后只把当前这条动态标记为已读，条目保留在列表中
-  if (!activity.viewed) {
-    try {
-      await request({
-        url: `/company/applications/${activity.id}/view`,
-        method: 'put'
-      })
-    } catch (error) {
-      console.error('标记已读失败:', error)
-    }
-    activity.viewed = true
-  }
-
-  // 根据动态类型跳转到对应页面
-  let route = ''
-  if (activity.type === 'application') {
-    route = '/company/application-view'
-  }
-  if (route) {
-    router.push(route)
-  }
-}
-
-const getStatusText = (status) => {
-  const statusMap = {
-    pending: '待确认',
-    approved: '已通过',
-    interview: '面试中',
-    pending_interview: '待面试',
-    interview_passed: '面试通过',
-    interview_failed: '面试未通过',
-    confirmed: '已确认',
-    rejected: '已拒绝',
-    withdrawn: '已撤回',
-    cancelled: '已取消',
-    canceled: '已取消'
-  }
-  return statusMap[status] || status
-}
-
-const getStatusType = (status) => {
-  const typeMap = {
-    pending: 'warning',
-    pending_interview: 'warning',
-    interview: 'warning',
-    approved: 'success',
-    interview_passed: 'success',
-    confirmed: 'success',
-    rejected: 'danger',
-    interview_failed: 'danger',
-    withdrawn: 'info',
-    cancelled: 'info',
-    canceled: 'info'
-  }
-  return typeMap[status] || 'info'
+const handleViewRecentActivity = (activity) => {
+  router.push({ path: '/company/application-view', query: { activityId: String(activity.id) } })
 }
 
 const handleNotificationRefresh = () => {
@@ -479,10 +381,12 @@ const handleNewApplication = (data) => {
 const handleCompanyTodoUpdate = (data: CompanyTodoUpdateData) => {
   console.log('收到企业待办数据更新:', data)
   // 直接更新statsData中的待确认数量
-  statsData.value[2].value = data.pendingConfirmations || 0
-  statsData.value[1].value = (statsData.value[1].value || 0) - (data.pendingApplications || 0)
+  if (typeof data.pendingConfirmations === 'number') statsData.value[2].value = data.pendingConfirmations
   fetchStats()
+  fetchRecentActivities()
 }
+
+const refreshOnFocus = () => { fetchStats(); fetchRecentActivities() }
 
 onMounted(() => {
   console.log('CompanyHome 组件已挂载')
@@ -493,6 +397,8 @@ onMounted(() => {
   emitter.on('notification-refresh', handleNotificationRefresh)
   onNewApplication(handleNewApplication)
   onCompanyTodoUpdate(handleCompanyTodoUpdate)
+  window.addEventListener('focus', refreshOnFocus)
+  window.addEventListener('online', refreshOnFocus)
 })
 
 onUnmounted(() => {
@@ -500,6 +406,10 @@ onUnmounted(() => {
   emitter.off('notification-refresh', handleNotificationRefresh)
   offNewApplication(handleNewApplication)
   offCompanyTodoUpdate(handleCompanyTodoUpdate)
+  window.removeEventListener('focus', refreshOnFocus)
+  window.removeEventListener('online', refreshOnFocus)
+  activityFeed.dispose()
+  statsRequest++
 })
 </script>
 
@@ -567,32 +477,47 @@ onUnmounted(() => {
             <el-badge :value="unreadActivityCount" :hidden="unreadActivityCount === 0" class="unread-badge" />
           </div>
         </div>
-        <el-scrollbar height="400px">
+        <div class="activity-toolbar">
+          <el-radio-group :model-value="activityState.unreadOnly" size="small"
+            aria-label="动态筛选" @update:model-value="activityFeed.setUnreadOnly(Boolean($event))">
+            <el-radio-button :value="false">全部</el-radio-button>
+            <el-radio-button :value="true">未读</el-radio-button>
+          </el-radio-group>
+          <el-button link type="primary" :loading="activityState.loading" @click="fetchRecentActivities">刷新</el-button>
+        </div>
+        <p class="activity-hint">岗位申请与状态变化</p>
+        <el-scrollbar height="340px">
           <div class="activity-list">
-            <div v-if="recentActivities.length === 0" class="empty-state">
+            <div v-if="activityState.error" class="activity-feedback" role="alert">
+              <span>{{ activityState.error }}</span>
+              <el-button link type="primary" @click="activityFeed.retry">重试</el-button>
+            </div>
+            <el-skeleton v-if="activityState.loading && !recentActivities.length" :rows="4" animated />
+            <div v-else-if="recentActivities.length === 0 && !activityState.error" class="empty-state">
               <el-icon :size="48" color="#C0C4CC">
                 <TrendCharts />
               </el-icon>
-              <p>暂无最新动态</p>
+              <p>{{ activityState.unreadOnly ? '暂无未读动态' : '暂无申请动态' }}</p>
             </div>
-            <div
+            <button
               v-for="activity in recentActivities"
               :key="activity.id"
+              type="button"
               class="activity-item"
               :class="{ 'is-unread': !activity.viewed, 'is-read': activity.viewed }"
-              :aria-label="`${activity.title}${activity.viewed ? '（已读）' : '（未读）'}`"
+              :aria-label="`${activityTitle(activity)}，${getStatusText(activity.status)}${activity.viewed ? '（已读）' : '（未读）'}`"
               @click="handleViewRecentActivity(activity)"
             >
               <div class="activity-icon">
-                <el-icon :size="20" :color="activity.status === 'pending' ? '#E6A23C' : activity.status === 'confirmed' ? '#67C23A' : '#F56C6C'">
-                  <component :is="activity.status === 'pending' ? Bell : activity.status === 'confirmed' ? DocumentChecked : Message" />
+                <el-icon :size="20" :color="activity.status === 'pending' ? '#E6A23C' : ['confirmed', 'interview_passed'].includes(activity.status) ? '#67C23A' : '#909399'">
+                  <component :is="activity.status === 'pending' ? Bell : ['confirmed', 'interview_passed'].includes(activity.status) ? DocumentChecked : Message" />
                 </el-icon>
                 <div v-if="!activity.viewed" class="unread-dot"></div>
               </div>
               <div class="activity-content">
-                <div class="activity-title">{{ activity.title }}</div>
+                <div class="activity-title">{{ activityTitle(activity) }}</div>
                 <div class="activity-meta">
-                  <span class="activity-time">{{ activity.time }}</span>
+                  <span class="activity-time" :title="activity.activityTime || ''">{{ activityTimeText(activity.activityTime) }}</span>
                   <el-tag :type="getStatusType(activity.status)" size="small">
                     {{ getStatusText(activity.status) }}
                   </el-tag>
@@ -601,6 +526,9 @@ onUnmounted(() => {
                   </span>
                 </div>
               </div>
+            </button>
+            <div v-if="activityState.hasMore" class="activity-more">
+              <el-button link type="primary" :loading="activityState.loading" @click="activityFeed.loadMore">加载更多</el-button>
             </div>
           </div>
         </el-scrollbar>
@@ -953,6 +881,13 @@ onUnmounted(() => {
 }
 
 .activity-item {
+  width: 100%;
+  background: transparent;
+  border: 0;
+  text-align: left;
+  font: inherit;
+  box-shadow: none;
+  border-radius: 0;
   display: flex;
   gap: 12px;
   padding: 16px 0;
@@ -963,7 +898,15 @@ onUnmounted(() => {
 
 .activity-item:hover {
   background: #f5f7fa;
+  box-shadow: none;
+  transform: none;
 }
+
+.activity-item:focus-visible { outline: 2px solid #409eff; outline-offset: -2px; }
+.activity-toolbar { display: flex; align-items: center; justify-content: space-between; padding: 12px 24px 0; }
+.activity-hint { margin: 8px 24px; color: #909399; font-size: 12px; }
+.activity-feedback { display: flex; align-items: center; justify-content: space-between; color: #e6a23c; padding: 12px 0; }
+.activity-more { padding: 12px 0; text-align: center; }
 
 .activity-item.is-unread .activity-title {
   color: #303133;
@@ -1015,13 +958,13 @@ onUnmounted(() => {
   font-size: 14px;
   color: #303133;
   margin-bottom: 6px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  line-height: 1.5;
 }
 
 .activity-meta {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   font-size: 12px;

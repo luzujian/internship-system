@@ -20,6 +20,18 @@ class FileUploadSafetyTest {
     @AfterEach void clearIdentity() { CurrentHolder.remove(); }
 
     @Test
+    void genericImageDeleteCannotRemoveAgreementObjectsIncludingEncodedPaths() {
+        var controller = new FileUploadController();
+        var oss = mock(AliyunOSSOperator.class);
+        ReflectionTestUtils.setField(controller, "aliyunOSSOperator", oss);
+        for (String url : java.util.List.of("https://example.invalid/internship-agreement/7/file.pdf",
+                "https://example.invalid/test-prefix/internship-agreement%2F7%2Ffile.docx")) {
+            org.junit.jupiter.api.Assertions.assertNotEquals(200, controller.deleteImage(java.util.Map.of("url", url)).getCode());
+        }
+        verifyNoInteractions(oss);
+    }
+
+    @Test
     void htmlFilenameCannotControlStoredExtension() throws Exception {
         var controller = new FileUploadController();
         var oss = mock(AliyunOSSOperator.class);

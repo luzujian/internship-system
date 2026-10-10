@@ -2,6 +2,9 @@ package com.internship.agent.business;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.internship.config.AiRuntimeProperties;
+import com.internship.util.AiCallGuard;
+import org.springframework.beans.factory.annotation.Autowired;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.SystemMessage;
@@ -55,10 +58,18 @@ public class FillIntentService {
     private final AgentCapabilityService capabilities;
     private final AgentModel model;
     private final ObjectMapper json;
+    private final AiCallGuard calls;
 
     public FillIntentService(AgentTaskService tasks, AgentCapabilityService capabilities,
                              AgentModel model, ObjectMapper json) {
+        this(tasks, capabilities, model, json, new AiCallGuard(new AiRuntimeProperties()));
+    }
+
+    @Autowired
+    public FillIntentService(AgentTaskService tasks, AgentCapabilityService capabilities,
+                             AgentModel model, ObjectMapper json, AiCallGuard calls) {
         this.tasks = tasks; this.capabilities = capabilities; this.model = model; this.json = json;
+        this.calls = calls;
     }
 
     public Map<String, Object> fill(Actor actor, FillRequest request) {
@@ -76,10 +87,12 @@ public class FillIntentService {
 
         long started = System.currentTimeMillis();
         ChatResponse response;
-        try {
+        try (var ignored = calls.acquireUser("fill:" + actor.ownerKey())) {
             response = model.call(
                     List.<Message>of(new SystemMessage(AgentClock.nowLine() + "\n" + SYSTEM_PROMPT), new UserMessage(userPrompt(request, fillable))),
                     List.of());
+        } catch (AgentException e) {
+            throw e;
         } catch (Exception e) {
             throw new AgentException("MODEL_UNAVAILABLE", "模型服务暂时不可用，请稍后重试。", 502);
         }

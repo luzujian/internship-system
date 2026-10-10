@@ -6,6 +6,7 @@ import com.internship.entity.Result;
 import com.internship.entity.StudentJobApplication;
 import com.internship.entity.StudentUser;
 import com.internship.entity.User;
+import com.internship.entity.dto.StudentPositionKey;
 import com.internship.service.DirectHireService;
 import com.internship.service.PositionService;
 import com.internship.service.StudentJobApplicationService;
@@ -14,6 +15,7 @@ import com.internship.service.StudentUserService;
 import com.internship.utils.StudentProfileCompleteness;
 
 import java.util.List;
+import java.util.Set;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -60,12 +62,14 @@ public class StudentJobApplicationController {
             User user = getCurrentUser();
             if (user == null) return Result.error("未登录");
             List<StudentJobApplication> applications = applicationService.findByStudentId(user.getId());
+            Set<StudentPositionKey> directHirePairs = directHireService.findDirectHirePairs(applications.stream()
+                    .map(app -> new StudentPositionKey(app.getStudentId(), app.getPositionId())).toList());
             // 转换行业英文为中文
             for (StudentJobApplication app : applications) {
                 if (app.getIndustryName() != null) {
                     app.setIndustryName(convertIndustryToChinese(app.getIndustryName()));
                 }
-                app.setDirectHire(directHireService.isDirectHire(app.getStudentId(), app.getPositionId()));
+                app.setDirectHire(directHirePairs.contains(new StudentPositionKey(app.getStudentId(), app.getPositionId())));
             }
             return Result.success(applications);
         } catch (Exception e) {
@@ -120,7 +124,9 @@ public class StudentJobApplicationController {
                 return Result.error("该岗位已暂停招聘，无法申请");
             }
             if (position.getInternshipEndDate() != null
-                    && position.getInternshipEndDate().before(new java.sql.Date(System.currentTimeMillis()))) {
+                    && java.time.Instant.ofEpochMilli(position.getInternshipEndDate().getTime())
+                    .atZone(java.time.ZoneId.of("Asia/Shanghai")).toLocalDate()
+                    .isBefore(java.time.LocalDate.now(java.time.ZoneId.of("Asia/Shanghai")))) {
                 return Result.error("该岗位实习期已结束,无法申请");
             }
             applicationService.create(application);

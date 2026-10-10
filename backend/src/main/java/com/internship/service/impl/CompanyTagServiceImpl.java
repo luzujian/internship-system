@@ -47,8 +47,6 @@ public class CompanyTagServiceImpl implements CompanyTagService {
         if (cooperationMode != null && !cooperationMode.trim().isEmpty()) {
             if ("mutual_choice".equals(cooperationMode)) {
                 tags.add("校企双向选择");
-            } else if ("student_contact".equals(cooperationMode)) {
-                tags.add("学生自主联系");
             }
         }
 
@@ -88,7 +86,7 @@ public class CompanyTagServiceImpl implements CompanyTagService {
 
     private String rebuildTags(CompanyUser company) {
         String tags = rebuildTags(company.getCompanyTag(), company.getAcceptBackup(),
-                company.getIsInternshipBase(), company.getCooperationMode());
+                company.getIsInternshipBase(), Integer.valueOf(1).equals(company.getAuditStatus()) ? "mutual_choice" : null);
         if (tags == null || Integer.valueOf(1).equals(company.getAuditStatus())) return tags;
         String filtered = java.util.Arrays.stream(tags.split(","))
                 .filter(tag -> !"校企双向选择".equals(tag))

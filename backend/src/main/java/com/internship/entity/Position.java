@@ -19,6 +19,17 @@ public class Position {
 
     private Long companyId;
 
+    private Long contactId;
+    @JsonIgnore
+    private boolean contactSpecified;
+    public void setContactId(Long contactId) {
+        this.contactId = contactId;
+        this.contactSpecified = true;
+    }
+    private String contactPerson;
+    private String contactPhone;
+    private String contactEmail;
+
     private Long categoryId;
 
     @NotBlank(message = "岗位名称不能为空")

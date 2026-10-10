@@ -3,6 +3,7 @@ package com.internship.config;
 import com.internship.entity.AIModel;
 import com.internship.service.impl.AIConfigRefreshServiceImpl;
 import com.internship.util.AiEndpointSupport;
+import com.internship.util.AiCallGuard;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.deepseek.DeepSeekChatModel;
 import org.springframework.ai.deepseek.DeepSeekChatOptions;
@@ -15,15 +16,16 @@ import org.springframework.retry.support.RetryTemplate;
 import org.springframework.web.client.RestClient;
 
 import java.util.Map;
+import java.time.Duration;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 按模型动态构建 ChatClient。
  *
  * <p>ccswitch 式多接入点：每个模型行可独立配置 {@code apiEndpoint}/{@code apiKey}，
- * 为空时回退全局环境变量（spring.ai.deepseek.*）。独立配置的模型使用专属
- * DeepSeekApi 客户端（按 地址+Key+模型+参数 指纹缓存复用）；未配置独立
- * 接入点的行沿用注入的全局客户端，行为与此前完全一致。</p>
+ * 两者均为空时回退全局环境变量（spring.ai.deepseek.*），独立地址必须配置独立 Key。独立配置的模型使用专属
+ * DeepSeekApi 客户端（按 地址+Key+模型+参数 指纹缓存复用）；全局与独立
+ * 接入点使用同样的超时、单次尝试和共享容量限制。</p>
  */
 public class DynamicChatClientFactory {
 
@@ -47,6 +49,8 @@ public class DynamicChatClientFactory {
     /** AIConfig 显式传入的全局兜底（与上面 @Value 同源，显式传参便于单测与排查）。 */
     private String globalBaseUrl;
     private String globalApiKey;
+    private AiRuntimeProperties limits = new AiRuntimeProperties();
+    private AiCallGuard calls = new AiCallGuard(limits);
 
     /** 独立接入点客户端缓存：指纹 -> 模型，模型行改配后指纹变化自动重建。 */
     private final ConcurrentHashMap<String, DeepSeekChatModel> dedicatedModels = new ConcurrentHashMap<>();
@@ -63,6 +67,13 @@ public class DynamicChatClientFactory {
         this.globalApiKey = globalApiKey;
     }
 
+    public DynamicChatClientFactory(DeepSeekApi deepSeekApi, AIConfigRefreshServiceImpl aiConfigRefreshService,
+                                    String globalBaseUrl, String globalApiKey, AiCallGuard calls, AiRuntimeProperties limits) {
+        this(deepSeekApi, aiConfigRefreshService, globalBaseUrl, globalApiKey);
+        this.calls = calls;
+        this.limits = limits;
+    }
+
     /** 预览专用：连接2秒/读取10秒上限，maxAttempts=1 不重试；不影响其他模型调用的客户端。 */
     public ChatClient createPreviewChatClient(String modelCode, String systemPrompt) {
         return createPreviewChatClient(modelCode, systemPrompt, 10000);
@@ -72,22 +83,17 @@ public class DynamicChatClientFactory {
     public ChatClient createPreviewChatClient(String modelCode, String systemPrompt, int readTimeoutMillis) {
         AIModel configured = aiConfigRefreshService.getDefaultModelConfig();
         if (configured != null) modelCode = configured.getModelCode();
-        String endpoint = configured == null ? null : AiEndpointSupport.normalizeQuiet(configured.getApiEndpoint());
-        String key = configured == null ? null : configured.getApiKey();
+        var connection = resolveConnection(configured);
         SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
         requestFactory.setConnectTimeout(2000);
         requestFactory.setReadTimeout(Math.max(1000, Math.min(30000, readTimeoutMillis)));
-        DeepSeekApi previewApi = DeepSeekApi.builder()
-                .baseUrl(AiEndpointSupport.isBlank(endpoint) ? effectiveGlobalBaseUrl() : endpoint)
-                .apiKey(AiEndpointSupport.isBlank(key) ? effectiveGlobalApiKey() : key)
-                .restClientBuilder(RestClient.builder().requestInterceptor(com.internship.util.QwenRequestSupport.interceptor()).requestFactory(requestFactory))
-                .build();
+        DeepSeekApi previewApi = createApi(connection, modelCode, requestFactory);
         DeepSeekChatModel chatModel = DeepSeekChatModel.builder()
                 .deepSeekApi(previewApi)
                 .defaultOptions(DeepSeekChatOptions.builder().model(modelCode).build())
                 .retryTemplate(RetryTemplate.builder().maxAttempts(1).build())
                 .build();
-        return ChatClient.builder(chatModel).defaultSystem(systemPrompt).build();
+        return ChatClient.builder(calls.wrap(chatModel)).defaultSystem(systemPrompt).build();
     }
 
     public ChatClient createChatClient(String modelCode, String systemPrompt) {
@@ -100,86 +106,63 @@ public class DynamicChatClientFactory {
         }
 
         String effectiveModel = modelCode;
-        double temperature = modelConfig.getTemperature().doubleValue();
-        int maxTokens = modelConfig.getMaxTokens();
+        double temperature = modelConfig.getTemperature() == null ? 0.7 : modelConfig.getTemperature().doubleValue();
+        int maxTokens = modelConfig.getMaxTokens() == null ? 2000 : modelConfig.getMaxTokens();
 
-        String endpoint = AiEndpointSupport.normalizeQuiet(modelConfig.getApiEndpoint());
-        String apiKey = AiEndpointSupport.isBlank(modelConfig.getApiKey()) ? null : modelConfig.getApiKey().trim();
-        String globalEndpoint = AiEndpointSupport.normalizeQuiet(effectiveGlobalBaseUrl());
-        String globalKey = AiEndpointSupport.isBlank(effectiveGlobalApiKey()) ? null : effectiveGlobalApiKey().trim();
-
-        boolean useDedicated = !AiEndpointSupport.isBlank(endpoint) || !AiEndpointSupport.isBlank(apiKey);
-        if (!useDedicated) {
-            endpoint = globalEndpoint;
-            apiKey = globalKey;
-        } else {
-            if (AiEndpointSupport.isBlank(endpoint)) {
-                endpoint = globalEndpoint;
-            }
-            if (AiEndpointSupport.isBlank(apiKey)) {
-                apiKey = globalKey;
-            }
-        }
-        // The administrator controls the exact provider model identifier.
-        effectiveModel = modelCode;
-
-        DeepSeekChatModel chatModel;
-        if (!useDedicated || AiEndpointSupport.isBlank(endpoint)) {
-            // 与此前一致：走全局注入客户端（默认重试策略保持不变）。
-            chatModel = DeepSeekChatModel.builder()
-                    .deepSeekApi(deepSeekApi)
+        var connection = resolveConnection(modelConfig);
+        // Build global and dedicated transports with the same bounded timeout/retry policy.
+        final String finalEndpoint = connection.endpoint();
+        final String finalModel = effectiveModel;
+        final String finalKey = connection.apiKey();
+        final String fingerprint = finalEndpoint + "\n" + finalKey + "\n"
+                + finalModel + "\n" + temperature + "\n" + maxTokens;
+        if (dedicatedModels.size() > 32) dedicatedModels.clear();
+        DeepSeekChatModel chatModel = dedicatedModels.computeIfAbsent(fingerprint, key -> {
+            log.info("为模型 {} 构建调用客户端，地址: {}", finalModel, finalEndpoint);
+            SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
+            requestFactory.setConnectTimeout(limits.getConnectTimeoutMillis());
+            requestFactory.setReadTimeout(limits.getReadTimeoutMillis());
+            DeepSeekApi dedicatedApi = createApi(connection, finalModel, requestFactory);
+            return DeepSeekChatModel.builder()
+                    .deepSeekApi(dedicatedApi)
                     .defaultOptions(DeepSeekChatOptions.builder()
-                            .model(effectiveModel)
-                            .temperature(temperature)
-                            .maxTokens(maxTokens)
-                            .build())
+                            .model(finalModel).temperature(temperature).maxTokens(maxTokens).build())
+                    .retryTemplate(RetryTemplate.builder().maxAttempts(1).build())
                     .build();
-        } else {
-            final String finalEndpoint = endpoint;
-            final String finalModel = effectiveModel;
-            final String finalKey = apiKey;
-            final String fingerprint = finalEndpoint + "\n" + finalKey + "\n"
-                    + finalModel + "\n" + temperature + "\n" + maxTokens;
-            if (dedicatedModels.size() > 32) {
-                dedicatedModels.clear();
-            }
-            chatModel = dedicatedModels.computeIfAbsent(fingerprint, key -> {
-                log.info("为模型 {} 构建独立接入客户端，地址: {}", finalModel, finalEndpoint);
-                RestClient.Builder dedicatedRest = RestClient.builder().requestInterceptor(com.internship.util.QwenRequestSupport.interceptor())
-                        .defaultHeader("User-Agent", AiEndpointSupport.CLIENT_USER_AGENT);
-                var dedicatedWeb = org.springframework.web.reactive.function.client.WebClient.builder()
-                        .filter(com.internship.util.QwenRequestSupport.filter())
-                        .defaultHeader("User-Agent", AiEndpointSupport.CLIENT_USER_AGENT);
-                // 中转网关（如 Zen Go）要求 x-opencode-session 路由头，官方直连时为空 Map，无影响。
-                for (Map.Entry<String, String> gatewayHeader
-                        : AiEndpointSupport.extraHeaders(finalEndpoint, finalModel).entrySet()) {
-                    dedicatedRest = dedicatedRest.defaultHeader(gatewayHeader.getKey(), gatewayHeader.getValue());
-                    dedicatedWeb = dedicatedWeb.defaultHeader(gatewayHeader.getKey(), gatewayHeader.getValue());
-                }
-                DeepSeekApi dedicatedApi = DeepSeekApi.builder()
-                        .baseUrl(finalEndpoint)
-                        .apiKey(finalKey)
-                        .restClientBuilder(dedicatedRest)
-                        .webClientBuilder(dedicatedWeb)
-                        .build();
-                return DeepSeekChatModel.builder()
-                        .deepSeekApi(dedicatedApi)
-                        .defaultOptions(DeepSeekChatOptions.builder()
-                                .model(finalModel)
-                                .temperature(temperature)
-                                .maxTokens(maxTokens)
-                                .build())
-                        .build();
-            });
-        }
+        });
 
-        return ChatClient.builder(chatModel)
+        return ChatClient.builder(calls.wrap(chatModel))
                 .defaultSystem(systemPrompt)
                 .build();
     }
 
     private String effectiveGlobalBaseUrl() {
         return AiEndpointSupport.isBlank(globalBaseUrl) ? previewBaseUrl : globalBaseUrl;
+    }
+
+    private AiEndpointSupport.Connection resolveConnection(AIModel model) {
+        return AiEndpointSupport.resolveConnection(model == null ? null : model.getApiEndpoint(),
+                model == null ? null : model.getApiKey(), effectiveGlobalBaseUrl(), effectiveGlobalApiKey());
+    }
+
+    /** Both preview and normal calls preserve the configured base path and gateway headers. */
+    private DeepSeekApi createApi(AiEndpointSupport.Connection connection, String modelCode,
+                                 SimpleClientHttpRequestFactory requestFactory) {
+        RestClient.Builder rest = RestClient.builder()
+                .requestInterceptor(com.internship.util.QwenRequestSupport.interceptor())
+                .defaultHeader("User-Agent", AiEndpointSupport.CLIENT_USER_AGENT);
+        if (requestFactory != null) rest.requestFactory(requestFactory);
+        var web = org.springframework.web.reactive.function.client.WebClient.builder()
+                .clientConnector(new org.springframework.http.client.reactive.JdkClientHttpConnector(
+                        java.net.http.HttpClient.newBuilder().connectTimeout(Duration.ofMillis(limits.getConnectTimeoutMillis())).build()))
+                .filter(com.internship.util.QwenRequestSupport.filter())
+                .defaultHeader("User-Agent", AiEndpointSupport.CLIENT_USER_AGENT);
+        for (Map.Entry<String, String> header : AiEndpointSupport.extraHeaders(connection.endpoint(), modelCode).entrySet()) {
+            rest.defaultHeader(header.getKey(), header.getValue());
+            web.defaultHeader(header.getKey(), header.getValue());
+        }
+        return DeepSeekApi.builder().baseUrl(connection.endpoint()).apiKey(connection.apiKey())
+                .completionsPath("/chat/completions").restClientBuilder(rest).webClientBuilder(web).build();
     }
 
     private String effectiveGlobalApiKey() {

@@ -41,9 +41,8 @@ public interface AIModelService {
     List<AIModel> maskForOutput(List<AIModel> models);
 
     /**
-     * 复制一条模型配置（ccswitch 式“复制配置”）。
-     * Key 随行复制（不出接口明文，由后端直接落库），is_default 恒为 0，
-     * modelCode 自动生成唯一值。
+     * 返回未保存的配置模板：保留厂商真实模型 ID，清除 id、Key 和默认状态。
+     * 由管理端补充不同的真实模型 ID 与凭证后再保存，不伪造可调用的模型 ID。
      */
     AIModel duplicateModel(Long id, String creator);
 
@@ -53,4 +52,7 @@ public interface AIModelService {
      * 仅 ADMIN 可调；Key 永不记日志、不回显。
      */
     Map<String, Object> testConnection(AIModel probe);
+
+    /** 从给定网关的 /models 获取模型 ID；表单和已保存配置的合并语义与测连一致。 */
+    Map<String, Object> discoverModels(AIModel probe);
 }

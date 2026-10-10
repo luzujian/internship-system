@@ -9,7 +9,7 @@ import static org.mockito.Mockito.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 class CompanyInfoKnowledgeServiceTest {
-    @Test void approvalAndStoredModeDetermineCooperationLabel() {
+    @Test void approvedCompanyKeepsCooperationLabelWhenStoredModeIsEmptyOrRetired() {
         var companies=mock(CompanyUserService.class);var liaisons=mock(CompanySchoolLiaisonService.class);
         var json=new ObjectMapper();var service=new CompanyInfoKnowledgeService(json,companies,liaisons);
         var company=new CompanyUser();company.setId(3L);company.setCooperationMode("mutual_choice");
@@ -18,6 +18,12 @@ class CompanyInfoKnowledgeServiceTest {
         company.setAuditStatus(1);
         assertEquals(1L,service.read(3L).get("activeTagCount"));
         company.setCooperationMode(null);
+        assertEquals(1L,service.read(3L).get("activeTagCount"));
+        company.setCooperationMode("student_contact");
+        var retiredResult=json.valueToTree(service.read(3L));
+        assertEquals(1,retiredResult.path("activeTagCount").asInt());
+        assertFalse(retiredResult.path("tags").toString().contains("学生自主联系"));
+        company.setAuditStatus(0);
         assertEquals(0L,service.read(3L).get("activeTagCount"));
     }
     @Test void readsCurrentValuesWithSharedDefinitionsAndExcludesAccountSecrets() throws Exception {
@@ -29,8 +35,8 @@ class CompanyInfoKnowledgeServiceTest {
         var result=json.valueToTree(service.read(3L));
         assertTrue(result.toString().contains("contact@example.com"));assertFalse(result.toString().contains("secret"));
         assertTrue(result.path("tags").findValues("active").stream().anyMatch(node->node.asBoolean()));
-        assertEquals(2,result.path("activeTagCount").asInt());
-        assertEquals(result.path("tags").size()-2,result.path("inactiveTagCount").asInt());
+        assertEquals(1,result.path("activeTagCount").asInt());
+        assertEquals(result.path("tags").size()-1,result.path("inactiveTagCount").asInt());
         company.setContactEmail("new@example.com");assertTrue(json.writeValueAsString(service.read(3L)).contains("new@example.com"));
         verify(companies,times(2)).findById(3L);
     }

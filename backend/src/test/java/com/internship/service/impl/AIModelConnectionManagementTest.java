@@ -1,5 +1,6 @@
 package com.internship.service.impl;
 
+import com.internship.agent.business.AgentVoiceSettings;
 import com.internship.entity.AIModel;
 import com.internship.exception.BusinessException;
 import com.internship.mapper.AIModelMapper;
@@ -10,6 +11,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -21,7 +24,6 @@ import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.Executors;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -47,6 +49,9 @@ class AIModelConnectionManagementTest {
     private volatile int stubStatus = 200;
     private volatile String stubBody;
     private volatile String seenAuth;
+    private volatile String seenRequestBody;
+    private volatile String seenPath;
+    private volatile String seenMethod;
 
     @BeforeEach
     void setUp() {
@@ -87,22 +92,23 @@ class AIModelConnectionManagementTest {
     }
 
     @Test
-    void duplicateCopiesConfigWithUniqueCode() {
+    void duplicateReturnsUnsavedTemplateWithoutInventingAProviderModelId() {
         AIModel source = stored(3L, "deepseek-chat");
         source.setModelName("DeepSeek-V4.1-Flash");
         source.setApiKey("sk-source-key");
         when(aiModelMapper.findById(3L)).thenReturn(source);
-        when(aiModelMapper.findByModelCode("deepseek-chat-copy")).thenReturn(null);
 
         AIModel copy = service.duplicateModel(3L, "admin");
 
-        assertEquals("deepseek-chat-copy", copy.getModelCode());
+        assertEquals("deepseek-chat", copy.getModelCode());
         assertTrue(copy.getModelName().contains("副本"));
         assertEquals(Integer.valueOf(0), copy.getIsDefault());
-        assertEquals("sk-source-key", copy.getApiKey());
-        ArgumentCaptor<AIModel> captor = ArgumentCaptor.forClass(AIModel.class);
-        verify(aiModelMapper).insert(captor.capture());
-        assertEquals("deepseek-chat-copy", captor.getValue().getModelCode());
+        assertEquals(0, copy.getStatus());
+        assertNull(copy.getApiKey());
+        assertNull(copy.getId());
+        assertEquals("sk-source-key", source.getApiKey());
+        verify(aiModelMapper, never()).insert(any());
+        verifyNoInteractions(aiConfigRefreshService);
     }
 
     @Test
@@ -125,6 +131,97 @@ class AIModelConnectionManagementTest {
         assertNull(captor.getValue().getApiKey(), "空 Key 必须置 null 以便 Mapper 跳过该列");
         assertNull(captor.getValue().getApiEndpoint());
         assertEquals("新展示名", captor.getValue().getModelName());
+    }
+
+    @Test
+    void editingCurrentChatModelCannotDisableIt() {
+        AIModel existing = stored(3L, "deepseek-chat");
+        existing.setIsDefault(1);
+        when(aiModelMapper.findById(3L)).thenReturn(existing);
+        AIModel patch = new AIModel();
+        patch.setId(3L);
+        patch.setStatus(0);
+
+        BusinessException error = assertThrows(BusinessException.class, () -> service.update(patch));
+
+        assertTrue(error.getMessage().contains("先选择其他模型"));
+        verify(aiModelMapper, never()).update(any());
+        verifyNoInteractions(aiConfigRefreshService);
+    }
+
+    @Test
+    void editingCurrentChatModelCannotClearItsDefaultAssignment() {
+        AIModel existing = stored(3L, "deepseek-chat");
+        existing.setIsDefault(1);
+        when(aiModelMapper.findById(3L)).thenReturn(existing);
+        AIModel patch = new AIModel();
+        patch.setId(3L);
+        patch.setIsDefault(0);
+
+        BusinessException error = assertThrows(BusinessException.class, () -> service.update(patch));
+
+        assertTrue(error.getMessage().contains("其他聊天模型设为默认"));
+        verify(aiModelMapper, never()).update(any());
+        verifyNoInteractions(aiConfigRefreshService);
+    }
+
+    @Test
+    void editingCurrentVoiceModelCannotDisableItEvenWhileClearingItsAssignment() {
+        AIModel existing = stored(3L, "qwen3-asr-flash-realtime");
+        when(aiModelMapper.findById(3L)).thenReturn(existing);
+        AgentVoiceSettings voice = mock(AgentVoiceSettings.class);
+        ReflectionTestUtils.setField(service, "voiceSettings", voice);
+        when(voice.selectedId()).thenReturn(3L);
+        AIModel patch = new AIModel();
+        patch.setId(3L);
+        patch.setStatus(0);
+        patch.setUseForVoice(false);
+
+        assertThrows(BusinessException.class, () -> service.update(patch));
+
+        verify(aiModelMapper, never()).update(any());
+        verify(voice, never()).save(anyLong());
+        verifyNoInteractions(aiConfigRefreshService);
+    }
+
+    @Test
+    void currentChatModelCanStillEditParametersWithoutChangingItsAssignment() {
+        AIModel existing = stored(3L, "deepseek-chat");
+        existing.setIsDefault(1);
+        when(aiModelMapper.findById(3L)).thenReturn(existing);
+        when(aiModelMapper.update(any())).thenReturn(1);
+        AIModel patch = new AIModel();
+        patch.setId(3L);
+        patch.setModelName("当前聊天模型的新名称");
+        patch.setMaxTokens(2048);
+
+        assertEquals(1, service.update(patch));
+
+        verify(aiModelMapper).update(patch);
+        assertNull(patch.getIsDefault());
+        assertEquals(1, existing.getIsDefault());
+        verify(aiConfigRefreshService).refreshAIConfig();
+    }
+
+    @Test
+    void enabledVoiceModelCanStillClearItsAssignmentUsingExistingVoiceRules() {
+        AIModel existing = stored(3L, "qwen3-asr-flash-realtime");
+        when(aiModelMapper.findById(3L)).thenReturn(existing);
+        when(aiModelMapper.update(any())).thenReturn(1);
+        AgentVoiceSettings voice = mock(AgentVoiceSettings.class);
+        ReflectionTestUtils.setField(service, "voiceSettings", voice);
+        when(voice.selectedId()).thenReturn(3L, 3L, 0L);
+        AIModel patch = new AIModel();
+        patch.setId(3L);
+        patch.setStatus(1);
+        patch.setUseForVoice(false);
+
+        assertEquals(1, service.update(patch));
+
+        verify(voice).save(0L);
+        verify(voice, never()).resolve();
+        verify(aiModelMapper).update(patch);
+        verify(aiConfigRefreshService).refreshAIConfig();
     }
 
     @Test
@@ -160,6 +257,8 @@ class AIModelConnectionManagementTest {
         assertTrue((Long) result.get("latencyMs") >= 0);
         assertEquals("hello-test", result.get("reply"));
         assertEquals("Bearer sk-probe", seenAuth);
+        assertTrue(seenRequestBody.contains("\"max_tokens\":4096"));
+        assertFalse(seenRequestBody.contains("\"temperature\""));
     }
 
     @Test
@@ -178,6 +277,33 @@ class AIModelConnectionManagementTest {
         assertEquals(false, result.get("ok"));
         assertEquals(401, result.get("httpStatus"));
         assertTrue(String.valueOf(result.get("error")).contains("401"));
+    }
+
+    @Test
+    void probeUsesConfiguredProviderOutputBudget() throws Exception {
+        stubBody = chatCompletion("OK");
+        startStub();
+        AIModel input = probe();
+        input.setMaxTokens(2048);
+        assertEquals(true, service.testConnection(input).get("ok"));
+        assertTrue(seenRequestBody.contains("\"max_tokens\":2048"));
+        input.setMaxTokens(0);
+        assertThrows(BusinessException.class, () -> service.testConnection(input));
+    }
+
+    @Test
+    void savedProbeUsesSavedProviderOutputBudget() throws Exception {
+        stubBody = chatCompletion("OK");
+        startStub();
+        AIModel existing = stored(3L, "Baichuan4-Turbo");
+        existing.setApiEndpoint(stubBase());
+        existing.setApiKey("sk-stored");
+        existing.setMaxTokens(2048);
+        when(aiModelMapper.findById(3L)).thenReturn(existing);
+        AIModel input = new AIModel();
+        input.setId(3L);
+        assertEquals(true, service.testConnection(input).get("ok"));
+        assertTrue(seenRequestBody.contains("\"max_tokens\":2048"));
     }
 
     @Test
@@ -208,6 +334,176 @@ class AIModelConnectionManagementTest {
         probe.setApiEndpoint("not-a-url");
         probe.setApiKey("sk-x");
         assertThrows(BusinessException.class, () -> service.testConnection(probe));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"", "<html>Gateway login</html>", "{}", "{\"choices\":[]}",
+            "{\"error\":{\"code\":\"invalid_api_key\",\"message\":\"sk-probe\"}}",
+            "{\"choices\":[{\"message\":{\"content\":\"\",\"reasoning_content\":\"thinking\"}}]}"})
+    void successfulHttpStatusAloneNeverProvesChatWorks(String response) throws Exception {
+        stubBody = response;
+        startStub();
+
+        Map<String, Object> result = service.testConnection(probe());
+
+        assertEquals(false, result.get("ok"));
+        assertNull(result.get("reply"));
+        assertNotNull(result.get("error"));
+        assertFalse(result.toString().contains("sk-probe"));
+    }
+
+    @Test
+    void maliciousUpstreamCannotEchoKeyThroughErrorsOrReplies() throws Exception {
+        stubStatus = 400;
+        stubBody = "bad token: sk-probe";
+        startStub();
+        assertFalse(service.testConnection(probe()).toString().contains("sk-probe"));
+
+        stubStatus = 200;
+        stubBody = chatCompletion("Your key is sk-probe");
+        Map<String, Object> result = service.testConnection(probe());
+        assertEquals(true, result.get("ok"));
+        assertFalse(result.toString().contains("sk-probe"));
+    }
+
+    @Test
+    void discoveryUsesNormalizedGatewayPathAndDeduplicatesExactIds() throws Exception {
+        stubBody = "{\"data\":[{\"id\":\"deepseek-ai/DeepSeek-V3\"},{\"id\":\"ep-2026010101-abcd\"},"
+                + "{\"id\":\"deepseek-ai/DeepSeek-V3\"},{\"id\":\"\"},{\"name\":\"ignored\"}]}";
+        startStub();
+        AIModel input = probe();
+        input.setApiEndpoint(stubBase() + "/gateway/v1/chat/completions/");
+        input.setModelCode(null);
+
+        Map<String, Object> result = service.discoverModels(input);
+
+        assertEquals(List.of("deepseek-ai/DeepSeek-V3", "ep-2026010101-abcd"), result.get("models"));
+        assertEquals(stubBase() + "/gateway/v1", result.get("endpoint"));
+        assertEquals("/gateway/v1/models", seenPath);
+        assertEquals("GET", seenMethod);
+        assertEquals("Bearer sk-probe", seenAuth);
+        verifyNoInteractions(aiModelMapper);
+    }
+
+    @Test
+    void discoveryUsesSavedCredentialsAndRejectsNonModelResponses() throws Exception {
+        stubBody = "{\"data\":[{\"id\":\"glm-4-plus\"}]}";
+        startStub();
+        AIModel existing = stored(3L, "glm-4-plus");
+        existing.setApiEndpoint(stubBase());
+        existing.setApiKey("sk-stored");
+        when(aiModelMapper.findById(3L)).thenReturn(existing);
+        AIModel input = new AIModel();
+        input.setId(3L);
+
+        assertEquals(List.of("glm-4-plus"), service.discoverModels(input).get("models"));
+        assertEquals("Bearer sk-stored", seenAuth);
+        stubBody = "<html>login</html>";
+        assertThrows(BusinessException.class, () -> service.discoverModels(input));
+        stubBody = "{\"choices\":[]}";
+        assertThrows(BusinessException.class, () -> service.discoverModels(input));
+        stubStatus = 401;
+        stubBody = "Your API Key sk-stored is invalid";
+        assertFalse(assertThrows(BusinessException.class, () -> service.discoverModels(input)).getMessage().contains("sk-stored"));
+    }
+
+    @Test
+    void changingGatewayWithoutNewKeyFailsBeforeNetworkForSaveProbeAndDiscovery() {
+        AIModel existing = stored(3L, "deepseek-chat");
+        existing.setApiEndpoint("https://old.example/v1");
+        existing.setApiKey("sk-old");
+        when(aiModelMapper.findById(3L)).thenReturn(existing);
+        AIModel input = new AIModel();
+        input.setId(3L);
+        input.setApiEndpoint("https://new.example/v1");
+
+        assertThrows(BusinessException.class, () -> service.testConnection(input));
+        assertThrows(BusinessException.class, () -> service.discoverModels(input));
+        assertThrows(BusinessException.class, () -> service.update(input));
+        verify(aiModelMapper, never()).update(any());
+    }
+
+    @Test
+    void equivalentEndpointKeepsStoredKeyAndClearConfigUsesWholeGlobalPair() throws Exception {
+        stubBody = chatCompletion("OK");
+        startStub();
+        AIModel existing = stored(3L, "deepseek-chat");
+        existing.setApiEndpoint(stubBase() + "/v1");
+        existing.setApiKey("sk-stored");
+        when(aiModelMapper.findById(3L)).thenReturn(existing);
+        AIModel input = new AIModel();
+        input.setId(3L);
+        input.setApiEndpoint(stubBase() + "/v1/chat/completions/");
+        assertEquals(true, service.testConnection(input).get("ok"));
+        assertEquals("Bearer sk-stored", seenAuth);
+
+        ReflectionTestUtils.setField(service, "globalEndpoint", stubBase() + "/global/v1");
+        ReflectionTestUtils.setField(service, "globalApiKey", "sk-global");
+        input.setClearApiConfig(true);
+        input.setApiKey("sk-ignored");
+        assertEquals(true, service.testConnection(input).get("ok"));
+        assertEquals("/global/v1/chat/completions", seenPath);
+        assertEquals("Bearer sk-global", seenAuth);
+        stubBody = "{\"data\":[]}";
+        assertEquals(List.of(), service.discoverModels(input).get("models"));
+        assertEquals("/global/v1/models", seenPath);
+        assertEquals("Bearer sk-global", seenAuth);
+    }
+
+    @Test
+    void independentGatewayNeverReceivesGlobalKey() {
+        ReflectionTestUtils.setField(service, "globalApiKey", "sk-global");
+        AIModel input = new AIModel();
+        input.setApiEndpoint("https://independent.example/v1");
+        input.setModelCode("deepseek-chat");
+        assertThrows(BusinessException.class, () -> service.testConnection(input));
+        assertThrows(BusinessException.class, () -> service.discoverModels(input));
+    }
+
+    @Test
+    void invalidIdAndMaskedCredentialsFailBeforeNetwork() {
+        AIModel input = new AIModel();
+        input.setId(0L);
+        assertThrows(BusinessException.class, () -> service.testConnection(input));
+        assertThrows(BusinessException.class, () -> service.discoverModels(input));
+        input.setId(999L);
+        assertThrows(BusinessException.class, () -> service.testConnection(input));
+        assertThrows(BusinessException.class, () -> service.discoverModels(input));
+        input.setId(null);
+        input.setApiKey("sk-****abcd");
+        assertThrows(BusinessException.class, () -> service.testConnection(input));
+    }
+
+    @Test
+    void savingNamespacedProviderIdPreservesItsRealValue() {
+        AIModel input = stored(null, "deepseek-ai/DeepSeek-V3.2");
+        input.setProvider("siliconflow");
+        input.setApiEndpoint("https://api.siliconflow.cn/v1/chat/completions");
+        input.setApiKey("  sk-provider  ");
+
+        service.insert(input);
+
+        ArgumentCaptor<AIModel> captor = ArgumentCaptor.forClass(AIModel.class);
+        verify(aiModelMapper).insert(captor.capture());
+        assertEquals("deepseek-ai/DeepSeek-V3.2", captor.getValue().getModelCode());
+        assertEquals("https://api.siliconflow.cn/v1", captor.getValue().getApiEndpoint());
+        assertEquals("sk-provider", captor.getValue().getApiKey());
+    }
+
+    @Test
+    void tooLongProviderIdIsRejectedWithoutSilentlyChangingIt() {
+        AIModel input = stored(null, "a".repeat(51));
+        assertThrows(BusinessException.class, () -> service.insert(input));
+        assertEquals("a".repeat(51), input.getModelCode());
+        verify(aiModelMapper, never()).insert(any());
+    }
+
+    private AIModel probe() {
+        AIModel input = new AIModel();
+        input.setApiEndpoint(stubBase());
+        input.setApiKey("sk-probe");
+        input.setModelCode("stub-model");
+        return input;
     }
 
     @Test
@@ -269,11 +565,12 @@ class AIModelConnectionManagementTest {
 
     private void startStub() throws IOException {
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
-        server.setExecutor(Executors.newCachedThreadPool());
-        server.createContext("/chat/completions", exchange -> {
+        server.createContext("/", exchange -> {
             try {
                 seenAuth = exchange.getRequestHeaders().getFirst("Authorization");
-                exchange.getRequestBody().readAllBytes();
+                seenPath = exchange.getRequestURI().getPath();
+                seenMethod = exchange.getRequestMethod();
+                seenRequestBody = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
                 byte[] body = stubBody.getBytes(StandardCharsets.UTF_8);
                 exchange.getResponseHeaders().add("Content-Type", "application/json");
                 exchange.sendResponseHeaders(stubStatus, body.length);

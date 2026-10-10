@@ -186,6 +186,8 @@ public class InternshipApplicationController {
             String newStatus = statusRequest.getStatus();
             String rejectReason = com.internship.service.StudentJobApplicationStatuses
                     .normalizeRejectReason(newStatus, statusRequest.getRejectReason());
+            com.internship.service.StudentJobApplicationStatuses
+                    .requireReviewTransition(application.getStatus(), newStatus);
             if (!com.internship.service.StudentJobApplicationStatuses.isActive(application.getStatus())) {
                 return Result.error("该申请已处理，请勿重复操作");
             }

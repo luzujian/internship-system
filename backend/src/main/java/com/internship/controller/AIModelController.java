@@ -3,6 +3,7 @@ package com.internship.controller;
 import com.internship.anno.Log;
 import com.internship.entity.AIModel;
 import com.internship.entity.Result;
+import com.internship.exception.BusinessException;
 import com.internship.service.AIModelService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -50,8 +51,7 @@ public class AIModelController {
             int result = aiModelService.insert(aiModel);
             return Result.success("添加成功", aiModelService.maskForOutput(aiModel));
         } catch (Exception e) {
-            log.error("添加AI模型失败: {}", e.getMessage());
-            return Result.error("添加失败: " + e.getMessage());
+            return configurationError("添加失败", e);
         }
     }
 
@@ -130,8 +130,7 @@ public class AIModelController {
             int result = aiModelService.update(aiModel);
             return Result.success("更新成功", aiModelService.maskForOutput(aiModel));
         } catch (Exception e) {
-            log.error("更新AI模型失败: {}", e.getMessage());
-            return Result.error("更新失败: " + e.getMessage());
+            return configurationError("更新失败", e);
         }
     }
 
@@ -242,31 +241,46 @@ public class AIModelController {
         try {
             Map<String, Object> result = aiModelService.testConnection(probe);
             boolean ok = Boolean.TRUE.equals(result.get("ok"));
-            // 厂商侧拒绝（401/404 等）属于“测出了结果”，仍用 200 把延迟与原文带回前端展示；
+            // 厂商侧拒绝（401/404 等）属于“测出了结果”，仍用 200 返回安全错误与延迟；
             // 只有参数缺失等根本没发出去的情况才走 error。
             return Result.success(ok ? "连接成功" : String.valueOf(result.get("error")), result);
         } catch (Exception e) {
-            log.error("测试AI模型连接失败: {}", e.getMessage());
-            return Result.error("测试失败: " + e.getMessage());
+            return configurationError("测试失败", e);
+        }
+    }
+
+    @PostMapping("/models")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Log(module = "AI_MODEL", operationType = "SELECT", description = "获取网关模型列表")
+    public Result discoverAIModels(@RequestBody AIModel probe) {
+        try {
+            return Result.success(aiModelService.discoverModels(probe));
+        } catch (Exception e) {
+            return configurationError("获取模型列表失败", e);
         }
     }
 
     /**
-     * 复制配置：以已有模型为模板新建一条（Key 随行复制、默认关闭），
-     * 实际请求模型自动加 -copy 后缀保证唯一。
+     * 提取未保存模板；真实模型 ID 不改写，不复制密钥。
      */
     @PostMapping("/{id}/duplicate")
     @PreAuthorize("hasRole('ADMIN')")
-    @Log(module = "AI_MODEL", operationType = "INSERT", description = "复制AI模型配置")
+    @Log(module = "AI_MODEL", operationType = "SELECT", description = "提取AI模型配置模板")
     public Result duplicateAIModel(@PathVariable Long id, @RequestBody(required = false) Map<String, String> request) {
         log.info("复制AI模型配置，ID: {}", id);
         try {
             String creator = request == null ? "admin" : request.getOrDefault("creator", "admin");
             AIModel copy = aiModelService.duplicateModel(id, creator);
-            return Result.success("复制成功", aiModelService.maskForOutput(copy));
+            return Result.success("已生成未保存模板，请填写真实模型 ID 和 API Key 后保存", aiModelService.maskForOutput(copy));
         } catch (Exception e) {
-            log.error("复制AI模型配置失败: {}", e.getMessage());
-            return Result.error("复制失败: " + e.getMessage());
+            return configurationError("复制失败", e);
         }
+    }
+
+    private Result configurationError(String action, Exception exception) {
+        // JDBC/HTTP 异常可能携带完整参数，不能将异常原文写日志或交给调用者。
+        log.warn("{}，异常类型: {}", action, exception.getClass().getSimpleName());
+        return Result.error(action + "：" + (exception instanceof BusinessException
+                ? exception.getMessage() : "操作未完成，请检查配置或联系管理员。"));
     }
 }

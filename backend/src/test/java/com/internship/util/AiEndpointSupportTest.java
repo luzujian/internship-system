@@ -75,4 +75,57 @@ class AiEndpointSupportTest {
         assertEquals("deepintern-deepseek-v4-pro",
                 AiEndpointSupport.sessionIdFor("DeepSeek-V4-Pro"));
     }
+
+    @Test
+    void preservesDomesticProviderAndGatewayPaths() {
+        for (String base : new String[] {
+                "https://dashscope.aliyuncs.com/compatible-mode/v1",
+                "https://open.bigmodel.cn/api/paas/v4",
+                "https://ark.cn-beijing.volces.com/api/v3",
+                "https://qianfan.baidubce.com/v2",
+                "http://127.0.0.1:4000/team/china/v1"}) {
+            assertEquals(base, AiEndpointSupport.normalizeEndpoint(base + "/chat/completions/"));
+        }
+    }
+
+    @Test
+    void rejectsMalformedOrCredentialBearingAddresses() {
+        for (String invalid : new String[] {"https://", "http:///v1", "https://api.example:99999/v1",
+                "https://key:secret@api.example/v1", "https://api.example/v1?api_key=secret",
+                "https://api.example/v1#chat", "https://api.example/v1/responses",
+                "https://api.example/v1/messages", "https://api.example/a b"}) {
+            assertThrows(IllegalArgumentException.class, () -> AiEndpointSupport.normalizeEndpoint(invalid), invalid);
+        }
+    }
+
+    @Test
+    void routeHeaderRequiresExactHostAndZenPath() {
+        for (String other : new String[] {"https://other.example/opencode.ai/zen/v1",
+                "https://opencode.ai.evil.example/zen/v1", "https://opencode.ai/zenn/v1"}) {
+            assertTrue(AiEndpointSupport.extraHeaders(other, "model").isEmpty());
+        }
+    }
+
+    @Test
+    void gatewayNeverInheritsUnrelatedGlobalKey() {
+        assertThrows(IllegalArgumentException.class, () -> AiEndpointSupport.resolveConnection(
+                "https://gateway.example/v1", "", "https://api.deepseek.com", "global-key"));
+        var own = AiEndpointSupport.resolveConnection("https://gateway.example/v1/", "own-key",
+                "https://api.deepseek.com", "global-key");
+        assertEquals("https://gateway.example/v1", own.endpoint());
+        assertEquals("own-key", own.apiKey());
+        assertFalse(own.toString().contains("own-key"));
+    }
+
+    @Test
+    void globalPairAndKeyOnlyOverrideAreResolvedTogether() {
+        var inherited = AiEndpointSupport.resolveConnection(null, null, "https://api.deepseek.com/", "global-key");
+        assertEquals("https://api.deepseek.com", inherited.endpoint());
+        assertEquals("global-key", inherited.apiKey());
+        var keyOnly = AiEndpointSupport.resolveConnection(null, "own-key", "https://api.deepseek.com", "global-key");
+        assertEquals("own-key", keyOnly.apiKey());
+        assertThrows(IllegalArgumentException.class, () -> AiEndpointSupport.resolveConnection(null, null, null, null));
+        assertThrows(IllegalArgumentException.class, () -> AiEndpointSupport.resolveConnection(
+                "https://gateway.example/v1", "bad\r\nkey", null, null));
+    }
 }

@@ -26,6 +26,7 @@ import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.time.format.ResolverStyle;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -208,7 +209,7 @@ public class JobPostingParseService {
                 2. 不生成、不改写、不补充任何岗位内容。
                 3. 文本中的“岗位类别”“所属部门”“招聘部门”都填写到department；“岗位名称”“职位名称”填写到positionName。
                 4. 文本明确出现“实习生”“实习岗位”“实习期间”时positionType填"实习"；全职、兼职同理。
-                5. “线上面试”“视频面试”“通过线上视频”统一为interviewMethod="线上视频"；电话面试填"电话面试"，线下面谈填"线下"。
+                5. “线上面试”“视频面试”“通过线上视频”统一为interviewMethod="线上视频"；电话面试填"电话面试"，线下面谈填"线下"。明确提供多种面试方式时全部保留，以顿号连接为字符串，例如"线下、线上视频"，不要返回数组。
                 6. salaryUnit只能是"K/月"、"元/天"、"元/小时"、"面议"。
                 7. "8000元/月"应规范化为salaryUnit="K/月"、salaryMin=8；"12k"应填写12。
                 8. requiredMajors使用字符串数组；如果专业不限，填写["不限制专业"]。
@@ -361,7 +362,7 @@ public class JobPostingParseService {
         result.setRequirements(cleanText(result.getRequirements()));
         result.setInternshipEnvironment(normalizeEnumText(result.getInternshipEnvironment(), INTERNSHIP_ENVIRONMENTS));
         result.setInterviewLocation(cleanText(result.getInterviewLocation()));
-        result.setInterviewMethod(normalizeEnumText(result.getInterviewMethod(), INTERVIEW_METHODS));
+        result.setInterviewMethod(normalizeInterviewMethods(result.getInterviewMethod()));
         result.setInterviewRemark(cleanText(result.getInterviewRemark()));
         result.setInterviewTime(normalizeDateTime(result.getInterviewTime()));
         result.setRequiredMajors(normalizeMajors(result.getRequiredMajors()));
@@ -529,6 +530,18 @@ public class JobPostingParseService {
                 .limit(20)
                 .toList();
         return normalized.isEmpty() ? null : normalized;
+    }
+
+    private String normalizeInterviewMethods(String value) {
+        String cleaned = cleanText(value);
+        if (cleaned == null) return null;
+        List<String> methods = Arrays.stream(cleaned.split("[、,，;；/|]"))
+                .map(String::trim)
+                .filter(method -> !method.isEmpty())
+                .distinct()
+                .toList();
+        if (methods.isEmpty() || !INTERVIEW_METHODS.containsAll(methods)) return null;
+        return String.join("、", methods);
     }
 
     private String normalizeEnumText(String value, Set<String> allowedValues) {

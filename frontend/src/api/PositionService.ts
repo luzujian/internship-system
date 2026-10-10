@@ -3,6 +3,10 @@ import request from '@/utils/request'
 export interface Position {
   id: number
   companyId: number
+  contactId?: number | null
+  contactPerson?: string
+  contactPhone?: string
+  contactEmail?: string
   positionName: string
   department?: string
   positionType?: string

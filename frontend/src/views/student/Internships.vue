@@ -487,19 +487,16 @@ const highlightedInternshipId = ref<string | number | null>(null)
 const handleAIAnalysisResult = async (data: any) => {
   console.log('[Internships] 收到AI分析结果WebSocket消息:', data)
 
-  if (data.success) {
-    if (data.isNotReflection) {
-      // 内容被判定为不是实习心得
-      ElMessage.warning('您提交的内容不是实习心得，已被退回草稿，请修改后重新提交')
-      // 刷新整个列表，确保状态同步
-      await fetchReflections()
-    } else {
-      // AI分析成功完成
-      await fetchReflections()
-    }
+  if (data.isNotReflection) {
+    // 退回通知的 success 为 false，优先同步服务端的草稿状态
+    ElMessage.warning('您提交的内容不是实习心得，已被退回草稿，请修改后重新提交')
+    await fetchReflections()
+  } else if (data.success) {
+    // AI分析成功完成
+    await fetchReflections()
   } else {
-    // AI分析失败
-    ElMessage.error(data.message || 'AI分析失败，请稍后重试')
+    // 分析暂未完成不代表心得提交失败
+    ElMessage.warning(data.message || '心得已提交，AI分析暂未完成，可稍后查看结果或由教师人工批阅，无需重复提交')
   }
 
   await fetchPeriodStatus()

@@ -5,6 +5,8 @@ import java.time.LocalDateTime;
 
 @Data
 public class InternshipConfirmationRecord {
+    @com.fasterxml.jackson.annotation.JsonProperty(access = com.fasterxml.jackson.annotation.JsonProperty.Access.WRITE_ONLY)
+    private java.util.List<Long> agreementFileIds;
     private Long id;
     private Long studentId;
     private String studentName;

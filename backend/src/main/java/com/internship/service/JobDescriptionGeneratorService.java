@@ -1,7 +1,9 @@
 package com.internship.service;
 
 import com.internship.config.DynamicChatClientFactory;
+import com.internship.agent.business.AgentException;
 import com.internship.entity.AIModel;
+import com.internship.exception.BusinessException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -74,11 +76,11 @@ public class JobDescriptionGeneratorService {
 
             return result;
 
+        } catch (AgentException e) {
+            throw e;
         } catch (Exception e) {
             log.error("生成岗位描述异常: {}", e.getMessage());
-            result.put("description", "AI生成失败，请手动填写");
-            result.put("requirements", "AI生成失败，请手动填写");
-            return result;
+            throw new BusinessException("AI生成失败，请稍后重试或手动填写", e);
         }
     }
 
@@ -115,25 +117,17 @@ public class JobDescriptionGeneratorService {
         result.put("description", "");
 
         if (aiResponse == null || aiResponse.trim().isEmpty()) {
-            return result;
+            throw new BusinessException("AI未返回岗位描述");
         }
 
-        try {
-            // 提取岗位描述
-            Pattern descPattern = Pattern.compile("【岗位描述】\\s*\\n?([\\s\\S]*?)$", Pattern.CASE_INSENSITIVE);
-            Matcher descMatcher = descPattern.matcher(aiResponse);
-            if (descMatcher.find()) {
-                result.put("description", descMatcher.group(1).trim());
-            }
-
-            // 如果解析失败，直接返回原始内容
-            if (result.get("description").isEmpty()) {
-                result.put("description", aiResponse.trim());
-            }
-
-        } catch (Exception e) {
-            log.error("解析生成内容异常: {}", e.getMessage());
+        // 带格式标题时只取正文；没有标题的旧格式仍使用原始内容。
+        Pattern descPattern = Pattern.compile("【岗位描述】\\s*\\n?([\\s\\S]*?)$", Pattern.CASE_INSENSITIVE);
+        Matcher descMatcher = descPattern.matcher(aiResponse);
+        String description = descMatcher.find() ? descMatcher.group(1).trim() : aiResponse.trim();
+        if (description.isEmpty()) {
+            throw new BusinessException("AI未返回岗位描述");
         }
+        result.put("description", description);
 
         return result;
     }

@@ -518,7 +518,7 @@
             <div class="info-item">
               <el-icon><OfficeBuilding /></el-icon>
               <span class="info-label">合作模式：</span>
-              <span class="info-value">{{ formatCooperationMode(selectedJob.cooperationMode) }}</span>
+              <span class="info-value">校企双向选择</span>
             </div>
             <div class="info-item">
               <el-icon><Location /></el-icon>
@@ -1135,19 +1135,6 @@ const selectedJob = ref(null)
 
 // 卡片底部企业标签：排除与徽章重复的（实习基地/校友单位）及不宜展示的（接受兜底）
 const filterJobTags = (tags) => (tags || []).filter(t => !['接受兜底', '实习基地', '校友单位'].includes(t))
-
-// 合作模式：兼容新格式(mutual_choice/student_contact)与老格式(双向,兜底,自主)
-const formatCooperationMode = (mode) => {
-  if (!mode) return '-'
-  const map = {
-    '双向': '校企双向选择',
-    '自主': '学生自主联系',
-    '兜底': '接受兜底',
-    mutual_choice: '校企双向选择',
-    student_contact: '学生自主联系'
-  }
-  return mode.split(',').map(m => map[m.trim()] || m.trim()).join('、')
-}
 
 // 企业宣传资料：photos/videos 为 JSON 数组字符串，容错解析
 const favoritePhotos = computed(() => {
@@ -2809,35 +2796,9 @@ const maskEmail = (email) => {
 const handleLogout = async () => {
   // 如果是只读模式（管理员切换过来的），点击退出应该返回管理员端
   if (authStore.user?.isReadOnly && authStore.user?.originalAdminUsername) {
-    const originalAdminUsername = authStore.user.originalAdminUsername
-    const currentRole = authStore.role
-    if (currentRole) {
-      const rolePrefix = currentRole.startsWith('ROLE_') ? currentRole.toLowerCase() + '_' : ''
-      localStorage.removeItem(rolePrefix + 'accessToken_' + currentRole)
-      localStorage.removeItem(rolePrefix + 'refreshToken_' + currentRole)
-      localStorage.removeItem(rolePrefix + 'token_' + currentRole)
-      localStorage.removeItem(rolePrefix + 'role_' + currentRole)
-      localStorage.removeItem(rolePrefix + 'userId_' + currentRole)
-      localStorage.removeItem(rolePrefix + 'username_' + currentRole)
-      localStorage.removeItem(rolePrefix + 'isReadOnly_' + currentRole)
-      localStorage.removeItem(rolePrefix + 'originalAdminUsername_' + currentRole)
+    if (!authStore.restoreAdminSession()) {
+      throw new Error('管理员会话已失效，请重新登录')
     }
-
-    localStorage.setItem('current_role', 'ROLE_ADMIN')
-    localStorage.setItem('admin_accessToken_ROLE_ADMIN', localStorage.getItem('admin_accessToken_ROLE_ADMIN') || '')
-    localStorage.setItem('admin_refreshToken_ROLE_ADMIN', localStorage.getItem('admin_refreshToken_ROLE_ADMIN') || '')
-    localStorage.setItem('admin_role_ROLE_ADMIN', 'ROLE_ADMIN')
-    localStorage.setItem('admin_userId_ROLE_ADMIN', localStorage.getItem('admin_userId_ROLE_ADMIN') || '')
-    localStorage.setItem('admin_username_ROLE_ADMIN', originalAdminUsername)
-
-    authStore.role = 'ROLE_ADMIN'
-    authStore.user = {
-      id: localStorage.getItem('admin_userId_ROLE_ADMIN'),
-      username: originalAdminUsername,
-      name: originalAdminUsername
-    }
-    authStore.token = localStorage.getItem('admin_accessToken_ROLE_ADMIN')
-    authStore.isAuthenticated = true
 
     await router.push('/admin/dashboard')
   } else {

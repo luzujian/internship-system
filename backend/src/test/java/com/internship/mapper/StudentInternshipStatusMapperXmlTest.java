@@ -6,6 +6,8 @@ import org.apache.ibatis.io.Resources;
 import org.apache.ibatis.mapping.BoundSql;
 import org.apache.ibatis.session.Configuration;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.io.InputStream;
 import java.util.List;
@@ -13,8 +15,33 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 
 class StudentInternshipStatusMapperXmlTest {
+
+    @ParameterizedTest
+    @ValueSource(strings = {"getDashboardStats", "getDashboardStatsByClassIds", "getDashboardStatsByDivisionIds",
+            "getStatsByGrade", "getStatsByMajor", "getStatsByClass", "getStatsByClassIds",
+            "getStatsByGradeByClassIds", "getStatsByMajorByClassIds", "getStatsByGradeByDivisionIds",
+            "getStatsByMajorByDivisionIds", "getStatsByClassByDivisionIds", "getStatsByDivisionByDivisionIds"})
+    void dashboardCalendarUsesPlacementDatesAndKeepsStudentsAwaitingPlacement(String statement) throws Exception {
+        String resource = "com/internship/mapper/StudentInternshipStatusMapper.xml";
+        Configuration configuration = configurationWithSharedFragments();
+        try (InputStream input = Resources.getResourceAsStream(resource)) {
+            new XMLMapperBuilder(input, configuration, resource, configuration.getSqlFragments()).parse();
+        }
+        BoundSql boundSql = configuration.getMappedStatement("com.internship.mapper.StudentInternshipStatusMapper." + statement)
+                .getBoundSql(Map.of("startDate", "2026-09-01", "endDate", "2027-09-01",
+                        "classIds", List.of(1L), "divisionIds", List.of(2L)));
+        String sql = boundSql.getSql().replaceAll("\\s+", " ").toLowerCase();
+        assertDoesNotThrow(() -> net.sf.jsqlparser.parser.CCJSqlParserUtil.parse(sql));
+
+        assertFalse(sql.contains("sis.update_time"), "建档/编辑时间不得从当前学生分母排除人员");
+        assertTrue(sql.contains("su.status = 1"));
+        assertTrue(sql.contains("coalesce(sis.status, 0) in (0, 1, 5, 6) or sis.internship_end_time is null or sis.internship_end_time >= ?"));
+        assertTrue(sql.contains("coalesce(sis.status, 0) in (0, 1, 5, 6) or sis.internship_start_time is null or sis.internship_start_time < date_add(?, interval 1 day)"));
+    }
 
     private Configuration configurationWithSharedFragments() throws Exception {
         Configuration configuration = new Configuration();

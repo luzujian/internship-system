@@ -1,10 +1,12 @@
 package com.internship.service;
 
 import com.internship.config.DynamicChatClientFactory;
+import com.internship.agent.business.AgentException;
 import com.internship.entity.CompanyUser;
 import com.internship.entity.Position;
 import com.internship.entity.StudentJobApplication;
 import com.internship.entity.StudentUser;
+import com.internship.exception.BusinessException;
 import com.internship.utils.SalaryFormatter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -38,6 +40,7 @@ public class JobRecommendationAgentService {
     private final DynamicChatClientFactory chatClientFactory;
 
     private static final String SYSTEM_PROMPT = "你是实习管理系统的学生端AI助手，负责为学生推荐合适的实习岗位。";
+    private static final int MAX_CANDIDATES = 30;
 
     @Autowired
     public JobRecommendationAgentService(
@@ -81,8 +84,11 @@ public class JobRecommendationAgentService {
                     .collect(Collectors.toList());
             log.info("系统中共有 {} 个active岗位", allActivePositions.size());
 
-            // 3. 让AI分析哪些岗位适合该学生
-            List<Long> matchedPositionIds = analyzeAndMatchPositions(query, student, allActivePositions, model);
+            // Only a bounded candidate set is sent to the provider on each request.
+            List<Position> candidates = allActivePositions.stream()
+                    .sorted(Comparator.comparingInt((Position position) -> candidateRelevance(position, query, student.getMajor())).reversed())
+                    .limit(MAX_CANDIDATES).toList();
+            List<Long> matchedPositionIds = analyzeAndMatchPositions(query, student, candidates, model);
 
             // 4. 根据ID获取匹配的岗位，并保持AI返回的顺序（按匹配度排序）
             List<Position> matchedPositions;
@@ -114,17 +120,24 @@ public class JobRecommendationAgentService {
 
             // 7. 构建最终结果
             Map<String, Object> result = new HashMap<>();
+            result.put("success", true);
             result.put("type", "job_recommendation");
             result.put("total", recommendedJobs.size());
             result.put("positions", recommendedJobs);
-            result.put("message", String.format("为您找到%d个匹配的岗位", recommendedJobs.size()));
+            result.put("candidateCount", candidates.size());
+            result.put("candidateLimitReached", allActivePositions.size() > MAX_CANDIDATES);
+            result.put("message", allActivePositions.size() > MAX_CANDIDATES
+                    ? String.format("从本次%d个候选岗位中找到%d个匹配岗位，可进一步指定岗位名称筛选", candidates.size(), recommendedJobs.size())
+                    : String.format("为您找到%d个匹配的岗位", recommendedJobs.size()));
 
             log.info("岗位推荐完成: 找到{}个匹配岗位", recommendedJobs.size());
             return result;
 
+        } catch (AgentException e) {
+            throw e;
         } catch (Exception e) {
             log.error("处理岗位推荐异常", e);
-            return buildErrorResult("推荐服务暂时不可用: " + e.getMessage());
+            return buildErrorResult("推荐服务暂时不可用，请稍后重试");
         }
     }
 
@@ -137,37 +150,35 @@ public class JobRecommendationAgentService {
      * @return 匹配的岗位ID列表
      */
     private List<Long> analyzeAndMatchPositions(String query, StudentUser student, List<Position> positions, String model) {
-        try {
-            // 构建岗位列表信息
-            StringBuilder positionsInfo = new StringBuilder();
-            for (Position p : positions) {
-                positionsInfo.append(String.format("ID:%d|名称:%s|要求:%s|描述:%s\n",
-                        p.getId(),
-                        p.getPositionName(),
-                        p.getRequirements() != null ? p.getRequirements() : "",
-                        p.getDescription() != null ? p.getDescription() : ""));
-            }
-
-            String systemPrompt = buildPositionMatchingPrompt();
-            String userPrompt = buildPositionMatchingUserPrompt(query, student, positionsInfo.toString());
-
-            ChatClient client = getChatClientByModel(model);
-            Prompt prompt = new Prompt(List.of(
-                    new SystemMessage(systemPrompt),
-                    new UserMessage(userPrompt)
-            ));
-
-            String aiResponse = client.prompt(prompt).call().content();
-            log.debug("AI 岗位匹配响应已返回：length={}",
-                    aiResponse != null ? aiResponse.length() : 0);
-
-            // 解析AI返回的岗位ID列表
-            return parsePositionIdsFromResponse(aiResponse);
-
-        } catch (Exception e) {
-            log.error("AI岗位匹配异常: {}", e.getMessage());
-            return Collections.emptyList();
+        if (positions.isEmpty()) return List.of();
+        // 构建岗位列表信息
+        StringBuilder positionsInfo = new StringBuilder();
+        for (Position p : positions) {
+            positionsInfo.append(String.format("ID:%d|名称:%s|要求:%s|描述:%s\n",
+                    p.getId(),
+                    bounded(p.getPositionName(), 80),
+                    bounded(p.getRequirements(), 160),
+                    bounded(p.getDescription(), 240)));
         }
+
+        String systemPrompt = buildPositionMatchingPrompt();
+        String userPrompt = buildPositionMatchingUserPrompt(query, student, positionsInfo.toString());
+
+        ChatClient client = getChatClientByModel(model);
+        Prompt prompt = new Prompt(List.of(
+                new SystemMessage(systemPrompt),
+                new UserMessage(userPrompt)
+        ));
+
+        String aiResponse = client.prompt(prompt).call().content();
+        log.debug("AI 岗位匹配响应已返回：length={}",
+                aiResponse != null ? aiResponse.length() : 0);
+
+        // 解析AI返回的岗位ID列表
+        List<Long> ids = parsePositionIdsFromResponse(aiResponse);
+        Set<Long> candidateIds = positions.stream().map(Position::getId).collect(Collectors.toSet());
+        if (!candidateIds.containsAll(ids)) throw new BusinessException("AI返回了候选范围外的岗位");
+        return ids;
     }
 
     /**
@@ -198,10 +209,10 @@ public class JobRecommendationAgentService {
      */
     private String buildPositionMatchingUserPrompt(String query, StudentUser student, String positionsInfo) {
         return "学生信息：\n" +
-                "- 专业：" + student.getMajor() + "\n" +
-                "- 年级：" + student.getGrade() + "\n" +
-                "- 姓名：" + student.getName() + "\n" +
-                "- 用户需求：" + query + "\n\n" +
+                "- 专业：" + bounded(student.getMajor(), 120) + "\n" +
+                "- 年级：" + bounded(Objects.toString(student.getGrade(), ""), 80) + "\n" +
+                "- 姓名：" + bounded(student.getName(), 80) + "\n" +
+                "- 用户需求：" + bounded(query, 4000) + "\n\n" +
                 "可用岗位列表：\n" + positionsInfo + "\n\n" +
                 "请根据学生的专业背景和用户需求，从上述岗位列表中选出最适合的岗位。\n" +
                 "重要：必须按匹配度从高到低排序，最匹配的岗位ID排在前面。\n" +
@@ -213,41 +224,42 @@ public class JobRecommendationAgentService {
      */
     private List<Long> parsePositionIdsFromResponse(String aiResponse) {
         if (aiResponse == null || aiResponse.trim().isEmpty()) {
-            return Collections.emptyList();
+            throw new BusinessException("AI未返回岗位推荐结果");
         }
-
-        try {
-            // 查找 position_ids: 后面的内容
-            Pattern pattern = Pattern.compile("position_ids:\\s*([^\\n]+)");
-            Matcher matcher = pattern.matcher(aiResponse);
-
-            if (matcher.find()) {
-                String idsStr = matcher.group(1).trim();
-                if (idsStr.isEmpty() || "\"\"".equals(idsStr)) {
-                    return Collections.emptyList();
-                }
-
-                // 解析ID列表
-                List<Long> ids = new ArrayList<>();
-                for (String idStr : idsStr.split(",")) {
-                    try {
-                        ids.add(Long.parseLong(idStr.trim()));
-                    } catch (NumberFormatException e) {
-                        // 忽略无效的ID
-                    }
-                }
-                log.info("解析到 %d 个匹配岗位ID", ids.size());
-                return ids;
-            }
-
-            log.warn("无法从 AI 响应中解析岗位 ID：responseLength={}",
-                    aiResponse != null ? aiResponse.length() : 0);
-            return Collections.emptyList();
-
-        } catch (Exception e) {
-            log.error("解析岗位ID异常: {}", e.getMessage());
-            return Collections.emptyList();
+        Matcher matcher = Pattern.compile("(?i)position_ids:[ \\t]*([^\\r\\n]*)").matcher(aiResponse);
+        if (!matcher.find()) throw new BusinessException("AI岗位推荐结果格式不正确");
+        String idsText = matcher.group(1).trim();
+        if ("\"\"".equals(idsText)) return List.of();
+        if (!idsText.matches("\\d+(?:\\s*,\\s*\\d+)*")) throw new BusinessException("AI岗位推荐结果格式不正确");
+        LinkedHashSet<Long> ids = new LinkedHashSet<>();
+        for (String value : idsText.split(",")) {
+            Long id = Long.valueOf(value.trim());
+            if (id <= 0) throw new BusinessException("AI岗位推荐结果格式不正确");
+            ids.add(id);
+            if (ids.size() == 10) break;
         }
+        return new ArrayList<>(ids);
+    }
+
+    private String bounded(String value, int limit) {
+        if (value == null) return "";
+        String text = value.replace('\n', ' ').replace('\r', ' ');
+        return text.length() <= limit ? text : text.substring(0, limit);
+    }
+
+    private int candidateRelevance(Position position, String query, String major) {
+        String title = bounded(position.getPositionName(), 80).toLowerCase(Locale.ROOT);
+        String requirement = bounded(position.getRequirements(), 160).toLowerCase(Locale.ROOT);
+        String request = bounded(query, 4000).toLowerCase(Locale.ROOT);
+        int score = !title.isBlank() && request.contains(title) ? 4 : 0;
+        Matcher keywords = Pattern.compile("[a-z0-9+#]{2,}").matcher(request);
+        while (keywords.find()) {
+            if (title.contains(keywords.group())) score += 2;
+            if (requirement.contains(keywords.group())) score++;
+        }
+        if (major != null && !major.isBlank() && (title.contains(major.toLowerCase(Locale.ROOT))
+                || requirement.contains(major.toLowerCase(Locale.ROOT)))) score += 2;
+        return score;
     }
 
     /**
@@ -400,6 +412,7 @@ public class JobRecommendationAgentService {
      */
     private Map<String, Object> buildErrorResult(String message) {
         Map<String, Object> result = new HashMap<>();
+        result.put("success", false);
         result.put("type", "job_recommendation");
         result.put("total", 0);
         result.put("positions", Collections.emptyList());

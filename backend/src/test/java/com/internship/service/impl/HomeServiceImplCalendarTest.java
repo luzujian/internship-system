@@ -8,6 +8,8 @@ import com.internship.mapper.StudentInternshipStatusMapper;
 import com.internship.service.CompanyUserService;
 import com.internship.service.InternshipCalendarService;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
@@ -18,6 +20,8 @@ import java.util.Map;
 
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 @ExtendWith(MockitoExtension.class)
 class HomeServiceImplCalendarTest {
@@ -42,6 +46,10 @@ class HomeServiceImplCalendarTest {
     @Mock private AnnouncementMapper announcementMapper;
     @Mock private CompanyUserService companyUserService;
     @Mock private InternshipCalendarService calendarService;
+    @Mock private com.internship.mapper.ClassCounselorRelationMapper classCounselorRelationMapper;
+    @Mock private com.internship.mapper.TeacherUserMapper teacherUserMapper;
+    @Mock private com.internship.mapper.DivisionMapper divisionMapper;
+    @Mock private com.internship.mapper.DepartmentMapper departmentMapper;
 
     @InjectMocks
     private HomeServiceImpl service;
@@ -61,5 +69,43 @@ class HomeServiceImplCalendarTest {
         service.getHomeStats(null, null, null, null);
 
         verify(statusMapper).getDashboardStats("2026-03-01", "2026-12-31");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"COUNSELOR", "DEPARTMENT", "COLLEGE", "TEACHER"})
+    void missingTeachingScopeNeverFallsBackToSchoolWideStatistics(String teacherType) {
+        when(announcementMapper.findAll()).thenReturn(new ArrayList<>());
+
+        var result = service.getHomeStats(99L, teacherType, "2026-09-01", "2027-09-01");
+
+        assertEquals(0.0, result.getInternshipRate());
+        assertEquals(0, result.getStatusData().stream().mapToInt(item -> item.getValue()).sum());
+        verifyNoInteractions(statusMapper);
+    }
+
+    @Test
+    void collegeWithoutDivisionsNeverFallsBackToSchoolWideStatistics() {
+        var teacher = new com.internship.entity.TeacherUser();
+        teacher.setDepartmentId("7");
+        when(teacherUserMapper.findById(99L)).thenReturn(teacher);
+        when(announcementMapper.findAll()).thenReturn(new ArrayList<>());
+
+        var result = service.getHomeStats(99L, "COLLEGE", "2026-09-01", "2027-09-01");
+
+        assertEquals(0.0, result.getInternshipRate());
+        verifyNoInteractions(statusMapper);
+    }
+
+    @Test
+    void schoolYearRateIncludesUnplacedStudentsInTheDenominator() {
+        when(statusMapper.getDashboardStats("2026-09-01", "2027-09-01"))
+                .thenReturn(Map.of("totalStudents", 47, "confirmed", 18, "noOffer", 29));
+        when(announcementMapper.findAll()).thenReturn(new ArrayList<>());
+
+        var result = service.getHomeStats(1L, "ADMIN", "2026-09-01", "2027-09-01");
+
+        assertEquals(38.3, result.getInternshipRate());
+        assertEquals(29, result.getStatusData().stream()
+                .filter(item -> "没offer".equals(item.getName())).findFirst().orElseThrow().getValue());
     }
 }

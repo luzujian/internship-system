@@ -2,10 +2,10 @@
 import request from '@/utils/request'
 
 export interface LogSummary {
-  todayOperations: number
-  todayFailedOperations: number
-  todayFailedLogins: number
-  todayHighRiskEvents: number
+  todayOperations: number | null
+  todayFailedOperations: number | null
+  todayFailedLogins: number | null
+  todayHighRiskEvents: number | null
 }
 
 export interface OperateLogItem {
@@ -196,7 +196,10 @@ export const runRetentionApi = (reason: string) => {
 
 export interface IntegrityVerifyReport {
   passed: boolean
+  status?: 'PASSED' | 'FAILED' | 'INCOMPLETE' | 'NO_DATA'
   totalIssues: number
+  totalWarnings?: number
+  continuityWarnings?: string[]
   signatureRoots: Record<string, number>
   [key: string]: unknown
 }

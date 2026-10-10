@@ -76,6 +76,10 @@
           show-word-limit
           placeholder="可填写补充说明（选填）"
         />
+        <div class="agreement-field">
+          <label><span class="required-mark">*</span>盖章实习协议</label>
+          <InternshipAgreementUpload ref="agreementUploader" v-model="agreementFiles" :disabled="submitting" :company-key="String(selectedOffer.offerId)" />
+        </div>
         <el-button type="primary" :loading="submitting" @click="confirmSelectedOffer">
           确认该实习
         </el-button>
@@ -152,11 +156,14 @@
             <p v-if="record.endReason || record.rejectionReason || record.recallReason" class="record-reason">
               {{ record.endReason || record.rejectionReason || record.recallReason }}
             </p>
+            <el-button v-if="record.agreementSourceId && (record.recallStatus != null || record.status === 1 || record.status === 2)" link type="primary" @click="openAgreement(record)">实习协议</el-button>
           </div>
         </article>
       </div>
     </section>
 
+    <InternshipAgreementDialog v-if="agreementTarget" v-model="agreementVisible"
+      :source-type="agreementTarget.sourceType" :source-id="agreementTarget.sourceId" />
     <!-- 撤回确认对话框 -->
     <el-dialog
       v-model="showRecallDialog"
@@ -202,6 +209,9 @@ import {
   OfficeBuilding
 } from '@element-plus/icons-vue'
 import request from '@/utils/request'
+import InternshipAgreementUpload from '@/components/student/InternshipAgreementUpload.vue'
+import InternshipAgreementDialog from '@/components/student/InternshipAgreementDialog.vue'
+import type { AgreementSource, AgreementUploadFile } from '@/api/internshipAgreements'
 
 interface InternshipOffer {
   offerId: string | number
@@ -219,6 +229,8 @@ interface InternshipOffer {
 }
 
 interface PlacementRecord {
+  agreementSourceType?: AgreementSource
+  agreementSourceId?: number
   id?: string | number
   placementId?: string | number
   companyName?: string
@@ -249,6 +261,15 @@ const currentPlacement = ref<PlacementRecord | null>(null)
 const pendingConfirmation = ref<PlacementRecord | null>(null)
 const selectedOfferId = ref('')
 const confirmationRemark = ref('')
+const agreementFiles = ref<AgreementUploadFile[]>([])
+const agreementUploader = ref<InstanceType<typeof InternshipAgreementUpload> | null>(null)
+const agreementVisible = ref(false)
+const agreementTarget = ref<{ sourceType: AgreementSource; sourceId: number } | null>(null)
+const openAgreement = (record: PlacementRecord) => {
+  if (!record.agreementSourceId || !record.agreementSourceType) return
+  agreementTarget.value = { sourceType: record.agreementSourceType, sourceId: record.agreementSourceId }
+  agreementVisible.value = true
+}
 const submitting = ref(false)
 const highlightedConfirmationId = ref('')
 const offersLoading = ref(false)
@@ -478,6 +499,7 @@ const confirmSelectedOffer = async () => {
     ElMessage.warning('您已有待企业确认的申请，请先等待企业处理或撤回后再提交新的确认')
     return
   }
+  if (!agreementUploader.value?.validate()) return
   try {
     await ElMessageBox.confirm(
       `确认选择「${offer.companyName || '该企业'} · ${offer.positionName || '该岗位'}」作为新的实习吗？`,
@@ -492,9 +514,11 @@ const confirmSelectedOffer = async () => {
     const operation = formContext.beginFormOperation('confirmation:remark')
     const response: any = await request.post('/student/internship-confirmation', {
       offerId: offer.offerId,
-      remark: confirmationRemark.value.trim()
+      remark: confirmationRemark.value.trim(),
+      agreementFileIds: agreementFiles.value.map(file => file.uploadId)
     })
     if (response.code !== 200) throw new Error(response.message || '确认失败')
+    agreementUploader.value?.markCommitted()
     operation.complete({ status: 'submitted', label: '实习确认已提交，等待企业审核', url: '/student/internship-confirmation-form' })
     ElMessage.success('实习确认已提交，等待企业审核')
     selectedOfferId.value = ''
@@ -574,6 +598,7 @@ useAgentPageContext(() => ({
 // 单例同一时刻只关联一个表单：撤回弹窗打开时优先注册撤回原因；关闭后若已选 Offer 则注册补充说明
 const formContext = useFormContext()
 const confirmProxy = {
+  get agreementFileIds() { return agreementFiles.value.filter(file => file.status === 'success').map(file => file.uploadId) },
   get remark() { return confirmationRemark.value },
   set remark(v: unknown) { confirmationRemark.value = String(v ?? '') }
 }
@@ -595,7 +620,8 @@ watch([showRecallDialog, selectedOfferId], ([recallOpen, offerId]) => {
     formContext.register({
       formId: 'confirmation:remark',
       title: '实习确认补充说明',
-      fields: [{ prop: 'remark', label: '补充说明', type: 'textarea' }],
+      fields: [{ prop: 'remark', label: '补充说明', type: 'textarea' },
+        { prop: 'agreementFileIds', label: '盖章实习协议', type: 'upload', required: true, patternHint: '支持多个Word或PDF文件，单个不超过20MB，请手动上传已盖章协议' }],
       getModel: () => confirmProxy,
       getObject: () => selectedOfferId.value ? { type: 'offer', id: selectedOfferId.value } : null,
       getValidationSummary: () => ({ missingFields: selectedOffer.value ? [] : ['待确认的Offer'], validationErrors: pendingConfirmation.value ? ['已有待企业确认的申请，请先等待企业处理或撤回后再提交'] : [] })
@@ -609,6 +635,9 @@ onUnmounted(() => { formContext.unregister('confirmation:recall'); formContext.u
 </script>
 
 <style scoped>
+.agreement-field { width: 100%; margin: 16px 0; }
+.agreement-field > label { display: block; margin-bottom: 10px; color: #606266; font-size: 14px; }
+.required-mark { margin-right: 4px; color: #f56c6c; }
 .confirmation-page {
   display: grid;
   gap: 20px;

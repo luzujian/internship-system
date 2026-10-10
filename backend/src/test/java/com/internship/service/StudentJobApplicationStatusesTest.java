@@ -2,12 +2,31 @@ package com.internship.service;
 
 import com.internship.exception.BusinessException;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 
 class StudentJobApplicationStatusesTest {
+
+    @ParameterizedTest
+    @CsvSource({"pending,approved", "pending,rejected", "approved,interview_passed",
+            "approved,interview_failed", "interview,interview_passed", "pending_interview,interview_failed"})
+    void acceptsSupportedReviewTransitions(String current, String next) {
+        assertDoesNotThrow(() -> StudentJobApplicationStatuses.requireReviewTransition(current, next));
+    }
+
+    @ParameterizedTest
+    @CsvSource({"pending,unknown", "pending,", "pending,interview_passed", "pending,interview_failed",
+            "approved,pending", "approved,approved", "interview_passed,rejected",
+            "interview_passed,approved", "interview_passed,interview_failed", "rejected,approved"})
+    void rejectsUnknownSkippedOrReversedTransitions(String current, String next) {
+        assertThrows(BusinessException.class,
+                () -> StudentJobApplicationStatuses.requireReviewTransition(current, next));
+    }
 
     @Test
     void rejectionRequiresNonBlankReason() {

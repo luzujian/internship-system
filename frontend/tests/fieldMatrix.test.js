@@ -14,8 +14,7 @@ import { fileURLToPath } from 'node:url';
 // [formId, prop, flag前缀]
 const REVIEWED = [
   ['admin:ai-model', 'clearApiConfig', 'BOUND_NOT_DECLARED'],
-  // 模型用途切换影响系统实际路由，由管理员手动选择，不开放给 AI 填表。
-  ['admin:ai-model', 'isDefault', 'BOUND_NOT_DECLARED'],
+  // isDefault 现有条件 disabled，扫描器按 readonly 排除；下方独立断言继续保护手动用途与敏感字段。
   ['admin:ai-model', 'useForVoice', 'BOUND_NOT_DECLARED'],
   ['admin:backup', 'enabled', 'BOUND_NOT_DECLARED'],
   ['admin:backup', 'time', 'BOUND_NOT_DECLARED'],
@@ -46,10 +45,29 @@ const REVIEWED = [
   ['home:self-practice', 'applicationLetterUrl', 'UPLOAD_FIELD'],
   ['home:self-practice', 'acceptanceLetterUrl', 'DECLARED_NOT_BOUND'],
   ['home:self-practice', 'acceptanceLetterUrl', 'UPLOAD_FIELD'],
+  // 实习协议由多文件上传组件生成 ID 清单；只声明必填提示，不允许 AI 写入文件 ID。
+  ['home:self-practice', 'agreementFileIds', 'DECLARED_NOT_BOUND'],
+  ['home:self-practice', 'agreementFileIds', 'UPLOAD_FIELD'],
+  ['confirmation:remark', 'agreementFileIds', 'UPLOAD_FIELD'],
   ['teacher:score-weights', '-', 'FIELDS_UNRESOLVED'],
 ];
 
 const dir = dirname(fileURLToPath(import.meta.url));
+
+test('AI模型用途与密钥始终保持手动配置，条件禁用不削弱AI字段门禁', () => {
+  const source = readFileSync(join(dir, '..', 'src', 'views', 'admin', 'AIModelManagement.vue'), 'utf8');
+  const start = source.indexOf('const aiModelFillFields');
+  const end = source.indexOf('const registerAiModelForm');
+  assert.ok(start >= 0 && end > start, 'must locate the actual registered descriptor factory');
+  const fields = [...source.slice(start, end).matchAll(/prop:\s*'([^']+)'/g)].map(match => match[1]).sort();
+  assert.deepEqual(fields, ['modelName', 'modelCode', 'provider', 'apiEndpoint', 'maxTokens', 'temperature', 'status', 'description'].sort());
+  for (const prop of ['isDefault', 'useForVoice', 'clearApiConfig']) {
+    assert.match(source, new RegExp('v-model="form\\.' + prop + '"'), `${prop} must retain its manual control`);
+    assert.ok(!fields.includes(prop), `${prop} must stay outside AI fill descriptors`);
+  }
+  assert.ok(!fields.includes('apiKey'), 'AI must never receive a fillable credential field');
+  assert.match(source, /<el-checkbox[^>]*v-model="form\.isDefault"[^>]*:disabled="editingCurrentChat"/);
+});
 
 test('字段矩阵零未评审 flag 门禁', () => {
   execFileSync(process.execPath, [join(dir, 'field_matrix.mjs')], { stdio: 'pipe' });

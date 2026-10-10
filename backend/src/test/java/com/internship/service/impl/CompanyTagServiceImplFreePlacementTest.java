@@ -29,7 +29,14 @@ class CompanyTagServiceImplFreePlacementTest {
         company.setCooperationMode("student_contact");
         service.updateCompanyTag(1L);
         assertEquals("student_contact", company.getCooperationMode());
-        assertEquals("学生自主联系,其他标签", company.getCompanyTag());
+        assertEquals("其他标签", company.getCompanyTag());
+        company.setCompanyTag("学生自主联系,其他标签");
+        company.setAuditStatus(1);
+        service.updateCompanyTag(1L);
+        assertEquals("校企双向选择,其他标签", company.getCompanyTag());
+        company.setCooperationMode(null);
+        service.updateCompanyTag(1L);
+        assertEquals("校企双向选择,其他标签", company.getCompanyTag());
     }
 
     @Test

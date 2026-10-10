@@ -23,6 +23,11 @@ const companyRoutes: RouteRecordRaw[] = [
     component: agentPage('views/company/InternshipConfirm.vue', () => import('../views/company/InternshipConfirm.vue'))
   },
   {
+    path: 'internship-students',
+    name: 'CompanyInternshipStudents',
+    component: agentPage('views/company/InternshipStudents.vue', () => import('../views/company/InternshipStudents.vue'))
+  },
+  {
     path: 'application-view',
     name: 'ApplicationView',
     component: agentPage('views/company/ApplicationView.vue', () => import('../views/company/ApplicationView.vue'))

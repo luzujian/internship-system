@@ -8,6 +8,10 @@
     <resultMap id="PositionResultMap" type="com.internship.entity.Position">
         <id property="id" column="id" />
         <result property="companyId" column="company_id" />
+        <result property="contactId" column="contact_id" />
+        <result property="contactPerson" column="contact_person" />
+        <result property="contactPhone" column="contact_phone" />
+        <result property="contactEmail" column="contact_email" />
         <result property="categoryId" column="category_id" />
         <result property="positionName" column="position_name" />
         <result property="department" column="department" />
@@ -40,10 +44,23 @@
         <result property="updateTime" column="update_time" />
     </resultMap>
 
+    <sql id="ContactPerson">CASE WHEN cc.id IS NOT NULL THEN cc.name ELSE cu.contact_person END</sql>
+    <sql id="ContactPhone">CASE WHEN cc.id IS NOT NULL THEN cc.phone ELSE cu.contact_phone END</sql>
+    <sql id="ContactEmail">CASE WHEN cc.id IS NOT NULL THEN cc.email ELSE cu.contact_email END</sql>
+    <sql id="ContactColumns">
+        <include refid="com.internship.mapper.PositionMapper.ContactPerson"/> AS contact_person,
+        <include refid="com.internship.mapper.PositionMapper.ContactPhone"/> AS contact_phone,
+        <include refid="com.internship.mapper.PositionMapper.ContactEmail"/> AS contact_email
+    </sql>
+    <sql id="ContactJoins">
+        LEFT JOIN company_users cu ON p.company_id = cu.id
+        LEFT JOIN company_contact cc ON p.contact_id = cc.id AND cc.company_id = p.company_id
+    </sql>
+
     <!-- 插入岗位信息 -->
     <insert id="insert" parameterType="com.internship.entity.Position">
         insert into position (
-            company_id, category_id, position_name, department, position_type,
+            company_id, contact_id, category_id, position_name, department, position_type,
             province, city, district, detail_address,
             salary_min, salary_max, salary_unit, description, requirements,
             planned_recruit, recruited_count, remaining_quota,
@@ -52,7 +69,7 @@
             internship_environment, provides_accommodation, required_majors, create_time, update_time
         )
         values (
-            #{companyId}, #{categoryId}, #{positionName}, #{department}, #{positionType},
+            #{companyId}, #{contactId}, #{categoryId}, #{positionName}, #{department}, #{positionType},
             #{province}, #{city}, #{district}, #{detailAddress},
             #{salaryMin}, #{salaryMax}, #{salaryUnit}, #{description}, #{requirements},
             #{plannedRecruit}, #{recruitedCount}, #{remainingQuota},
@@ -64,7 +81,7 @@
 
     <!-- 根据 ID 查询岗位信息 -->
     <select id="findById" resultMap="PositionResultMap">
-        select * from position where id = #{id}
+        SELECT p.*, <include refid="ContactColumns"/> FROM position p <include refid="ContactJoins"/> where p.id = #{id}
     </select>
 
     <!-- 根据 ID 查询岗位信息并加行锁（FOR UPDATE，防止并发超发） -->
@@ -80,8 +97,9 @@
                  WHERE sis.position_id = p.id AND sis.status IN (1, 2, 3)
                    AND COALESCE(sis.recall_status, 0) != 2), 0
             ) AS recruited_count,
-            p.*
+            p.*, <include refid="ContactColumns"/>
         FROM position p
+        <include refid="ContactJoins"/>
         WHERE p.id = #{id} FOR UPDATE
     </select>
 
@@ -89,6 +107,9 @@
     <update id="update" parameterType="com.internship.entity.Position">
         update position
         <set>
+            <if test="contactSpecified">
+                contact_id = #{contactId},
+            </if>
             <if test="companyId != null">
                 company_id = #{companyId},
             </if>
@@ -206,15 +227,20 @@
                  WHERE sis.position_id = p.id AND sis.status IN (1, 2, 3)
                    AND COALESCE(sis.recall_status, 0) != 2), 0
             ) AS recruited_count,
-            p.*
+            p.*, <include refid="ContactColumns"/>
         FROM position p
+        <include refid="ContactJoins"/>
         ORDER BY p.create_time DESC
+    </select>
+
+    <select id="countByCompanyId" resultType="java.lang.Long">
+        SELECT COUNT(*) FROM position WHERE company_id = #{companyId}
     </select>
 
     <!-- 根据企业 ID 查询岗位信息（动态计算剩余名额） -->
     <select id="findByCompanyId" resultMap="PositionResultMap">
         SELECT
-            p.*,
+            p.*, <include refid="ContactColumns"/>,
             p.planned_recruit - COALESCE(
                 (SELECT COUNT(DISTINCT sis.student_id) FROM student_internship_status sis
                  WHERE sis.position_id = p.id AND sis.status IN (1, 2, 3)
@@ -226,6 +252,7 @@
                    AND COALESCE(sis.recall_status, 0) != 2), 0
             ) AS recruited_count
         FROM position p
+        <include refid="ContactJoins"/>
         WHERE p.company_id = #{companyId}
         ORDER BY p.create_time DESC
     </select>
@@ -233,7 +260,7 @@
     <!-- 根据企业ID和条件查询岗位信息（动态计算剩余名额） -->
     <select id="findByCompanyIdWithConditions" resultMap="PositionResultMap">
         SELECT
-            p.*,
+            p.*, <include refid="ContactColumns"/>,
             p.planned_recruit - COALESCE(
                 (SELECT COUNT(DISTINCT sis.student_id) FROM student_internship_status sis
                  WHERE sis.position_id = p.id AND sis.status IN (1, 2, 3)
@@ -245,6 +272,7 @@
                    AND COALESCE(sis.recall_status, 0) != 2), 0
             ) AS recruited_count
         FROM position p
+        <include refid="ContactJoins"/>
         <where>
             <if test="companyId != null">
                 p.company_id = #{companyId}
@@ -265,7 +293,7 @@
     <!-- 动态条件查询岗位信息（动态计算剩余名额） -->
     <select id="list" resultMap="PositionResultMap">
         SELECT
-            p.*,
+            p.*, <include refid="ContactColumns"/>,
             p.planned_recruit - COALESCE(
                 (SELECT COUNT(DISTINCT sis.student_id) FROM student_internship_status sis
                  WHERE sis.position_id = p.id AND sis.status IN (1, 2, 3)
@@ -277,6 +305,7 @@
                    AND COALESCE(sis.recall_status, 0) != 2), 0
             ) AS recruited_count
         FROM position p
+        <include refid="ContactJoins"/>
         <where>
             <if test="companyId != null">
                 p.company_id = #{companyId}
@@ -294,8 +323,8 @@
     </select>
 
     <!-- 根据 ID 列表查询岗位信息 -->
-    <select id="selectByIds" resultType="com.internship.entity.Position" parameterType="java.util.List">
-        SELECT * FROM position WHERE id IN
+    <select id="selectByIds" resultMap="PositionResultMap" parameterType="java.util.List">
+        SELECT p.*, <include refid="ContactColumns"/> FROM position p <include refid="ContactJoins"/> WHERE p.id IN
         <foreach collection="list" item="id" open="(" separator="," close=")">
             #{id}
         </foreach>
@@ -327,8 +356,9 @@
                  WHERE sis.position_id = p.id AND sis.status IN (1, 2, 3)
                    AND COALESCE(sis.recall_status, 0) != 2), 0
             ) AS recruited_count,
-            p.*
+            p.*, <include refid="ContactColumns"/>
         FROM position p
+        <include refid="ContactJoins"/>
         ORDER BY p.create_time DESC
         LIMIT #{offset}, #{pageSize}
     </select>
@@ -346,8 +376,9 @@
                  WHERE sis.position_id = p.id AND sis.status IN (1, 2, 3)
                    AND COALESCE(sis.recall_status, 0) != 2), 0
             ) AS recruited_count,
-            p.*
+            p.*, <include refid="ContactColumns"/>
         FROM position p
+        <include refid="ContactJoins"/>
         ORDER BY p.create_time DESC
     </select>
 
@@ -372,16 +403,16 @@
             COALESCE((
                 SELECT COUNT(DISTINCT sis.student_id)
                 FROM student_internship_status sis
-                WHERE sis.position_id =
-p.idAND sis.status IN (1, 2, 3)
-p.idAND COALESCE(sis.recall_status, 0) != 2
+                WHERE sis.position_id = p.id
+                AND sis.status IN (1, 2, 3)
+                AND COALESCE(sis.recall_status, 0) != 2
             ), 0) AS recruitedCount,
             p.planned_recruit - COALESCE((
                 SELECT COUNT(DISTINCT sis.student_id)
                 FROM student_internship_status sis
-                WHERE sis.position_id =
-p.idAND sis.status IN (1, 2, 3)
-p.idAND COALESCE(sis.recall_status, 0) != 2
+                WHERE sis.position_id = p.id
+                AND sis.status IN (1, 2, 3)
+                AND COALESCE(sis.recall_status, 0) != 2
             ), 0) AS remainingQuota,
             p.status,
             p.publish_date AS publishDate,
@@ -439,7 +470,7 @@ p.idAND COALESCE(sis.recall_status, 0) != 2
     <!-- 根据类别 ID 查询岗位信息（动态计算剩余名额） -->
     <select id="findByCategoryId" resultMap="PositionResultMap">
         SELECT
-            p.*,
+            p.*, <include refid="ContactColumns"/>,
             p.planned_recruit - COALESCE(
                 (SELECT COUNT(DISTINCT sis.student_id) FROM student_internship_status sis
                  WHERE sis.position_id = p.id AND sis.status IN (1, 2, 3)
@@ -451,6 +482,7 @@ p.idAND COALESCE(sis.recall_status, 0) != 2
                    AND COALESCE(sis.recall_status, 0) != 2), 0
             ) AS recruited_count
         FROM position p
+        <include refid="ContactJoins"/>
         WHERE p.category_id = #{categoryId}
         ORDER BY p.create_time DESC
     </select>
@@ -462,16 +494,16 @@ p.idAND COALESCE(sis.recall_status, 0) != 2
             p.recruited_count = (
                 SELECT COUNT(DISTINCT sis.student_id)
                 FROM student_internship_status sis
-                WHERE sis.position_id =
-#{positionId}AND sis.status IN (1, 2, 3)
-#{positionId}AND COALESCE(sis.recall_status, 0) != 2
+                WHERE sis.position_id = #{positionId}
+                AND sis.status IN (1, 2, 3)
+                AND COALESCE(sis.recall_status, 0) != 2
             ),
             p.remaining_quota = p.planned_recruit - (
                 SELECT COUNT(DISTINCT sis.student_id)
                 FROM student_internship_status sis
-                WHERE sis.position_id =
-#{positionId}AND sis.status IN (1, 2, 3)
-#{positionId}AND COALESCE(sis.recall_status, 0) != 2
+                WHERE sis.position_id = #{positionId}
+                AND sis.status IN (1, 2, 3)
+                AND COALESCE(sis.recall_status, 0) != 2
             ),
             p.update_time = NOW()
         WHERE p.id = #{positionId}

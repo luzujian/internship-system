@@ -1,5 +1,6 @@
 const roleNameMap: Record<string, string> = {
   STUDENT: '学生', TEACHER: '教师', ADMIN: '管理员', COMPANY: '企业', SYSTEM: '系统', UNKNOWN: '未知',
+  TEACHER_COLLEGE: '学院教师', TEACHER_DEPARTMENT: '系室教师', TEACHER_COUNSELOR: '辅导员',
   '管理员切换': '管理员切换'
 }
 
@@ -24,7 +25,9 @@ export const getRiskTagType = (risk?: string) => {
 const eventNameMap: Record<string, string> = {
   LOGIN_SUCCESS: '登录成功', LOGIN_FAILURE: '登录失败', ACCOUNT_LOCK: '账号锁定', LOGOUT: '登出',
   SESSION_TIMEOUT: '会话超时', ACCOUNT_DISABLED: '账号禁用', TOKEN_INVALID: '无效令牌',
-  RETENTION_CLEAN: '留存清理'
+  RETENTION_CLEAN: '留存清理', AUDIT_ARCHIVE: '审计日志归档', PASSWORD_RESET: '密码重置',
+  AUDIT_WRITE_FAILURE: '审计写入失败', AUDIT_INTEGRITY_FAILURE: '审计完整性异常',
+  AUDIT_RETENTION_FAILURE: '日志清理失败'
 }
 export const getEventTypeName = (type?: string) => type ? (eventNameMap[type] || type) : ''
 

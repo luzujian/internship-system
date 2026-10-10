@@ -61,6 +61,8 @@ public interface PositionMapper {
      */
     List<Position> findByCompanyId(Long companyId);
 
+    Long countByCompanyId(@Param("companyId") Long companyId);
+
     /**
      * 根据企业ID和条件查询岗位信息
      * @param companyId 企业ID

@@ -19,6 +19,7 @@ public class InterviewInvitation {
     private String remark;
     private String contactPerson;
     private String contactPhone;
+    private String contactEmail;
     private String website;
     private String companyAddress;
     private Boolean directHire;

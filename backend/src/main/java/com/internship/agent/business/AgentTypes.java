@@ -70,6 +70,8 @@ public final class AgentTypes {
         private int editRound;
         private Integer turnIndex;
         private long createdAt;
+        /** Execution budget starts after admission to a worker; persisted inside the existing JSON snapshot. */
+        private long startedAt;
         private long updatedAt;
         private String runtimeId;
         private String clientRequestId;

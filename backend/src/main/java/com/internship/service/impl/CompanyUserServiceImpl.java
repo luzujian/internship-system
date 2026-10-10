@@ -2,6 +2,8 @@ package com.internship.service.impl;
 
 import com.internship.entity.CompanyUser;
 import com.internship.entity.CompanyAlumniMember;
+import com.internship.entity.CompanyContact;
+import com.internship.service.CompanyContactService;
 import com.internship.entity.PageResult;
 import com.internship.exception.BusinessException;
 import com.internship.mapper.CompanyUserMapper;
@@ -33,6 +35,8 @@ public class CompanyUserServiceImpl implements CompanyUserService {
     private final CompanyUserMapper companyUserMapper;
     private final PasswordEncoder passwordEncoder;
     private final CompanyAlumniService companyAlumniService;
+    @Autowired
+    private CompanyContactService companyContactService;
 
     @Autowired
     public CompanyUserServiceImpl(CompanyUserMapper companyUserMapper,
@@ -48,6 +52,7 @@ public class CompanyUserServiceImpl implements CompanyUserService {
     public int insert(CompanyUser companyUser) {
         log.debug("插入企业信息: {}", companyUser.getCompanyName());
         companyUser.setPassword(UserCredentialDefaults.PASSWORD);
+        companyUser.setCooperationMode("mutual_choice");
 
         if (companyUser.getIsAlumniUnit() == null) {
             companyUser.setIsAlumniUnit(0);
@@ -55,6 +60,7 @@ public class CompanyUserServiceImpl implements CompanyUserService {
         List<CompanyAlumniMember> alumniMembers = companyAlumniService.normalize(
                 companyUser.getIsAlumniUnit(), companyUser.getAlumniMembers());
         companyAlumniService.syncLegacyRepresentative(companyUser, alumniMembers);
+        normalizeLegacyCompanyTag(companyUser);
         validateCompanyInfo(companyUser);
 
         // 使用 BCrypt 加密密码
@@ -228,9 +234,7 @@ public class CompanyUserServiceImpl implements CompanyUserService {
         if (companyUser.getWebsite() != null) {
             existingCompany.setWebsite(companyUser.getWebsite());
         }
-        if (companyUser.getCooperationMode() != null) {
-            existingCompany.setCooperationMode(companyUser.getCooperationMode());
-        }
+        existingCompany.setCooperationMode("mutual_choice");
         if (companyUser.getLogo() != null) {
             existingCompany.setLogo(companyUser.getLogo());
         }
@@ -243,10 +247,6 @@ public class CompanyUserServiceImpl implements CompanyUserService {
 
         // 审核相关字段
         if (companyUser.getAuditStatus() != null) {
-            if (Integer.valueOf(1).equals(companyUser.getAuditStatus())
-                    && !Integer.valueOf(1).equals(existingCompany.getAuditStatus())) {
-                existingCompany.setCooperationMode("mutual_choice");
-            }
             existingCompany.setAuditStatus(companyUser.getAuditStatus());
         }
         if (companyUser.getAuditRemark() != null) {
@@ -266,6 +266,7 @@ public class CompanyUserServiceImpl implements CompanyUserService {
             existingCompany.setRecallStatus(companyUser.getRecallStatus());
         }
 
+        normalizeLegacyCompanyTag(existingCompany);
         existingCompany.setUpdateTime(new Date());
 
         int result = companyUserMapper.update(existingCompany);
@@ -286,6 +287,8 @@ public class CompanyUserServiceImpl implements CompanyUserService {
         companyUser.setPassword(null);
         companyUser.setUsername(null);
         companyUser.setRole(null);
+        companyUser.setCooperationMode("mutual_choice");
+        normalizeLegacyCompanyTag(companyUser);
         companyUser.setUpdateTime(new Date());
         return companyUserMapper.update(companyUser);
     }
@@ -569,111 +572,107 @@ public class CompanyUserServiceImpl implements CompanyUserService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public Map<String, Object> importFromExcel(List<Map<String, Object>> companyDataList) {
-        log.info("开始从Excel导入企业数据，总数据量: {}", companyDataList != null ? companyDataList.size() : 0);
-
-        int successCount = 0;
-        int failCount = 0;
+        Map<String, List<Map<String, Object>>> groups = new java.util.LinkedHashMap<>();
+        for (Map<String, Object> row : companyDataList == null ? List.<Map<String, Object>>of() : companyDataList) {
+            String name = getStringValue(row, "企业名称");
+            if (StringUtils.isNotBlank(name)) groups.computeIfAbsent(name.toLowerCase(java.util.Locale.ROOT), key -> new ArrayList<>()).add(row);
+        }
         List<Map<String, Object>> failList = new ArrayList<>();
-
-        if (companyDataList == null || companyDataList.isEmpty()) {
-            Map<String, Object> result = new HashMap<>();
-            result.put("successCount", successCount);
-            result.put("failCount", failCount);
-            result.put("failList", failList);
-            return result;
-        }
-
-        List<String> allCompanyNames = new ArrayList<>();
-        for (Map<String, Object> rowData : companyDataList) {
-            String companyName = getStringValue(rowData, "企业名称");
-            if (StringUtils.isNotBlank(companyName)) {
-                allCompanyNames.add(companyName);
-            }
-        }
-
-        Map<String, CompanyUser> existingCompanyMap = new HashMap<>();
-        if (!allCompanyNames.isEmpty()) {
-            for (String companyName : allCompanyNames) {
-                CompanyUser existingCompany = companyUserMapper.findByUsername(companyName);
-                if (existingCompany != null) {
-                    existingCompanyMap.put(companyName, existingCompany);
-                }
-            }
-        }
-
-        List<CompanyUser> validCompanyList = new ArrayList<>();
-        Map<String, String> pendingInitialPasswords = new HashMap<>();
         List<Map<String, String>> initialCredentials = new ArrayList<>();
-
-        for (int i = 0; i < companyDataList.size(); i++) {
-            Map<String, Object> rowData = companyDataList.get(i);
-            Map<String, Object> failInfo = new HashMap<>();
-            failInfo.put("rowNum", i + 2);
-            failInfo.putAll(rowData);
-
+        int created = 0, updated = 0, contactCount = 0;
+        for (List<Map<String, Object>> rows : groups.values()) {
+            String name = getStringValue(rows.getFirst(), "企业名称");
+            CompanyUser company;
+            List<CompanyContact> contacts = new ArrayList<>();
+            boolean isNew;
+            // Validate the complete company group before any write. Database failures
+            // below abort the transaction rather than reporting a partial success.
             try {
-                // 跳过企业名称为空的空行（如模板自带的填写说明行）
-                if (StringUtils.isBlank(getStringValue(rowData, "企业名称"))) {
-                    continue;
+                List<CompanyUser> matches = companyUserMapper.findImportMatches(name);
+                if (matches.size() > 1) throw new BusinessException("系统存在多个同名企业，请先核实账号后再导入");
+                isNew = matches.isEmpty();
+                company = isNew ? convertToCompanyUser(rows.getFirst()) : matches.getFirst();
+                if (isNew && companyUserMapper.findByUsername(name) != null) {
+                    throw new BusinessException("企业名称对应的账号已被其他企业使用，请先核实");
                 }
-                CompanyUser companyUser = convertToCompanyUser(rowData);
-
-                if (existingCompanyMap.containsKey(companyUser.getCompanyName())) {
-                    failInfo.put("errorMsg", "企业名称已存在");
-                    failList.add(failInfo);
-                    failCount++;
-                    continue;
+                for (Map<String, Object> row : rows) {
+                    if (row.containsKey("_contactError")) throw new BusinessException(row.get("_contactError").toString());
+                    CompanyContact contact = new CompanyContact();
+                    contact.setName(getStringValue(row, "联系人"));
+                    contact.setPhone(getStringValue(row, "联系电话"));
+                    contact.setEmail(getStringValue(row, "联系邮箱"));
+                    companyContactService.validateImported(contact);
+                    contacts.add(contact);
+                    applyImportedFields(company, row);
                 }
-
-                validateCompanyInfo(companyUser);
-                String initialPassword = UserCredentialDefaults.PASSWORD;
-                companyUser.setPassword(passwordEncoder.encode(initialPassword));
-
-                validCompanyList.add(companyUser);
-                pendingInitialPasswords.put(companyUser.getCompanyName(), initialPassword);
-                existingCompanyMap.put(companyUser.getCompanyName(), companyUser);
-
-            } catch (Exception e) {
-                log.error("导入企业数据失败，行号: {}", i + 2, e);
-                failInfo.put("errorMsg", e.getMessage());
-                failList.add(failInfo);
-                failCount++;
+                validateCompanyInfo(company);
+            } catch (BusinessException e) {
+                for (Map<String, Object> row : rows) failList.add(Map.of(
+                        "rowNum", row.getOrDefault("_rowNum", companyDataList.indexOf(row) + 2),
+                        "企业名称", name, "errorMsg", e.getMessage()));
+                continue;
             }
-        }
-
-        if (!validCompanyList.isEmpty()) {
-            final int BATCH_SIZE = 100;
-            int totalSize = validCompanyList.size();
-            int batchCount = (totalSize + BATCH_SIZE - 1) / BATCH_SIZE;
-
-            for (int i = 0; i < batchCount; i++) {
-                int start = i * BATCH_SIZE;
-                int end = Math.min(start + BATCH_SIZE, totalSize);
-                List<CompanyUser> batchList = validCompanyList.subList(start, end);
-
-                int batchResult = companyUserMapper.batchInsert(batchList);
-                if (batchResult != batchList.size()) {
-                    throw new BusinessException("企业导入未全部写入，请重试");
-                }
-                successCount += batchResult;
-                for (CompanyUser insertedCompany : batchList) {
-                    initialCredentials.add(Map.of("username", insertedCompany.getUsername(),
-                            "password", pendingInitialPasswords.get(insertedCompany.getCompanyName())));
-                }
-
-                log.info("导入批次 {} 成功，导入数量: {}", i + 1, batchResult);
+            company.setCooperationMode("mutual_choice");
+            if (isNew) {
+                company.setPassword(passwordEncoder.encode(UserCredentialDefaults.PASSWORD));
+                if (companyUserMapper.insert(company) != 1) throw new BusinessException("企业导入未全部写入，请重试");
+                created++;
+                initialCredentials.add(Map.of("username", company.getUsername(), "password", UserCredentialDefaults.PASSWORD));
+            } else {
+                companyContactService.lockCompany(company.getId());
+                updated++;
             }
+            Map<String, CompanyContact> unique = new java.util.LinkedHashMap<>();
+            for (CompanyContact contact : contacts) {
+                String key = contact.getName() + "\u0000" + contact.getPhone();
+                CompanyContact previous = unique.putIfAbsent(key, contact);
+                if (previous != null && !contact.getEmail().isEmpty()) previous.setEmail(contact.getEmail());
+            }
+            CompanyContact first = null;
+            for (CompanyContact contact : unique.values()) {
+                boolean allowNameMatch = unique.values().stream().filter(c -> c.getName().equals(contact.getName())).count() == 1;
+                CompanyContact saved = companyContactService.mergeImported(company.getId(), contact, allowNameMatch);
+                if (first == null) first = saved;
+                contactCount++;
+            }
+            company.setContactPerson(first.getName());
+            company.setContactPhone(first.getPhone());
+            if (isNew || !first.getEmail().isEmpty()) company.setContactEmail(first.getEmail());
+            company.setUpdateTime(new Date());
+            if (companyUserMapper.updateImportedProfile(company) != 1) throw new BusinessException("企业导入未全部写入，请重试");
         }
-
-        log.info("Excel企业数据导入完成，成功: {}, 失败: {}", successCount, failCount);
-
+        companyContactService.invalidatePositions();
         Map<String, Object> result = new HashMap<>();
-        result.put("successCount", successCount);
-        result.put("failCount", failCount);
+        result.put("successCount", created + updated);
+        result.put("createdCount", created);
+        result.put("updatedCount", updated);
+        result.put("contactCount", contactCount);
+        result.put("failCount", failList.size());
         result.put("failList", failList);
         result.put("initialCredentials", initialCredentials);
-
         return result;
+    }
+
+    private void applyImportedFields(CompanyUser company, Map<String, Object> row) {
+        String value = getStringValue(row, "企业地址");
+        if (StringUtils.isNotBlank(value)) company.setAddress(value);
+        value = getStringValue(row, "所在城市");
+        if (StringUtils.isNotBlank(value)) {
+            company.setCity(value);
+            if (StringUtils.isBlank(company.getAddress())) company.setAddress(value);
+        }
+        value = getStringValue(row, "企业简介");
+        if (StringUtils.isNotBlank(value)) company.setIntroduction(value);
+        value = getStringValue(row, "统一社会信用代码");
+        if (StringUtils.isNotBlank(value)) company.setCreditCode(value);
+        value = getStringValue(row, "手机号");
+        if (StringUtils.isNotBlank(value)) company.setPhone(value);
+        value = getStringValue(row, "个人邮箱");
+        if (StringUtils.isNotBlank(value)) company.setEmail(value);
+        value = getStringValue(row, "营业执照");
+        if (StringUtils.isNotBlank(value)) company.setBusinessLicense(value);
+        value = getStringValue(row, "法人身份证");
+        if (StringUtils.isNotBlank(value)) company.setLegalIdCard(value);
     }
 
     private CompanyUser convertToCompanyUser(Map<String, Object> rowData) {
@@ -834,6 +833,7 @@ public class CompanyUserServiceImpl implements CompanyUserService {
         if (modeTags != null) result.addAll(modeTags);
         List<String> flagTags = companyUserMapper.getDistinctFlagTags();
         if (flagTags != null) result.addAll(flagTags);
+        result.remove("学生自主联系");
         return new ArrayList<>(result);
     }
 
@@ -846,6 +846,10 @@ public class CompanyUserServiceImpl implements CompanyUserService {
         if (company != null && company.getCompanyTag() != null) {
             company.setCompanyTag(company.getCompanyTag()
                     .replace("双向选择阶段", "校企双向选择"));
+            company.setCompanyTag(Arrays.stream(company.getCompanyTag().split(","))
+                    .map(String::trim)
+                    .filter(tag -> !"学生自主联系".equals(tag))
+                    .collect(Collectors.joining(",")));
         }
     }
 

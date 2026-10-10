@@ -792,8 +792,8 @@ const loadStudents = async () => {
 const loadStatistics = async () => {
   statsLoading.value = true
   try {
-    // 如果是辅导员访问，加载辅导员的统计数据
-    if (isCounselor.value && counselorId.value > 0) {
+    // 辅导员学生管理页只需要班级数和学生数
+    if (isStudentManagementPage.value && isCounselor.value && counselorId.value > 0) {
       const response = await getCounselorStatistics(counselorId.value) as unknown as {
         code?: number
         data?: { classCount?: number; studentCount?: number }
@@ -804,22 +804,8 @@ const loadStatistics = async () => {
         if (response.data.studentCount !== undefined) statistics.value.studentCount = response.data.studentCount
       }
     } else {
-      // 非辅导员访问（系室教师、院系教师等），获取全部学生的统计数据
-      const response = await studentApi.getStatistics() as unknown as {
-        code?: number
-        data?: {
-          studentCount?: number
-          noOfferCount?: number
-          pendingCount?: number
-          confirmedCount?: number
-          interningCount?: number
-          finishedCount?: number
-          interruptedCount?: number
-          delayedCount?: number
-        }
-      }
-      // studentApi.getStatistics 返回 {code,data} 包体，统计对象即内层 data
-      const actualData = response?.data ?? {}
+      // 状态监控统一按当前教师管辖范围统计；API 已返回解包后的统计对象
+      const actualData = await studentApi.getStatistics()
       statistics.value.studentCount = actualData.studentCount || 0
       statistics.value.noOfferCount = actualData.noOfferCount || 0
       statistics.value.pendingCount = actualData.pendingCount || 0

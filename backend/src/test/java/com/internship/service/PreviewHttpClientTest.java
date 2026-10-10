@@ -105,14 +105,14 @@ class PreviewHttpClientTest {
     }
 
     @org.junit.jupiter.api.Test
-    void normalClientKeepsItsExistingRetryPolicy() {
+    void normalClientAlsoKeepsOneAttemptForRuntimeSafety() {
         factory.createPreviewChatClient("deepseek-chat", "local");
         long started = System.nanoTime();
         assertThrows(Exception.class, () -> factory.createChatClient("deepseek-chat", "local")
                 .prompt().user("local").call().chatResponse());
         System.out.printf("PREVIEW_HTTP scenario=normal-client requests=%d elapsedMs=%d%n",
                 requests.get(), (System.nanoTime() - started) / 1_000_000);
-        assertEquals(2, requests.get());
+        assertEquals(1, requests.get());
     }
 
     private Map<String, Object> parse(boolean teacher) {

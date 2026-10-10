@@ -401,8 +401,7 @@
                 <foreach collection="companyTags" item="tag" separator=" and " open="(" close=")">
                     (
                         FIND_IN_SET(#{tag}, REPLACE(company_tag, '双向选择阶段', '校企双向选择')) > 0
-                        OR (#{tag} = '校企双向选择' AND (cooperation_mode LIKE '%双向%' OR cooperation_mode LIKE '%mutual_choice%'))
-                        OR (#{tag} = '学生自主联系' AND (cooperation_mode LIKE '%自主%' OR cooperation_mode LIKE '%student_contact%'))
+                        OR (#{tag} = '校企双向选择' AND audit_status = 1)
                         OR (#{tag} = '接受兜底' AND (cooperation_mode LIKE '%兜底%' OR accept_backup = 1))
                         OR (#{tag} = '实习基地' AND is_internship_base = 1)
                         OR (#{tag} = '已签协议' AND has_training_base_agreement = 1)
@@ -444,8 +443,7 @@
                 <foreach collection="companyTags" item="tag" separator=" AND " open="AND (" close=")">
                     (
                         FIND_IN_SET(#{tag}, REPLACE(c.company_tag, '双向选择阶段', '校企双向选择')) &gt; 0
-                        OR (#{tag} = '校企双向选择' AND (c.cooperation_mode LIKE '%双向%' OR c.cooperation_mode LIKE '%mutual_choice%'))
-                        OR (#{tag} = '学生自主联系' AND (c.cooperation_mode LIKE '%自主%' OR c.cooperation_mode LIKE '%student_contact%'))
+                        OR (#{tag} = '校企双向选择' AND c.audit_status = 1)
                         OR (#{tag} = '接受兜底' AND (c.cooperation_mode LIKE '%兜底%' OR c.accept_backup = 1))
                         OR (#{tag} = '实习基地' AND c.is_internship_base = 1)
                         OR (#{tag} = '已签协议' AND c.has_training_base_agreement = 1)
@@ -746,6 +744,26 @@
     </update>
 
     <!-- 根据公司名称查找公司 -->
+    <!-- Import never writes account identity, password, approval or historical associations. -->
+    <update id="updateImportedProfile">
+        UPDATE company_users
+        <set>
+            cooperation_mode = #{cooperationMode},
+            contact_person = #{contactPerson}, contact_phone = #{contactPhone},
+            <if test="contactEmail != null and contactEmail != ''">contact_email = #{contactEmail},</if>
+            <if test="address != null and address != ''">address = #{address},</if>
+            <if test="city != null and city != ''">city = #{city},</if>
+            <if test="introduction != null and introduction != ''">introduction = #{introduction},</if>
+            <if test="creditCode != null and creditCode != ''">credit_code = #{creditCode},</if>
+            <if test="phone != null and phone != ''">phone = #{phone},</if>
+            <if test="email != null and email != ''">email = #{email},</if>
+            <if test="businessLicense != null and businessLicense != ''">business_license = #{businessLicense},</if>
+            <if test="legalIdCard != null and legalIdCard != ''">legal_id_card = #{legalIdCard},</if>
+            update_time = NOW()
+        </set>
+        WHERE id = #{id}
+    </update>
+
     <select id="findByCompanyName" resultType="com.internship.entity.CompanyUser">
         SELECT * FROM company_users
         WHERE company_name = #{companyName}
@@ -799,12 +817,10 @@
         WHERE company_tag IS NOT NULL AND company_tag != ''
     </select>
 
-    <!-- 合作模式映射的标签（校企双向选择/学生自主联系/接受兜底） -->
+    <!-- 审核通过的系统内企业统一为校企合作；兼容旧的兜底标记 -->
     <select id="getDistinctCooperationModeTags" resultType="java.lang.String">
         SELECT DISTINCT '校企双向选择' FROM company_users
-        WHERE cooperation_mode LIKE '%双向%' OR cooperation_mode LIKE '%mutual_choice%'
-        UNION SELECT DISTINCT '学生自主联系' FROM company_users
-        WHERE cooperation_mode LIKE '%自主%' OR cooperation_mode LIKE '%student_contact%'
+        WHERE audit_status = 1
         UNION SELECT DISTINCT '接受兜底' FROM company_users
         WHERE cooperation_mode LIKE '%兜底%'
     </select>

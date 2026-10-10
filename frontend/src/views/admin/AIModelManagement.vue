@@ -1,187 +1,78 @@
 <template>
   <div class="ai-model-container">
-    <div class="page-header">
-      <div class="header-content">
-        <div class="title-section">
-          <h1>AI大模型选择</h1>
-          <p>在模型的添加或编辑窗口选择用途，可分别用于聊天、语音识别，也可两者共用</p>
-        </div>
-        <div class="header-illustration">
-          <div class="illustration-circle circle-1"></div>
-          <div class="illustration-circle circle-2"></div>
-        </div>
-      </div>
-      <div v-if="currentModels.length" class="current-models">
-      <div v-for="currentModel in currentModels" :key="currentModel.id" class="current-model-display">
-        <div class="current-model-icon">
-          <el-icon><Star /></el-icon>
-        </div>
-        <div class="current-model-info">
-          <div class="current-model-label">
-            <el-tag v-if="isDefaultModel(currentModel)" size="small">当前聊天模型</el-tag>
-            <el-tag v-if="currentModel.useForVoice" size="small" type="success">当前语音识别模型</el-tag>
-          </div>
-          <div class="current-model-name">{{ currentModel.modelName }}</div>
-          <div class="current-model-detail">
-            <span class="detail-item">实际请求：<code class="mono">{{ currentModel.modelCode }}</code></span>
-            <span class="detail-separator">|</span>
-            <span class="detail-item">{{ providerLabel(currentModel.provider) }}</span>
-            <span class="detail-separator">|</span>
-            <span class="detail-item">Key：{{ currentModel.hasApiKey ? "已配置" : "未配置（走全局）" }}</span>
-            <span class="detail-separator">|</span>
-            <span class="detail-item">最大Token: {{ currentModel.maxTokens }}</span>
-          </div>
-        </div>
-      </div>
-      </div>
+    <header class="gateway-header">
+      <div><div class="eyebrow">AI WORKSPACE / 模型管理</div><h1>AI 大模型选择</h1><p>集中管理供应商与自定义网关，为系统选择合适的聊天和语音模型。</p></div>
+      <div class="header-actions"><el-button @click="fetchModels" :loading="loading" :icon="Refresh">刷新</el-button><el-button v-if="canManage" type="primary" :icon="Plus" data-agent-open @click="handleAdd">添加模型</el-button></div>
+    </header>
+    <div class="active-grid">
+      <section class="active-panel">
+        <div class="panel-label"><el-icon><Star /></el-icon>当前聊天模型<el-tag size="small" type="success">新请求生效</el-tag></div>
+        <template v-if="chatModel"><h2>{{ chatModel.modelName }}</h2><code>{{ chatModel.modelCode }}</code><div class="active-bottom"><span>{{ providerLabel(chatModel.provider) }}</span><el-button v-if="canManage" link type="primary" @click="handleEdit(chatModel)">配置模型 →</el-button></div></template>
+        <template v-else><h2>尚未选择</h2><p>添加并启用聊天模型后，将它设为默认。</p></template>
+      </section>
+      <section class="active-panel voice-panel">
+        <div class="panel-label"><el-icon><Connection /></el-icon>当前语音识别模型</div>
+        <template v-if="voiceModel"><h2>{{ voiceModel.modelName }}</h2><code>{{ voiceModel.modelCode }}</code><div class="active-bottom"><span>{{ providerLabel(voiceModel.provider) }}</span><el-button v-if="canManage" link type="primary" @click="handleEdit(voiceModel)">配置用途 →</el-button></div></template>
+        <template v-else><h2>尚未选择</h2><p>语音识别使用专门的适配器，在模型配置中选择用途。</p></template>
+      </section>
     </div>
-
-    <el-alert title="聊天模型负责问答与业务协助；语音模型将录音转为可编辑文字。每种用途选择一个模型，保存后新请求生效。" type="info" :closable="false" style="margin-bottom: 16px" />
-
-    <el-card class="actions-card" shadow="never">
-      <el-form :inline="true" :model="searchForm" class="search-form">
-        <div class="search-row">
-          <el-form-item label="模型名称">
-            <el-input v-model="searchKeyword" placeholder="请输入模型名称" clearable @keyup.enter="handleSearch">
-              <template #prefix>
-                <el-icon><Search /></el-icon>
-              </template>
-            </el-input>
-          </el-form-item>
-          <el-form-item label="提供商">
-            <el-select v-model="filterProvider" placeholder="全部提供商" clearable @change="handleFilter" class="filter-select">
-              <el-option
-                v-for="p in PROVIDER_PRESETS"
-                :key="p.value"
-                :label="p.label"
-                :value="p.value"
-              />
-            </el-select>
-          </el-form-item>
-          <el-form-item label="状态">
-            <el-select v-model="filterStatus" placeholder="请选择状态" clearable @change="handleFilter" class="filter-select">
-              <el-option label="启用" value="1" />
-              <el-option label="禁用" value="0" />
-            </el-select>
-          </el-form-item>
-          <el-form-item>
-            <div class="search-actions">
-              <el-button type="primary" @click="handleSearch" class="search-btn">
-                <el-icon><Search /></el-icon>&nbsp;查询
-              </el-button>
-              <el-button type="warning" @click="handleReset" class="reset-btn">
-                <el-icon><Refresh /></el-icon>&nbsp;重置
-              </el-button>
-            </div>
-          </el-form-item>
-        </div>
-      </el-form>
-    </el-card>
-
-    <el-card class="table-card" shadow="never">
-      <div class="table-toolbar">
-        <span class="toolbar-title">模型列表</span>
-        <el-button v-if="authStore.hasPermission('ai:model:view')" type="primary" data-agent-open @click="handleAdd">
-          <el-icon><Plus /></el-icon>&nbsp;添加模型
-        </el-button>
+    <section class="gateway-guide"><div><strong>国内模型，也可以统一走你的网关</strong><p>选择供应商预设，或填写自定义地址、网关 API Key 和真实模型 ID。接入协议为 OpenAI Chat Completions。</p></div><el-button v-if="canManage" plain type="primary" @click="handleAddPreset('custom')">添加自定义网关</el-button></section>
+    <section class="registry-panel">
+      <div class="registry-heading"><h2>模型配置 <span>{{ modelList.length }}</span></h2><span class="muted">{{ modelList.filter(m => m.status === 1).length }} 个已启用 · {{ providerCount }} 家供应商</span></div>
+      <div class="registry-filters">
+        <el-input v-model="searchKeyword" clearable aria-label="搜索模型" placeholder="搜索名称、模型 ID 或网关地址" :prefix-icon="Search" />
+        <el-select v-model="filterProvider" clearable placeholder="全部供应商" aria-label="筛选供应商"><el-option v-for="p in providerFilters" :key="p.value" :label="p.label" :value="p.value" /></el-select>
+        <el-select v-model="filterStatus" clearable placeholder="全部状态" aria-label="筛选状态"><el-option label="已启用" value="1"/><el-option label="已停用" value="0"/></el-select>
+        <el-button @click="handleReset">重置</el-button>
       </div>
-      <el-table :data="modelList" border stripe class="data-table" v-loading="loading" empty-text="暂无AI模型">
-        <el-table-column prop="id" label="ID" width="70" />
-        <el-table-column prop="modelName" label="模型名称" width="170" />
-        <el-table-column label="当前用途" width="160">
-          <template #default="{ row }">
-            <div class="usage-tags">
-              <el-tag v-if="row.isDefault" size="small">聊天</el-tag>
-              <el-tag v-if="row.useForVoice" type="success" size="small">语音识别</el-tag>
-              <span v-if="!row.isDefault && !row.useForVoice" class="form-tip">备用</span>
-            </div>
-          </template>
-        </el-table-column>
-        <el-table-column prop="modelCode" label="实际请求模型" width="190">
-          <template #default="{ row }">
-            <code class="mono">{{ row.modelCode }}</code>
-          </template>
-        </el-table-column>
-        <el-table-column prop="provider" label="提供商" width="110">
-          <template #default="{ row }">
-            <el-tag size="small" type="info">{{ providerLabel(row.provider) }}</el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column prop="apiEndpoint" label="API 地址" min-width="200" show-overflow-tooltip>
-          <template #default="{ row }">
-            <span class="endpoint-text">{{ row.apiEndpoint || "—（全局）" }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column label="Key" width="110" align="center">
-          <template #default="{ row }">
-            <el-tag size="small" :type="row.hasApiKey ? 'success' : 'info'">
-              {{ row.hasApiKey ? "已配置" : "未配置" }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column prop="maxTokens" label="最大Token" width="100" />
-        <el-table-column prop="temperature" label="温度" width="80" />
-        <el-table-column prop="status" label="状态" width="90">
-          <template #default="{ row }">
-            <el-tag class="status-tag" :type="row.status === 1 ? 'success' : 'danger'">
-              {{ row.status === 1 ? '启用' : '禁用' }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column label="操作" align="center" width="250" fixed="right">
-          <template #default="{ row }">
-            <div class="action-buttons">
-              <el-tooltip v-if="authStore.hasPermission('ai:model:view')" content="编辑" placement="top">
-                <el-button type="primary" size="small" @click="handleEdit(row)" class="table-btn edit">
-                  <el-icon><Edit /></el-icon>
-                </el-button>
-              </el-tooltip>
-              <el-tooltip v-if="authStore.hasPermission('ai:model:view')" content="测试连接" placement="top">
-                <el-button type="success" size="small" @click="handleQuickTest(row)" class="table-btn test" :disabled="row.apiEndpoint?.endsWith('/realtime')" :loading="quickTestingId === row.id">
-                  <el-icon><Connection /></el-icon>
-                </el-button>
-              </el-tooltip>
-              <el-tooltip v-if="authStore.hasPermission('ai:model:view')" content="复制配置" placement="top">
-                <el-button type="info" size="small" @click="handleDuplicate(row)" class="table-btn copy">
-                  <el-icon><CopyDocument /></el-icon>
-                </el-button>
-              </el-tooltip>
-              <el-tooltip v-if="authStore.hasPermission('ai:model:view')" content="删除" placement="top">
-                <el-button type="danger" size="small" @click="handleDelete(row)" class="table-btn delete">
-                  <el-icon><Delete /></el-icon>
-                </el-button>
-              </el-tooltip>
-            </div>
-          </template>
-        </el-table-column>
-      </el-table>
-    </el-card>
+      <div v-loading="loading" class="model-grid">
+        <article v-for="row in visibleModels" :key="row.id" class="model-card" :class="{ 'is-current': isDefaultModel(row), 'is-disabled': row.status !== 1 }" :style="{ '--provider-color': presetOf(row.provider)?.color || '#475569' }">
+          <div class="card-top"><div class="provider-badge">{{ presetOf(row.provider)?.shortName || 'API' }}</div><div class="card-heading"><h3>{{ row.modelName }}</h3><span>{{ providerLabel(row.provider) }}</span></div><el-tag :type="row.status === 1 ? 'success' : 'info'" size="small">{{ row.status === 1 ? '已启用' : '已停用' }}</el-tag></div>
+          <div class="usage-tags"><el-tag v-if="isDefaultModel(row)" size="small">当前聊天</el-tag><el-tag v-if="row.useForVoice" size="small" type="success">当前语音</el-tag><span v-if="!isDefaultModel(row) && !row.useForVoice" class="muted">备用配置</span></div>
+          <div class="card-field"><span>模型 ID</span><code>{{ row.modelCode }}</code></div>
+          <div class="card-field"><span>API 地址</span><span class="endpoint-text" :title="row.apiEndpoint || '继承全局配置'">{{ row.apiEndpoint || '继承全局配置' }}</span></div>
+          <div class="card-meta"><span :class="{ 'key-missing': row.apiEndpoint && !row.hasApiKey }">{{ row.hasApiKey ? '● 独立密钥已配置' : row.apiEndpoint ? '○ 缺少网关密钥' : '◌ 使用全局凭证' }}</span><span>{{ row.maxTokens || '默认' }} Token · 温度 {{ row.temperature ?? '默认' }}</span></div>
+          <p v-if="row.description" class="card-description">{{ row.description }}</p>
+          <div v-if="connectionResults[row.id || 0]" class="connection-state" :class="{ failed: !connectionResults[row.id || 0].ok }" role="status">{{ describeTestResult(connectionResults[row.id || 0]) }}</div>
+          <div v-if="canManage" class="card-actions">
+            <el-button size="small" :icon="Connection" @click="handleQuickTest(row)" :loading="quickTestingId === row.id" :disabled="quickTestingId !== null || !canChat(row)">测连</el-button>
+            <el-button size="small" :icon="Edit" @click="handleEdit(row)">编辑</el-button>
+            <el-dropdown trigger="click"><el-button size="small" aria-label="更多模型操作">更多 ▾</el-button><template #dropdown><el-dropdown-menu><el-dropdown-item :disabled="!canChat(row) || row.status !== 1 || isDefaultModel(row)" @click="handleSetDefault(row)">设为聊天默认</el-dropdown-item><el-dropdown-item :disabled="isDefaultModel(row) || row.useForVoice" @click="handleToggleStatus(row)">{{ row.status === 1 ? '停用模型' : '启用模型' }}</el-dropdown-item><el-dropdown-item @click="handleDuplicate(row)">复制为新配置</el-dropdown-item><el-dropdown-item divided :disabled="isDefaultModel(row) || !!row.useForVoice" @click="handleDelete(row)">删除配置</el-dropdown-item></el-dropdown-menu></template></el-dropdown>
+          </div>
+        </article>
+      </div>
+      <el-empty v-if="!loading && !visibleModels.length" :description="modelList.length ? '没有符合筛选条件的模型' : '还没有模型配置'"><el-button v-if="canManage && !modelList.length" type="primary" @click="handleAdd">添加第一个模型</el-button></el-empty>
+    </section>
 
-    <el-dialog v-model="dialogVisible" :title="dialogTitle" width="760px" class="form-dialog" @close="handleDialogClose">
+    <el-dialog v-model="dialogVisible" :title="dialogTitle" top="4vh" width="min(800px, calc(100vw - 24px))" class="form-dialog gateway-form-dialog" :close-on-click-modal="false" @close="handleDialogClose">
+      <div v-if="!form.id" class="preset-picker"><div class="section-label">选择供应商预设</div><div class="preset-grid"><button v-for="p in PROVIDER_PRESETS" :key="p.value" type="button" class="preset-button" :class="{ selected: form.provider === p.value }" @click="choosePreset(p.value)"><span :style="{ color: p.color }">{{ p.shortName }}</span>{{ p.label }}</button></div></div>
+      <div class="provider-hint"><span>{{ selectedPreset?.hint || '填写供应商或兼容网关的接入信息。' }}</span><a v-if="selectedPreset?.docs" :href="selectedPreset.docs" target="_blank" rel="noopener noreferrer">官方文档 ↗</a></div>
       <el-form :model="form" :rules="rules" ref="formRef" label-width="130px" class="ai-model-form">
         <el-form-item label="模型名称" prop="modelName">
           <el-input v-model="form.modelName" placeholder="展示名，如：千问 Omni Flash" />
           <div class="form-tip">页面上显示的名字，可随意修改</div>
         </el-form-item>
         <el-form-item label="实际请求模型" prop="modelCode">
-          <el-input v-model="form.modelCode" placeholder="如：qwen3.8-omni-flash" />
-          <div class="form-tip">修改后会自动同步引用旧值的辅导员配置；不可与其它模型重复</div>
+          <el-input v-model="form.modelCode" placeholder="填写厂商模型 ID、组织/模型名或 ep-… 接入点 ID" maxlength="50" />
+          <el-select v-if="modelOptions.length" v-model="form.modelCode" filterable placeholder="从预设或网关候选中选择" class="full-width model-candidates"><el-option v-for="code in modelOptions" :key="code" :label="code" :value="code" /></el-select>
+          <div class="form-tip">模型 ID 原样发送给网关，支持 / : @ +；沿用现有 50 字限制，不可与其他配置重复。候选列表仅供参考，也可直接手输。</div>
         </el-form-item>
         <el-form-item label="模型用途">
           <div>
             <span v-if="capabilitiesLoading" class="form-tip">正在检查可用用途…</span>
             <template v-else>
               <div class="usage-options">
-                <el-checkbox v-if="supportedUsages.includes('chat')" v-model="form.isDefault" :true-value="1" :false-value="0">用作聊天模型</el-checkbox>
+                <el-checkbox v-if="supportedUsages.includes('chat')" v-model="form.isDefault" :true-value="1" :false-value="0" :disabled="editingCurrentChat">用作聊天模型</el-checkbox>
                 <el-checkbox v-if="supportedUsages.includes('voice')" v-model="form.useForVoice">用作语音识别模型</el-checkbox>
               </div>
               <div class="form-tip">{{ capabilityError || (!form.modelCode ? '填写实际请求模型后显示可用用途。' : !supportedUsages.length ? '暂未确认此模型的接入能力，不能选择用途。' : '勾选后替换该用途的当前模型；两项都勾选即可共用。') }}</div>
+              <div v-if="editingCurrentChat" class="form-tip">当前聊天默认模型不能在此取消用途，请先将其他模型设为聊天默认。</div>
               <div v-if="supportedUsages.includes('voice')" class="form-tip">{{ form.modelCode.includes('asr-flash-realtime') ? '支持边说边出字，结束后核对发送。' : '结束录音后转为文字，核对修改后再发送。' }}</div>
             </template>
           </div>
         </el-form-item>
         <el-form-item label="提供商" prop="provider">
-          <el-select v-model="form.provider" placeholder="请选择提供商" class="full-width">
+          <el-select v-model="form.provider" placeholder="请选择提供商" class="full-width" @change="applyProviderPreset">
             <el-option
               v-for="p in PROVIDER_PRESETS"
               :key="p.value"
@@ -191,8 +82,8 @@
           </el-select>
         </el-form-item>
         <el-form-item label="API 地址" prop="apiEndpoint">
-          <el-input v-model="form.apiEndpoint" placeholder="如：https://api.deepseek.com，或中转站给的 .../v1 地址" clearable />
-          <div class="form-tip">填写服务商提供的完整接入地址，保留其中的 /v1；手动填写的地址不会被预设覆盖。</div>
+          <el-input v-model="form.apiEndpoint" placeholder="如：https://gateway.example.com/v1" clearable :disabled="!!form.clearApiConfig" maxlength="255" />
+          <div class="form-tip">保留 /v1、/api/v3 等网关路径；粘贴完整 /chat/completions 地址会自动归一化。地址与 Key 都留空时继承全局配置。</div>
         </el-form-item>
         <el-form-item label="API Key" prop="apiKey">
           <el-input
@@ -200,13 +91,16 @@
             type="password"
             show-password
             clearable
+            autocomplete="new-password"
+            :disabled="!!form.clearApiConfig"
             :placeholder="form.id && editHasApiKey ? '已配置（留空则不修改）' : '请输入该模型的 API Key'"
           />
-          <div class="form-tip">列表中仅显示掩码；编辑时留空表示保持原值</div>
-          <el-checkbox v-if="form.id && editHasApiKey" v-model="form.clearApiConfig" class="clear-check">
+          <div class="form-tip">{{ endpointChanged ? '网关地址已更改，请重新填写对应的 Key。' : '密钥仅保存在后端；编辑留空会沿用该地址已保存的密钥。独立网关必须使用自己的 Key。' }}</div>
+          <el-checkbox v-if="form.id" v-model="form.clearApiConfig" class="clear-check">
             清空独立配置，该模型回退到全局地址与 Key
           </el-checkbox>
         </el-form-item>
+        <el-form-item label="获取模型列表"><el-button :loading="discovering" :disabled="testing || saving" @click="handleDiscover">{{ discovering ? '正在获取…' : '从网关获取模型' }}</el-button><div class="form-tip" role="status">{{ discoveryMessage || '使用 /models 获取当前 Key 可访问的模型；网关不提供列表时仍可手动填写 ID。' }}</div></el-form-item>
         <el-form-item label="最大Token数" prop="maxTokens">
           <el-input-number v-model="form.maxTokens" :min="1" :max="8192" placeholder="请输入最大Token数" />
           <div class="form-tip">系统允许范围为 [1, 8192]，请结合模型限制填写</div>
@@ -218,15 +112,16 @@
         <el-form-item label="状态" prop="status">
           <el-radio-group v-model="form.status">
             <el-radio :label="1">启用</el-radio>
-            <el-radio :label="0">禁用</el-radio>
+            <el-radio :label="0" :disabled="mustRemainEnabled">禁用</el-radio>
           </el-radio-group>
+          <div v-if="mustRemainEnabled" class="form-tip">当前聊天或语音模型必须保持启用，请先选择替代模型后再停用。语音用途也可在此取消并保存，再次编辑时停用。</div>
         </el-form-item>
         <el-form-item label="描述" prop="description">
           <el-input v-model="form.description" type="textarea" :rows="3" placeholder="请输入模型描述" />
         </el-form-item>
         <el-form-item label="连接测试">
           <div class="test-row">
-            <el-button type="success" plain @click="handleDialogTest" :loading="testing" :disabled="form.apiEndpoint?.endsWith('/realtime')">
+            <el-button type="success" plain @click="handleDialogTest" :loading="testing" :disabled="discovering || saving || form.apiEndpoint?.endsWith('/realtime') || !supportedUsages.includes('chat')">
               <el-icon><Connection /></el-icon>&nbsp;{{ testing ? "测试中…" : "测试连接" }}
             </el-button>
             <span class="form-tip">通用对话接口可在保存前测连，不写库；实时语音接口请保存后通过实际录音验证</span>
@@ -252,7 +147,7 @@
       <template #footer>
         <div class="dialog-footer">
           <el-button class="cancel-btn" @click="dialogVisible = false">取消</el-button>
-          <el-button class="confirm-btn" type="primary" @click="handleSave" :loading="saving" :disabled="capabilitiesLoading || !!capabilityError">保存</el-button>
+          <el-button class="confirm-btn" type="primary" @click="handleSave" :loading="saving" :disabled="testing || discovering || capabilitiesLoading || !!capabilityError">保存</el-button>
         </div>
       </template>
     </el-dialog>
@@ -263,9 +158,10 @@
 import logger from "@/utils/logger"
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from "vue"
 import { ElMessage, ElMessageBox } from "element-plus"
-import { Plus, Edit, Delete, Search, Star, Refresh, CopyDocument, Connection } from "@element-plus/icons-vue"
+import { Plus, Edit, Search, Star, Refresh, Connection } from "@element-plus/icons-vue"
 import aiModelService, { PROVIDER_PRESETS } from "@/api/aiModel"
 import type { AIModel } from "@/api/aiModel"
+import type { FormInstance } from "element-plus"
 import { useAuthStore } from "@/store/auth"
 import type { FormFieldDescriptor } from "@/agent/types"
 import { useFormContext } from "@/agent/formContext"
@@ -300,16 +196,38 @@ const currentModels = ref<AIModel[]>([])
 const searchKeyword = ref("")
 const filterStatus = ref("")
 const filterProvider = ref("")
-const formRef = ref(null)
+const formRef = ref<FormInstance>()
 const testResult = ref<TestResult | null>(null)
 const editHasApiKey = ref(false)
-
-const searchForm = ref({
-  modelName: "",
-  status: ""
+const editEndpoint = ref("")
+const discovering = ref(false)
+const discoveredModels = ref<string[]>([])
+const discoveryMessage = ref("")
+const connectionResults = ref<Record<number, TestResult>>({})
+const canManage = computed(() => authStore.hasPermission('ai:model:view'))
+const presetOf = (provider?: string) => PROVIDER_PRESETS.find(p => p.value === provider)
+const chatModel = computed(() => currentModels.value.find(isDefaultModel))
+const voiceModel = computed(() => currentModels.value.find(m => m.useForVoice))
+const providerCount = computed(() => new Set(modelList.value.map(m => m.provider)).size)
+const providerFilters = computed(() => [
+  ...PROVIDER_PRESETS,
+  ...[...new Set(modelList.value.map(m => m.provider))].filter(value => !presetOf(value)).map(value => ({ value, label: value }))
+])
+const visibleModels = computed(() => {
+  const keyword = searchKeyword.value.trim().toLowerCase()
+  return modelList.value.filter(row => (!filterProvider.value || row.provider === filterProvider.value)
+    && (filterStatus.value === '' || !filterStatus.value || String(row.status) === filterStatus.value)
+    && (!keyword || [row.modelName, row.modelCode, row.provider, providerLabel(row.provider), row.apiEndpoint, row.description]
+      .some(value => value?.toLowerCase().includes(keyword))))
+    .slice().sort((a, b) => Number(isDefaultModel(b)) - Number(isDefaultModel(a)))
 })
+const canChat = (row: AIModel) => !row.apiEndpoint?.endsWith('/realtime') && !!row.supportedUsages?.includes('chat')
+const selectedPreset = computed(() => presetOf(form.value.provider))
+const modelOptions = computed(() => [...new Set([...discoveredModels.value, ...(selectedPreset.value?.models || [])])])
+const normalizeAddress = (value = '') => value.trim().replace(/\/+$/, '').replace(/\/chat\/completions$/, '').replace(/\/+$/, '')
+const endpointChanged = computed(() => !!form.value.id && normalizeAddress(form.value.apiEndpoint) !== normalizeAddress(editEndpoint.value))
 
-const defaultProvider = "qwen"
+const defaultProvider = "custom"
 const presetEndpointOf = (provider?: string) =>
   PROVIDER_PRESETS.find((p) => p.value === provider)?.endpoint || ""
 
@@ -330,11 +248,18 @@ const emptyForm = (): AIModel & { apiKey?: string } => ({
 })
 
 const form = ref<AIModel & { apiKey?: string }>(emptyForm())
+const editingCurrentChat = computed(() => !!form.value.id && modelList.value.some(row => row.id === form.value.id && isDefaultModel(row)))
+const editingCurrentVoice = computed(() => !!form.value.id && modelList.value.some(row => row.id === form.value.id && !!row.useForVoice))
+const mustRemainEnabled = computed(() => editingCurrentChat.value || editingCurrentVoice.value || form.value.isDefault === 1 || form.value.isDefault === true || !!form.value.useForVoice)
+watch(() => [form.value.apiEndpoint, form.value.apiKey, form.value.id, form.value.clearApiConfig], () => {
+  discoveredModels.value = []; discoveryMessage.value = ''; testResult.value = null
+})
+watch(() => [form.value.modelCode, form.value.maxTokens, form.value.temperature], () => { testResult.value = null })
 const supportedUsages = ref<string[]>([])
 const capabilitiesLoading = ref(false)
 const capabilityError = ref('')
 let capabilityRequest = 0
-watch(() => form.value.modelCode, async (code) => {
+watch(() => [form.value.modelCode, form.value.id] as const, async ([code]) => {
   const mine = ++capabilityRequest
   supportedUsages.value = []; capabilityError.value = ''
   if (!code?.trim()) { capabilitiesLoading.value = false; form.value.isDefault = 0; form.value.useForVoice = false; return }
@@ -361,22 +286,32 @@ const rules = {
   modelName: [{ required: true, message: "请输入模型名称（展示名）", trigger: "blur" }],
   modelCode: [
     { required: true, message: "请输入实际请求模型", trigger: "blur" },
-    { pattern: /^[A-Za-z0-9][A-Za-z0-9._-]{0,49}$/, message: "字母数字打头，可含字母/数字/点/横线/下划线，最长50", trigger: "blur" }
+    { pattern: /^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,49}$/, message: "字母数字打头，可含 . _ - / : @ +，最多50个字符", trigger: "blur" }
   ],
   provider: [{ required: true, message: "请选择提供商", trigger: "change" }],
   apiEndpoint: [
     {
       validator: (_rule, value, callback) => {
         if (!value || !String(value).trim()) return callback()
-        const v = String(value).trim().toLowerCase()
-        if (!v.startsWith("http://") && !v.startsWith("https://")) {
-          return callback(new Error("API 地址必须以 http:// 或 https:// 开头"))
-        }
+        if (form.value.clearApiConfig) return callback()
+        try {
+          const url = new URL(normalizeAddress(value))
+          if (!['http:', 'https:'].includes(url.protocol) || !url.hostname) throw new Error()
+          if (url.username || url.password || url.search || url.hash) return callback(new Error('地址不能包含密钥、查询参数或片段'))
+          if (/\/(responses|messages)$/.test(url.pathname)) return callback(new Error('请填写 Chat Completions 兼容基地址'))
+        } catch { return callback(new Error('请输入有效的 http(s) API 基地址')) }
         return callback()
       },
       trigger: "blur"
     }
   ],
+  apiKey: [{ validator: (_rule, value, callback) => {
+    if (form.value.clearApiConfig) return callback()
+    if (form.value.apiEndpoint?.trim() && !value?.trim() && (!editHasApiKey.value || endpointChanged.value))
+      return callback(new Error('新增或更换网关地址时，请填写对应的完整 API Key'))
+    if (value && (value.includes('****') || /[\x00-\x1f\x7f]/.test(value))) return callback(new Error('请输入完整且不含控制字符的 API Key'))
+    callback()
+  }, trigger: 'blur' }],
   maxTokens: [{ required: true, message: "请输入最大Token数", trigger: "blur" }],
   temperature: [{ required: true, message: "请输入温度参数", trigger: "blur" }]
 }
@@ -385,6 +320,7 @@ const isDefaultModel = (row: AIModel) => row.isDefault === 1 || row.isDefault ==
 
 const fetchModels = async () => {
   loading.value = true
+  connectionResults.value = {}
   try {
     const response = (await aiModelService.getAIModels()) as unknown as AIModelEnvelope
     if (response.code === 200) {
@@ -402,62 +338,7 @@ const fetchModels = async () => {
   }
 }
 
-const handleSearch = async () => {
-  if (!searchKeyword.value) {
-    fetchModels()
-    return
-  }
-
-  loading.value = true
-  try {
-    const response = (await aiModelService.searchAIModels(searchKeyword.value)) as unknown as AIModelEnvelope
-    if (response.code === 200) {
-      modelList.value = Array.isArray(response.data) ? response.data : []
-    } else {
-      ElMessage.error(response.message || response.msg || "搜索失败")
-    }
-  } catch (error) {
-    ElMessage.error("搜索失败")
-  } finally {
-    loading.value = false
-  }
-}
-
-const handleReset = () => {
-  searchKeyword.value = ""
-  filterStatus.value = ""
-  filterProvider.value = ""
-  fetchModels()
-}
-
-const handleFilter = async () => {
-  loading.value = true
-  try {
-    let response: AIModelEnvelope | undefined
-    if (filterStatus.value !== "" && filterProvider.value) {
-      const statusResp = (await aiModelService.getAIModelsByStatus(Number(filterStatus.value))) as unknown as AIModelEnvelope
-      if (statusResp.code === 200 && Array.isArray(statusResp.data)) {
-        statusResp.data = statusResp.data.filter((m) => m.provider === filterProvider.value)
-      }
-      response = statusResp
-    } else if (filterStatus.value !== "") {
-      response = (await aiModelService.getAIModelsByStatus(Number(filterStatus.value))) as unknown as AIModelEnvelope
-    } else if (filterProvider.value) {
-      response = (await aiModelService.getAIModelsByProvider(filterProvider.value)) as unknown as AIModelEnvelope
-    } else {
-      fetchModels()
-      return
-    }
-
-    if (response && response.code === 200) {
-      modelList.value = Array.isArray(response.data) ? response.data : []
-    }
-  } catch (error) {
-    ElMessage.error("筛选失败")
-  } finally {
-    loading.value = false
-  }
-}
+const handleReset = () => { searchKeyword.value = ""; filterStatus.value = ""; filterProvider.value = "" }
 
 // ===== 智能填表：AI 模型弹窗（只写响应式 model，不触发提交） =====
 const formContext = useFormContext()
@@ -465,7 +346,7 @@ const formContext = useFormContext()
 // 由管理员手动选择，不能通过 AI 填表切换系统模型或清除凭据。
 const aiModelFillFields = (): FormFieldDescriptor[] => [
   { prop: 'modelName', label: '模型名称', type: 'input', required: true },
-  { prop: 'modelCode', label: '实际请求模型', type: 'input', required: true, patternHint: '字母数字打头，可含字母/数字/点/横线/下划线' },
+  { prop: 'modelCode', label: '实际请求模型', type: 'input', required: true, patternHint: '真实模型ID原样发送，支持 / : @ +，最多50个字符' },
   { prop: 'provider', label: '提供商', type: 'select', required: true,
     options: PROVIDER_PRESETS.map(p => ({ label: p.label, value: p.value })) },
   { prop: 'apiEndpoint', label: 'API 地址', type: 'input', patternHint: '如 https://api.deepseek.com；中转 .../v1 保留' },
@@ -490,30 +371,68 @@ watch(dialogVisible, (open) => {
 })
 onUnmounted(() => formContext.unregister('admin:ai-model'))
 
-// 切换提供商时地址跟随变化；如果当前地址是手填的（与旧预设不同）则保留不覆盖。
-watch(
-  () => form.value.provider,
-  (newProvider, oldProvider) => {
-    if (newProvider === oldProvider) return
-    const newPreset = PROVIDER_PRESETS.find((p) => p.value === newProvider)
-    const oldPreset = PROVIDER_PRESETS.find((p) => p.value === oldProvider)
-    const current = (form.value.apiEndpoint || "").trim()
-    if (!current || (oldPreset && current === oldPreset.endpoint)) {
-      form.value.apiEndpoint = newPreset && newPreset.endpoint ? newPreset.endpoint : ""
-    }
-  }
-)
+const previousProvider = ref(defaultProvider)
+const applyProviderPreset = (value: string) => {
+  const oldPreset = presetOf(previousProvider.value)
+  const preset = presetOf(value)
+  const before = normalizeAddress(form.value.apiEndpoint)
+  if (!before || before === normalizeAddress(oldPreset?.endpoint)) form.value.apiEndpoint = preset?.endpoint || ''
+  if (before !== normalizeAddress(form.value.apiEndpoint)) form.value.apiKey = ''
+  if (!form.value.modelCode || oldPreset?.models.includes(form.value.modelCode)) form.value.modelCode = preset?.models[0] || ''
+  form.value.maxTokens = preset?.maxTokens || 4096
+  form.value.temperature = preset?.temperature ?? 0.7
+  previousProvider.value = value
+}
+const choosePreset = (value: string) => { form.value.provider = value; applyProviderPreset(value) }
+const handleAddPreset = (value: string) => { handleAdd(); choosePreset(value) }
+const connectionFingerprint = () => JSON.stringify([form.value.id, form.value.apiEndpoint, form.value.apiKey, form.value.clearApiConfig])
+const probeFingerprint = () => JSON.stringify([connectionFingerprint(), form.value.modelCode, form.value.maxTokens, form.value.temperature])
+let dialogTestRequest = 0
+let discoveryRequest = 0
+const handleDiscover = async () => {
+  try { await formRef.value?.validateField(['apiEndpoint', 'apiKey']) } catch { return }
+  const mine = ++discoveryRequest, fingerprint = connectionFingerprint()
+  discovering.value = true; discoveryMessage.value = ''; discoveredModels.value = []
+  try {
+    const response = await aiModelService.discoverModels({ id: form.value.id, apiEndpoint: form.value.apiEndpoint, apiKey: form.value.apiKey, clearApiConfig: form.value.clearApiConfig, modelCode: form.value.modelCode }) as unknown as AIModelEnvelope<{models: string[], endpoint: string}>
+    if (mine !== discoveryRequest || fingerprint !== connectionFingerprint() || !dialogVisible.value) return
+    if (response.code !== 200 || !Array.isArray(response.data?.models)) throw new Error(response.message || response.msg || '获取模型列表失败')
+    discoveredModels.value = response.data.models
+    discoveryMessage.value = response.data.models.length ? '已获取 ' + response.data.models.length + ' 个模型，在上方候选列表中选择。' : '网关未返回可用模型，请手动填写准确的模型 ID。'
+  } catch (error) {
+    if (mine === discoveryRequest && fingerprint === connectionFingerprint() && dialogVisible.value) discoveryMessage.value = (error instanceof Error ? error.message : '获取模型列表失败') + '，仍可手动填写模型 ID。'
+  } finally { if (mine === discoveryRequest) discovering.value = false }
+}
+const handleSetDefault = async (row: AIModel) => {
+  await ElMessageBox.confirm('将“' + row.modelName + '”设为系统聊天默认模型？后续新请求会使用该配置。', '切换聊天模型', {type:'info'}).then(async () => {
+    const response = await aiModelService.setAsDefault(row.id!, authStore.user?.username || 'admin') as unknown as AIModelEnvelope
+    if (response.code === 200) { ElMessage.success('聊天模型已切换'); await fetchModels() }
+  }).catch(error => { if (error !== 'cancel' && error !== 'close') ElMessage.error('切换失败，请检查配置') })
+}
+const handleToggleStatus = async (row: AIModel) => {
+  try {
+    const response = await aiModelService.updateAIModel(row.id!, {status: row.status === 1 ? 0 : 1, updater: authStore.user?.username || 'admin'}) as unknown as AIModelEnvelope
+    if (response.code === 200) { ElMessage.success(row.status === 1 ? '模型已停用' : '模型已启用'); await fetchModels() }
+  } catch { ElMessage.error('更新模型状态失败') }
+}
 
 const openDialog = (title: string) => {
   dialogTitle.value = title
   testResult.value = null
   dialogVisible.value = true
   registerAiModelForm(title)
+  nextTick(() => {
+    formRef.value?.clearValidate()
+    const root = formRef.value?.$el?.closest('.gateway-form-dialog')
+    root?.querySelector('.preset-grid')?.scrollTo(0, 0)
+    root?.querySelector('.el-dialog__body')?.scrollTo(0, 0)
+  })
 }
 
 const handleAdd = () => {
   form.value = emptyForm()
   editHasApiKey.value = false
+  editEndpoint.value = ""; previousProvider.value = defaultProvider
   openDialog("添加AI模型")
 }
 
@@ -534,6 +453,7 @@ const handleEdit = (row: AIModel) => {
     useForVoice: !!row.useForVoice,
     description: row.description || ""
   }
+  editEndpoint.value = row.apiEndpoint || ""; previousProvider.value = row.provider
   editHasApiKey.value = !!row.hasApiKey
   openDialog("编辑AI模型")
 }
@@ -562,24 +482,12 @@ const handleDelete = async (row: AIModel) => {
 
 const handleDuplicate = async (row: AIModel) => {
   try {
-    await ElMessageBox.confirm(`以"${row.modelName}"为模板复制一条配置吗？Key 会随行复制，可在打开的编辑框里继续改。`, "提示", {
-      confirmButtonText: "确定",
-      cancelButtonText: "取消",
-      type: "info"
-    })
-    const response = (await aiModelService.duplicateModel(row.id as number, "admin")) as unknown as AIModelEnvelope<AIModel>
+    const response = await aiModelService.duplicateModel(row.id!, authStore.user?.username || 'admin') as unknown as AIModelEnvelope<AIModel>
     if (response.code === 200 && response.data) {
-      ElMessage.success(`复制成功，新实际请求模型：${response.data.modelCode}`)
-      await fetchModels()
-      handleEdit(response.data)
-    } else {
-      ElMessage.error(response.message || response.msg || "复制失败")
+      handleEdit(response.data); dialogTitle.value = '复制为新配置'; registerAiModelForm(dialogTitle.value)
+      ElMessage.info('已生成未保存模板。请填写不同的真实模型 ID 和对应的 Key，启用后保存。')
     }
-  } catch (error) {
-    if (error !== "cancel") {
-      ElMessage.error("复制失败")
-    }
-  }
+  } catch { ElMessage.error('复制配置失败') }
 }
 
 const describeTestResult = (data: TestResult) => {
@@ -590,10 +498,12 @@ const describeTestResult = (data: TestResult) => {
 }
 
 const handleQuickTest = async (row: AIModel) => {
+  if (quickTestingId.value !== null) return
   quickTestingId.value = row.id as number
   try {
     const response = (await aiModelService.testConnection({ id: row.id })) as unknown as AIModelEnvelope<TestResult>
     if (response.code === 200 && response.data) {
+      connectionResults.value[row.id!] = response.data
       if (response.data.ok) {
         ElMessage.success(describeTestResult(response.data))
       } else {
@@ -616,11 +526,13 @@ const handleDialogTest = async () => {
   } catch (error) {
     return
   }
+  const mine = ++dialogTestRequest, fingerprint = probeFingerprint()
   testing.value = true
   testResult.value = null
   try {
     const { hasApiKey: _omit, ...payload } = form.value
     const response = (await aiModelService.testConnection(payload)) as unknown as AIModelEnvelope<TestResult>
+    if (mine !== dialogTestRequest || fingerprint !== probeFingerprint() || !dialogVisible.value) return
     if (response.code === 200 && response.data) {
       testResult.value = response.data
       if (response.data.ok) {
@@ -632,12 +544,21 @@ const handleDialogTest = async () => {
   } catch (error) {
     ElMessage.error("测试失败")
   } finally {
-    testing.value = false
+    if (mine === dialogTestRequest) testing.value = false
   }
 }
 
 const handleSave = async () => {
   if (!formRef.value || capabilitiesLoading.value || capabilityError.value) return
+
+  if (editingCurrentChat.value && form.value.isDefault !== 1 && form.value.isDefault !== true) {
+    ElMessage.warning('请先将其他模型设为聊天默认，再取消当前模型的聊天用途')
+    return
+  }
+  if (mustRemainEnabled.value && form.value.status !== 1) {
+    ElMessage.warning('当前聊天或语音模型必须保持启用，请先保存解除语音用途或选择替代模型')
+    return
+  }
 
   try {
     await formRef.value.validate()
@@ -680,23 +601,12 @@ const handleSave = async () => {
 }
 
 const handleDialogClose = () => {
+  dialogTestRequest++; discoveryRequest++; testing.value = false; discovering.value = false
   nextTick(() => {
     if (formRef.value) {
       formRef.value.resetFields()
     }
   })
-}
-
-const formatDateTime = (date) => {
-  if (!date) return ""
-  const d = new Date(date)
-  const year = d.getFullYear()
-  const month = String(d.getMonth() + 1).padStart(2, "0")
-  const day = String(d.getDate()).padStart(2, "0")
-  const hours = String(d.getHours()).padStart(2, "0")
-  const minutes = String(d.getMinutes()).padStart(2, "0")
-  const seconds = String(d.getSeconds()).padStart(2, "0")
-  return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`
 }
 
 onMounted(() => {
@@ -705,377 +615,96 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.usage-tags, .usage-options { display: flex; gap: 8px; flex-wrap: wrap; }
-.ai-model-container {
-  padding: 20px;
-  background: #f5f7fa;
-  min-height: 100vh;
-}
-
-/* 页面标题区域 */
-.page-header {
-  border-radius: 16px;
-  border: none;
-  background: white;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
-  margin-bottom: 24px;
-  overflow: hidden;
-}
-
-.header-content {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  background: linear-gradient(135deg, #409EFF 0%, #52c41a 100%);
-  border-radius: 16px 16px 0 0;
-  padding: 24px 32px;
-  color: white;
-  position: relative;
-  overflow: hidden;
-}
-
-.header-content::before {
-  content: "";
-  position: absolute;
-  top: -50%;
-  right: -50%;
-  width: 100%;
-  height: 100%;
-  background: radial-gradient(circle, rgba(255, 255, 255, 0.1) 0%, transparent 70%);
-  transform: rotate(30deg);
-}
-
-.title-section h1 {
-  font-size: 28px;
-  font-weight: 700;
-  margin-bottom: 8px;
-  color: white;
-}
-
-.title-section p {
-  font-size: 14px;
-  opacity: 0.95;
-  font-weight: 500;
-  margin: 0;
-}
-
-.header-illustration {
-  position: relative;
-  width: 100px;
-  height: 100px;
-}
-
-.illustration-circle {
-  position: absolute;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.15);
-  animation: float 6s ease-in-out infinite;
-}
-
-.circle-1 {
-  width: 60px;
-  height: 60px;
-  top: 0;
-  right: 0;
-  animation-delay: 0s;
-}
-
-.circle-2 {
-  width: 40px;
-  height: 40px;
-  bottom: 10px;
-  left: 10px;
-  animation-delay: 3s;
-}
-
-@keyframes float {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-10px); }
-}
-
-.current-models {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr));
-  gap: 1px;
-  background: #e4edf5;
-}
-
-.current-model-info { min-width: 0; }
-.current-model-name, .current-model-detail code { overflow-wrap: anywhere; }
-
-.current-model-display {
-  display: flex;
-  align-items: center;
-  padding: 20px 32px;
-  background: linear-gradient(135deg, #f8fbff 0%, #e6f7ff 100%);
-}
-
-.current-model-icon {
-  width: 48px;
-  height: 48px;
-  border-radius: 12px;
-  background: linear-gradient(135deg, #409EFF, #52c41a);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: white;
-  font-size: 24px;
-  margin-right: 16px;
-  flex-shrink: 0;
-}
-
-.current-model-label {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-  font-size: 12px;
-  color: #909399;
-  margin-bottom: 4px;
-}
-
-.current-model-name {
-  font-size: 20px;
-  font-weight: 700;
-  color: #303133;
-  margin-bottom: 4px;
-}
-
-.current-model-detail {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
-  color: #606266;
-  flex-wrap: wrap;
-}
-
-.detail-separator {
-  color: #dcdfe6;
-}
-
-.mono {
-  font-family: Consolas, "Courier New", monospace;
-  background: #f0f2f5;
-  border-radius: 4px;
-  padding: 1px 6px;
-  font-size: 12px;
-  color: #409EFF;
-}
-
-.endpoint-text {
-  color: #606266;
-  font-size: 13px;
-}
-
-/* 搜索区域 */
-.actions-card {
-  border-radius: 16px;
-  border: none;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
-  margin-bottom: 24px;
-}
-
-.search-form {
-  padding: 4px;
-}
-
-.search-row {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-  flex-wrap: wrap;
-}
-
-.search-actions {
-  display: flex;
-  gap: 12px;
-}
-
-.search-btn, .reset-btn {
-  border-radius: 8px;
-}
-
-.filter-select {
-  min-width: 150px;
-}
-
-/* 表格区域 */
-.table-card {
-  border-radius: 16px;
-  border: none;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
-}
-
-.table-toolbar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 16px;
-}
-
-.toolbar-title {
-  font-size: 16px;
-  font-weight: 700;
-  color: #303133;
-}
-
-.data-table {
-  border-radius: 8px;
-}
-
-.action-buttons {
-  display: flex;
-  gap: 6px;
-  justify-content: center;
-}
-
-.table-btn {
-  border-radius: 6px;
-  padding: 7px;
-}
-
-/* 对话框样式 */
-.form-dialog {
-  border-radius: 16px;
-  overflow: hidden;
-}
-
-.form-dialog :deep(.el-dialog__header) {
-  background: linear-gradient(135deg, #f8fbff 0%, #e6f7ff 100%);
-  margin: 0;
-  padding: 20px;
-  border-bottom: 1px solid #e6f7ff;
-}
-
-.ai-model-form {
-  padding: 20px 0;
-}
-
-.form-tip {
-  color: #909399;
-  font-size: 12px;
-  margin-top: 4px;
-}
-
-.full-width {
-  width: 100%;
-}
-
-.suggest-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: 6px;
-  flex-wrap: wrap;
-}
-
-.suggest-label {
-  font-size: 12px;
-  color: #909399;
-}
-
-.suggest-tag {
-  cursor: pointer;
-}
-
-.clear-check {
-  margin-top: 6px;
-}
-
-.test-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.test-alert {
-  margin-top: 10px;
-  width: 100%;
-}
-
-/* 对话框按钮 */
-.dialog-footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 12px;
-}
-
-.cancel-btn,
-.confirm-btn {
-  border-radius: 8px;
-  padding: 10px 20px;
-}
-
-.confirm-btn {
-  background: linear-gradient(135deg, #409EFF, #52c41a);
-  border: none;
-}
-
-.confirm-btn:hover {
-  background: linear-gradient(135deg, #66b1ff, #73d13d);
-  transform: translateY(-1px);
-}
-
-/* 响应式设计 */
-@media screen and (max-width: 768px) {
-  .ai-model-container {
-    padding: 15px;
-  }
-
-  .header-content {
-    flex-direction: column;
-    text-align: center;
-    padding: 20px;
-  }
-
-  .header-illustration {
-    margin-top: 15px;
-  }
-
-  .current-model-display {
-    flex-direction: column;
-    text-align: center;
-    padding: 20px;
-  }
-
-  .current-model-label { justify-content: center; }
-
-  .current-model-icon {
-    margin-right: 0;
-    margin-bottom: 16px;
-  }
-
-  .current-model-detail {
-    flex-direction: column;
-    gap: 4px;
-  }
-
-  .detail-separator {
-    display: none;
-  }
-
-  .search-row {
-    flex-direction: column;
-    gap: 12px;
-    align-items: stretch;
-  }
-
-  .search-actions {
-    justify-content: center;
-  }
-
-  .action-buttons {
-    flex-wrap: wrap;
-    justify-content: center;
-  }
-
-  .data-table {
-    font-size: 12px;
-  }
-
-  .action-buttons {
-    gap: 4px;
-  }
+.ai-model-container { padding: 24px; min-height: 100%; color: #243248; background: #f6f8fb; }
+.gateway-header { display:flex; align-items:center; justify-content:space-between; gap:20px; margin-bottom:24px; }
+.eyebrow { color:#718098; font-size:11px; font-weight:600; letter-spacing:1.4px; margin-bottom:8px; }
+.gateway-header h1 { margin:0 0 8px; font-size:28px; font-weight:700; letter-spacing:-.7px; }
+.gateway-header p { margin:0; font-size:13px; line-height:1.7; color:#718098; }
+.header-actions { display:flex; gap:10px; flex-shrink:0; }
+.header-actions :deep(.el-button + .el-button) { margin-left:0; }
+.active-grid { display:grid; grid-template-columns:1fr 1fr; gap:18px; margin-bottom:18px; }
+.active-panel { padding:22px 24px 16px; border:1px solid #cfdbef; border-radius:16px; background:linear-gradient(130deg,#f0f5ff,#fff 80%); min-width:0; }
+.voice-panel { border-color:#dce5ee; background:linear-gradient(130deg,#f0f8f7,#fff 80%); }
+.panel-label { display:flex; align-items:center; gap:8px; font-size:12px; font-weight:600; color:#526580; }
+.panel-label :deep(.el-tag) { margin-left:auto; }
+.active-panel h2 { font-size:21px; margin:18px 0 8px; font-weight:650; }
+.active-panel code { color:#657894; font-size:12px; overflow-wrap:anywhere; }
+.active-panel p { font-size:12px; color:#7a8798; line-height:1.6; }
+.active-bottom { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-top:16px; padding-top:12px; border-top:1px solid #e1e8f3; font-size:12px; color:#6b7b92; }
+.gateway-guide { display:flex; justify-content:space-between; align-items:center; gap:16px; padding:16px 20px; margin-bottom:24px; background:#fff; border:1px solid #e1e7ef; border-radius:12px; }
+.gateway-guide strong { font-size:13px; font-weight:600; }
+.gateway-guide p { color:#78869a; font-size:12px; margin:6px 0 0; line-height:1.7; }
+.registry-panel { min-width:0; }
+.registry-heading { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:16px; }
+.registry-heading h2 { font-size:17px; margin:0; }
+.registry-heading h2 span { display:inline-block; color:#64748b; font-size:12px; background:#e8edf4; padding:3px 8px; border-radius:6px; margin-left:5px; vertical-align:middle; }
+.muted { color:#8a95a5; font-size:12px; }
+.registry-filters { display:grid; grid-template-columns:minmax(220px,1fr) 210px 140px auto; gap:12px; margin-bottom:20px; }
+.model-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:16px; }
+.model-card { display:flex; flex-direction:column; min-width:0; border:1px solid #e1e7ef; border-radius:14px; background:#fff; padding:19px; box-shadow:0 3px 12px #263b5910; }
+.model-card.is-current { border-color:#aec6f4; box-shadow:0 0 0 1px #dce8ff; }
+.model-card.is-disabled { background:#fcfcfd; }
+.card-top { display:flex; gap:11px; align-items:center; margin-bottom:14px; }
+.provider-badge { display:flex; align-items:center; justify-content:center; flex-shrink:0; width:39px; height:39px; border-radius:11px; color:var(--provider-color); font-size:17px; font-weight:700; background:color-mix(in srgb,var(--provider-color) 10%,white); }
+.card-heading { min-width:0; flex:1; }
+.card-heading h3 { font-size:14px; font-weight:600; margin:0 0 5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.card-heading span { color:#8a95a5; font-size:11px; }
+.usage-tags { display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-bottom:17px; min-height:20px; }
+.card-field { display:flex; flex-direction:column; gap:6px; margin-bottom:14px; min-width:0; }
+.card-field > span:first-child { font-size:10px; letter-spacing:.3px; color:#95a0af; }
+.card-field code { font-family:ui-monospace,SFMono-Regular,Consolas,monospace; font-size:12px; color:#435472; overflow-wrap:anywhere; }
+.endpoint-text { display:block; max-width:100%; color:#718097; font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.card-meta { display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px; color:#8793a3; font-size:10px; margin-top:2px; }
+.card-meta > span:first-child { color:#498574; }
+.card-meta .key-missing { color:#d58928; }
+.card-description { font-size:11px; line-height:1.7; color:#8793a3; overflow-wrap:anywhere; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; margin:13px 0 0; }
+.card-actions { display:flex; gap:8px; padding-top:15px; border-top:1px solid #eef1f5; margin-top:18px; }
+.card-actions :deep(.el-button + .el-button) { margin-left:0; }
+.card-actions :deep(.el-dropdown) { margin-left:auto; }
+.connection-state { padding:9px 11px; background:#edf8f2; border-radius:7px; font-size:11px; color:#2d8666; line-height:1.6; margin-top:12px; overflow-wrap:anywhere; }
+.connection-state.failed { background:#fff2f0; color:#bb564e; }
+.section-label { font-size:12px; font-weight:600; color:#62728b; margin-bottom:12px; }
+.preset-picker { margin-bottom:18px; }
+.preset-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; max-height:208px; overflow-y:auto; padding:1px; }
+.preset-button { display:flex; align-items:center; gap:9px; padding:10px 12px; background:#fff; border:1px solid #e4e9f0; border-radius:8px; color:#53627a; font:inherit; font-size:11px; cursor:pointer; text-align:left; }
+.preset-button span { min-width:23px; font-weight:700; font-size:13px; }
+.preset-button:hover,.preset-button.selected { border-color:#6b9cec; background:#f1f6ff; }
+.preset-button:focus-visible { outline:2px solid #409eff; outline-offset:2px; }
+.provider-hint { display:flex; justify-content:space-between; gap:12px; margin-bottom:22px; font-size:12px; line-height:1.8; color:#75849b; padding:12px 14px; border-radius:8px; background:#f5f8fc; }
+.provider-hint a { flex-shrink:0; color:#477ccd; text-decoration:none; }
+.full-width { width:100%; }
+.model-candidates { margin-top:8px; }
+.form-tip { font-size:11px; color:#8a97ab; line-height:1.7; margin-top:5px; width:100%; overflow-wrap:anywhere; }
+.usage-options { display:flex; gap:12px; flex-wrap:wrap; }
+.clear-check { white-space:normal; height:auto; margin-top:8px; }
+.clear-check :deep(.el-checkbox__label) { white-space:normal; font-size:12px; line-height:1.6; }
+.test-row { display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
+.test-alert { width:100%; margin-top:10px; }
+.test-alert :deep(.el-alert__title) { overflow-wrap:anywhere; line-height:1.7; }
+.dialog-footer { display:flex; justify-content:flex-end; gap:10px; }
+:global(.gateway-form-dialog .el-dialog__body) { max-height:calc(100vh - 190px); overflow-y:auto; padding-right:5px; }
+@media (max-width:1100px) { .registry-filters { grid-template-columns:minmax(180px,1fr) 170px 120px auto; } }
+@media (max-width:768px) {
+  .ai-model-container { padding:16px 12px; }
+  .gateway-header { align-items:flex-start; flex-direction:column; gap:16px; }
+  .gateway-header h1 { font-size:24px; }
+  .header-actions { width:100%; }
+  .header-actions :deep(.el-button) { flex:1; }
+  .active-grid { grid-template-columns:1fr; gap:12px; }
+  .active-panel { padding:18px 20px 14px; }
+  .active-panel h2 { font-size:19px; }
+  .gateway-guide { align-items:flex-start; flex-direction:column; padding:15px; }
+  .registry-heading { align-items:flex-start; flex-direction:column; gap:8px; }
+  .registry-filters { grid-template-columns:1fr 1fr; gap:9px; }
+  .registry-filters > :first-child { grid-column:1 / -1; }
+  .registry-filters > :last-child { grid-column:1 / -1; }
+  .model-grid { grid-template-columns:minmax(0,1fr); }
+  .preset-grid { grid-template-columns:1fr 1fr; max-height:190px; }
+  .preset-button { padding:9px 7px; gap:5px; font-size:10px; }
+  .provider-hint { flex-direction:column; gap:5px; }
+  :global(.gateway-form-dialog .el-form-item) { display:block; }
+  :global(.gateway-form-dialog .el-form-item__label) { justify-content:flex-start; width:auto !important; height:25px; margin-bottom:5px; }
+  :global(.gateway-form-dialog .el-form-item__content) { margin-left:0 !important; }
+  :global(.gateway-form-dialog .el-dialog__body) { max-height:calc(100vh - 190px); }
 }
 </style>

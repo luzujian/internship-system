@@ -40,7 +40,7 @@ class AgentKnowledgeTest {
         Actor student = new Actor("ROLE_STUDENT:1:false:", 1L, "ROLE_STUDENT", "学生", null,
                 null, null, false, Set.of());
         Actor teacher = new Actor("ROLE_TEACHER_COUNSELOR:9:false:", 9L, "ROLE_TEACHER_COUNSELOR", "教师", "COUNSELOR",
-                null, null, false, Set.of());
+                null, null, false, Set.of("menu:student-tracking"));
 
         assertEquals(0, knowledge.lookup(student, "完全不存在的系统能力XYZ").total());
         assertTrue(knowledge.lookup(student, "实习计划").total() > 0);

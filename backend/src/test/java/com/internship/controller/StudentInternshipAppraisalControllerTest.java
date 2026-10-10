@@ -2,6 +2,7 @@ package com.internship.controller;
 
 import com.internship.entity.FileUpload;
 import com.internship.entity.InternshipAppraisalFile;
+import com.internship.entity.InternshipStageAssignment;
 import com.internship.entity.Result;
 import com.internship.entity.User;
 import com.internship.exception.BusinessException;
@@ -13,6 +14,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -122,5 +125,24 @@ class StudentInternshipAppraisalControllerTest {
         assertEquals(400, result.getCode());
         assertEquals("数据库保存失败", result.getMessage());
         verify(ossOperator).deleteFile(objectNameCaptor.getValue());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"PENDING_CONFIRMATION", "REJECTED", "WITHDRAWN"})
+    void rejectsUnconfirmedPlacementBeforeUploadingFile(String placementStatus) throws Exception {
+        InternshipStageAssignment assignment = new InternshipStageAssignment();
+        assignment.setId(22L);
+        assignment.setStudentId(11L);
+        assignment.setStatus(placementStatus);
+        when(assignmentService.findById(22L)).thenReturn(assignment);
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "鉴定表.pdf", "application/pdf", "content".getBytes());
+
+        Result result = controller.upload(file, 22L, null);
+
+        assertEquals(400, result.getCode());
+        assertEquals("只能关联已确认的实习经历", result.getMessage());
+        verify(ossOperator, never()).uploadWithObjectName(any(), any());
+        verify(appraisalService, never()).addUploadedFile(anyLong(), any(), any());
     }
 }

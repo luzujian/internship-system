@@ -33,12 +33,7 @@ export default defineConfig({
     chunkSizeWarningLimit: 1500,
     rollupOptions: {
       output: {
-        manualChunks: (id) => {
-          // 禁用手动分割，让系统自动处理
-          if (id.includes('node_modules')) {
-            return 'vendor'
-          }
-        },
+        // 保留按路由和动态 import 自动分块，避免文档预览、导出等依赖进入首屏。
         assetFileNames: 'assets/[name].[hash:8]-v2[extname]',
         chunkFileNames: 'assets/[name].[hash:8]-v2.js',
         entryFileNames: 'assets/[name].[hash:8]-v2.js'

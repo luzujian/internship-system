@@ -22,7 +22,9 @@ class PositionMutationBoundaryTest {
     private final PositionMapper mapper = mock(PositionMapper.class);
     private final PositionController controller = new PositionController();
     PositionMutationBoundaryTest() {
-        ReflectionTestUtils.setField(controller, "positionService", new PositionServiceImpl(mapper, mock(StudentInternshipStatusService.class)));
+        PositionServiceImpl service = new PositionServiceImpl(mapper, mock(StudentInternshipStatusService.class));
+        ReflectionTestUtils.setField(service, "companyContactService", mock(com.internship.service.CompanyContactService.class));
+        ReflectionTestUtils.setField(controller, "positionService", service);
         ReflectionTestUtils.setField(controller, "positionCacheService", mock(PositionCacheService.class));
         ReflectionTestUtils.setField(controller, "webSocketHandler", mock(AnnouncementWebSocketHandler.class));
         Position own = new Position(); own.setId(10L); own.setCompanyId(20L);

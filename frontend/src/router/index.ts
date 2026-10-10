@@ -24,9 +24,6 @@ import teacherRoutes from './teacherRouter'
 // 导入模块化守卫
 import { registerGuards } from './guards'
 
-// 导入路由预加载工具
-import { initRoutePreload } from './preloadRoutes'
-
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
@@ -123,9 +120,6 @@ const router = createRouter({
 
 // 注册路由守卫
 registerGuards(router)
-
-// 初始化路由预加载（在应用启动时预加载常用组件）
-initRoutePreload()
 
 // 路由后置守卫（用于页面标题）
 router.afterEach((to) => {

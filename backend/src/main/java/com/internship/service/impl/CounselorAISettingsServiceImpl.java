@@ -14,10 +14,13 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
+import java.util.Locale;
 
 @Slf4j
 @Service
@@ -35,6 +38,9 @@ public class CounselorAISettingsServiceImpl implements CounselorAISettingsServic
     @Autowired
     @Lazy
     private EnhancedDeepSeekService enhancedDeepSeekService;
+
+    @Autowired
+    private TransactionTemplate transactionTemplate;
     
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -136,19 +142,20 @@ public class CounselorAISettingsServiceImpl implements CounselorAISettingsServic
     }
     
     @Override
-    @Transactional(rollbackFor = Exception.class)
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public int batchCreateWithAIDescription(Long counselorId, String categoryName) {
         log.info("批量创建辅导员评分规则并生成AI描述，辅导员ID: {}, 类别: {}", counselorId, categoryName);
 
-        if (counselorId == null) {
+        if (counselorId == null || counselorId <= 0) {
             throw new BusinessException("辅导员ID不能为空");
         }
 
         if (categoryName == null || categoryName.trim().isEmpty()) {
             throw new BusinessException("类别名称不能为空");
         }
+        if (categoryName.length() > 100) throw new BusinessException("类别名称不能超过100字");
 
-        String categoryCode = categoryName.toLowerCase().replace(" ", "_");
+        String categoryCode = categoryName.trim().toLowerCase(Locale.ROOT).replace(" ", "_");
 
         List<CounselorScoringRule> rules = new ArrayList<>();
         Date now = new Date();
@@ -186,33 +193,31 @@ public class CounselorAISettingsServiceImpl implements CounselorAISettingsServic
             rules.add(rule);
         }
 
-        int result = counselorScoringRuleMapper.batchInsert(rules);
-
-        redistributeWeights(counselorId);
+        Integer result = transactionTemplate.execute(status -> {
+            int inserted = counselorScoringRuleMapper.batchInsert(rules);
+            redistributeWeights(counselorId);
+            return inserted;
+        });
+        if (result == null) throw new BusinessException("评分规则保存失败");
 
         log.info("批量创建辅导员评分规则成功，创建数量: {}", result);
         return result;
     }
     
     private String generateDescription(String categoryName, String level, int minScore, int maxScore) {
-        try {
-            String prompt = String.format("请为实习管理系统的%s评分等级生成一段简短的中文描述（50-100字）：\n" +
-                    "类别：%s\n" +
-                    "等级：%s\n" +
-                    "分数范围：%d-%d分\n" +
-                    "描述要求：简洁明了，突出该等级的特点和评价标准。",
-                    categoryName, categoryName, level, minScore, maxScore);
-            
-            String aiDescription = enhancedDeepSeekService.chatWithResources(prompt, false);
-            
-            if (aiDescription != null && !aiDescription.trim().isEmpty()) {
-                return aiDescription.trim();
-            }
-        } catch (Exception e) {
-            log.warn("AI生成描述失败，使用默认描述: {}", e.getMessage());
+        String prompt = String.format("请为实习管理系统的%s评分等级生成一段简短的中文描述（50-100字）：\n" +
+                "类别：%s\n" +
+                "等级：%s\n" +
+                "分数范围：%d-%d分\n" +
+                "描述要求：简洁明了，突出该等级的特点和评价标准。",
+                categoryName, categoryName, level, minScore, maxScore);
+
+        String aiDescription = enhancedDeepSeekService.chatWithResources(prompt, false);
+
+        if (aiDescription == null || aiDescription.isBlank()) {
+            throw new BusinessException("AI未返回评分描述，请稍后重试");
         }
-        
-        return String.format("%s - %s等级（%d-%d分）", categoryName, level, minScore, maxScore);
+        return aiDescription.trim();
     }
     
     @Override
@@ -380,28 +385,7 @@ public class CounselorAISettingsServiceImpl implements CounselorAISettingsServic
         categoryMap.put("责任心", "责任心");
         categoryMap.put("专业技能", "专业技能");
 
-        // 如果在硬编码映射中找不到，调用AI翻译
-        if (!categoryMap.containsKey(categoryCode)) {
-            return translateToChinese(categoryCode);
-        }
-
-        return categoryMap.get(categoryCode);
-    }
-
-    /**
-     * 调用AI将英文类别名称翻译成中文
-     */
-    private String translateToChinese(String categoryCode) {
-        try {
-            String prompt = String.format("请将以下英文类别名称翻译成中文（只返回翻译结果，不要其他内容）：\n%s", categoryCode);
-            String result = enhancedDeepSeekService.chatWithResources(prompt, false);
-            if (result != null && !result.trim().isEmpty()) {
-                return result.trim();
-            }
-        } catch (Exception e) {
-            log.warn("AI翻译类别名称失败: {}", e.getMessage());
-        }
-        // 翻译失败时返回原始code
-        return categoryCode;
+        // Reweighting is a database operation; never call a provider while holding its transaction.
+        return categoryMap.getOrDefault(categoryCode, categoryCode);
     }
 }

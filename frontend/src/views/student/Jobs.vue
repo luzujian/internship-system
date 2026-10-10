@@ -337,7 +337,7 @@
               <div class="info-item">
                 <el-icon><OfficeBuilding /></el-icon>
                 <span class="info-label">合作模式：</span>
-                <span class="info-value">{{ formatCooperationMode(selectedJob.cooperationMode) }}</span>
+                <span class="info-value">校企双向选择</span>
               </div>
               <div class="info-item">
                 <el-icon><Location /></el-icon>
@@ -1254,19 +1254,6 @@ const companyVideos = computed(() => {
     return Array.isArray(arr) ? arr.filter(u => !u.startsWith('blob:')) : []
   } catch { return [] }
 })
-
-// 合作模式：兼容新格式(mutual_choice/student_contact)与老格式(双向,兜底,自主)
-const formatCooperationMode = (mode) => {
-  if (!mode) return '-'
-  const map = {
-    '双向': '校企双向选择',
-    '自主': '学生自主联系',
-    '兜底': '接受兜底',
-    mutual_choice: '校企双向选择',
-    student_contact: '学生自主联系'
-  }
-  return mode.split(',').map(m => map[m.trim()] || m.trim()).join('、')
-}
 
 // 标记已申请的职位及其状态
 const markAppliedJobs = async () => {
@@ -2633,6 +2620,50 @@ useAgentPageContext(() => ({
 }
 
 @media (max-width: 767px) {
+  .job-detail-content .detail-section {
+    padding: 0 12px;
+  }
+
+  .job-detail-content .detail-header {
+    padding: 16px;
+    gap: 12px;
+    flex-direction: column;
+  }
+
+  .job-detail-content .detail-title {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .job-detail-content .internship-base-badges {
+    flex-wrap: wrap;
+  }
+
+  .job-detail-content .info-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .job-detail-content .info-item {
+    min-width: 0;
+    gap: 8px;
+    padding: 12px;
+  }
+
+  .job-detail-content .info-value,
+  .job-detail-content .contact-value {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .job-detail-content .contact-info {
+    padding: 12px;
+  }
+
+  .job-detail-content .contact-item {
+    padding: 10px 8px;
+    gap: 8px;
+  }
+
   .filter-group {
     min-width: 100%;
   }

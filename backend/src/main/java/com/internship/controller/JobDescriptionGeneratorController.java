@@ -1,5 +1,6 @@
 package com.internship.controller;
 
+import com.internship.agent.business.AgentException;
 import com.internship.service.JobDescriptionGeneratorService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -58,6 +59,8 @@ public class JobDescriptionGeneratorController {
 
             return ResponseEntity.ok(response);
 
+        } catch (AgentException e) {
+            throw e;
         } catch (Exception e) {
             Map<String, Object> errorResponse = new HashMap<>();
             errorResponse.put("success", false);

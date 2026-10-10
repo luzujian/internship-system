@@ -1,0 +1,1811 @@
+[
+  {
+    "id": "admin-knowledge-map",
+    "category": "overview",
+    "title": "全系统功能知识地图与四端业务主线",
+    "roles": [
+      "admin"
+    ],
+    "keywords": [
+      "全系统知识",
+      "全部业务功能",
+      "全方面知识",
+      "功能总览",
+      "模块清单",
+      "四端功能"
+    ],
+    "rules": "系统主线是企业登记与准入、发布岗位、学生投递、企业处理申请和面试或直接录取、学生提交实习确认、企业确认接收、实习过程跟进、心得批阅和鉴定材料收集。另有自主实习、考研延期及换岗分支。学生端涵盖首页待办、职位浏览、我的申请、面试管理、实习确认、心得、鉴定和个人中心。教师端涵盖负责范围内的看板、学生跟进、申请审核、心得评分、鉴定收集、班级、统一日历、评分配置、公告、资源和报表。企业端涵盖招聘、申请处理、确认接收、当前实习学生、企业资料和账户设置。管理员端涵盖账号、企业准入、组织班级、岗位类别、公告资源、问题反馈、撤回记录、数据统计、权限、模型、关键词和评分规则、日志、备份及系统设置。询问完整功能时按这些模块归纳；询问单个功能时再检索对应详细说明。菜单和实际办理权限以当前授权为准，保留路由不代表每个角色都能使用。",
+    "source": "frontend/src/router/adminRouter.ts; frontend/src/router/studentRouter.ts; frontend/src/router/teacherRouter.ts; frontend/src/router/companyRouter.ts",
+    "verifiedAt": "2026-10-08",
+    "verifyLevel": "CODE_TRACED"
+  },
+  {
+    "id": "admin-role-boundaries",
+    "category": "rule",
+    "title": "四端职责、教师负责范围与权限边界",
+    "roles": [
+      "student",
+      "teacher",
+      "company",
+      "admin"
+    ],
+    "keywords": [
+      "角色分工",
+      "四端职责",
+      "辅导员",
+      "系室教师",
+      "学院教师",
+      "数据范围",
+      "谁负责"
+    ],
+    "rules": "学生办理本人的投递、申请、面试回复、实习确认和材料提交；企业处理本企业招聘申请、面试及实习确认；教师按实际负责范围跟进学生、处理获准的申请、批阅心得和收集鉴定；管理员维护账号、授权及系统管理配置。辅导员负责班级，系室教师负责本系，学院教师负责本学院，具体对象还需通过服务端归属校验。自主实习申请由负责辅导员处理，延期等申请按教师类型和授权处理。平台岗位的最终实习接收由企业确认，不能说教师代企业确认。能讲解某角色的规则不等于管理员AI获得该角色的业务明细查询或执行能力。",
+    "source": "backend/src/main/java/com/internship/controller/ApprovalController.java; backend/src/main/java/com/internship/agent/business/AgentIdentityService.java; backend/src/main/java/com/internship/agent/business/AgentReadTools.java",
+    "verifiedAt": "2026-10-08",
+    "verifyLevel": "CODE_TRACED"
+  },
+  {
+    "id": "admin-readonly-role-switch",
+    "category": "howto",
+    "title": "管理员角色切换与只读查看其他端",
+    "roles": [
+      "admin"
+    ],
+    "keywords": [
+      "角色切换",
+      "切换身份",
+      "只读查看",
+      "查看学生端",
+      "查看教师端",
+      "查看企业端"
+    ],
+    "routes": [
+      "/admin/profile"
+    ],
+    "steps": "管理员在右上角账号菜单选择角色切换，选择目标角色和用户，并在原页面完成管理员身份验证。进入目标端后按页面提示只读查看，退出查看后返回管理员身份。",
+    "rules": "角色切换用于获准的只读查看，不能据此提交、审核或修改目标用户业务。AI依据服务器实际身份和只读标记工作，用户在对话中自称其他角色不能改变身份。不要在对话中索要管理员密码、目标用户密码或验证码。",
+    "source": "frontend/src/views/admin/AdminLayout.vue; backend/src/main/java/com/internship/controller/AuthController.java; backend/src/main/java/com/internship/agent/business/AgentIdentityService.java",
+    "verifiedAt": "2026-10-08",
+    "verifyLevel": "CODE_TRACED"
+  },
+  {
+    "id": "admin-dashboard-statistics",
+    "category": "admin",
+    "title": "管理员首页概览与日活跃数据统计",
+    "roles": [
+      "admin"
+    ],
+    "keywords": [
+      "管理员首页",
+      "管理看板",
+      "系统总量",
+      "数据统计",
+      "日活跃",
+      "活跃统计"
+    ],
+    "routes": [
+      "/admin/dashboard",
+      "/admin/data-statistics",
+      "/admin/data-statistics/active-statistics"
+    ],
+    "steps": "管理员首页查看系统概览，在数据统计的日活跃统计页面查看活跃数据和页面提供的筛选、图表。",
+    "rules": "账号、企业、岗位或申请的总量与活跃人数是不同统计口径，不能互相替代；系统级统计也不能冒充某位教师的负责范围统计。知识说明不包含实时数字；管理员AI的系统总量工具只返回该工具已经提供的计数，其他图表数据应到原页面核对。",
+    "source": "frontend/src/views/admin/Dashboard.vue; frontend/src/views/admin/DataStatisticsManagement.vue; backend/src/main/java/com/internship/agent/business/AgentReadTools.java",
+    "verifiedAt": "2026-10-08",
+    "verifyLevel": "CODE_TRACED"
+  },
+  {
+    "id": "admin-student-accounts",
+    "category": "admin",
+    "title": "学生账号管理、导入导出与密码重置",
+    "roles": [
+      "admin"
+    ],
+    "keywords": [
+      "学生管理",
+      "学生账号",
+      "导入学生",
+      "学生导出",
+      "重置学生密码",
+      "添加学生"
+    ],
+    "routes": [
+      "/admin/student-users"
+    ],
+    "steps": "在学生管理页按页面条件搜索账号，使用新增或编辑维护学生资料；批量导入前下载当前页面模板，填写后上传并核对逐项结果；导出与密码重置从对应按钮办理。",
+    "rules": "学号、年级、专业、班级和账号状态属于学生基础资料，修改基础资料不代表审批了学生申请或完成了实习确认。新增、编辑、删除、导入及重置按各自权限控制。批量导入可能部分成功，应按失败明细修正，不能把整个文件都说成已成功。密码在原页面办理，AI不能读取或展示现有密码。",
+    "source": "frontend/src/views/admin/StudentUserManagement.vue; backend/src/main/java/com/internship/controller/StudentUserController.java",
+    "verifiedAt": "2026-10-08",
+    "verifyLevel": "CODE_TRACED"
+  },
+  {
+    "id": "admin-teacher-accounts",
+    "category": "admin",
+    "title": "教师账号管理与教师类型、组织归属",
+    "roles": [
+      "admin"
+    ],
+    "keywords": [
+      "教师管理",
+      "教师账号",
+      "导入教师",
+      "教师类型",
+      "教师归属",
+      "重置教师密码"
+    ],
+    "routes": [
+      "/admin/teacher-users"
+    ],
+    "steps": "在教师管理页搜索、新增或编辑教师，填写页面要求的账号、教师类型和组织归属；导入时使用当前模板并核对导入结果。密码重置和账号维护在原页面确认后办理。",
+    "rules": "教师类型区分辅导员、系室教师和学院教师，组织归属与负责班级共同影响业务范围；角色名称不是跨系、跨学院访问的授权。教师功能菜单在权限管理中分配，负责班级由班级管理关联，创建账号不等于已经完成班级分配。",
+    "source": "frontend/src/views/admin/TeacherUserManagement.vue; backend/src/main/java/com/internship/controller/TeacherUserController.java; backend/src/main/java/com/internship/controller/TeacherClassController.java",
+    "verifiedAt": "2026-10-08",
+    "verifyLevel": "CODE_TRACED"
+  },
+  {
+    "id": "admin-administrator-accounts",
+    "category": "admin",
+    "title": "管理员账户维护与超级管理员保护",
+    "roles": [
+      "admin"
+    ],
+    "keywords": [
+      "管理员管理",
+      "管理员账号",
+      "添加管理员",
+      "超级管理员",
+      "重置管理员密码"
+    ],
+    "routes": [
+      "/admin/admin-users"
+    ],
+    "steps": "管理员账户维护页提供搜索、添加、编辑、导出、重置和删除入口，具体按钮取决于当前账号授权。",
+    "rules": "普通管理员的管理权限由权限配置决定，不能把所有管理员都视为超级管理员。页面对超级管理员记录设有不可编辑、不可删除和不可重置的保护。管理员账号暂不适用学生、教师、企业的邮箱自助找回流程。账户删除及密码重置必须在原页面由用户办理。",
+    "source": "frontend/src/views/admin/AdminUserManagement.vue; backend/src/main/java/com/internship/controller/AdminUserController.java",
+    "verifiedAt": "2026-10-08",
+    "verifyLevel": "CODE_TRACED"
+  },
+  {
+    "id": "admin-company-admission",
+    "category": "admin",
+    "title": "企业管理、注册审核与企业账号状态",
+    "roles": [
+      "admin"
+    ],
+    "keywords": [
+      "企业管理",
+      "企业审核",
+      "企业资质审核",
+      "注册审核",
+      "企业注册",
+      "企业准入",
+      "审核拒绝",
+      "企业禁用"
+    ],
+    "routes": [
+      "/admin/companies",
+      "/teacher/company-audit"
+    ],
+    "steps": "企业通过注册入口提交企业基础信息和资质材料，等待审核；管理员在企业管理中查看资料、材料和审核状态，按原页面提供的审核操作办理通过或拒绝。新增、导入、编辑、启用禁用、密码重置和标签更新也在企业管理页办理。教师企业审核入口是否开放需另核对菜单和审核权限。",
+    "rules": "注册申请、审核通过和校企合作资格不是同一步；企业审核状态与账号启用状态也是不同概念。管理端直接新增企业与企业自行注册等待审核的路径不同，不应强行套用同一审核步骤。注册企业审核通过后的登录和设置密码按系统实际登记邮箱验证流程办理，不能承诺发送或知道初始密码。管理员AI可读待审核企业队列，但不会代审核或改变企业状态。",
+    "source": "frontend/src/views/admin/CompanyManagement.vue; backend/src/main/java/com/internship/controller/CompanyRegisterController.java; backend/src/main/java/com/internship/controller/CompanyUserController.java; backend/src/main/java/com/internship/controller/ApprovalController.java",
+    "verifiedAt": "2026-10-08",
+    "verifyLevel": "CODE_TRACED"
+  },
+  {
+    "id": "admin-company-tags",
+    "category": "rule",
+    "title": "企业标签、校企双向选择和实习基地说明",
+    "roles": [
+      "company",
+      "teacher",
+      "admin"
+    ],
+    "keywords": [
+      "企业标签",
+      "校企双向选择",
+      "接受兜底",
+      "实习基地",
+      "校友企业",
+      "标签重建"
+    ],
+    "routes": [
+      "/admin/companies",
+      "/company/interviews",
+      "/teacher/company-list"
+    ],
+    "rules": "企业标签由企业资料、审核状态及对应合作或基地等业务字段生成，部分标签通过资料字段联动，不能把填写任意标签文字当成资格已经生效。校企双向选择按服务端准入规则和审核状态生成，企业提交注册本身不等于已经建立合作。资料变更后的标签以标签重建结果为准。企业端的企业信息页面解释基础字段、校友成员、基地协议等信息，管理员企业管理可维护获准字段；教师企业信息用于查看相关资料。具体企业现有标签必须在原页面或已授权数据查询中核对。",
+    "source": "backend/src/main/java/com/internship/service/impl/CompanyTagServiceImpl.java; backend/src/main/resources/agent/company-info-schema.json; frontend/src/views/company/CompanyInfo.vue; frontend/src/views/teacher/CompanyList.vue",
+    "verifiedAt": "2026-10-08",
+    "verifyLevel": "CODE_TRACED",
+    "permissionAny": {
+      "teacher": [
+        "menu:company-list"
+      ]
+    }
+  },
+  {
+    "id": "admin-organization-majors",
+    "category": "admin",
+    "title": "院系与专业管理及组织层级",
+    "roles": [
+      "admin"
+    ],
+    "keywords": [
+      "专业管理",
+      "院系管理",
+      "组织层级",
+      "添加专业",
+      "所属学院",
+      "所属系"
+    ],
+    "routes": [
+      "/admin/majors"
+    ],
+    "steps": "在院系专业管理页面按当前层级和列表维护院系、专业信息，新增或编辑时选择页面要求的组织归属；导入导出按该页模板和实际按钮办理。",
+    "rules": "学院、系、专业、班级与学生组成组织关联，教师业务范围会使用这些关联。专业名称相似不代表是同一个专业；组织维护与学生实习业务状态不同，不能用修改专业替代业务审核。有关删除及关联限制应以页面和服务端返回为准，不能承诺删除组织后关联业务会自动迁移。",
+    "source": "frontend/src/views/admin/DepartmentMajorManagement.vue; backend/src/main/java/com/internship/controller/DepartmentController.java; backend/src/main/java/com/internship/controller/MajorController.java",
+    "verifiedAt": "2026-10-08",
+    "verifyLevel": "CODE_TRACED"
+  },
+  {
+    "id": "admin-class-management",
+    "category": "admin",
+    "title": "管理员班级管理、专业年级和负责教师关联",
+    "roles": [
+      "admin"
+    ],
+    "keywords": [
+      "管理员班级管理",
+      "创建班级",
+      "班级专业",
+      "班级年级",
+      "分配辅导员",
+      "负责班级"
+    ],
+    "routes": [
+      "/admin/classes"
+    ],
+    "steps": "管理员在班级管理按名称、年级、专业筛选，维护班级基础资料，并从页面的教师关联入口核对或配置负责教师；批量维护按页面提供的导入导出操作进行。",
+    "rules": "班级基础资料和教师负责关系是不同信息。学生所在班级的关联会影响负责教师查询、催办及自主实习审核范围；看到某学院教师不代表该教师负责学院中每个班级的全部办理事项。修改负责关系后应重新核对实际范围，AI不能按旧会话判断当前归属。",
+    "source": "frontend/src/views/admin/ClassManagement.vue; backend/src/main/java/com/internship/controller/ClassController.java; backend/src/main/java/com/internship/controller/TeacherClassController.java",
+    "verifiedAt": "2026-10-08",
+    "verifyLevel": "CODE_TRACED"
+  },
+  {
+    "id": "admin-position-categories",
+    "category": "admin",
+    "title": "岗位类别管理与类别下岗位模板",
+    "roles": [
+      "admin"
+    ],
+    "keywords": [
+      "岗位类别",
+      "岗位分类",
+      "类别管理",
+      "岗位模板",
+      "导入岗位类别"
+    ],
+    "routes": [
+      "/admin/position-categories"
+    ],
+    "steps": "在岗位类别管理维护类别名称、描述，并查看和维护类别下的岗位名称及要求；支持页面提供的搜索和批量导入操作。",
+    "rules": "岗位类别及其要求模板供企业发布岗位选择和参考，不等于企业已经发布了一个招聘岗位。类别下的岗位数量不能当成在招人数、已录用人数或剩余名额。",
+    "source": "frontend/src/views/admin/PositionCategoryManagement.vue; backend/src/main/java/com/internship/controller/PositionCategoryController.java; backend/src/main/java/com/internship/controller/PositionController.java",
+    "verifiedAt": "2026-10-08",
+    "verifyLevel": "CODE_TRACED"
+  },
+  {
+    "id": "admin-recruitment-management",
+    "category": "admin",
+    "title": "管理员招聘管理与企业发布岗位的区别",
+    "roles": [
+      "admin"
+    ],
+    "keywords": [
+      "管理员招聘管理",
+      "招聘管理",
+      "岗位维护",
+      "在招状态",
+      "岗位名额",
+      "计划招聘人数"
+    ],
+    "routes": [
+      "/admin/recruitment"
+    ],
+    "steps": "管理员招聘管理页面用于获准的岗位维护和信息核对；企业日常发布、修改及处理招聘申请在企业招聘管理办理。菜单是否开放以当前配置为准。",
+    "rules": "岗位在招状态、计划招聘人数、录用机会和已确认实习人数是不同信息。面试通过或直接录取不等于已占用正式实习名额，企业最终确认接收时还会校验剩余名额。关闭招聘不应被解释为已结束学生的现有实习。AI只能说明这些规则，当前岗位人数和状态需从获准页面核对。",
+    "source": "frontend/src/views/admin/RecruitmentManagement.vue; frontend/src/views/company/RecruitmentManagement.vue; backend/src/main/java/com/internship/service/InternshipConfirmationWorkflowService.java",
+    "verifiedAt": "2026-10-08",
+    "verifyLevel": "CODE_TRACED"
+  },
+  {
+    "id": "admin-confirmation-records",
+    "category": "admin",
+    "title": "管理端实习确认记录与实际确认责任人",
+    "roles": [
+      "admin"
+    ],
+    "keywords": [
+      "管理端实习确认",
+      "实习确认申请",
+      "确认记录",
+      "确认责任人",
+      "教师确认"
+    ],
+    "routes": [
+      "/admin/internship-confirm-application"
+    ],
+    "rules": "管理端保留实习确认记录页面，是否显示与可用操作按当前权限和配置判断。平台岗位实习的业务主线仍是学生选定有效录用机会并提交确认表，由对应企业最终确认接收；不能因为管理端有记录页面就说管理员AI或教师负责替企业确认。自主实习由教师按申请审核路径落实，不能把该分支生成的实习经历说成企业操作确认。",
+    "source": "frontend/src/views/admin/InternshipConfirmApplication.vue; backend/src/main/java/com/internship/service/InternshipConfirmationWorkflowService.java; backend/src/main/java/com/internship/service/impl/StudentApplicationServiceImpl.java",
+    "verifiedAt": "2026-10-08",
+    "verifyLevel": "CODE_TRACED"
+  },
+  {
+    "id": "admin-withdrawal-records",
+    "category": "admin",
+    "title": "学生和企业撤回申请记录管理",
+    "roles": [
+      "admin"
+    ],
+    "keywords": [
+      "撤回申请记录",
+      "撤回记录",
+      "学生撤回",
+      "企业撤回",
+      "历史记录"
+    ],
+    "routes": [
+      "/admin/application-withdrawal-records"
+    ],
+    "steps": "撤回申请记录页按学生、企业分类查看，使用页面提供的申请人、企业、联系人和撤回时间筛选并打开详情。",
+    "rules": "撤回是业务状态变化，记录删除是管理数据操作；删除撤回历史不等于恢复申请或重新发起审核。已撤回记录不能冒充仍在等待处理的申请。涉及重新申请应核对对应申请类型的当前办理条件。",
+    "source": "frontend/src/views/admin/ApplicationWithdrawalRecordManagement.vue; backend/src/main/java/com/internship/controller/StudentJobApplicationController.java; backend/src/main/java/com/internship/controller/CompanyRegisterController.java",
+    "verifiedAt": "2026-10-08",
+    "verifyLevel": "CODE_TRACED"
+  },
+  {
+    "id": "admin-announcements",
+    "category": "admin",
+    "title": "公告管理、发布状态与目标群体",
+    "roles": [
+      "admin"
+    ],
+    "keywords": [
+      "公告管理",
+      "发布公告",
+      "公告目标群体",
+      "公告附件",
+      "公告看不到",
+      "公告已读"
+    ],
+    "routes": [
+      "/admin/announcements"
+    ],
+    "steps": "在公告管理新增或编辑公告，填写标题、正文、发布人信息和目标群体，按需要选择教师类别、专业及附件，再由用户在原页面保存或发布。列表可筛选、查看及执行获准的维护操作。",
+    "rules": "公告有发布状态和受众限制，保存草稿不等于已向所有人发布。学生、教师或企业能否看到公告取决于发布状态及目标群体；阅读记录与邮件、站内提醒的送达回执也不同。不能因为公告存在就断言某位用户已看到或收到邮件。",
+    "source": "frontend/src/views/admin/AnnouncementManagement.vue; backend/src/main/java/com/internship/controller/AnnouncementController.java; backend/src/main/java/com/internship/controller/AnnouncementReadRecordController.java",
+    "verifiedAt": "2026-10-08",
+    "verifyLevel": "CODE_TRACED"
+  },
+  {
+    "id": "admin-resource-documents",
+    "category": "admin",
+    "title": "资源文档管理、模板下载与资源发布",
+    "roles": [
+      "admin"
+    ],
+    "keywords": [
+      "资源管理",
+      "资源文档",
+      "发布文档",
+      "资源中心",
+      "模板下载",
+      "资源归档"
+    ],
+    "routes": [
+      "/admin/resource-documents"
+    ],
+    "steps": "管理员在资源管理维护文档标题、说明、文件、发布状态及受众；学生在个人中心的资源中心查看和下载获准发布的资源，包括实习鉴定模板。教师资源页面按自己的发布权限和归属维护资源。",
+    "rules": "上传文件、保存草稿、发布文档和归档是不同步骤。未发布或受众不匹配的文档不能当成所有用户都能下载；文件格式和大小以当前页面限制为准。助手可以说明下载入口，但不能凭知识条目描述未读取模板的每个字段或版式。",
+    "source": "frontend/src/views/admin/ResourceDocumentManagement.vue; frontend/src/views/student/Profile.vue; backend/src/main/java/com/internship/controller/ResourceDocumentController.java; backend/src/main/java/com/internship/controller/ResourceManagementController.java",
+    "verifiedAt": "2026-10-08",
+    "verifyLevel": "CODE_TRACED"
+  },
+  {
+    "id": "admin-problem-feedback",
+    "category": "admin",
+    "title": "问题反馈提交、查看与管理处理",
+    "roles": [
+      "admin"
+    ],
+    "keywords": [
+      "问题反馈",
+      "反馈管理",
+      "系统故障反馈",
+      "反馈处理",
+      "反馈状态"
+    ],
+    "routes": [
+      "/admin/problem-feedback"
+    ],
+    "steps": "用户通过系统提供的问题反馈入口提交问题说明；管理员在问题反馈管理查看列表和详情，按页面提供的状态及处理操作跟进。",
+    "rules": "问题反馈用于记录和跟进问题，不是实习申请、审核或实习确认。反馈被标记处理不能作为技术故障已经修复的证据。管理员AI可以说明流程和排查方向，当前反馈内容、处理结果及实际故障原因需另行核对。",
+    "source": "frontend/src/views/admin/FeedbackManagement.vue; backend/src/main/java/com/internship/controller/ProblemFeedbackController.java",
+    "verifiedAt": "2026-10-08",
+    "verifyLevel": "CODE_TRACED"
+  },
+  {
+    "id": "admin-business-permissions",
+    "category": "admin",
+    "title": "业务权限管理、管理员角色和教师菜单配置",
+    "roles": [
+      "admin"
+    ],
+    "keywords": [
+      "权限管理",
+      "业务权限",
+      "菜单权限",
+      "管理员角色",
+      "教师角色",
+      "学生菜单配置",
+      "看不到菜单"
+    ],
+    "routes": [
+      "/admin/permissions"
+    ],
+    "steps": "权限管理页分别配置管理员角色授权、教师角色菜单和学生端菜单显隐，选择对应角色或菜单项后在原页面保存。",
+    "rules": "菜单显示、接口权限、数据归属和AI能力是不同控制层。显示菜单不等于有权操作所有对象，隐藏菜单也不是让AI绕过权限的理由。教师菜单按具体类型和权限配置加载；学生菜单可由系统配置控制。管理员AI解释规则时可检索四端知识，实际可用功能仍应读取当前账号权限。",
+    "source": "frontend/src/views/admin/PermissionManagement.vue; frontend/src/utils/studentMenuConfig.ts; frontend/src/utils/teacherPermissions.ts; backend/src/main/java/com/internship/controller/AdminPermissionController.java",
+    "verifiedAt": "2026-10-08",
+    "verifyLevel": "CODE_TRACED"
+  },
+  {
+    "id": "admin-ai-capability-management",
+    "category": "admin",
+    "title": "AI助手总开关、角色能力和用户单独授权",
+    "roles": [
+      "admin"
+    ],
+    "keywords": [
+      "AI权限管理",
+      "AI能力",
+      "AI总开关",
+      "对话问答",
+      "能力关闭",
+      "用户单独授权",
+      "智能填表权限"
+    ],
+    "routes": [
+      "/admin/permissions"
+    ],
+    "steps": "权限管理的AI权限管理中设置助手总开关，按角色勾选支持的能力；需要例外时搜索具体用户，在用户级设置中调整并保存。侧栏可按已支持的流程生成权限变更预览，最终结果以确认后的实际回执为准。",
+    "rules": "用户级设置优先于角色默认，能力授权叠加在业务权限上，只收窄不放大。对话、语音、填表、学生实习计划、投递执行、教师简报、自动跟进和自动通知是不同能力，角色不支持的能力不能靠勾选强行新增。只读身份只保留对话问答。了解全系统知识不改变能力开关，也不允许管理员AI调用未提供的数据工具。",
+    "source": "frontend/src/views/admin/PermissionManagement.vue; backend/src/main/java/com/internship/agent/business/AgentCapabilityService.java; backend/src/main/java/com/internship/controller/AgentCapabilityAdminController.java",
+    "verifiedAt": "2026-10-08",
+    "verifyLevel": "CODE_TRACED"
+  },
+  {
+    "id": "admin-ai-model-management",
+    "category": "admin",
+    "title": "AI大模型选择、供应商网关及聊天与语音用途",
+    "roles": [
+      "admin"
+    ],
+    "keywords": [
+      "AI大模型选择",
+      "AI模型",
+      "网关地址",
+      "模型网关",
+      "模型管理",
+      "默认模型",
+      "聊天默认",
+      "语音模型",
+      "模型用途",
+      "API地址",
+      "APIKey",
+      "Token",
+      "温度参数"
+    ],
+    "routes": [
+      "/admin/ai-model"
+    ],
+    "steps": "在AI大模型选择添加或编辑配置，填写模型显示名称、实际请求模型标识、提供商、API地址、密钥、用途、最大Token和温度等页面字段；使用连接测试核对后保存，再选择对应聊天默认或语音用途。网关支持时可获取模型列表，也可手动填写模型标识。",
+    "rules": "显示名称用于识别，实际请求模型用于向服务商发送请求，二者不必相同。聊天默认和语音选择是独立用途，实时语音模型不能当通用聊天默认。正在用作聊天默认或语音的配置不能直接停用或删除，应先选择替代配置。模型启用不代表自动成为默认；模型列表获取和连接测试成功也不等于所有业务AI均完成验收。密钥只在原表单安全输入，AI不能展示或索要现有密钥。",
+    "source": "frontend/src/views/admin/AIModelManagement.vue; backend/src/main/java/com/internship/controller/AIModelController.java; backend/src/main/java/com/internship/service/impl/AIModelServiceImpl.java; backend/src/main/java/com/internship/agent/business/AgentModelSettings.java",
+    "verifiedAt": "2026-10-08",
+    "verifyLevel": "CODE_TRACED"
+  },
+  {
+    "id": "admin-ai-model-testing",
+    "category": "howto",
+    "title": "模型连接测试、AI测试与常见配置失败",
+    "roles": [
+      "admin"
+    ],
+    "keywords": [
+      "AI测试",
+      "连接测试",
+      "获取模型列表",
+      "网关测试",
+      "模型连不上",
+      "模型删除不了",
+      "模型停用不了"
+    ],
+    "routes": [
+      "/admin/ai-test",
+      "/admin/ai-model"
+    ],
+    "steps": "模型管理中的连接测试检查该份配置；AI测试页面用于页面提供的对话或测试操作。连接失败先核对地址、实际模型标识、用途、启用状态和服务商支持的协议，再依据页面错误检查授权或通道情况。",
+    "rules": "无法获取模型列表不一定表示不能对话，一些网关不提供列表；服务商返回失败、系统限流和本地权限关闭也不是同一原因。正在使用的默认或语音配置需要先切换用途才能停用或删除。不能把通用排查条件断言成线上这次失败的原因，不能保证填写任意OpenAI兼容地址就能支持全部功能。",
+    "source": "frontend/src/views/admin/AITest.vue; frontend/src/views/admin/AIModelManagement.vue; backend/src/main/java/com/internship/service/impl/AIModelServiceImpl.java; backend/src/main/java/com/internship/util/AiEndpointSupport.java",
+    "verifiedAt": "2026-10-08",
+    "verifyLevel": "CODE_TRACED"
+  },
+  {
+    "id": "admin-scoring-templates",
+    "category": "admin",
+    "title": "系统评分规则、等级分段和类别权重",
+    "roles": [
+      "admin"
+    ],
+    "keywords": [
+      "系统评分规则",
+      "评分规则管理",
+      "等级分段",
+      "最低分",
+      "最高分",
+      "类别权重",
+      "优秀良好"
+    ],
+    "routes": [
+      "/admin/scoring-rule"
+    ],
+    "steps": "在评分规则管理按分类、状态搜索，维护规则等级、分数范围、描述及启用状态；类别权重从调整权重入口维护并按页面校验保存。",
+    "rules": "系统级规则模板与辅导员自己的评分配置不同，修改模板不等于自动改写已经提交的心得成绩。等级、各类别得分、类别权重与最终评定是不同信息；不能未经真实计算把某项分数当作总成绩。规则的生效周期应核对教师配置与心得周期，不承诺修改后所有历史评分立即重算。",
+    "source": "frontend/src/views/admin/ScoringRuleManagement.vue; backend/src/main/java/com/internship/controller/ScoringRuleController.java; backend/src/main/java/com/internship/service/impl/ScoringRuleServiceImpl.java",
+    "verifiedAt": "2026-10-08",
+    "verifyLevel": "CODE_TRACED"
+  },
+  {
+    "id": "admin-keyword-library",
+    "category": "admin",
+    "title": "系统关键词库与辅导员关键词配置",
+    "roles": [
+      "admin"
+    ],
+    "keywords": [
+      "关键词库",
+      "关键词库管理",
+      "关键词配置",
+      "启用关键词",
+      "辅导员关键词"
+    ],
+    "routes": [
+      "/admin/keyword-library",
+      "/teacher/keyword-library",
+      "/teacher/ai-keyword-config"
+    ],
+    "steps": "管理员在关键词库管理维护关键词和启用状态；教师按已授权入口维护自己的关键词库或AI关键词配置。",
+    "rules": "关键词是心得分析和评分配置的参考内容，不是业务菜单权限，也不是岗位类别。系统关键词与教师个人关键词的来源和适用配置不同，不能说增加关键词就自动改变所有学生成绩；是否参与当前周期分析需按教师设置和实际分析结果核对。",
+    "source": "frontend/src/views/admin/KeywordLibraryManagement.vue; frontend/src/views/teacher/CounselorKeywordLibraryManagement.vue; backend/src/main/java/com/internship/controller/KeywordLibraryController.java; backend/src/main/java/com/internship/controller/CounselorKeywordController.java",
+    "verifiedAt": "2026-10-08",
+    "verifyLevel": "CODE_TRACED"
+  },
+  {
+    "id": "admin-log-center",
+    "category": "admin",
+    "title": "日志中心、操作审计、登录日志和安全事件",
+    "roles": [
+      "admin"
+    ],
+    "keywords": [
+      "日志中心",
+      "系统日志",
+      "日志管理",
+      "操作日志",
+      "登录日志",
+      "安全事件",
+      "审计",
+      "请求ID",
+      "日志留存",
+      "日志导出"
+    ],
+    "routes": [
+      "/admin/logs"
+    ],
+    "steps": "在日志中心选择操作日志、登录日志或安全事件，用时间、账号、结果、风险、角色、模块及请求ID等条件查询，打开详情；导出使用已应用的筛选条件，留存策略在对应设置入口维护。",
+    "rules": "今日概览是当天系统累计统计，不随下方筛选改变；列表页数、筛选结果总数和今日概览不能混用。尝试、失败和成功代表不同结果，记录到操作尝试不等于业务已执行成功。关联请求ID可用于在已有权限内排查同一次请求，日志缺失也可能受权限和留存影响。管理员AI尚无日志明细读取工具，不能声称已查看某次错误日志或已清理日志。",
+    "source": "frontend/src/views/admin/LogManagement.vue; backend/src/main/java/com/internship/controller/LogController.java; backend/src/main/java/com/internship/service/AuditLogService.java",
+    "verifiedAt": "2026-10-08",
+    "verifyLevel": "CODE_TRACED"
+  },
+  {
+    "id": "admin-backup-restore",
+    "category": "admin",
+    "title": "数据备份与恢复、自动备份策略和保留天数",
+    "roles": [
+      "admin"
+    ],
+    "keywords": [
+      "数据备份",
+      "备份恢复",
+      "自动备份",
+      "手动备份",
+      "立即备份",
+      "恢复数据",
+      "备份保留天数",
+      "备份频率"
+    ],
+    "routes": [
+      "/admin/backup"
+    ],
+    "steps": "备份管理页查看备份记录和结果，使用立即备份、下载、恢复及删除按钮办理获准操作。自动备份设置中配置开关、每天每周每月频率、时间和保留天数，再由用户保存。",
+    "rules": "创建、查看、恢复和删除由不同权限控制。恢复会影响现有数据，应先核对备份范围、时间和结果并按原页面确认。自动备份配置保存与一次备份任务实际成功不同；保留天数影响历史备份清理。知识库不存储当前备份清单，也不证明备份已可恢复，管理员AI不能代创建、下载、删除或恢复备份。",
+    "source": "frontend/src/views/admin/BackupManagement.vue; backend/src/main/java/com/internship/controller/BackupController.java",
+    "verifiedAt": "2026-10-08",
+    "verifyLevel": "CODE_TRACED"
+  },
+  {
+    "id": "admin-system-security-settings",
+    "category": "admin",
+    "title": "系统设置、维护模式与密码登录安全配置",
+    "roles": [
+      "admin"
+    ],
+    "keywords": [
+      "系统设置",
+      "基础配置",
+      "维护模式",
+      "正常运行",
+      "安全配置",
+      "密码复杂度",
+      "登录失败次数",
+      "账号锁定时间",
+      "会话超时"
+    ],
+    "routes": [
+      "/admin/system-settings"
+    ],
+    "steps": "系统设置的基础配置选择运行状态；安全配置维护密码最小长度和复杂度要求、最大登录失败次数、锁定时长及会话超时，再按表单校验保存。",
+    "rules": "维护模式、账号被禁用、登录失败锁定和会话过期是不同状态，应依据实际提示排查。知识说明不包含当前安全参数，不能用默认值替代现行配置。安全设置与教师管理的统一实习日历不是同一配置页面。",
+    "source": "frontend/src/views/admin/SystemSettingsManagement.vue; backend/src/main/java/com/internship/controller/SystemSettingsController.java; backend/src/main/java/com/internship/utils/PasswordValidator.java",
+    "verifiedAt": "2026-10-08",
+    "verifyLevel": "CODE_TRACED"
+  },
+  {
+    "id": "admin-email-notifications",
+    "category": "rule",
+    "title": "业务邮件开关、提醒范围与教师单次提醒",
+    "roles": [
+      "admin"
+    ],
+    "keywords": [
+      "邮件提醒",
+      "邮件开关",
+      "业务邮件",
+      "邮件通道",
+      "测试邮件",
+      "邮件没收到",
+      "站内提醒"
+    ],
+    "routes": [
+      "/admin/system-settings",
+      "/teacher/student-tracking"
+    ],
+    "steps": "系统设置的基础配置管理业务邮件开关及企业审核、学生申请、岗位申请、实习确认等提醒范围。教师给某位学生发单次邮件或站内提醒，可从学生跟进入口办理，或使用已授权AI生成草稿后由教师确认发送。",
+    "rules": "提醒开关、业务范围、邮件通道配置、用户绑定邮箱和实际发送结果是不同检查项。业务处理成功不等于邮件已送达；站内提醒也不等于邮箱邮件。老师明确要求站内提醒时不能自动改为邮件；单次发送与定时重复跟进是不同流程。管理员AI可说明检查条件，但不能读取邮箱、声称已发送或保证对方收到。",
+    "source": "frontend/src/views/admin/SystemSettingsManagement.vue; backend/src/main/java/com/internship/controller/SystemSettingsController.java; backend/src/main/java/com/internship/controller/ReminderController.java; backend/src/main/java/com/internship/agent/business/TeacherReminderExecuteService.java",
+    "verifiedAt": "2026-10-08",
+    "verifyLevel": "CODE_TRACED"
+  },
+  {
+    "id": "admin-system-data-clear",
+    "category": "admin",
+    "title": "系统清除数据的范围选择与确认流程",
+    "roles": [
+      "admin"
+    ],
+    "keywords": [
+      "清除数据",
+      "清空数据",
+      "系统数据清理",
+      "批量删除数据",
+      "数据删除"
+    ],
+    "routes": [
+      "/admin/system-settings"
+    ],
+    "steps": "系统设置的清除数据入口会要求选择清理页面或数据范围，并在原页面完成账号验证和确认；应先核对选择项与其实际影响，再按页面提示办理。",
+    "rules": "清除数据、清除缓存和备份恢复是不同操作。删除业务数据可能影响关联记录，不能把它描述成刷新页面或重置某个统计数字。AI只解释流程和已登记范围，不收集密码，不生成或执行清理SQL，不代确认清除。",
+    "source": "frontend/src/views/admin/SystemSettingsManagement.vue; backend/src/main/java/com/internship/controller/AdminController.java",
+    "verifiedAt": "2026-10-08",
+    "verifyLevel": "CODE_TRACED"
+  },
+  {
+    "id": "admin-account-login-profile",
+    "category": "howto",
+    "title": "各端个人资料、邮箱绑定、修改密码与找回密码",
+    "roles": [
+      "student",
+      "teacher",
+      "company",
+      "admin"
+    ],
+    "keywords": [
+      "个人中心",
+      "个人资料",
+      "账号设置",
+      "绑定邮箱",
+      "修改密码",
+      "忘记密码",
+      "密码找回",
+      "验证码"
+    ],
+    "routes": [
+      "/admin/profile",
+      "/student/profile",
+      "/teacher/profile",
+      "/teacher/account-settings",
+      "/company/settings"
+    ],
+    "steps": "各端在个人中心或账号设置维护允许修改的资料。学生、教师和审核通过的企业可在登录页忘记密码入口使用账号及已绑定邮箱，通过验证码校验后设置密码；登录后的改密按原页面要求输入原密码和新密码。",
+    "rules": "验证码必须发到登记邮箱，发送验证码不代表已完成密码重置。邮箱未绑定、企业审核条件不满足、账号禁用、锁定和会话失效需分别处理。管理员账号暂不支持该自助找回路径。AI不能获取、索要或转述现有密码及验证码。",
+    "source": "frontend/src/views/student/Profile.vue; frontend/src/views/teacher/AccountSettings.vue; frontend/src/views/company/AccountSettings.vue; backend/src/main/java/com/internship/service/PasswordResetService.java; backend/src/main/java/com/internship/controller/CompanyController.java",
+    "verifiedAt": "2026-10-08",
+    "verifyLevel": "CODE_TRACED"
+  },
+  {
+    "id": "admin-student-home",
+    "category": "student",
+    "title": "学生首页、待办、最近动态和实习计划",
+    "roles": [
+      "student",
+      "teacher",
+      "admin"
+    ],
+    "keywords": [
+      "学生首页",
+      "学生待办",
+      "最近动态",
+      "实习计划",
+      "实习阶段",
+      "陪跑",
+      "待确认提醒"
+    ],
+    "routes": [
+      "/student/home"
+    ],
+    "rules": "学生首页集中显示本人实习状态、待办及进展，并提供自主实习或考研延期等入口。待办区分本人还需办理与等待别人处理；最近动态是已登记历史事件，不是当前状态或全部待办。侧栏实习计划按真实业务记录推导阶段，已完成不重复办理，等待处理不等于失败，新投递不应让已经落实的实习整体回退。学生提醒应按页面要求查看和确认。管理员可解释这些含义，不能用知识卡判断某个学生当前走到哪一步。",
+    "source": "frontend/src/views/student/Home.vue; backend/src/main/java/com/internship/agent/business/StudentJourneyService.java; backend/src/main/java/com/internship/agent/business/StudentPlanService.java",
+    "verifiedAt": "2026-10-08",
+    "verifyLevel": "CODE_TRACED",
+    "permissionAny": {
+      "teacher": [
+        "menu:home",
+        "menu:student-tracking",
+        "view:student_tracking"
+      ]
+    }
+  },
+  {
+    "id": "admin-student-job-application",
+    "category": "student",
+    "title": "学生职位浏览、岗位投递与重复投递限制",
+    "roles": [
+      "student",
+      "teacher",
+      "company",
+      "admin"
+    ],
+    "keywords": [
+      "职位浏览",
+      "学生投递",
+      "投递岗位",
+      "重复投递",
+      "不能投递",
+      "岗位比较",
+      "岗位推荐"
+    ],
+    "routes": [
+      "/student/jobs"
+    ],
+    "steps": "学生在职位浏览按页面条件搜索、打开岗位详情，核对企业、要求、地点、薪资和招聘状态；补齐页面要求的个人资料后自行投递。已授权AI可辅助岗位比较或生成投递确认，正式操作需学生确认并以执行回执为准。",
+    "rules": "岗位存在不等于仍在招聘；服务端会核对学生资料、岗位状态、适用时间及重复申请条件。岗位推荐不是录用承诺，学生专业不等于已经证明学历或技能。已经有实习的学生发起其他投递与旧实习是否关闭是不同事件，正式换岗须完成新确认。具体不能投递的原因必须查本人记录或页面错误，不能仅从通用规则推断。",
+    "source": "frontend/src/views/student/Jobs.vue; backend/src/main/java/com/internship/controller/StudentJobApplicationController.java; backend/src/main/java/com/internship/service/impl/StudentJobApplicationServiceImpl.java; backend/src/main/java/com/internship/agent/business/JobApplyExecuteService.java",
+    "verifiedAt": "2026-10-08",
+    "verifyLevel": "CODE_TRACED",
+    "studentMenus": [
+      "/student/jobs"
+    ]
+  },
+  {
+    "id": "admin-student-applications",
+    "category": "student",
+    "title": "我的申请、岗位申请与普通申请状态区别",
+    "roles": [
+      "student",
+      "teacher",
+      "company",
+      "admin"
+    ],
+    "keywords": [
+      "我的申请",
+      "岗位申请",
+      "普通申请",
+      "申请进度",
+      "申请撤回",
+      "待审核不等于通过"
+    ],
+    "routes": [
+      "/student/applications"
+    ],
+    "steps": "学生在我的申请区分岗位投递和普通申请，查看状态、详情、处理意见，并在当前状态允许时自行撤回或继续办理。",
+    "rules": "岗位申请是招聘投递，普通申请包括自主实习和考研延期等业务。待审核只表示等待处理，不是申请成功或实习已落实；申请状态、面试结果、录用机会、实习确认和学生实习状态应分别解释。撤回条件由当前记录和服务端校验决定，不能承诺任何已处理申请都可撤回。",
+    "source": "frontend/src/views/student/Applications.vue; backend/src/main/java/com/internship/controller/StudentJobApplicationController.java; backend/src/main/java/com/internship/service/impl/StudentApplicationServiceImpl.java",
+    "verifiedAt": "2026-10-08",
+    "verifyLevel": "CODE_TRACED",
+    "permissionAny": {
+      "teacher": [
+        "menu:approval",
+        "menu:student-tracking",
+        "view:student_tracking"
+      ]
+    },
+    "studentMenus": [
+      "/student/applications"
+    ]
+  },
+  {
+    "id": "admin-student-interviews",
+    "category": "student",
+    "title": "学生面试安排查看、邀请信息与面试结果",
+    "roles": [
+      "student",
+      "teacher",
+      "company",
+      "admin"
+    ],
+    "keywords": [
+      "面试管理",
+      "面试邀请",
+      "接受面试",
+      "拒绝面试",
+      "面试通过",
+      "面试失败",
+      "面试取消"
+    ],
+    "routes": [
+      "/student/interviews"
+    ],
+    "steps": "学生在面试管理查看企业邀请、时间、地点、联系方式和结果，按邀请安排参加面试；企业安排和更新面试信息在企业申请处理页面办理。",
+    "rules": "当前学生面试页用于查看，没有接受或拒绝面试邀请的操作按钮，不能指导学生点击不存在的回复按钮。接到邀请、参加面试和面试通过是不同阶段。通过面试或免面试直接录取会产生可继续办理的录用机会，仍需学生提交实习确认及企业最终确认。面试取消或失败不应覆盖另一条有效机会，也不应自动取消已经正式落实的实习。",
+    "source": "frontend/src/views/student/Interviews.vue; backend/src/main/java/com/internship/controller/StudentInterviewController.java; backend/src/main/java/com/internship/service/impl/InterviewInvitationServiceImpl.java",
+    "verifiedAt": "2026-10-08",
+    "verifyLevel": "CODE_TRACED",
+    "permissionAny": {
+      "teacher": [
+        "menu:student-tracking",
+        "view:student_tracking"
+      ]
+    },
+    "studentMenus": [
+      "/student/interviews"
+    ]
+  },
+  {
+    "id": "admin-self-practice-workflow",
+    "category": "workflow",
+    "title": "自主实习申请、材料、辅导员审核与生效",
+    "roles": [
+      "student",
+      "teacher",
+      "admin"
+    ],
+    "keywords": [
+      "自主实习",
+      "自主实习申请",
+      "接收函",
+      "个人申请书",
+      "校企合作企业",
+      "自主实习审核"
+    ],
+    "routes": [
+      "/student/home",
+      "/teacher/approval",
+      "/teacher/student-application-audit"
+    ],
+    "steps": "学生从首页自主实习入口填写实习单位、岗位和联系人等资料，按表单上传个人申请书和单位实习接收函后正式提交；在我的申请查看处理意见。负责辅导员在授权范围内核对材料并审核。",
+    "rules": "自主实习是独立分支，不要求先投递平台岗位，也不要求系统企业再次完成平台岗位确认。单位与登记企业相匹配时按页面要求选择标准名称，不能用不同名称绕过同一企业识别。申请提交不等于通过；审核通过落实的经历也不等于企业亲自确认过。实际材料、修改和撤回条件以当前表单及记录状态为准。",
+    "source": "frontend/src/views/student/Home.vue; backend/src/main/java/com/internship/controller/ApprovalController.java; backend/src/main/java/com/internship/service/impl/StudentApplicationServiceImpl.java",
+    "verifiedAt": "2026-10-08",
+    "verifyLevel": "CODE_TRACED"
+  },
+  {
+    "id": "admin-postgraduate-delay",
+    "category": "workflow",
+    "title": "考研延期申请、计划材料与审批条件",
+    "roles": [
+      "student",
+      "teacher",
+      "admin"
+    ],
+    "keywords": [
+      "考研延期",
+      "考研延迟",
+      "延期申请",
+      "考研计划",
+      "延期审核",
+      "延迟实习"
+    ],
+    "routes": [
+      "/student/home",
+      "/teacher/approval",
+      "/teacher/student-application-audit"
+    ],
+    "steps": "学生在首页考研延期入口填写申请理由并上传要求的考研计划材料，提交后在我的申请查看结果；有相应类型和范围权限的系室或学院教师处理延期申请。",
+    "rules": "待审不代表已获准延期，批准后的延期状态与原有投递状态不同。辅导员不能因为负责班级就代办其角色不支持的延期审批。获准延期不自动产生新实习单位，也不能凭知识说明猜测个人获批起止日期或恢复时间。",
+    "source": "frontend/src/views/student/Home.vue; backend/src/main/java/com/internship/controller/ApprovalController.java; backend/src/main/java/com/internship/service/impl/StudentApplicationServiceImpl.java",
+    "verifiedAt": "2026-10-08",
+    "verifyLevel": "CODE_TRACED"
+  },
+  {
+    "id": "admin-offer-confirmation-workflow",
+    "category": "workflow",
+    "title": "录用机会、学生实习确认表和企业最终确认",
+    "roles": [
+      "student",
+      "teacher",
+      "company",
+      "admin"
+    ],
+    "keywords": [
+      "Offer",
+      "录用机会",
+      "实习确认表",
+      "提交确认表",
+      "选择Offer",
+      "最终确认",
+      "确认表拒绝"
+    ],
+    "routes": [
+      "/student/internship-confirmation-form"
+    ],
+    "steps": "企业面试通过或直接录取后，学生在实习确认页面选择有效Offer，可填写备注，再点击「确认该实习」提交；对应企业在企业端实习确认查看并确认或拒绝。学生待企业确认时可按页面入口填写原因并撤回；拒绝后查看原因，再按允许的后续步骤办理。",
+    "rules": "面试通过不需要再虚构第二次录用按钮。学生提交只产生待企业确认事项，不等于正式实习生效；同一有效录用机会和待处理确认不能重复提交。企业确认会复核对应企业、岗位、学生、当前状态和剩余名额，成功后更新实习经历、当前实习及名额。教师不负责这个最终确认环节。确认记录已经撤回、拒绝或关闭时不能当成当前有效实习。",
+    "source": "frontend/src/views/student/InternshipConfirmationForm.vue; backend/src/main/java/com/internship/service/InternshipConfirmationWorkflowService.java; backend/src/main/java/com/internship/service/DirectHireService.java",
+    "verifiedAt": "2026-10-08",
+    "verifyLevel": "CODE_TRACED",
+    "studentMenus": [
+      "/student/internship-confirmation-form"
+    ]
+  },
+  {
+    "id": "admin-position-change-history",
+    "category": "workflow",
+    "title": "换岗流程、实习经历分段与中断结束区别",
+    "roles": [
+      "student",
+      "teacher",
+      "company",
+      "admin"
+    ],
+    "keywords": [
+      "换岗",
+      "单位变更",
+      "换单位",
+      "实习经历",
+      "历史实习",
+      "实习中断",
+      "实习结束"
+    ],
+    "rules": "常规换岗通过新的岗位申请、录用机会和实习确认流程办理；成功确认新安排时才按业务规则关闭或分段旧经历、更新当前单位岗位与名额。投递新岗位本身不等于已经换岗，另一次申请失败不应取消旧的正式实习。当前实习、历史经历、已结束和已中断需分别解释；缺交心得或一条取消记录不能自动证明实习已中断。保留的单位变更类型或旧页面不能替代当前实际开放的新确认流程。",
+    "source": "backend/src/main/java/com/internship/service/InternshipConfirmationWorkflowService.java; backend/src/main/java/com/internship/service/impl/InternshipStageAssignmentServiceImpl.java; backend/src/main/java/com/internship/controller/ApprovalController.java",
+    "verifiedAt": "2026-10-08",
+    "verifyLevel": "CODE_TRACED"
+  },
+  {
+    "id": "admin-student-reflections",
+    "category": "student",
+    "title": "实习心得提交、草稿、周期和自主实习条件",
+    "roles": [
+      "student",
+      "teacher",
+      "admin"
+    ],
+    "keywords": [
+      "实习心得",
+      "心得提交",
+      "心得草稿",
+      "心得周期",
+      "心得截止",
+      "心得菜单",
+      "自主实习心得"
+    ],
+    "routes": [
+      "/student/internships",
+      "/student/internship-reflection/submit"
+    ],
+    "steps": "学生在实习心得页选择当前可办理期次，可直接填写心得正文后提交，或通过页面上传Word文档提交。提交后查看已提交内容、AI分析和教师反馈；可撤回的记录按页面入口撤回、修改并重新提交。",
+    "rules": "心得期次按统一日历及心得周期计算，换岗不会任意重置期次。资格根据当前有效实习经历、日期和服务端状态核验；已获批自主实习也是独立合法来源，不能一概要求企业再次确认。草稿可能来自撤回或内容无效退回，当前页面没有单独保存草稿按钮；上传Word的接口会一并提交，不能把它说成仅上传附件。心得菜单显隐、可提交资格、草稿、已提交、AI待分析和教师已评分是不同状态。AI分析暂未完成不代表提交失败，无需重复提交；人工评分不能被后续AI结果自动覆盖。某期具体截止、是否已交及不能提交原因必须查当前日历和本人真实记录。",
+    "source": "frontend/src/views/student/Internships.vue; backend/src/main/java/com/internship/controller/StudentInternshipReflectionController.java; backend/src/main/java/com/internship/service/impl/InternshipReflectionServiceImpl.java; backend/src/main/java/com/internship/task/ReflectionAiAnalysisDispatcher.java",
+    "verifiedAt": "2026-10-08",
+    "verifyLevel": "CODE_TRACED",
+    "permissionAny": {
+      "teacher": [
+        "menu:evaluation",
+        "view:reflection"
+      ]
+    },
+    "studentMenus": [
+      "/student/internships"
+    ]
+  },
+  {
+    "id": "admin-student-appraisal",
+    "category": "student",
+    "title": "实习鉴定模板、材料提交窗口、推荐星级与撤回",
+    "roles": [
+      "student",
+      "teacher",
+      "admin"
+    ],
+    "keywords": [
+      "实习鉴定",
+      "鉴定表",
+      "鉴定模板",
+      "鉴定提交",
+      "鉴定窗口",
+      "推荐星级",
+      "鉴定撤回",
+      "鉴定退回"
+    ],
+    "routes": [
+      "/student/internship-appraisal"
+    ],
+    "steps": "学生在个人中心资源中心下载获准发布的模板，按要求完成后到实习鉴定页面核对实习单位和材料，上传支持的文件；系统内企业按页面要求填写推荐星级，最后点击提交最终材料。未关联登记企业的自主实习不强求企业星级。",
+    "rules": "上传附件或保存草稿不等于正式提交。提交需满足统一实习结束、鉴定截止窗口和服务端实习状态等条件；已提交时不能继续随意增加或删除附件。撤回还需满足记录状态及截止条件。教师材料收集和学生正式提交是不同操作，不应把页面上传成功说成教师已收齐或审核通过。具体时间查询统一日历，模板布局未读取时不能凭空逐字段说明。",
+    "source": "frontend/src/views/student/InternshipAppraisal.vue; backend/src/main/java/com/internship/service/impl/InternshipAppraisalServiceImpl.java; backend/src/main/java/com/internship/controller/StudentInternshipAppraisalController.java",
+    "verifiedAt": "2026-10-08",
+    "verifyLevel": "CODE_TRACED",
+    "permissionAny": {
+      "teacher": [
+        "menu:appraisal-collection"
+      ]
+    },
+    "studentMenus": [
+      "/student/internship-appraisal"
+    ]
+  },
+  {
+    "id": "admin-teacher-tracking",
+    "category": "teacher",
+    "title": "教师首页、实习状态看板、学生跟进与智能简报",
+    "roles": [
+      "teacher",
+      "admin"
+    ],
+    "keywords": [
+      "教师首页",
+      "实习状态看板",
+      "学生状态监控",
+      "学生跟进",
+      "智能简报",
+      "重点关注"
+    ],
+    "routes": [
+      "/teacher/home",
+      "/teacher/dashboard",
+      "/teacher/student-tracking"
+    ],
+    "steps": "教师在首页和实习状态看板查看负责范围统计，在学生状态监控或跟进页筛选学生、核对进展和待办；已授权侧栏可按明确范围生成实习情况智能简报，单次提醒由教师核对对象及正文后确认。",
+    "rules": "看板统计以教师实际负责范围为准，不能用全校总量替代。名单可能分页，总数不能只数当前页；未到截止不能把未提交一概说成逾期。AI简报是受控统计和说明，不是代审批或代修改状态。这些说明用于解释工具用途及统计概念，知识可见不增加跨角色查询或读取学生明细的能力。",
+    "source": "frontend/src/views/teacher/Home.vue; frontend/src/views/teacher/Dashboard.vue; frontend/src/views/teacher/TeacherStudentManagement.vue; backend/src/main/java/com/internship/agent/business/TeacherInternshipSummaryService.java",
+    "verifiedAt": "2026-10-08",
+    "verifyLevel": "CODE_TRACED",
+    "permissionAny": {
+      "teacher": [
+        "menu:dashboard",
+        "menu:student-tracking",
+        "view:student_tracking"
+      ]
+    }
+  },
+  {
+    "id": "admin-teacher-application-approval",
+    "category": "teacher",
+    "title": "教师学生申请审核、材料查看与类型权限",
+    "roles": [
+      "teacher",
+      "admin"
+    ],
+    "keywords": [
+      "教师审核",
+      "审核管理",
+      "学生申请审核",
+      "自主实习谁审核",
+      "延期谁审核",
+      "审核材料"
+    ],
+    "routes": [
+      "/teacher/approval",
+      "/teacher/student-application-audit"
+    ],
+    "steps": "教师在审核管理或学生申请审核入口选择获准的申请类型，查看学生、材料、理由和当前状态，再在原页面办理通过或拒绝并核对结果。",
+    "rules": "服务端同时校验教师类型、实际负责学生及申请类型。辅导员处理自主实习，系室和学院教师按获准类型处理延期等申请，不能仅凭菜单存在扩大范围。已经处理或撤回的申请不能重复审核。企业资质审核另有独立审核权限，与学生申请审核不同；平台岗位最终确认仍由企业负责。",
+    "source": "frontend/src/views/teacher/Approval.vue; backend/src/main/java/com/internship/controller/ApprovalController.java",
+    "verifiedAt": "2026-10-08",
+    "verifyLevel": "CODE_TRACED",
+    "permissionAny": {
+      "teacher": [
+        "menu:approval"
+      ]
+    }
+  },
+  {
+    "id": "admin-teacher-evaluation",
+    "category": "teacher",
+    "title": "智慧评分、心得AI分析、人工评分与成绩评定",
+    "roles": [
+      "teacher",
+      "admin"
+    ],
+    "keywords": [
+      "智慧评分",
+      "心得评分",
+      "AI分析",
+      "人工评分",
+      "自动评分",
+      "成绩评定",
+      "待分析",
+      "分析失败"
+    ],
+    "routes": [
+      "/teacher/evaluation",
+      "/teacher/grade-finalize"
+    ],
+    "steps": "教师在智慧评分查看负责学生的心得与分析状态，打开详情核对正文、分析及评分依据，再按页面提供的人工评分或分析操作办理。成绩评定入口与智慧评分页面关联，具体功能受当前授权约束。",
+    "rules": "心得提交成功、分析排队、AI分析完成和人工评分完成是不同状态。AI失败不能被表示为已得到有效分数，自动分析也不能覆盖教师已经人工确认的评分。批量操作只适用于当前允许的范围和状态。修改规则或重新分析不代表所有历史记录立即重算，最终成绩应以实际评分结果为准。",
+    "source": "frontend/src/views/teacher/Evaluation.vue; backend/src/main/java/com/internship/controller/EvaluationManagementController.java; backend/src/main/java/com/internship/service/impl/InternshipReflectionServiceImpl.java; backend/src/main/java/com/internship/task/ReflectionAiAnalysisDispatcher.java",
+    "verifiedAt": "2026-10-08",
+    "verifyLevel": "CODE_TRACED",
+    "permissionAny": {
+      "teacher": [
+        "menu:evaluation",
+        "view:reflection"
+      ]
+    }
+  },
+  {
+    "id": "admin-teacher-scoring-configuration",
+    "category": "teacher",
+    "title": "辅导员AI分析配置、个人评分规则与生效周期",
+    "roles": [
+      "teacher",
+      "admin"
+    ],
+    "keywords": [
+      "辅导员AI设置",
+      "AI分析配置",
+      "AI评分配置",
+      "教师评分规则",
+      "规则生效",
+      "评分模型"
+    ],
+    "routes": [
+      "/teacher/aisettings",
+      "/teacher/ai-scoring-config",
+      "/teacher/scoring-rules"
+    ],
+    "steps": "获准的辅导员在AI分析配置及评分规则管理维护自己的分析方式、规则和页面支持的模型设置，必要时参考系统模板；保存后按页面提示核对生效范围或周期。",
+    "rules": "教师个人规则、系统模板和当前使用模型不同。实习进行期间的规则调整存在周期生效约束，不能承诺历史心得立即全部采用新规则。更改AI配置不等于允许访问别的教师负责学生，也不会把未分析记录变成已评分。管理员AI可讲解配置含义，当前选项和生效结果需到对应页面核实。",
+    "source": "frontend/src/views/teacher/Settings.vue; frontend/src/views/teacher/CounselorAISettings.vue; frontend/src/views/teacher/CounselorScoringRuleManagement.vue; backend/src/main/java/com/internship/controller/CounselorAISettingsController.java; backend/src/main/java/com/internship/controller/SettingsController.java",
+    "verifiedAt": "2026-10-08",
+    "verifyLevel": "CODE_TRACED",
+    "permissionAny": {
+      "teacher": [
+        "menu:teacherAiScoringConfig",
+        "menu:settings"
+      ]
+    },
+    "teacherTypes": [
+      "COUNSELOR"
+    ]
+  },
+  {
+    "id": "admin-teacher-class-claim",
+    "category": "teacher",
+    "title": "教师班级管理、辅导员认领与负责关系",
+    "roles": [
+      "teacher",
+      "admin"
+    ],
+    "keywords": [
+      "教师班级管理",
+      "认领班级",
+      "认领本院班级",
+      "添加负责班级",
+      "班级归属",
+      "负责教师"
+    ],
+    "routes": [
+      "/teacher/classes"
+    ],
+    "steps": "教师在班级管理查看当前负责班级，使用页面按角色提供的认领本院班级或添加负责班级入口，再核对负责关系。基础班级、年级和专业维护在管理员班级管理办理。",
+    "rules": "认领和负责关系须满足教师组织及已有关系限制，不是任意选择班级就能获取学生数据。移除负责关系与删除基础班级不同；变更后业务范围需重新核对。已存在的归属冲突或无法认领原因以服务端返回为准。",
+    "source": "frontend/src/views/teacher/TeacherClassManagement.vue; backend/src/main/java/com/internship/controller/TeacherClassController.java",
+    "verifiedAt": "2026-10-08",
+    "verifyLevel": "CODE_TRACED",
+    "permissionAny": {
+      "teacher": [
+        "menu:classes"
+      ]
+    }
+  },
+  {
+    "id": "admin-unified-calendar-settings",
+    "category": "rule",
+    "title": "重要设置、全校统一实习日历与心得周期",
+    "roles": [
+      "teacher",
+      "admin"
+    ],
+    "keywords": [
+      "重要设置",
+      "实习日历",
+      "实习时间",
+      "实习开始",
+      "实习结束",
+      "鉴定截止",
+      "时间节点",
+      "心得周期"
+    ],
+    "routes": [
+      "/teacher/timeline-config",
+      "/teacher/key-timeline-config"
+    ],
+    "steps": "有对应权限的系室教师在重要设置相关页面维护统一实习开始、结束、鉴定截止和心得周期，保存时由服务端校验日期关系。",
+    "rules": "全校统一日历是业务时间依据，个人实习记录没有填日期不代表没有统一安排。日历约束心得期次及鉴定窗口，实习记录的当前状态仍需实际业务更新，不能仅凭当天日期断言已经转换。管理员可解释设置流程并用已有日历工具核对时间，但知识开放不授予其代修改教师日历的能力。",
+    "source": "frontend/src/views/teacher/Settings.vue; backend/src/main/java/com/internship/controller/SettingsController.java; backend/src/main/java/com/internship/service/impl/InternshipCalendarServiceImpl.java",
+    "verifiedAt": "2026-10-08",
+    "verifyLevel": "CODE_TRACED",
+    "permissionAny": {
+      "teacher": [
+        "menu:settings"
+      ]
+    },
+    "teacherTypes": [
+      "DEPARTMENT"
+    ]
+  },
+  {
+    "id": "admin-teacher-appraisal-collection",
+    "category": "teacher",
+    "title": "教师实习材料收集、材料下载与未提交统计",
+    "roles": [
+      "teacher",
+      "admin"
+    ],
+    "keywords": [
+      "鉴定表收集",
+      "鉴定材料收集",
+      "教师鉴定",
+      "鉴定未提交",
+      "批量下载鉴定",
+      "材料退回"
+    ],
+    "routes": [
+      "/teacher/internship-appraisals"
+    ],
+    "steps": "教师在「实习材料收集」的「实习协议」或「实习鉴定表」页签筛选负责范围中的班级、学生及提交情况，查看、下载材料并按当前页签与筛选导出。协议按实习记录计算，默认展示待审核及已生效记录并包含已结束历史；自主实习确认归并到原申请，未申请实习的学生不计未交协议。协议详情可查看历史版本，导出仅含最新版，不受分页限制。",
+    "rules": "学生正式提交的材料与上传但未提交的草稿不同，未提交统计不能仅按附件数量判定。教师只能访问实际负责范围，空范围不扩大为全校；未到截止的未提交不能直接称逾期。AI介绍模块不代表已核对任何班级材料是否收齐。",
+    "source": "frontend/src/views/teacher/InternshipAppraisalCollection.vue; backend/src/main/java/com/internship/controller/TeacherInternshipAppraisalController.java; backend/src/main/java/com/internship/service/impl/TeacherInternshipAppraisalServiceImpl.java",
+    "verifiedAt": "2026-10-08",
+    "verifyLevel": "CODE_TRACED",
+    "permissionAny": {
+      "teacher": [
+        "menu:appraisal-collection"
+      ]
+    }
+  },
+  {
+    "id": "admin-teacher-reports",
+    "category": "teacher",
+    "title": "教师统计报表、看板与导出范围",
+    "roles": [
+      "teacher",
+      "admin"
+    ],
+    "keywords": [
+      "统计报表",
+      "教师报表",
+      "报表导出",
+      "实习统计",
+      "报表筛选"
+    ],
+    "routes": [
+      "/teacher/reports"
+    ],
+    "steps": "教师在统计报表页面使用提供的时间或业务条件查看图表和报表，并从实际导出入口下载所需文件。",
+    "rules": "教师报表与管理员系统总量、账号日活统计的范围和口径不同。图表、明细和导出应核对筛选及实际负责范围，不能把一个图表的比例或当前页记录当作全校完整结果。管理员AI当前不能读取该页报表明细。",
+    "source": "frontend/src/views/teacher/Reports.vue; frontend/src/views/teacher/Dashboard.vue",
+    "verifiedAt": "2026-10-08",
+    "verifyLevel": "CODE_TRACED",
+    "permissionAny": {
+      "teacher": [
+        "menu:reports"
+      ]
+    }
+  },
+  {
+    "id": "admin-teacher-announcement-resources",
+    "category": "teacher",
+    "title": "教师公告查看、企业信息与资源发布归属",
+    "roles": [
+      "admin"
+    ],
+    "keywords": [
+      "教师公告",
+      "教师资源",
+      "教师发布文档",
+      "教师企业信息",
+      "资源归属",
+      "自己的资源"
+    ],
+    "routes": [
+      "/teacher/announcements",
+      "/teacher/resources",
+      "/teacher/company-list"
+    ],
+    "steps": "教师在公告页面查看获准的公告并按发布权限维护本人公告，在企业信息查看企业资料，在资源管理按当前权限发布文档、查看详情或下载资源。编辑和删除资源时还需核对发布归属。",
+    "rules": "能够看到资源不等于可以编辑或删除，教师维护资源受本人发布归属约束。资源草稿、发布和归档不同；教师企业资料查看也不等于企业最终实习接收权限。不要仅凭页面标题推断教师拥有管理员全部管理能力。",
+    "source": "frontend/src/views/teacher/AnnouncementView.vue; frontend/src/views/teacher/Resources.vue; frontend/src/views/teacher/CompanyList.vue; backend/src/main/java/com/internship/controller/ResourceManagementController.java",
+    "verifiedAt": "2026-10-08",
+    "verifyLevel": "CODE_TRACED"
+  },
+  {
+    "id": "admin-company-recruitment",
+    "category": "company",
+    "title": "企业招聘管理、发布岗位、面试信息和AI撰写",
+    "roles": [
+      "company",
+      "admin"
+    ],
+    "keywords": [
+      "企业招聘",
+      "招聘岗位",
+      "岗位发布",
+      "发布岗位",
+      "岗位描述",
+      "任职要求",
+      "薪资单位",
+      "面试信息",
+      "AI生成岗位描述",
+      "招聘文本解析"
+    ],
+    "routes": [
+      "/company/jobs",
+      "/company/dashboard",
+      "/company"
+    ],
+    "steps": "企业在招聘管理新增或编辑岗位，填写名称、类别、类型、工作地点、薪资及单位、描述、要求、计划人数和面试信息等页面字段。可用AI撰写岗位描述或解析招聘文本辅助填写，再由企业核对并点击正式保存或发布。",
+    "rules": "企业仅维护本企业岗位，AI生成或填入字段不代表已发布。薪资单位、住宿和地点等信息必须按明确字段解释，空值不是已提供也不是未提供。岗位在招状态决定学生可见和可投递条件，计划人数与最终确认后的剩余名额不同。全校统一实习日历由教师维护，不能随意要求企业发布表新增学生个人实习起止日期。",
+    "fieldAnswers": {
+      "plannedRecruit": "可以，在招聘管理发布或编辑岗位时填写「计划招聘人数」即可。",
+      "contactId": "可以，在招聘管理发布或编辑岗位时，通过「岗位联系人」选择已维护的联系人。",
+      "salaryUnit": "可以，在招聘管理发布或编辑岗位时选择「薪资单位」。"
+    },
+    "source": "frontend/src/views/company/RecruitmentManagement.vue; frontend/src/views/company/CompanyHome.vue; backend/src/main/java/com/internship/controller/CompanyController.java; backend/src/main/java/com/internship/controller/JobDescriptionGeneratorController.java",
+    "verifiedAt": "2026-10-08",
+    "verifyLevel": "CODE_TRACED"
+  },
+  {
+    "id": "admin-company-applications",
+    "category": "company",
+    "title": "企业收到的岗位申请、面试安排与免面试录取",
+    "roles": [
+      "company",
+      "admin"
+    ],
+    "keywords": [
+      "企业申请处理",
+      "收到的申请",
+      "申请查看",
+      "安排面试",
+      "直接录取",
+      "免面试",
+      "拒绝应聘"
+    ],
+    "routes": [
+      "/company/application-view"
+    ],
+    "steps": "企业在申请查看或招聘对应申请列表查看本企业收到的学生投递，核对岗位及当前状态，然后按原页面提供的拒绝、面试安排、面试结果或直接录取入口办理。",
+    "rules": "直接录取用于免面试产生有效录用机会，不等于企业已经完成最终实习接收。面试通过后也仍需学生提交确认表。已撤回、取消、失效或已处理申请不能当作待办重复处理；企业只处理归属于本企业的记录。",
+    "source": "frontend/src/views/company/ApplicationView.vue; frontend/src/views/company/RecruitmentManagement.vue; backend/src/main/java/com/internship/controller/CompanyController.java; backend/src/main/java/com/internship/service/DirectHireService.java",
+    "verifiedAt": "2026-10-08",
+    "verifyLevel": "CODE_TRACED"
+  },
+  {
+    "id": "admin-company-confirmations",
+    "category": "company",
+    "title": "企业实习确认、拒绝原因及剩余名额校验",
+    "roles": [
+      "company",
+      "admin"
+    ],
+    "keywords": [
+      "企业实习确认",
+      "最终确认",
+      "确认学生实习",
+      "企业确认",
+      "接收学生",
+      "待企业确认",
+      "拒绝原因",
+      "没有可确认名额"
+    ],
+    "routes": [
+      "/company/internship-confirm"
+    ],
+    "steps": "企业在实习确认页筛选待确认记录，查看学生提交的信息，再确认接收或填写拒绝原因。页面提示没有可确认名额时，应核对计划人数及已落实名额后按原业务入口处理。",
+    "rules": "只有对应企业及仍待处理的有效记录可确认。最终确认是学生当前实习、经历和名额变动的关键节点，不是普通查看详情。拒绝需填写原因；已经拒绝、撤回或确认的记录不能重复确认。不要用教师审批或管理员修改状态替代企业办理。",
+    "source": "frontend/src/views/company/InternshipConfirm.vue; backend/src/main/java/com/internship/controller/CompanyConfirmationController.java; backend/src/main/java/com/internship/service/InternshipConfirmationWorkflowService.java",
+    "verifiedAt": "2026-10-08",
+    "verifyLevel": "CODE_TRACED"
+  },
+  {
+    "id": "admin-company-internship-students",
+    "category": "company",
+    "title": "企业当前实习学生名单与申请名单的区别",
+    "roles": [
+      "company",
+      "admin"
+    ],
+    "keywords": [
+      "企业实习学生",
+      "当前实习学生",
+      "本企业学生名单",
+      "自主实习学生",
+      "已落实学生"
+    ],
+    "routes": [
+      "/company/internship-students"
+    ],
+    "steps": "企业在实习学生页面查看当前在本企业实习的学生，按姓名、学号或岗位搜索，并核对页面返回的班级专业、岗位、实习方式、时间和联系信息。",
+    "rules": "该名单不是所有投递者、历史实习者或待企业确认名单；数据由服务端按本企业当前有效实习关联限定，平台安排和已匹配到本企业的自主实习按实际来源显示。名单加载失败不等于没有学生。AI能否读取该名单须按当前已提供工具判断，知识说明不等于已经读取名单。",
+    "source": "frontend/src/views/company/InternshipStudents.vue; backend/src/main/java/com/internship/controller/CompanyInternshipStudentController.java; backend/src/main/resources/com/internship/mapper/CompanyInternshipStudentMapper.xml",
+    "verifiedAt": "2026-10-08",
+    "verifyLevel": "CODE_TRACED"
+  },
+  {
+    "id": "admin-company-profile-fields",
+    "category": "company",
+    "title": "企业信息字段、资质材料、校友成员和基地协议",
+    "roles": [
+      "company",
+      "admin"
+    ],
+    "keywords": [
+      "企业信息",
+      "企业资料",
+      "企业字段",
+      "联系人",
+      "资质材料",
+      "校友成员",
+      "基地协议",
+      "合作方式"
+    ],
+    "routes": [
+      "/company/interviews"
+    ],
+    "steps": "企业信息页面维护允许编辑的企业基础资料、联系信息、简介及页面支持的校友或基地材料等字段。字段选项及标签含义应依据页面控件说明和企业资料知识定义解释，保存由企业在原页面确认。",
+    "rules": "企业信息页面的内部路由名称包含interviews，但当前菜单显示企业信息，不应因此指引为独立面试管理页。企业登记资料、审核资格、合作方式和派生标签不同，不能通过改文本绕过服务端准入规则。材料上传只是资料维护步骤，不能自动推定审核通过或协议生效。",
+    "source": "frontend/src/views/company/CompanyInfo.vue; backend/src/main/resources/agent/company-info-schema.json; backend/src/main/java/com/internship/controller/CompanyController.java; backend/src/main/java/com/internship/agent/business/CompanyInfoKnowledgeService.java",
+    "verifiedAt": "2026-10-08",
+    "verifyLevel": "CODE_TRACED"
+  },
+  {
+    "id": "admin-agent-assistance",
+    "category": "howto",
+    "title": "四端AI侧栏、语音填表、任务历史与自动跟进",
+    "roles": [
+      "student",
+      "teacher",
+      "company",
+      "admin"
+    ],
+    "keywords": [
+      "AI助手",
+      "AI侧栏",
+      "语音填表",
+      "智能填表",
+      "任务历史",
+      "自动跟进",
+      "自动化任务",
+      "确认卡"
+    ],
+    "steps": "各端获准用户通过AI助手入口打开侧栏，按当前问题查询规则或已支持的数据；在已登记表单中可用文字或语音辅助填入字段，先核对再在原表单提交。教师重复或定时跟进使用侧栏预览、确认、启用和任务管理流程；任务记录可查看执行反馈。",
+    "rules": "AI聊天、语音识别、填写字段、业务提交和自动任务执行是不同步骤。填表不能包含密码或替用户点击提交，取消、换页及切换会话后不应把过期结果写入新表单。教师定时跟进与一次性提醒不同，预览不创建任务，创建和启用也不同。各端真实可用性和数据范围仍取决于当前账号权限及工具清单，只说明当前用户获准使用的能力。",
+    "source": "frontend/src/components/agent/AgentWorkspace.vue; frontend/src/agent/store.ts; backend/src/main/java/com/internship/agent/business/FillIntentService.java; backend/src/main/java/com/internship/agent/business/AgentActionService.java",
+    "verifiedAt": "2026-10-08",
+    "verifyLevel": "CODE_TRACED"
+  },
+  {
+    "id": "admin-retained-entry-boundaries",
+    "category": "rule",
+    "title": "旧路由、停用流程与当前菜单入口判断",
+    "roles": [
+      "admin"
+    ],
+    "keywords": [
+      "旧路由",
+      "停用流程",
+      "实习登记",
+      "旧入口",
+      "测试页面",
+      "没有菜单",
+      "是否启用"
+    ],
+    "routes": [
+      "/student/internship-registration",
+      "/student/test"
+    ],
+    "rules": "源代码中保留页面或路由不代表当前菜单已开放，也不代表原业务入口仍支持提交。学生默认菜单以首页、职位浏览、我的申请、面试、实习确认、心得、鉴定和个人中心为主；实习登记、测试等保留路径不能凭存在就推荐为当前正式流程。教师旧的时间节点、AI设置及成绩等路径有与当前页面共用的情况，应按实际菜单标签和权限说明。业务已明确停用的入口不能通过AI对话重新启用。",
+    "source": "frontend/src/router/studentRouter.ts; frontend/src/router/teacherRouter.ts; frontend/src/utils/studentMenuConfig.ts; backend/src/main/java/com/internship/service/InternshipConfirmationWorkflowService.java",
+    "verifiedAt": "2026-10-08",
+    "verifyLevel": "CODE_TRACED"
+  },
+  {
+    "id": "admin-files-and-materials",
+    "category": "rule",
+    "title": "附件上传、预览下载、正式提交与材料权限",
+    "roles": [
+      "student",
+      "teacher",
+      "company",
+      "admin"
+    ],
+    "keywords": [
+      "附件上传",
+      "文件预览",
+      "材料下载",
+      "文件限制",
+      "上传成功",
+      "无法下载附件"
+    ],
+    "rules": "申请资质、心得、鉴定及资源文档的上传格式和大小应按各自当前页面限制解释，不能套用一个全系统统一大小。申请或鉴定材料上传后仍需正式提交相应业务；实习心得的Word上传入口则会同时提交，应按实际接口回执判断，不能一概说上传不算提交。材料读取还需核对角色、记录归属及当前权限。预览或下载失败不等于材料没有上传，也不自动代表审批失败。AI不能仅凭文件名推断正文、签章真伪或模板版式。",
+    "source": "backend/src/main/java/com/internship/controller/StudentInternshipAppraisalController.java; backend/src/main/java/com/internship/controller/ApprovalController.java; backend/src/main/java/com/internship/controller/ResourceDocumentController.java; backend/src/main/java/com/internship/controller/CompanyUserController.java",
+    "verifiedAt": "2026-10-08",
+    "verifyLevel": "CODE_TRACED"
+  },
+  {
+    "id": "admin-state-and-error-interpretation",
+    "category": "faq",
+    "title": "业务状态区别、无记录、无权限和查询失败解释",
+    "roles": [
+      "student",
+      "teacher",
+      "company",
+      "admin"
+    ],
+    "keywords": [
+      "状态区别",
+      "没有记录",
+      "无权限",
+      "查询失败",
+      "为什么不能下一步",
+      "流程卡住",
+      "故障排查"
+    ],
+    "rules": "申请、面试、录用机会、确认表、实习经历、学生汇总状态、心得提交、AI分析和评分不是同一个状态。当前结果无记录只说明当前授权范围没有匹配项，权限不足和接口失败不能被解释成系统没有此业务。解释一般规则可使用知识库；断言某个用户为何卡住需核对真实记录，管理员AI没有对应明细工具时应明确无法确认个案，只说明已核实的通常条件和原页面核对入口。服务可启动、AI测试成功或存在日志不代表完整业务已经验证通过。",
+    "source": "backend/src/main/java/com/internship/agent/business/AgentTaskService.java; backend/src/main/java/com/internship/service/InternshipConfirmationWorkflowService.java; backend/src/main/java/com/internship/task/ReflectionAiAnalysisDispatcher.java",
+    "verifiedAt": "2026-10-08",
+    "verifyLevel": "CODE_TRACED"
+  },
+  {
+    "id": "student-knowledge-map",
+    "category": "overview",
+    "title": "学生端功能说明与当前可用菜单",
+    "roles": ["student", "admin"],
+    "keywords": ["学生端功能", "学生功能目录", "学生所有功能", "学生能做什么"],
+    "rules": "学生端围绕本人的实习办理：首页查看状态、待办、最近动态和自主实习或延期申请入口；职位浏览了解在招岗位并投递；我的申请查看投递及普通申请进度；面试管理查看面试信息和结果；实习确认选择有效Offer并提交给企业确认；实习心得按期次输入内容或提交Word文件；实习鉴定在窗口内提交材料；个人中心维护资料、简历证书、消息与资源。实际显示菜单由当前配置决定，不能把已隐藏的入口说成当前可办理。问当前功能可用性先核对实时权限，不提供管理员管理操作或他人的私人业务信息。",
+    "source": "frontend/src/router/studentRouter.ts; frontend/src/utils/studentMenuConfig.ts; frontend/src/views/student/Profile.vue; frontend/src/views/student/Home.vue",
+    "verifiedAt": "2026-10-08",
+    "verifyLevel": "CODE_TRACED"
+  },
+  {
+    "id": "teacher-knowledge-map",
+    "category": "overview",
+    "title": "教师端功能说明、菜单授权与负责范围",
+    "roles": ["teacher", "admin"],
+    "keywords": ["教师端功能", "教师功能目录", "教师所有功能", "教师能做什么", "教师菜单授权"],
+    "rules": "教师基础入口包括首页、个人资料和账号设置。业务模块按当前授权开放，包括实习状态看板、学生跟进、申请审核、智慧评分、实习材料收集、企业信息、公告、资源、统计报表、班级及有关设置。不能按学院、系室或辅导员称谓直接推定拥有全部菜单，解释当前功能先查实时权限，详细说明只使用当前角色获准的知识。功能授权、教师类型和实际负责学生范围共同约束业务，菜单开放不等于可以访问全校学生；无有效负责范围时也不能扩大查询。",
+    "source": "frontend/src/router/teacherRouter.ts; frontend/src/utils/teacherPermissions.ts; backend/src/main/java/com/internship/agent/business/AgentIdentityService.java",
+    "verifiedAt": "2026-10-08",
+    "verifyLevel": "CODE_TRACED"
+  },
+  {
+    "id": "company-knowledge-map",
+    "category": "overview",
+    "title": "企业端功能说明与本企业业务边界",
+    "roles": ["company", "admin"],
+    "keywords": ["企业端功能", "企业功能目录", "企业所有功能", "企业能做什么"],
+    "rules": "企业端主要包括首页动态和通知、招聘管理、收到的申请、实习确认、当前实习学生、企业信息及账户设置。招聘管理维护本企业岗位及面试信息；申请处理可按状态办理面试或直接录取；学生正式提交确认后由本企业最终确认接收；实习学生页查看当前有效关联学生。企业信息维护获准的基础字段和材料，账户设置维护联系资料、绑定邮箱和密码。企业只办理本企业业务，不能访问其他企业申请或教师内部评分设置；AI可用能力还须核对当前权限。",
+    "source": "frontend/src/router/companyRouter.ts; frontend/src/views/company/CompanyLayout.vue; backend/src/main/java/com/internship/controller/CompanyController.java",
+    "verifiedAt": "2026-10-08",
+    "verifyLevel": "CODE_TRACED"
+  },
+  {
+    "id": "student-profile-completeness",
+    "category": "student",
+    "title": "学生个人资料完整性、简历证书与申请前置条件",
+    "roles": ["student", "admin"],
+    "keywords": ["个人资料完整", "完善资料", "资料不完整", "电话邮箱", "简历上传", "证书上传", "个人中心"],
+    "routes": ["/student/profile"],
+    "steps": "学生在个人中心维护获准编辑的资料，核对姓名、学号、电话和邮箱；简历及证书按页面选择文件后点击确认上传完成正式保存。发现学籍归属信息无法自行修改时按原系统流程联系负责老师或管理员核对。",
+    "rules": "岗位申请、自主实习申请和考研延期等办理前会校验姓名、学号、电话、邮箱完整性。选择文件、等待上传和正式保存不是同一步；简历或证书存在不能自动证明岗位技能或学历条件满足。AI能解释字段和缺失项，不能读取未提供的文件内容或代修改不允许编辑的学籍字段。",
+    "source": "frontend/src/views/student/Profile.vue; backend/src/main/java/com/internship/utils/StudentProfileCompleteness.java; backend/src/main/java/com/internship/controller/StudentJobApplicationController.java; backend/src/main/java/com/internship/controller/StudentApplicationController.java",
+    "verifiedAt": "2026-10-08",
+    "verifyLevel": "CODE_TRACED"
+  },
+  {
+    "id": "student-messages-resources-feedback",
+    "category": "student",
+    "title": "学生消息中心、资源下载和问题反馈入口",
+    "roles": ["student", "admin"],
+    "keywords": ["消息中心", "学生公告", "学生资源", "下载模板", "问题反馈", "通知看不到"],
+    "routes": ["/student/profile", "/student/home"],
+    "steps": "学生在个人中心的消息中心查看面向本人的公告，在资源中心查看和下载获准发布的文档或模板；系统问题通过问题反馈入口说明页面、操作和实际提示，避免把密码或验证码放入正文。",
+    "rules": "公告显示受发布状态和受众限制，资源下载受发布状态及访问条件限制。已读公告不代表已经完成实习待办，下载鉴定模板不等于已提交鉴定材料。业务动态、公告、待确认提醒和邮件是不同信息渠道。AI不能因通知不显示就断言业务失败，也不能提供他人的通知内容。",
+    "source": "frontend/src/views/student/Profile.vue; frontend/src/views/student/Home.vue; backend/src/main/java/com/internship/controller/AnnouncementController.java; backend/src/main/java/com/internship/controller/ResourceDocumentController.java; backend/src/main/java/com/internship/controller/ProblemFeedbackController.java",
+    "verifiedAt": "2026-10-08",
+    "verifyLevel": "CODE_TRACED"
+  },
+  {
+    "id": "teacher-announcement-management",
+    "category": "teacher",
+    "title": "教师公告查看、本人公告维护及发布权限",
+    "roles": ["teacher", "admin"],
+    "keywords": ["教师公告", "教师发布公告", "我的公告", "公告删除", "公告附件", "公告目标群体"],
+    "routes": ["/teacher/announcements"],
+    "permissionAny": {"teacher": ["menu:announcements"]},
+    "steps": "教师在公告页面搜索、查看公告，使用我的公告核对本人发布记录。当前权限提供发布或维护按钮时，在原表单核对标题、正文、状态、受众及附件后保存或发布。",
+    "rules": "公告菜单授权与发布、编辑权限不同，能查看不代表能发布所有人的公告。页面根据实际能力显示发布和维护入口，后端还校验记录归属。教师看到的公告由发布状态、受众及页面筛选决定，不能把公告发出说成每个用户都已阅读或收到邮件。",
+    "source": "frontend/src/views/teacher/AnnouncementView.vue; backend/src/main/java/com/internship/controller/AnnouncementController.java",
+    "verifiedAt": "2026-10-08",
+    "verifyLevel": "CODE_TRACED"
+  },
+  {
+    "id": "teacher-resource-management",
+    "category": "teacher",
+    "title": "教师发布资源文档、状态与本人归属限制",
+    "roles": ["teacher", "admin"],
+    "keywords": ["教师资源", "发布资源文档", "教师发布文档", "资源文档编辑", "资源文档删除"],
+    "routes": ["/teacher/resources"],
+    "permissionAny": {"teacher": ["menu:resources"]},
+    "steps": "教师在资源管理填写文档标题、说明、受众和状态并选择文件，核对后发布；列表可查看、预览和下载，编辑或删除从本人资源的获准入口办理。",
+    "rules": "教师只能编辑和删除自己发布的文档，批量删除也需逐项符合归属。草稿、已发布和归档不同，文件上传不等于已对学生发布。附件和发布人只读信息须按原控件办理，语音或文字填表不替用户选择文件或点击提交。",
+    "source": "frontend/src/views/teacher/Resources.vue; backend/src/main/java/com/internship/controller/ResourceDocumentController.java",
+    "verifiedAt": "2026-10-08",
+    "verifyLevel": "CODE_TRACED"
+  },
+  {
+    "id": "teacher-company-information",
+    "category": "teacher",
+    "title": "教师企业信息、标签、宣传资料与校内对接关系",
+    "roles": ["teacher", "admin"],
+    "keywords": ["教师企业信息", "企业信息查看", "宣传资料", "校内对接人", "走访教师", "企业联系人"],
+    "routes": ["/teacher/company-list"],
+    "permissionAny": {"teacher": ["menu:company-list"]},
+    "steps": "教师在企业信息搜索并查看获准的企业资料、标签、宣传材料及校内对接关系；关系维护按页面对当前教师提供的入口办理。",
+    "rules": "查看企业信息与企业准入审核、企业修改基础资料和企业最终接收学生不同。校内对接关系也不等于该教师负责企业中所有学生或可以代企业确认。关系批量替换及删除还有教师类型和创建归属限制，不能把查看权限当成任意修改关系权限。",
+    "source": "frontend/src/views/teacher/CompanyList.vue; backend/src/main/java/com/internship/service/CompanySchoolLiaisonService.java; backend/src/main/java/com/internship/controller/CompanyRelationsController.java",
+    "verifiedAt": "2026-10-08",
+    "verifyLevel": "CODE_TRACED"
+  },
+  {
+    "id": "teacher-company-audit",
+    "category": "teacher",
+    "title": "教师企业资质审核的独立授权与办理步骤",
+    "roles": ["teacher", "admin"],
+    "keywords": ["教师企业审核", "企业资质审核", "教师审核企业注册"],
+    "routes": ["/teacher/company-audit"],
+    "permissionAny": {"teacher": ["menu:approval"]},
+    "permissionAll": {"teacher": ["user:company:audit"]},
+    "steps": "同时具备企业审核入口和企业资质审核权限的教师，可在对应审核页面查看资料和材料，按当前状态核对后通过或填写拒绝意见。",
+    "rules": "这项授权与教师学生申请审核权限分开，不能根据教师类型或看见审核菜单直接推定可审核企业。企业注册审核不等于平台岗位的实习接收确认；后者仍由对应企业办理。AI只解释授权范围和流程，不代审批。",
+    "source": "frontend/src/views/teacher/CompanyAudit.vue; frontend/src/utils/teacherPermissions.ts; backend/src/main/java/com/internship/controller/ApprovalController.java",
+    "verifiedAt": "2026-10-08",
+    "verifyLevel": "CODE_TRACED"
+  },
+  {
+    "id": "teacher-reminder-automation",
+    "category": "teacher",
+    "title": "教师单次提醒、自动跟进、启用暂停与执行反馈",
+    "roles": ["teacher", "admin"],
+    "keywords": ["教师提醒", "单次提醒", "定时提醒", "自动跟进", "自动化任务", "任务暂停", "任务启用", "执行记录"],
+    "permissionAny": {"teacher": ["menu:student-tracking", "view:student_tracking"]},
+    "steps": "单次提醒先核对负责学生、渠道和正文，经教师确认后发送。重复或定时跟进先生成规则预览，核对后确认创建任务；创建后按当前策略启用，侧栏任务管理可查看、暂停、启用、运行、删除及核对执行记录。",
+    "rules": "预览不创建任务，任务创建、启用和实际通知发送是不同状态。能创建不一定能发送通知或完整执行，当前能力及自动化策略需实时核对。定时执行仍需复核学生归属、有效业务状态和通知条件；发送结果未知时不自动反复重发。一次性叮嘱不应被强行转换成重复任务，教师明确选择站内渠道时不能替换为邮件。",
+    "source": "frontend/src/components/agent/AutomationManager.vue; backend/src/main/java/com/internship/agent/business/TeacherReminderExecuteService.java; backend/src/main/java/com/internship/agent/business/AgentCapabilityService.java",
+    "verifiedAt": "2026-10-08",
+    "verifyLevel": "CODE_TRACED"
+  },
+  {
+    "id": "company-registration-status",
+    "category": "company",
+    "title": "企业注册进度、撤回修改与重新提交审核",
+    "roles": ["company", "admin"],
+    "keywords": ["企业注册进度", "注册被拒绝", "撤回注册", "重新提交", "修改注册申请", "审核未通过"],
+    "steps": "企业登记后按注册进度入口查看审核结果。需要修改时按当前状态使用允许的撤回或重新提交入口，填写要求的原因，修改资料和材料后重新提交，随后等待新一轮审核。",
+    "rules": "撤回修改与拒绝后重新提交不是审核通过。当前撤回处理可能允许直接修改，不能虚构必定需要管理员再审批一次撤回。重新提交会恢复待审核状态并保留必要历史信息；企业准入和登录条件仍以实际审核及账号状态为准。AI不查询或泄露其他企业注册记录。",
+    "source": "backend/src/main/java/com/internship/controller/CompanyRegisterController.java; backend/src/main/java/com/internship/controller/CompanyUserController.java",
+    "verifiedAt": "2026-10-08",
+    "verifyLevel": "CODE_TRACED"
+  },
+  {
+    "id": "company-school-liaisons",
+    "category": "company",
+    "title": "企业信息中的校内对接人及只读关系展示",
+    "roles": ["company", "admin"],
+    "keywords": ["企业校内对接人", "学校联系人", "学校联络人", "校内对接", "对接人维护", "对接关系"],
+    "routes": ["/company/interviews"],
+    "rules": "企业在企业信息页查看本企业已登记的校内对接关系，这部分为只读展示，不是企业可自行填写或删除的基础字段。校内关系由获准的教师侧流程维护，不能因为某教师出现在对接名单就推定其负责全部企业实习学生。名单读取失败与没有登记关系不同；知识说明不包含当前对接人姓名或联系方式，须到获准页面核对。",
+    "source": "frontend/src/views/company/CompanyInfo.vue; backend/src/main/java/com/internship/controller/CompanySchoolLiaisonReadController.java; backend/src/main/java/com/internship/service/CompanySchoolLiaisonService.java",
+    "verifiedAt": "2026-10-08",
+    "verifyLevel": "CODE_TRACED"
+  },
+  {
+    "id": "company-home-notifications",
+    "category": "company",
+    "title": "企业首页动态、通知公告与已读状态",
+    "roles": ["company", "admin"],
+    "keywords": ["企业首页", "企业动态", "企业通知", "企业公告", "标记已读", "动态已读"],
+    "routes": ["/company/dashboard", "/company"],
+    "rules": "企业首页展示本企业相关统计、业务动态和面向企业的公告通知。点击动态后标记当前条目已读，条目仍可保留在列表；公告阅读和业务动态阅读各有记录。已读表示查看了消息，不表示已处理申请或确认接收学生；通知时间是事件时间，也不能代替当前业务状态。AI不应凭历史通知断言申请仍待处理或邮件已送达。",
+    "source": "frontend/src/views/company/CompanyHome.vue; backend/src/main/java/com/internship/controller/CompanyController.java; backend/src/main/java/com/internship/controller/AnnouncementReadRecordController.java",
+    "verifiedAt": "2026-10-08",
+    "verifyLevel": "CODE_TRACED"
+  },
+  {
+    "id": "teacher-personal-keywords",
+    "category": "teacher",
+    "title": "辅导员个人关键词库与AI关键词配置",
+    "roles": ["teacher", "admin"],
+    "keywords": ["教师关键词", "辅导员关键词", "个人关键词库", "关键词配置", "关键词权重", "AI关键词"],
+    "routes": ["/teacher/keyword-library", "/teacher/ai-keyword-config"],
+    "teacherTypes": ["COUNSELOR"],
+    "permissionAny": {"teacher": ["menu:teacherAiScoringConfig", "menu:settings"]},
+    "steps": "获准的辅导员在个人关键词库维护关键词、分类、说明等当前表单字段，在AI关键词配置查看参与分析的设置并按页面允许的入口调整。核对当前分析设置后保存。",
+    "rules": "个人关键词归当前辅导员所有，不能读取或修改其他辅导员的个人关键词。关键词库与是否启用关键词分析是不同设置，新增词条不等于所有心得已经重新分析，也不改变菜单或学生负责范围。系统提供的参考关键词和个人词条应按页面标示区分；当前是否生效需核对本人配置和实际分析结果。",
+    "source": "frontend/src/views/teacher/CounselorKeywordLibraryManagement.vue; frontend/src/views/teacher/CounselorAISettings.vue; backend/src/main/java/com/internship/controller/CounselorKeywordController.java; backend/src/main/java/com/internship/controller/SettingsController.java",
+    "verifiedAt": "2026-10-08",
+    "verifyLevel": "CODE_TRACED"
+  },
+  {
+    "id": "teacher-personal-scoring-rules",
+    "category": "teacher",
+    "title": "辅导员个人评分分类、分数区间与类别权重",
+    "roles": ["teacher", "admin"],
+    "keywords": ["教师评分规则", "评分规则管理", "评分分类", "分数区间", "类别权重", "调整权重", "权重总和", "评分标准"],
+    "routes": ["/teacher/scoring-rules"],
+    "teacherTypes": ["COUNSELOR"],
+    "permissionAny": {"teacher": ["menu:teacherAiScoringConfig"]},
+    "steps": "辅导员在评分规则管理查看自己的分类和规则，按页面入口新增分类、编辑规则的分数区间、描述、评价标准、适用场景及启用状态。调整类别权重时，将全部类别权重总和设置为100，再保存。",
+    "rules": "类别权重与某条规则的分数区间不同。分类生成的默认规则应以实际生成结果为准；AI生成描述后仍需检查。个人规则只作用于当前辅导员的配置范围，不能修改他人规则，不能仅因保存成功就断言历史评分已重新计算；生效周期和分析执行结果需另行核对。",
+    "source": "frontend/src/views/teacher/CounselorScoringRuleManagement.vue; backend/src/main/java/com/internship/controller/CounselorAISettingsController.java; backend/src/main/java/com/internship/service/impl/CounselorAISettingsServiceImpl.java",
+    "verifiedAt": "2026-10-08",
+    "verifyLevel": "CODE_TRACED"
+  },
+  {
+    "id": "company-position-contacts",
+    "category": "company",
+    "title": "企业联系人管理、岗位联系人选择与删除限制",
+    "roles": ["company", "admin"],
+    "keywords": ["企业联系人", "联系人管理", "岗位联系人", "新增联系人", "联系人不能删除", "联系人邮箱"],
+    "routes": ["/company/interviews", "/company/jobs"],
+    "steps": "企业在企业信息的联系人管理页签新增或编辑联系人，填写姓名和电话，邮箱选填，核对后点击保存联系人。发布或编辑岗位时，在岗位联系人选项中选择本企业已保存的联系人，也可选择使用企业原联系人。",
+    "rules": "联系人仅归当前企业管理，不能选择或修改其他企业联系人。姓名和电话相同的联系人不可重复创建；联系人被岗位使用时，应先给相关岗位更换联系人再删除。未指定独立联系人的旧岗位继续使用企业基础信息中的原联系人。联系人加载失败不能解释为没有联系人；保存联系人与保存岗位是两个步骤，AI填入表单不代表已保存。",
+    "source": "frontend/src/components/company/CompanyContacts.vue; frontend/src/views/company/CompanyInfo.vue; frontend/src/views/company/RecruitmentManagement.vue; backend/src/main/java/com/internship/controller/CompanyContactController.java; backend/src/main/java/com/internship/service/CompanyContactService.java",
+    "verifiedAt": "2026-10-08",
+    "verifyLevel": "CODE_TRACED"
+  }
+]

@@ -38,7 +38,7 @@ import java.util.stream.Collectors;
 public class ReflectionTaskGenerator {
     static final ZoneId BUSINESS_ZONE = ZoneId.of("Asia/Shanghai");
     private static final Set<String> REFLECTION_ASSIGNMENT_STATUSES =
-            Set.of("CONFIRMED", "REPLACED", "INTERRUPTED", "ENDED");
+            Set.of("CONFIRMED", "IN_PROGRESS", "REPLACED", "INTERRUPTED", "ENDED");
 
     @Autowired
     private InternshipCalendarService calendarService;

@@ -77,8 +77,8 @@
       <div v-if="filteredApplications.length > 0" class="applications-list">
         <div
           v-for="application in filteredApplications"
-          :key="application.id"
-          :class="['application-card', { 'deep-link-target': String(application.id) === String(highlightedApplicationId) }]"
+          :key="`${application.applicationType}:${application.id}`"
+          :class="['application-card', { 'deep-link-target': `${application.applicationType}:${application.id}` === highlightedApplicationId }]"
           :data-activity-id="application.id"
           @click="viewApplicationDetail(application)"
         >
@@ -300,6 +300,7 @@
                 <el-icon class="module-icon"><Upload /></el-icon>
               </div>
               <h2 class="module-title">我的申请材料</h2>
+              <el-button v-if="currentApplication.applicationType === 'selfPractice'" link type="primary" @click="agreementVisible = true">实习协议</el-button>
             </div>
 
             <div v-if="materialsLoading" class="materials-loading">
@@ -397,6 +398,8 @@
       </template>
     </el-dialog>
 
+    <InternshipAgreementDialog v-if="currentApplication?.applicationType === 'selfPractice'" v-model="agreementVisible"
+      source-type="SELF_PRACTICE" :source-id="Number(currentApplication.id)" />
   </div>
 </template>
 
@@ -424,6 +427,7 @@ import {
 } from "@element-plus/icons-vue";
 
 import request from '@/utils/request';
+import InternshipAgreementDialog from '@/components/student/InternshipAgreementDialog.vue'
 import { studentApplicationMaterialByteUrl, studentProfileByteUrl } from '@/utils/authorizedFileUrl'
 import { downloadAuthorizedFile } from '@/utils/authorizedFileDownload'
 import { useAuthStore } from '@/store/auth';
@@ -444,6 +448,7 @@ const route = useRoute();
 
 // 状态管理
 const showDetailDialog = ref(false);
+const agreementVisible = ref(false)
 const selectedFilter = ref("all");
 const selectedType = ref("all");
 const currentApplication = ref(null);
@@ -627,7 +632,7 @@ const fetchApplications = async () => {
           contactPhone: app.hrManagerPhone || app.hrPhone || app.contactPhone || app.recruiterPhone || '',
           contactEmail: app.hrEmail || app.contactEmail || app.recruiterEmail || '',
           status: normalizeApplicationStatus(statusMap[String(app.status ?? '')] || 'pending', app.directHire),
-          applyDate: app.applyTime ? new Date(app.applyTime).toISOString().split('T')[0] : (app.createTime ? new Date(app.createTime).toISOString().split('T')[0] : ''),
+          applyDate: formatDateTimeMinute(app.applyTime || app.createTime).slice(0, 10),
           applyDateTime: formatDateTimeMinute(app.applyTime || app.createTime)
         });
       });
@@ -649,7 +654,7 @@ const fetchApplications = async () => {
           contactPhone: app.hrPhone || app.contactPhone || app.recruiterPhone || '',
           contactEmail: app.hrEmail || app.contactEmail || app.recruiterEmail || '',
           status: normalizeApplicationStatus(statusMap[String(app.status ?? '')] || 'pending', app.directHire),
-          applyDate: app.applyDate !== undefined && app.applyDate !== null && app.applyDate !== '' ? new Date(app.applyDate as string).toISOString().split('T')[0] : (app.createTime ? new Date(app.createTime as string).toISOString().split('T')[0] : ''),
+          applyDate: formatDateTimeMinute((app.applyDate as string) || app.createTime).slice(0, 10),
           applyDateTime: formatDateTimeMinute((app.applyDate as string) || app.createTime)
         });
       });
@@ -689,8 +694,8 @@ const filteredApplications = computed(() => {
 
   // 按申请时间从新到旧排序（最新的排第一张）
   return [...result].sort((a, b) => {
-    const ta = new Date(a.applyTime || a.applyDate || a.createTime || 0).getTime() || 0;
-    const tb = new Date(b.applyTime || b.applyDate || b.createTime || 0).getTime() || 0;
+    const ta = new Date(a.applyTime || a.applyDateTime || a.applyDate || a.createTime || 0).getTime() || 0;
+    const tb = new Date(b.applyTime || b.applyDateTime || b.applyDate || b.createTime || 0).getTime() || 0;
     return tb - ta;
   });
 });
@@ -787,7 +792,7 @@ const openApplicationFromQuery = async () => {
 
   selectedType.value = target.applicationType
   selectedFilter.value = 'all'
-  highlightedApplicationId.value = target.id
+  highlightedApplicationId.value = `${target.applicationType}:${target.id}`
   await viewApplicationDetail(target)
 }
 
@@ -910,7 +915,9 @@ const withdrawApplication = async (application) => {
       ? await request.post(`/student/applications/${application.id}/withdraw`)
       : await request.delete(`/student/job-applications/${application.id}`);
     if (response.code === 200) {
-      const index = applications.value.findIndex((app) => app.id === application.id);
+      const index = applications.value.findIndex((app) => (
+        String(app.id) === String(application.id) && app.applicationType === application.applicationType
+      ));
       if (index !== -1) {
         if (isDelay) {
           applications.value[index] = { ...applications.value[index], status: 'withdrawn' };

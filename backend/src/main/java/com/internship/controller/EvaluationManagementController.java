@@ -4,6 +4,7 @@ import com.internship.anno.Log;
 import com.internship.entity.*;
 import com.internship.entity.dto.InternshipCalendar;
 import com.internship.exception.BusinessException;
+import com.internship.mapper.InternshipReflectionMapper;
 import com.internship.service.*;
 import com.internship.utils.CurrentHolder;
 import com.internship.websocket.AnnouncementWebSocketHandler;
@@ -68,6 +69,9 @@ public class EvaluationManagementController {
 
     @Autowired
     private InternshipReflectionService internshipReflectionService;
+
+    @Autowired
+    private InternshipReflectionMapper reflectionMapper;
 
     @Autowired
     private InternshipCalendarService internshipCalendarService;
@@ -270,26 +274,14 @@ public class EvaluationManagementController {
                 effectivePeriod = internshipReflectionService.calculatePeriodNumber(new Date());
             }
 
-            // 检查AI评分开关状态
-            boolean aiScoringEnabled = counselorAISettingsService.isAiScoringEnabled(currentUserId);
-
-            // 检查学生是否有指定期次的非草稿心得
-            // 如果开启了AI评分，必须等AI分析完成才能显示；如果未开启，有心得就显示
-            if (effectivePeriod != null && reflections != null) {
-                for (InternshipReflection r : reflections) {
-                    if (r.getPeriodNumber() != null && effectivePeriod.equals(r.getPeriodNumber())) {
-                        if (aiScoringEnabled) {
-                            // AI评分开启时，必须AI分析完成才算有当前期次心得
-                            StudentReflectionAIAnalysis aiResult = studentReflectionAIAnalysisService.findByReflectionId(r.getId());
-                            if (aiResult != null) {
-                                hasCurrentPeriodReport = true;
-                                break;
-                            }
-                        } else {
-                            // AI评分未开启，有心得就显示
-                            hasCurrentPeriodReport = true;
-                            break;
-                        }
+            // A submitted report remains submitted while AI is pending or unavailable.
+            if (effectivePeriod != null) {
+                for (InternshipReflection reflection : reflections) {
+                    if (effectivePeriod.equals(reflection.getPeriodNumber())
+                            && reflection.getSubmitTime() != null && reflection.getContent() != null
+                            && !reflection.getContent().isBlank()) {
+                        hasCurrentPeriodReport = true;
+                        break;
                     }
                 }
             }
@@ -321,8 +313,8 @@ public class EvaluationManagementController {
             if (currentPeriodReflectionId != null) {
                 // 按当前期次检查对应的心得评价
                 StudentReflectionEvaluation periodEvaluation = studentReflectionEvaluationService.findByReflectionId(currentPeriodReflectionId);
-                // 只有评分了（totalScore不为空且大于0）才算已评分，评语不是必填项
-                evaluated = periodEvaluation != null && periodEvaluation.getTotalScore() != null && periodEvaluation.getTotalScore().doubleValue() > 0;
+                // 0分同样是已保存的人工评分，评语不是必填项。
+                evaluated = periodEvaluation != null && periodEvaluation.getTotalScore() != null;
             } else {
                 // 当前期次没有非草稿心得时，设为未评分
                 evaluated = false;
@@ -526,8 +518,8 @@ public class EvaluationManagementController {
         if (currentPeriodReflectionId != null) {
             periodEval = studentReflectionEvaluationService.findByReflectionId(currentPeriodReflectionId);
         }
-        // 根据周期参数判断评价状态 - 只有评分了（totalScore不为空且大于0）才算已评分，评语不是必填项
-        boolean evaluated = periodEval != null && periodEval.getTotalScore() != null && periodEval.getTotalScore().doubleValue() > 0;
+        // 0分同样是已保存的人工评分，评语不是必填项。
+        boolean evaluated = periodEval != null && periodEval.getTotalScore() != null;
         // gradePublished从InternshipEvaluation获取（因为一键上传操作的是这个表的gradePublished字段）
         boolean gradePublished = false;
         InternshipEvaluation existingEvaluation = internshipEvaluationService.findByStudentId(studentId);
@@ -581,6 +573,26 @@ public class EvaluationManagementController {
         Long teacherId = CurrentHolder.getUserId();
         if (teacherId == null) {
             return Result.error("无法获取当前教师信息");
+        }
+
+        // Lock the actual report before any grade write, using the same order as AI completion.
+        Integer currentPeriod = internshipReflectionService.calculatePeriodNumber(new Date());
+        List<InternshipReflection> reflections = internshipReflectionService.list(studentId, null, null, null);
+        Long currentReflectionId = null;
+        if (reflections != null && currentPeriod != null) {
+            for (InternshipReflection reflection : reflections) {
+                if (currentPeriod.equals(reflection.getPeriodNumber())) {
+                    InternshipReflection current = reflectionMapper.lockById(reflection.getId());
+                    if (current == null || !studentId.equals(current.getStudentId())
+                            || Integer.valueOf(1).equals(current.getDeleted()) || "0".equals(current.getRemark())
+                            || current.getSubmitTime() == null || current.getContent() == null
+                            || current.getContent().isBlank()) {
+                        return Result.error("实习心得尚未提交或已撤回，请刷新后重新评分");
+                    }
+                    currentReflectionId = current.getId();
+                    break;
+                }
+            }
         }
 
         // 获取评分规则的权重配置
@@ -719,18 +731,6 @@ public class EvaluationManagementController {
 
             // 同时保存到StudentReflectionEvaluation（每篇心得一条评价）
             try {
-                Integer currentPeriod = internshipReflectionService.calculatePeriodNumber(new Date());
-                List<InternshipReflection> reflections = internshipReflectionService.list(studentId, null, null, null);
-                Long currentReflectionId = null;
-                if (reflections != null && currentPeriod != null) {
-                    for (InternshipReflection r : reflections) {
-                        if (currentPeriod.equals(r.getPeriodNumber())) {
-                            currentReflectionId = r.getId();
-                            break;
-                        }
-                    }
-                }
-
                 if (currentReflectionId != null) {
                     // 转换scoreDetails为适合StudentReflectionEvaluation的格式
                     Map<String, Object> reflectionScoreDetails = new HashMap<>();

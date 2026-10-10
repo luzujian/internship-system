@@ -17,18 +17,27 @@ function originalHandler(file, name, scope) {
     const ast = ts.createSourceFile(file, script, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
     const node = ast.statements.filter(ts.isVariableStatement).flatMap(s => [...s.declarationList.declarations]).find(d => d.name.getText(ast) === name)
     assert.ok(node, `Missing real handler ${key}`)
-    sources.set(key, ts.transpileModule(`const actual = ${node.initializer.getText(ast)}; actual`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText)
+    sources.set(key, ts.transpileModule(`(${node.initializer.getText(ast)})`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText)
   }
   return vm.runInNewContext(sources.get(key), scope)
 }
 const announce = () => ({ title: '通知', content: '请核对', status: 'DRAFT', publisher: '管理员', publisherRole: 'ADMIN', targetType: ['ALL'], attachments: [] })
 const resource = () => ({ id: 3, title: '指南', publisher: '管理员', publisherRole: 'ADMIN', targetType: 'ALL', status: 'DRAFT', file: {} })
 const profile = () => ({ editingUser: { id: 3, username: '管理员', phone: '13812345678' }, editDialogVisible: ref(true), loadUserInfo: noop })
+const logRetention = () => {
+  const state = {
+    retentionLoaded: ref(true), retentionLoading: ref(false), retentionRunning: ref(false), retentionPreviewLoading: ref(false), retentionBusy: ref(false),
+    retentionDirty: ref(false), retentionInvalid: ref(false), savedRetention: ref(''), retentionPreviewData: ref(null),
+    retentionForm: ref({ highRiskDays: 365, normalDays: 90, loginDays: 90 })
+  }
+  state.policySnapshot = () => JSON.stringify([state.retentionForm.value.highRiskDays, state.retentionForm.value.normalDays, state.retentionForm.value.loginDays])
+  return state
+}
 // Each entry executes an original production save handler, not a copy of its implementation.
 const cases = [
   ['admin-user', 'AdminUserManagement', 'addUser', v => ({ addFormRef: v(), addForm: ref({ username: '管理员' }), addDialogVisible: ref(true), loadAdmins: noop }), 'addDialogVisible'],
   ['admin-user-edit', 'AdminUserManagement', 'updateUser', v => ({ editFormRef: v(), editForm: ref({ id: 3, username: '管理员' }), editDialogVisible: ref(true), loadAdmins: noop }), 'editDialogVisible'],
-  ['ai-model', 'AIModelManagement', 'handleSave', v => ({ formRef: v(), form: ref({ name: 'local', hasApiKey: true }), saving: ref(false), dialogVisible: ref(true), fetchModels: noop, capabilitiesLoading: ref(false), capabilityError: ref(null) }), 'dialogVisible'],
+  ['ai-model', 'AIModelManagement', 'handleSave', v => ({ formRef: v(), form: ref({ modelName: 'local', modelCode: 'gateway-chat', provider: 'custom', status: 1, isDefault: 0, useForVoice: false, hasApiKey: true }), modelList: ref([]), saving: ref(false), dialogVisible: ref(true), fetchModels: noop, capabilitiesLoading: ref(false), capabilityError: ref(null) }), 'dialogVisible'],
   ['announcement', 'AnnouncementManagement', 'handleSubmit', v => ({ formRef: v(), formData: announce(), dialogVisible: ref(true), fetchData: noop }), 'dialogVisible'],
   ['backup', 'BackupManagement', 'saveSchedule', () => ({ saving: ref(false), scheduleForm: ref({ enabled: true, time: '02:00' }), formatTime: value => value })],
   ['center-profile', 'ProfileCenter', 'saveProfile', profile, 'editDialogVisible'],
@@ -41,7 +50,7 @@ const cases = [
   ['division-edit', 'DepartmentMajorManagement', 'saveEditDivision', v => ({ editDivisionForm: ref({ id: 3, name: '系', departmentId: 1 }), editDivisionFormRef: v(), editDivisionDialogVisible: ref(true), getDivisionList: noop, queryDepartments: noop }), 'editDivisionDialogVisible'],
   ['feedback', 'FeedbackManagement', 'handleReplySubmit', v => ({ replyForm: { id: 3, adminReply: '已核实', status: 'RESOLVED' }, replyFormRef: v(), replyDialogVisible: ref(true), fetchData: noop }), 'replyDialogVisible'],
   ['keyword', 'KeywordLibraryManagement', 'handleSave', v => ({ form: ref({ keyword: '认真' }), formRef: v(), saving: ref(false), dialogVisible: ref(true), fetchKeywords: noop }), 'dialogVisible'],
-  ['log-retention', 'LogManagement', 'saveRetentionPolicies', () => ({ retentionLoading: ref(false), retentionForm: ref({ highRiskDays: 365, normalDays: 90, loginDays: 90 }) })],
+  ['log-retention', 'LogManagement', 'saveRetentionPolicies', logRetention],
   ['major', 'MajorManagement', 'addMajor', v => ({ addForm: ref({ name: '计算机' }), addFormRef: v(), addDialogVisible: ref(true), loadMajors: noop }), 'addDialogVisible'],
   ['major-edit', 'MajorManagement', 'updateMajor', v => ({ editForm: ref({ id: 3, name: '计算机' }), editFormRef: v(), editDialogVisible: ref(true), loadMajors: noop }), 'editDialogVisible'],
   ['major-org', 'DepartmentMajorManagement', 'saveMajor', v => ({ addMajorForm: ref({ name: '计算机', departmentId: 1, divisionId: 2 }), addMajorFormRef: v(), addMajorDialogVisible: ref(true), fixedDepartmentId: ref(1), getMajorList: noop, queryDepartments: noop }), 'addMajorDialogVisible'],
@@ -76,6 +85,13 @@ function fixture(entry, mode = 'success', invalid = false) {
     DivisionService: service, MajorService: service, DepartmentService: service, problemFeedbackApi: service, PositionCategoryService: service,
     resourceDocumentApi: service, updateRetentionPoliciesApi: write, runRetentionApi: write, addApi: write, updateApi: write
   })
+  if (id === 'ai-model') {
+    // Evaluate the actual protection predicates against each fixture's original rows.
+    scope.computed = getter => ({ get value() { return getter() } })
+    for (const declaration of ['isDefaultModel', 'editingCurrentChat', 'editingCurrentVoice', 'mustRemainEnabled']) {
+      scope[declaration] = originalHandler(file, declaration, scope)
+    }
+  }
   const run = async () => { await originalHandler(file, name, scope)(); await Promise.all(pending); await tick() }
   return { scope, receipts, order, validations, run, dialog }
 }
@@ -112,6 +128,51 @@ test('所有使用异步原生验证的表单校验失败时不提前发业务�
   }
 })
 
+test('AI模型编辑不能取消当前聊天用途或在同次编辑中停用当前聊天/语音模型', async () => {
+  const item = cases.find(item => item[0] === 'ai-model')
+  for (const original of [
+    { id: 3, isDefault: 1, useForVoice: false },
+    { id: 3, isDefault: 0, useForVoice: true }
+  ]) {
+    const ctx = fixture(item)
+    ctx.scope.modelList.value = [{ ...original, status: 1 }]
+    Object.assign(ctx.scope.form.value, { ...original, status: 0 })
+    if (original.useForVoice) ctx.scope.form.value.useForVoice = false
+    await ctx.run()
+    assert.deepEqual(ctx.order, [], 'current model must remain enabled even if voice is also cleared')
+    assert.equal(ctx.receipts.length, 0)
+    assert.equal(ctx.scope.dialogVisible.value, true)
+  }
+  const clearChat = fixture(item)
+  clearChat.scope.modelList.value = [{ id: 3, isDefault: 1, status: 1 }]
+  Object.assign(clearChat.scope.form.value, { id: 3, isDefault: 0 })
+  await clearChat.run()
+  assert.deepEqual(clearChat.order, [], 'current chat purpose cannot be cleared before choosing a replacement')
+})
+
+test('AI语音用途可以保持启用解除，解除保存后再编辑可停用；新的用途选择仍必须启用', async () => {
+  const item = cases.find(item => item[0] === 'ai-model')
+  const clearVoice = fixture(item)
+  clearVoice.scope.modelList.value = [{ id: 3, isDefault: 0, useForVoice: true, status: 1 }]
+  Object.assign(clearVoice.scope.form.value, { id: 3, useForVoice: false, status: 1 })
+  await clearVoice.run()
+  assert.deepEqual(clearVoice.order, ['capture', 'write', 'complete'])
+  assert.equal(clearVoice.receipts.length, 1)
+
+  const disableAfterClear = fixture(item)
+  disableAfterClear.scope.modelList.value = [{ id: 3, isDefault: 0, useForVoice: false, status: 1 }]
+  Object.assign(disableAfterClear.scope.form.value, { id: 3, useForVoice: false, status: 0 })
+  await disableAfterClear.run()
+  assert.deepEqual(disableAfterClear.order, ['capture', 'write', 'complete'])
+
+  for (const usage of ['isDefault', 'useForVoice']) {
+    const inactive = fixture(item)
+    Object.assign(inactive.scope.form.value, { status: 0, [usage]: usage === 'isDefault' ? 1 : true })
+    await inactive.run()
+    assert.deepEqual(inactive.order, [], 'a disabled model cannot be selected for a new usage')
+  }
+})
+
 test('学生/教师新增及编辑均在异步原校验通过后才创建请求', async () => {
   for (const id of ['student', 'teacher']) for (const valid of [false, true]) {
     const ctx = fixture(cases.find(item => item[0] === id), 'success', !valid)
@@ -131,7 +192,7 @@ test('日志保留策略与实际清理分别只确认自身提交字段', async
   await policy.run()
   assert.deepEqual([...policy.receipts[0].props], ['highRiskDays', 'normalDays', 'loginDays'])
   assert.match(policy.receipts[0].label, /未执行清理/)
-  const clean = fixture([item[0], item[1], 'executeRetention', () => ({ retentionPreviewData: ref({ total: 2 }), retentionReason: ref('已到留存期限'), retentionPreviewTotal: ref(2), retentionRunning: ref(false), loadSummary: noop, queryPage: noop })])
+  const clean = fixture([item[0], item[1], 'executeRetention', () => ({ ...logRetention(), retentionPreviewData: ref({ total: 2 }), retentionReason: ref('已到留存期限'), retentionPreviewTotal: ref(2), loadSummary: noop, queryPage: noop })])
   await clean.run()
   assert.deepEqual([...clean.receipts[0].props], ['retentionReason'])
   assert.match(clean.receipts[0].label, /实际删除 2 条/)

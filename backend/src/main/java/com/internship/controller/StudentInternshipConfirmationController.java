@@ -221,6 +221,7 @@ public class StudentInternshipConfirmationController {
             record.setPositionId(position.getId());
             record.setPositionName(position.getPositionName());
             record.setRemark(objectToString(body.get("remark")));
+            record.setAgreementFileIds(parseAgreementFileIds(body.get("agreementFileIds")));
 
             List<StudentJobApplication> applications = studentJobApplicationService
                     .findByStudentId(user.getId());
@@ -257,6 +258,20 @@ public class StudentInternshipConfirmationController {
             throw new BusinessException("Offer 企业或岗位信息不完整");
         }
         return invitation;
+    }
+
+    private List<Long> parseAgreementFileIds(Object value) {
+        if (!(value instanceof List<?> values)) {
+            throw new BusinessException("请至少上传一份已盖章的实习协议");
+        }
+        List<Long> ids = new ArrayList<>();
+        for (Object item : values) {
+            if (!(item instanceof Number number) || number.doubleValue() != number.longValue()) {
+                throw new BusinessException("协议文件编号无效");
+            }
+            ids.add(number.longValue());
+        }
+        return com.internship.service.InternshipAgreementService.requireFileIds(ids);
     }
 
     private Long latestApplicationId(List<StudentJobApplication> applications,
@@ -486,6 +501,9 @@ public class StudentInternshipConfirmationController {
                 String lifecycleStatus = lifecycleStatusForRecord(
                         record, placement, isCurrent ? studentInternshipStatus : null);
                 item.put("placementId", placement == null ? null : placement.getId());
+                boolean selfPractice = placement != null && "SELF_PRACTICE".equals(placement.getSourceType());
+                item.put("agreementSourceType", selfPractice ? "SELF_PRACTICE" : "CONFIRMATION");
+                item.put("agreementSourceId", selfPractice ? placement.getSourceAssignmentId() : record.getId());
                 item.put("isCurrent", isCurrent);
                 item.put("lifecycleStatus", lifecycleStatus);
                 item.put("statusText", lifecycleStatusText(lifecycleStatus));

@@ -15,6 +15,7 @@ import static com.internship.agent.business.AgentTypes.*;
 import static com.internship.agent.business.FillIntentService.*;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -37,7 +38,7 @@ class FillIntentServiceTest {
     private void modelReturns(String text) {
         AssistantMessage output = new AssistantMessage(text);
         ChatResponse response = new ChatResponse(List.of(new Generation(output)));
-        when(model.call(anyList(), anyList())).thenReturn(response);
+        doReturn(response).when(model).call(anyList(), anyList());
     }
 
     private FillRequest request(FieldDescriptor... fields) {
@@ -73,6 +74,32 @@ class FillIntentServiceTest {
                 () -> service.fill(student, request(company)));
         assertEquals(403, error.getHttpStatus());
         assertEquals("CAPABILITY_DISABLED", error.getCode());
+    }
+
+    @Test void concurrentFillForTheSameUserIsRejectedBeforeAnotherModelCall() throws Exception {
+        var entered = new java.util.concurrent.CountDownLatch(1);
+        var release = new java.util.concurrent.CountDownLatch(1);
+        when(model.call(anyList(), anyList())).thenAnswer(invocation -> {
+            entered.countDown();
+            assertTrue(release.await(5, java.util.concurrent.TimeUnit.SECONDS));
+            return new ChatResponse(List.of(new Generation(new AssistantMessage("{\"intent\":\"chat\",\"assignments\":[]}"))));
+        });
+        try (var worker = java.util.concurrent.Executors.newSingleThreadExecutor()) {
+            var first = worker.submit(() -> service.fill(student, request(company)));
+            try {
+                assertTrue(entered.await(3, java.util.concurrent.TimeUnit.SECONDS));
+                assertEquals("AI_BUSY", assertThrows(AgentException.class, () -> service.fill(student, request(company))).getCode());
+                org.mockito.Mockito.verify(model, org.mockito.Mockito.times(1)).call(anyList(), anyList());
+            } finally { release.countDown(); }
+            assertNotNull(first.get(3, java.util.concurrent.TimeUnit.SECONDS));
+        }
+    }
+
+    @Test void providerBusyRemains429AndDoesNotLeaveTheUserLocked() {
+        when(model.call(anyList(), anyList())).thenThrow(new AgentException("AI_BUSY", "繁忙", 429));
+        assertEquals(429, assertThrows(AgentException.class, () -> service.fill(student, request(company))).getHttpStatus());
+        modelReturns("{\"intent\":\"chat\",\"assignments\":[]}");
+        assertNotNull(service.fill(student, request(company)));
     }
 
     @Test void uploadFieldsAreExcludedAndExplained() {

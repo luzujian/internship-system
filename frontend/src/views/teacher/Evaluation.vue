@@ -882,6 +882,8 @@ const currentPeriodReport = computed((): StudentReportRow | null => {
     if (report && !report.isDraft) return report
     // 如果是草稿状态，返回null
     if (report && report.isDraft) return null
+    // 明确选择了期次时，不把其他期次的心得当作本期报告。
+    if (selectedPeriod) return null
   }
   // 如果没找到目标期次的心得，返回最新的非草稿心得
   const nonDraftReports = currentStudent.value.reports.filter((r: StudentReportRow) => !r.isDraft)
@@ -1699,14 +1701,22 @@ const submitBatchEvaluation = async () => {
 
 // 打开 AI 分析对话框
 const openAIAnalysisDialog = async (student: EvaluationStudent) => {
+  const reflectionId = currentPeriodReport.value?.id;
+  if (!reflectionId) { ElMessage.warning('当前期次没有可查看的实习心得'); return }
+  const selectedStudent = currentStudent.value;
+  currentAIAnalysis.value = null;
   try {
     aiAnalysisLoading.value = true
-    const response = await getAnalysisByStudentId(student.id)
+    const response = await getAnalysisByStudentId(student.id, reflectionId)
+    if (currentStudent.value !== selectedStudent || String(currentPeriodReport.value?.id) !== String(reflectionId)) return
 
     // getAnalysisByStudentId 的 data 为 unknown（运行时为分析对象，兼容驼峰/snake），收窄后使用
     const analysisRaw: unknown = response?.data
     if (response && analysisRaw !== null && typeof analysisRaw === 'object') {
       const analysis = analysisRaw as AIAnalysisRow
+      if (String(analysis.reflectionId ?? analysis.reflection_id) !== String(reflectionId)) {
+        ElMessage.error('分析报告与当前心得不匹配，请刷新后重试'); return
+      }
       // 将 scoreDetails 对象转换为 aspects 数组格式
       const aspects: Record<string, number> = {}
       const scoreDetailsRaw: unknown = analysis.scoreDetails ?? analysis.score_details

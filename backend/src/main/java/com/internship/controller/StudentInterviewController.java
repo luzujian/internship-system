@@ -3,6 +3,7 @@ package com.internship.controller;
 import com.internship.entity.Result;
 import com.internship.entity.InterviewInvitation;
 import com.internship.entity.User;
+import com.internship.entity.dto.StudentPositionKey;
 import com.internship.service.DirectHireService;
 import com.internship.service.InterviewInvitationService;
 import com.internship.service.UserService;
@@ -13,6 +14,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Set;
 
 @RestController
 @RequestMapping("/api/student/interviews")
@@ -54,9 +56,11 @@ public class StudentInterviewController {
     }
 
     private void markDirectHire(List<InterviewInvitation> invitations) {
+        Set<StudentPositionKey> directHirePairs = directHireService.findDirectHirePairs(invitations.stream()
+                .map(invitation -> new StudentPositionKey(invitation.getStudentId(), invitation.getPositionId())).toList());
         for (InterviewInvitation invitation : invitations) {
-            invitation.setDirectHire(directHireService.isDirectHire(
-                    invitation.getStudentId(), invitation.getPositionId()));
+            invitation.setDirectHire(directHirePairs.contains(
+                    new StudentPositionKey(invitation.getStudentId(), invitation.getPositionId())));
         }
     }
 

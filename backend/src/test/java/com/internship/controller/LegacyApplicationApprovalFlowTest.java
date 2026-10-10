@@ -5,6 +5,7 @@ import com.internship.entity.InternshipApplicationEntity;
 import com.internship.entity.InterviewInvitation;
 import com.internship.entity.Position;
 import com.internship.entity.Result;
+import com.internship.entity.StudentJobApplication;
 import com.internship.entity.User;
 import com.internship.mapper.CompanyUserMapper;
 import com.internship.mapper.MajorMapper;
@@ -24,6 +25,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -38,6 +41,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.never;
@@ -45,6 +49,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 
 @ExtendWith(MockitoExtension.class)
 class LegacyApplicationApprovalFlowTest {
@@ -101,6 +106,54 @@ class LegacyApplicationApprovalFlowTest {
     void tearDown() {
         CurrentHolder.remove();
         SecurityContextHolder.clearContext();
+    }
+
+    @ParameterizedTest
+    @CsvSource({"pending,unknown", "pending,interview_passed", "interview_passed,approved",
+            "interview_passed,interview_failed", "approved,pending"})
+    void companyMainReviewRejectsInvalidTransitionsBeforeAnyWrite(String current, String next) {
+        StudentJobApplication application = new StudentJobApplication();
+        application.setId(10L);
+        application.setStudentId(400L);
+        application.setPositionId(300L);
+        application.setCompanyId(200L);
+        application.setStatus(current);
+        when(jobApplicationService.findById(10L)).thenReturn(application);
+
+        Result result = companyController.updateJobApplicationStatus(10L, Map.of("status", next));
+
+        assertNotEquals(200, result.getCode());
+        verify(jobApplicationService, never()).updateStatusIfActive(anyLong(), any(), any());
+        verify(invitationService, never()).updateStatus(anyLong(), any(), any());
+    }
+
+    @ParameterizedTest
+    @CsvSource({"pending,unknown", "pending,interview_passed", "interview_passed,approved",
+            "interview_passed,interview_failed", "approved,pending"})
+    void companyLegacyReviewRejectsInvalidTransitionsBeforeAnyWrite(String current, String next) {
+        when(applicationService.findById(10L)).thenReturn(legacyApplication(current));
+
+        Result result = companyController.updateApplicationStatus(10L, Map.of("status", next));
+
+        assertNotEquals(200, result.getCode());
+        verify(applicationService, never()).updateStatus(anyLong(), any());
+        verify(jobApplicationService, never()).updateLatestStatusIfActive(anyLong(), anyLong(), any(), any());
+    }
+
+    @ParameterizedTest
+    @CsvSource({"pending,unknown", "pending,interview_passed", "interview_passed,approved",
+            "interview_passed,interview_failed", "approved,pending"})
+    void adminLegacyReviewRejectsInvalidTransitionsBeforeAnyWrite(String current, String next) throws Exception {
+        InternshipApplicationController controller = adminController();
+        when(applicationService.findById(10L)).thenReturn(legacyApplication(current));
+        MockMvcBuilders.standaloneSetup(controller).build()
+                .perform(put("/api/admin/applications/10/status")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\":\"" + next + "\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(org.hamcrest.Matchers.not(200)));
+        verify(applicationService, never()).updateStatus(anyLong(), any());
+        verify(jobApplicationService, never()).updateLatestStatusIfActive(anyLong(), anyLong(), any(), any());
     }
 
     @Test

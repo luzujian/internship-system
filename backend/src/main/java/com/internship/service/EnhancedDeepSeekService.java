@@ -1,6 +1,8 @@
 package com.internship.service;
 
 import com.internship.agent.business.AgentResponseStandard;
+import com.internship.agent.business.AgentException;
+import com.internship.exception.BusinessException;
 import com.internship.config.DynamicChatClientFactory;
 import com.internship.entity.LearningResource;
 import org.springframework.ai.chat.client.ChatClient;
@@ -40,9 +42,6 @@ public class EnhancedDeepSeekService {
      */
     public String chatWithResources(String question, boolean useReasoner) {
         try {
-            String modelCode = useReasoner ? "deepseek-reasoner" : "deepseek-chat";
-            ChatClient chatClient = chatClientFactory.createChatClient(modelCode, SYSTEM_PROMPT);
-            
             // 1. 搜索相关资源
             List<LearningResource> resources = resourceService.semanticSearch(question);
             log.info("搜索到相关资源数量: {}", resources.size());
@@ -52,10 +51,14 @@ public class EnhancedDeepSeekService {
             log.info("构建的资源上下文长度: {}", context.length());
 
             // 3. 调用DeepSeek API
-            return chatWithContext(question, context, useReasoner);
+            String response = chatWithContext(question, context, useReasoner);
+            if (response == null || response.isBlank()) throw new BusinessException("AI未返回生成结果");
+            return response;
+        } catch (AgentException e) {
+            throw e;
         } catch (Exception e) {
             log.error("基于资源的AI对话失败", e);
-            return "抱歉，资源搜索和AI对话处理过程中出现错误。";
+            throw new BusinessException("AI生成服务暂时不可用，请稍后重试", e);
         }
     }
 

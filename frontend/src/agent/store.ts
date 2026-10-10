@@ -546,6 +546,7 @@ export const useAgentStore = defineStore('businessAgent', () => {
     flowPreviewEpoch++; flowPreviewController?.abort(); flowPreviewController = null
     epoch++; stream?.abort(); stream = null; pending = null; pendingMessage.value = null; cancellingIds.value = []
     tasks.value = []; fillEvents.value = []; sessionId.value = null; draft.value = ''; error.value = ''; sending.value = false; filling.value = false
+    sessions.value = []; sessionsLoading.value = false; showHistory.value = false; sessionsHasMore.value = false; historyHasMore.value = false; sessionsPage = 1
     applyDialog.value.open = false; reminderDialog.value.open = false; autoOpenedReminders.clear()
     activityEvents.value = []; currentPlan.value = null; planStale.value = false; planSaving.value = false; planError.value = ''; ++planRequest; draftConflict.value = null; cancelAfterSend = false; restoringDraft = false
     resetAutoFlow(); resetCapsFlow()
@@ -559,6 +560,7 @@ export const useAgentStore = defineStore('businessAgent', () => {
       const caps: Capabilities = response.data
       if (caps.actor.ownerKey !== capabilities.value?.actor.ownerKey) {
         persistDraft(); persistEvents(); restoringDraft = true
+        sessions.value = []; sessionsLoading.value = false; showHistory.value = false; sessionsHasMore.value = false; historyHasMore.value = false; sessionsPage = 1
         tasks.value = []; sessionId.value = null; draft.value = ''; pending = null; pendingMessage.value = null; cancellingIds.value = []; sending.value = false
         restoringDraft = false; applyDialog.value.open = false; currentPlan.value = null; planError.value = ''; planSaving.value = false
       }
@@ -931,6 +933,7 @@ export const useAgentStore = defineStore('businessAgent', () => {
       const caps: Capabilities = response.data
       if (caps.actor.ownerKey !== capabilities.value?.actor.ownerKey) {
         persistDraft(); persistEvents(); restoringDraft = true
+        sessions.value = []; sessionsLoading.value = false; showHistory.value = false; sessionsHasMore.value = false; historyHasMore.value = false; sessionsPage = 1
         tasks.value = []; sessionId.value = null; draft.value = ''; pending = null; pendingMessage.value = null; cancellingIds.value = []; sending.value = false
         restoringDraft = false; applyDialog.value.open = false; currentPlan.value = null; planError.value = ''; planSaving.value = false
       }

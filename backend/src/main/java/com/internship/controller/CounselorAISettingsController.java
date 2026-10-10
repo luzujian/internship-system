@@ -6,9 +6,11 @@ import com.internship.entity.CounselorScoringRule;
 import com.internship.entity.CounselorCategoryWeight;
 import com.internship.entity.Result;
 import com.internship.service.CounselorAISettingsService;
+import com.internship.service.ReflectionAiAccessPolicy;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
@@ -22,6 +24,9 @@ public class CounselorAISettingsController {
     
     @Autowired
     private CounselorAISettingsService counselorAISettingsService;
+
+    @Autowired
+    private ReflectionAiAccessPolicy aiAccess;
     
     @GetMapping("/{counselorId}")
     @PreAuthorize("hasAnyRole('TEACHER_COUNSELOR', 'ADMIN')")
@@ -29,6 +34,7 @@ public class CounselorAISettingsController {
     public Result getSettings(@PathVariable Long counselorId) {
         log.info("查询辅导员AI评分设置，辅导员ID: {}", counselorId);
         try {
+            aiAccess.requireCounselor(counselorId);
             counselorAISettingsService.ensureDefaultRulesExist(counselorId);
             CounselorAISettings settings = counselorAISettingsService.findByCounselorId(counselorId);
             List<CounselorScoringRule> rules = counselorAISettingsService.getScoringRules(counselorId);
@@ -40,6 +46,8 @@ public class CounselorAISettingsController {
             data.put("categoryWeights", weights);
             
             return Result.success(data);
+        } catch (AccessDeniedException e) {
+            throw e;
         } catch (Exception e) {
             log.error("查询辅导员AI评分设置失败: {}", e.getMessage());
             return Result.error("查询失败: " + e.getMessage());
@@ -53,6 +61,7 @@ public class CounselorAISettingsController {
         log.info("收到辅导员 AI 评分设置保存请求");
         try {
             Long counselorId = Long.parseLong(request.get("counselorId").toString());
+            aiAccess.requireCounselor(counselorId);
             
             CounselorAISettings settings = new CounselorAISettings();
             settings.setCounselorId(counselorId);
@@ -89,6 +98,8 @@ public class CounselorAISettingsController {
             }
             
             return Result.success("保存成功");
+        } catch (AccessDeniedException e) {
+            throw e;
         } catch (Exception e) {
             log.error("保存辅导员AI评分设置失败: {}", e.getMessage());
             return Result.error("保存失败: " + e.getMessage());
@@ -101,11 +112,14 @@ public class CounselorAISettingsController {
     public Result updateSettings(@RequestBody CounselorAISettings settings) {
         log.info("收到辅导员 AI 评分设置更新请求：counselorId={}", settings.getCounselorId());
         try {
+            aiAccess.requireSettingsUpdate(settings);
             int result = counselorAISettingsService.update(settings);
             if (result > 0) {
                 return Result.success("更新成功");
             }
             return Result.error("更新失败");
+        } catch (AccessDeniedException e) {
+            throw e;
         } catch (Exception e) {
             log.error("更新辅导员AI评分设置失败: {}", e.getMessage());
             return Result.error("更新失败: " + e.getMessage());
@@ -118,9 +132,12 @@ public class CounselorAISettingsController {
     public Result getScoringRules(@PathVariable Long counselorId) {
         log.info("查询辅导员评分规则，辅导员ID: {}", counselorId);
         try {
+            aiAccess.requireCounselor(counselorId);
             counselorAISettingsService.ensureDefaultRulesExist(counselorId);
             List<CounselorScoringRule> rules = counselorAISettingsService.getScoringRules(counselorId);
             return Result.success(rules);
+        } catch (AccessDeniedException e) {
+            throw e;
         } catch (Exception e) {
             log.error("查询辅导员评分规则失败: {}", e.getMessage());
             return Result.error("查询失败: " + e.getMessage());
@@ -133,8 +150,11 @@ public class CounselorAISettingsController {
     public Result getScoringRulesByCategory(@PathVariable Long counselorId, @PathVariable String category) {
         log.info("按分类查询辅导员评分规则，辅导员ID: {}, 分类: {}", counselorId, category);
         try {
+            aiAccess.requireCounselor(counselorId);
             List<CounselorScoringRule> rules = counselorAISettingsService.getScoringRulesByCategory(counselorId, category);
             return Result.success(rules);
+        } catch (AccessDeniedException e) {
+            throw e;
         } catch (Exception e) {
             log.error("按分类查询辅导员评分规则失败: {}", e.getMessage());
             return Result.error("查询失败: " + e.getMessage());
@@ -147,8 +167,11 @@ public class CounselorAISettingsController {
     public Result getCategories(@PathVariable Long counselorId) {
         log.info("查询辅导员评分规则分类，辅导员ID: {}", counselorId);
         try {
+            aiAccess.requireCounselor(counselorId);
             List<String> categories = counselorAISettingsService.getCategories(counselorId);
             return Result.success(categories);
+        } catch (AccessDeniedException e) {
+            throw e;
         } catch (Exception e) {
             log.error("查询辅导员评分规则分类失败: {}", e.getMessage());
             return Result.error("查询失败: " + e.getMessage());
@@ -162,6 +185,7 @@ public class CounselorAISettingsController {
         log.info("收到辅导员评分规则保存请求");
         try {
             Long counselorId = Long.parseLong(request.get("counselorId").toString());
+            aiAccess.requireCounselor(counselorId);
             List<Map<String, Object>> rulesData = (List<Map<String, Object>>) request.get("rules");
             
             List<CounselorScoringRule> rules = new java.util.ArrayList<>();
@@ -182,6 +206,8 @@ public class CounselorAISettingsController {
             
             int result = counselorAISettingsService.saveScoringRules(counselorId, rules);
             return Result.success("保存成功，共保存" + result + "条规则");
+        } catch (AccessDeniedException e) {
+            throw e;
         } catch (Exception e) {
             log.error("保存辅导员评分规则失败: {}", e.getMessage());
             return Result.error("保存失败: " + e.getMessage());
@@ -194,12 +220,15 @@ public class CounselorAISettingsController {
     public Result updateScoringRule(@PathVariable Long id, @RequestBody CounselorScoringRule rule) {
         log.info("更新辅导员评分规则，ID: {}", id);
         try {
+            rule.setCounselorId(aiAccess.requireRule(id, rule.getCounselorId()));
             rule.setId(id);
             int result = counselorAISettingsService.updateScoringRule(rule);
             if (result > 0) {
                 return Result.success("更新成功");
             }
             return Result.error("更新失败");
+        } catch (AccessDeniedException e) {
+            throw e;
         } catch (Exception e) {
             log.error("更新辅导员评分规则失败: {}", e.getMessage());
             return Result.error("更新失败: " + e.getMessage());
@@ -212,11 +241,14 @@ public class CounselorAISettingsController {
     public Result deleteScoringRule(@PathVariable Long ruleId) {
         log.info("删除辅导员评分规则，规则ID: {}", ruleId);
         try {
+            aiAccess.requireRule(ruleId, null);
             int result = counselorAISettingsService.deleteScoringRule(ruleId);
             if (result > 0) {
                 return Result.success("删除成功");
             }
             return Result.error("删除失败");
+        } catch (AccessDeniedException e) {
+            throw e;
         } catch (Exception e) {
             log.error("删除辅导员评分规则失败: {}", e.getMessage());
             return Result.error("删除失败: " + e.getMessage());
@@ -229,10 +261,13 @@ public class CounselorAISettingsController {
     public Result deleteScoringRulesByCategory(@PathVariable Long counselorId, @PathVariable String category) {
         log.info("删除辅导员分类下所有评分规则，辅导员ID: {}, 分类: {}", counselorId, category);
         try {
+            aiAccess.requireCounselor(counselorId);
             int result = counselorAISettingsService.deleteScoringRulesByCategory(counselorId, category);
             counselorAISettingsService.deleteCategoryWeightByCategoryCode(counselorId, category);
             counselorAISettingsService.redistributeWeights(counselorId);
             return Result.success("删除成功，共删除" + result + "条规则");
+        } catch (AccessDeniedException e) {
+            throw e;
         } catch (Exception e) {
             log.error("删除辅导员分类下所有评分规则失败: {}", e.getMessage());
             return Result.error("删除失败: " + e.getMessage());
@@ -246,10 +281,13 @@ public class CounselorAISettingsController {
         log.info("收到批量创建辅导员评分规则请求");
         try {
             Long counselorId = Long.parseLong(request.get("counselorId").toString());
+            aiAccess.requireCounselor(counselorId);
             String categoryName = request.get("categoryName").toString();
             
             int result = counselorAISettingsService.batchCreateWithAIDescription(counselorId, categoryName);
             return Result.success("批量创建成功，共创建" + result + "条规则");
+        } catch (AccessDeniedException e) {
+            throw e;
         } catch (Exception e) {
             log.error("批量创建辅导员评分规则失败: {}", e.getMessage());
             return Result.error("批量创建失败: " + e.getMessage());
@@ -262,8 +300,11 @@ public class CounselorAISettingsController {
     public Result getCategoryWeights(@PathVariable Long counselorId) {
         log.info("查询辅导员分类权重，辅导员ID: {}", counselorId);
         try {
+            aiAccess.requireCounselor(counselorId);
             List<CounselorCategoryWeight> weights = counselorAISettingsService.getCategoryWeights(counselorId);
             return Result.success(weights);
+        } catch (AccessDeniedException e) {
+            throw e;
         } catch (Exception e) {
             log.error("查询辅导员分类权重失败: {}", e.getMessage());
             return Result.error("查询失败: " + e.getMessage());
@@ -276,6 +317,7 @@ public class CounselorAISettingsController {
     public Result getActiveCategoryWeights(@PathVariable Long counselorId) {
         log.info("查询辅导员启用的分类权重，辅导员ID: {}", counselorId);
         try {
+            aiAccess.requireCounselor(counselorId);
             List<CounselorCategoryWeight> weights = counselorAISettingsService.getCategoryWeights(counselorId);
             Integer totalWeight = counselorAISettingsService.getTotalWeight(counselorId);
             
@@ -284,6 +326,8 @@ public class CounselorAISettingsController {
             data.put("totalWeight", totalWeight);
             
             return Result.success(data);
+        } catch (AccessDeniedException e) {
+            throw e;
         } catch (Exception e) {
             log.error("查询辅导员启用的分类权重失败: {}", e.getMessage());
             return Result.error("查询失败: " + e.getMessage());
@@ -301,11 +345,15 @@ public class CounselorAISettingsController {
             }
             
             Long counselorId = Long.parseLong(request.get(0).get("counselorId").toString());
+            aiAccess.requireCounselor(counselorId);
             
             List<CounselorCategoryWeight> weights = new java.util.ArrayList<>();
             for (Map<String, Object> weightData : request) {
+                Long owner = Long.parseLong(weightData.get("counselorId").toString());
+                aiAccess.requireCounselor(owner);
+                if (!counselorId.equals(owner)) throw new AccessDeniedException("一次只能更新同一辅导员的评分权重");
                 CounselorCategoryWeight weight = new CounselorCategoryWeight();
-                weight.setCounselorId(Long.parseLong(weightData.get("counselorId").toString()));
+                weight.setCounselorId(owner);
                 weight.setCategoryCode((String) weightData.get("categoryCode"));
                 weight.setCategoryName((String) weightData.get("categoryName"));
                 weight.setWeight(Integer.parseInt(weightData.get("weight").toString()));
@@ -316,6 +364,8 @@ public class CounselorAISettingsController {
             counselorAISettingsService.deleteCategoryWeightByCategoryCode(counselorId, null);
             int result = counselorAISettingsService.saveCategoryWeights(counselorId, weights);
             return Result.success("批量更新成功");
+        } catch (AccessDeniedException e) {
+            throw e;
         } catch (Exception e) {
             log.error("批量更新辅导员分类权重失败: {}", e.getMessage());
             return Result.error("批量更新失败: " + e.getMessage());
@@ -328,8 +378,11 @@ public class CounselorAISettingsController {
     public Result deleteCategoryWeightByCategoryCode(@PathVariable Long counselorId, @PathVariable String categoryCode) {
         log.info("删除辅导员分类权重，辅导员ID: {}, 分类代码: {}", counselorId, categoryCode);
         try {
+            aiAccess.requireCounselor(counselorId);
             int result = counselorAISettingsService.deleteCategoryWeightByCategoryCode(counselorId, categoryCode);
             return Result.success("删除成功");
+        } catch (AccessDeniedException e) {
+            throw e;
         } catch (Exception e) {
             log.error("删除辅导员分类权重失败: {}", e.getMessage());
             return Result.error("删除失败: " + e.getMessage());

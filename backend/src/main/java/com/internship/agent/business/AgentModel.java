@@ -10,4 +10,6 @@ public interface AgentModel {
     default Flux<ChatResponse> stream(List<Message> messages,List<AgentReadTools.Spec> tools){
         return Flux.defer(()->Flux.just(call(messages,tools)));
     }
+    /** A separate, tool-free review pass; it shares the configured provider and runtime limits. */
+    default Flux<ChatResponse> review(List<Message> messages) { return stream(messages, List.of()); }
 }

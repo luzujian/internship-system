@@ -50,6 +50,9 @@ public class InternshipConfirmationWorkflowService {
     private final InternshipCalendarService internshipCalendarService;
     private final InternshipConfirmationResultNotifier confirmationResultNotifier;
 
+    @org.springframework.beans.factory.annotation.Autowired
+    private InternshipAgreementService agreementService;
+
     public InternshipConfirmationWorkflowService(InternshipConfirmationRecordMapper confirmationMapper,
                                                  InternshipStageAssignmentMapper assignmentMapper,
                                                  StudentInternshipStatusMapper statusMapper,
@@ -76,6 +79,7 @@ public class InternshipConfirmationWorkflowService {
                 || record.getPositionId() == null || offerId == null) {
             throw new BusinessException("确认记录或 Offer 信息不完整");
         }
+        InternshipAgreementService.requireFileIds(record.getAgreementFileIds());
         lockStudent(record.getStudentId());
         if (confirmationMapper.findActiveByStudentForUpdate(record.getStudentId()) != null) {
             throw new BusinessException("您已有待企业确认的实习确认表");
@@ -102,6 +106,7 @@ public class InternshipConfirmationWorkflowService {
         if (confirmationMapper.insert(record) <= 0) {
             throw new BusinessException("实习确认表提交失败");
         }
+        agreementService.bindSubmission(record.getStudentId(), "CONFIRMATION", record.getId(), record.getAgreementFileIds());
 
         assignment = preparePendingAssignment(record, assignment, OFFER_SOURCE, offerId);
         if (applicationId != null) assignment.setApplicationId(applicationId);

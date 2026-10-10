@@ -1,9 +1,12 @@
 package com.internship.service.impl;
 
 import com.internship.entity.CounselorScoringRule;
+import com.internship.entity.InternshipReflection;
 import com.internship.entity.StudentReflectionAIAnalysis;
 import com.internship.entity.StudentReflectionEvaluation;
 import com.internship.mapper.StudentReflectionEvaluationMapper;
+import com.internship.mapper.InternshipReflectionMapper;
+import com.internship.exception.BusinessException;
 import com.internship.service.CounselorAISettingsService;
 import com.internship.service.StudentReflectionAIAnalysisService;
 import com.internship.service.StudentReflectionEvaluationService;
@@ -18,6 +21,7 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 @Slf4j
 @Service
@@ -25,6 +29,9 @@ public class StudentReflectionEvaluationServiceImpl implements StudentReflection
     
     @Autowired
     private StudentReflectionEvaluationMapper evaluationMapper;
+
+    @Autowired
+    private InternshipReflectionMapper reflectionMapper;
     
     @Autowired
     private CounselorAISettingsService counselorAISettingsService;
@@ -35,6 +42,7 @@ public class StudentReflectionEvaluationServiceImpl implements StudentReflection
     @Override
     @Transactional(rollbackFor = Exception.class)
     public int insert(StudentReflectionEvaluation evaluation) {
+        lockReflection(evaluation);
         if (evaluation.getCreateTime() == null) {
             evaluation.setCreateTime(new Date());
         }
@@ -72,6 +80,12 @@ public class StudentReflectionEvaluationServiceImpl implements StudentReflection
     @Override
     @Transactional(rollbackFor = Exception.class)
     public int update(StudentReflectionEvaluation evaluation) {
+        if (evaluation.getReflectionId() == null) {
+            StudentReflectionEvaluation existing = evaluationMapper.findById(evaluation.getId());
+            if (existing == null) throw new BusinessException("评分记录不存在");
+            evaluation.setReflectionId(existing.getReflectionId());
+        }
+        lockReflection(evaluation);
         evaluation.setUpdateTime(new Date());
         return evaluationMapper.update(evaluation);
     }
@@ -91,7 +105,8 @@ public class StudentReflectionEvaluationServiceImpl implements StudentReflection
     @Override
     @Transactional(rollbackFor = Exception.class)
     public int saveEvaluation(StudentReflectionEvaluation evaluation) {
-        StudentReflectionEvaluation existing = evaluationMapper.findByReflectionId(evaluation.getReflectionId());
+        lockReflection(evaluation);
+        StudentReflectionEvaluation existing = evaluationMapper.lockByReflectionId(evaluation.getReflectionId());
         
         Map<String, Object> calculated = calculateTotalScoreAndGrade(evaluation.getScoreDetails(), evaluation.getCounselorId());
         evaluation.setTotalScore((BigDecimal) calculated.get("totalScore"));
@@ -115,6 +130,18 @@ public class StudentReflectionEvaluationServiceImpl implements StudentReflection
         } else {
             evaluation.setCreateTime(new Date());
             return evaluationMapper.insert(evaluation);
+        }
+    }
+
+    private void lockReflection(StudentReflectionEvaluation evaluation) {
+        InternshipReflection reflection = reflectionMapper.lockById(evaluation.getReflectionId());
+        if (reflection == null || Integer.valueOf(1).equals(reflection.getDeleted())
+                || "0".equals(reflection.getRemark()) || reflection.getSubmitTime() == null
+                || reflection.getContent() == null || reflection.getContent().isBlank()) {
+            throw new BusinessException("实习心得尚未提交或已撤回，请刷新后重新评分");
+        }
+        if (evaluation.getStudentId() != null && !Objects.equals(evaluation.getStudentId(), reflection.getStudentId())) {
+            throw new BusinessException("评分学生与实习心得不匹配");
         }
     }
     

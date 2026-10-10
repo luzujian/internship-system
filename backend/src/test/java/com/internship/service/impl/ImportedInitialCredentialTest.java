@@ -107,8 +107,12 @@ class ImportedInitialCredentialTest {
     @Test
     void companyImportStoresHashAndReturnsFixedDefaultCredential() {
         CompanyUserMapper mapper = mock(CompanyUserMapper.class);
-        when(mapper.batchInsert(anyList())).thenAnswer(invocation -> ((List<?>) invocation.getArgument(0)).size());
+        when(mapper.insert(org.mockito.ArgumentMatchers.any())).thenAnswer(invocation -> { CompanyUser company = invocation.getArgument(0); company.setId(77L); return 1; });
+        when(mapper.updateImportedProfile(org.mockito.ArgumentMatchers.any())).thenReturn(1);
         CompanyUserServiceImpl service = new CompanyUserServiceImpl(mapper, encoder, mock(CompanyAlumniService.class));
+        com.internship.mapper.CompanyContactMapper contacts = mock(com.internship.mapper.CompanyContactMapper.class);
+        when(contacts.lockCompany(77L)).thenReturn(77L);
+        ReflectionTestUtils.setField(service, "companyContactService", new com.internship.service.CompanyContactService(contacts, mock(com.internship.service.PositionCacheService.class)));
 
         Map<String, Object> result = service.importFromExcel(List.of(Map.of(
                 "企业名称", "Test Company", "联系人", "Contact", "联系电话", "13800000000", "企业地址", "Test Address")));
@@ -131,9 +135,9 @@ class ImportedInitialCredentialTest {
     }
 
     private CompanyUser mapperCompany(CompanyUserMapper mapper) {
-        org.mockito.ArgumentCaptor<List<CompanyUser>> rows = org.mockito.ArgumentCaptor.forClass(List.class);
-        org.mockito.Mockito.verify(mapper).batchInsert(rows.capture());
-        return rows.getValue().getFirst();
+        org.mockito.ArgumentCaptor<CompanyUser> row = org.mockito.ArgumentCaptor.forClass(CompanyUser.class);
+        org.mockito.Mockito.verify(mapper).insert(row.capture());
+        return row.getValue();
     }
 
     private void assertCredential(Map<String, Object> result, String username, String storedHash) {

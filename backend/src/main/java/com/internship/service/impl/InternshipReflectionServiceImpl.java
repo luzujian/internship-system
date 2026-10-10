@@ -2,6 +2,7 @@ package com.internship.service.impl;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.internship.agent.business.AgentException;
 import com.internship.config.DynamicChatClientFactory;
 import com.internship.entity.AIModel;
 import com.internship.entity.CategoryWeight;
@@ -21,6 +22,8 @@ import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -57,7 +60,12 @@ public class InternshipReflectionServiceImpl implements InternshipReflectionServ
     @Autowired
     private AIModelService aiModelService;
 
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    @Autowired
+    private TransactionTemplate transactionTemplate;
+
+    private final ObjectMapper objectMapper = new ObjectMapper()
+            .enable(com.fasterxml.jackson.core.JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
+            .enable(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
 
     private static final String SYSTEM_PROMPT = "你是一位专业的实习指导教师，请仔细分析学生实习心得，根据内容质量给出客观、公正的评价和评分。";
 
@@ -120,39 +128,90 @@ public class InternshipReflectionServiceImpl implements InternshipReflectionServ
     }
 
     @Override
-    @Transactional
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public Map<String, Object> analyzeReflection(Long id) {
-        InternshipReflection reflection = findById(id);
-        if (reflection == null) {
-            throw new RuntimeException("实习心得不存在");
-        }
+        // Capture the row and its submission event together, then release the lock before either API call.
+        Submission snapshot = transactionTemplate.execute(transaction -> {
+            InternshipReflection reflection = internshipReflectionMapper.lockById(id);
+            if (!submitted(reflection) || internshipReflectionMapper.hasManualEvaluation(id)) return null;
+            return new Submission(reflection,
+                    internshipReflectionMapper.latestSubmissionEventId(id, reflection.getStudentId()));
+        });
+        if (snapshot == null) return staleResult();
 
-        return analyzeReflectionContent(reflection.getContent());
+        Map<String, Object> result = analyzeReflectionContent(snapshot.reflection().getContent());
+        if (!Boolean.TRUE.equals(result.get("success"))) return result;
+        try {
+            Map<String, Object> data = (Map<String, Object>) result.get("data");
+            boolean applied = Boolean.TRUE.equals(transactionTemplate.execute(transaction -> {
+                InternshipReflection current = internshipReflectionMapper.lockById(id);
+                InternshipReflection original = snapshot.reflection();
+                if (!submitted(current) || internshipReflectionMapper.hasManualEvaluation(id)
+                        || !Objects.equals(original.getStudentId(), current.getStudentId())
+                        || !Objects.equals(original.getContent(), current.getContent())
+                        || !Objects.equals(original.getSubmitTime(), current.getSubmitTime())
+                        || !Objects.equals(original.getUpdateTime(), current.getUpdateTime())
+                        || !Objects.equals(original.getStatus(), current.getStatus())
+                        || !Objects.equals(snapshot.version(), internshipReflectionMapper.latestSubmissionEventId(
+                                id, original.getStudentId()))) return false;
+                current.setAiKeywords(data.get("keywords").toString());
+                current.setAiAnalysis((String) data.get("comment"));
+                current.setAiImprovements(data.get("improvements").toString());
+                // Preserve the legacy admin score contract, distinct from the counselor report's grade.
+                current.setAiScore(new BigDecimal(data.get("score").toString()));
+                Date now = new Date();
+                current.setAiAnalysisTime(now);
+                current.setUpdateTime(now);
+                current.setStatus(1);
+                if (internshipReflectionMapper.updateById(current) != 1) {
+                    throw new IllegalStateException("保存AI分析结果失败");
+                }
+                return true;
+            }));
+            return applied ? result : staleResult();
+        } catch (AgentException e) {
+            throw e;
+        } catch (Exception e) {
+            log.warn("保存管理员AI分析失败：reflectionId={}, type={}", id, e.getClass().getSimpleName());
+            return Map.of("success", false, "message", "保存AI分析结果失败，请稍后重试");
+        }
+    }
+
+    private record Submission(InternshipReflection reflection, Long version) {}
+
+    private static boolean submitted(InternshipReflection reflection) {
+        return reflection != null && !Integer.valueOf(1).equals(reflection.getDeleted())
+                && reflection.getStudentId() != null && reflection.getRemark() == null
+                && reflection.getSubmitTime() != null && reflection.getContent() != null
+                && !reflection.getContent().isBlank()
+                && (Integer.valueOf(0).equals(reflection.getStatus()) || Integer.valueOf(1).equals(reflection.getStatus()));
+    }
+
+    private static Map<String, Object> staleResult() {
+        return Map.of("success", false, "stale", true,
+                "message", "心得已撤回、重交或进入批阅，本次分析结果已忽略");
     }
 
     @Override
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public Map<String, Object> analyzeReflectionContent(String content) {
         return analyzeReflectionContent(content, null);
     }
 
     @Override
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public Map<String, Object> analyzeReflectionContent(String content, String modelCode) {
         Map<String, Object> result = new HashMap<>();
         
         try {
-            Map<String, Object> validationResult = validateReflectionContent(content, modelCode);
+            if (content == null || content.isBlank()) throw new IllegalArgumentException("实习心得内容不能为空");
+            ChatClient selectedClient = getChatClientByModel(modelCode);
+            Map<String, Object> validationResult = validateReflectionContent(content, selectedClient);
             
             log.info("验证结果: isReflection={}, reason={}", 
                 validationResult.get("isReflection"), validationResult.get("reason"));
             
-            Object isReflectionObj = validationResult.get("isReflection");
-            boolean isReflection = true;
-            
-            if (isReflectionObj instanceof Boolean) {
-                isReflection = (Boolean) isReflectionObj;
-            } else if (isReflectionObj instanceof String) {
-                isReflection = Boolean.parseBoolean((String) isReflectionObj);
-            }
+            boolean isReflection = Boolean.TRUE.equals(validationResult.get("isReflection"));
             
             log.info("解析后的isReflection值: {}", isReflection);
             
@@ -164,9 +223,8 @@ public class InternshipReflectionServiceImpl implements InternshipReflectionServ
                 return result;
             }
             
-            String prompt = buildAnalysisPrompt(content);
-            
-            ChatClient selectedClient = getChatClientByModel(modelCode);
+            List<CategoryWeight> weights = categoryWeightService.findActive();
+            String prompt = buildAnalysisPrompt(content, weights);
             
             String aiResponse = selectedClient.prompt()
                     .user(prompt)
@@ -178,8 +236,8 @@ public class InternshipReflectionServiceImpl implements InternshipReflectionServ
                     aiResponse != null ? aiResponse.length() : 0);
 
             Map<String, Object> analysisResult = parseAIResponse(aiResponse);
-            
-            calculateWeightedScore(analysisResult);
+            validateAnalysisResult(analysisResult);
+            calculateWeightedScore(analysisResult, weights);
             
             validateAndMatchKeywords(analysisResult);
             
@@ -187,75 +245,57 @@ public class InternshipReflectionServiceImpl implements InternshipReflectionServ
             result.put("data", analysisResult);
             
             return result;
+        } catch (AgentException e) {
+            throw e;
         } catch (Exception e) {
-            log.error("AI分析失败: {}", e.getMessage(), e);
+            log.warn("管理员AI分析失败：type={}", e.getClass().getSimpleName());
             result.put("success", false);
-            result.put("message", "AI分析失败: " + e.getMessage());
+            result.put("message", "AI分析暂未完成，请稍后重试");
             return result;
         }
     }
 
-    private Map<String, Object> validateReflectionContent(String content, String modelCode) {
-        Map<String, Object> result = new HashMap<>();
-        
-        try {
-            String validationPrompt = """
-                请判断以下内容是否为学生的实习心得。
-                
-                实习心得的特征：
-                1. 描述实习期间的工作内容、经历和感受
-                2. 反思实习过程中的收获和不足
-                3. 体现对专业知识的应用和实践
-                4. 包含对实习单位、岗位、工作环境的描述
-                5. 表达对实习的感悟和体会
-                
-                非实习心得的特征：
-                1. 纯粹的技术文档、代码说明
-                2. 课程作业、论文、研究报告
-                3. 个人日记、生活随笔
-                4. 与实习工作无关的文档
-                
-                待判断的内容：
-                %s
-                
-                请严格按照以下JSON格式返回判断结果（不要包含其他文字，只返回JSON）：
-                {
-                    "isReflection": true/false,
-                    "reason": "判断理由（简短说明）"
-                }
-                """.formatted(content);
+    private Map<String, Object> validateReflectionContent(String content, ChatClient selectedClient) {
+        String validationPrompt = """
+            请判断以下内容是否为学生的实习心得。
             
-            ChatClient selectedClient = getChatClientByModel(modelCode);
+            实习心得的特征：
+            1. 描述实习期间的工作内容、经历和感受
+            2. 反思实习过程中的收获和不足
+            3. 体现对专业知识的应用和实践
+            4. 包含对实习单位、岗位、工作环境的描述
+            5. 表达对实习的感悟和体会
             
-            String aiResponse = selectedClient.prompt()
-                    .user(validationPrompt)
-                    .call()
-                    .content();
-
-            log.debug("AI 内容验证响应已返回：length={}",
-                    aiResponse != null ? aiResponse.length() : 0);
-
-            Map<String, Object> validationData = parseAIResponse(aiResponse);
+            非实习心得的特征：
+            1. 纯粹的技术文档、代码说明
+            2. 课程作业、论文、研究报告
+            3. 个人日记、生活随笔
+            4. 与实习工作无关的文档
             
-            Object isReflectionObj = validationData.get("isReflection");
-            boolean isReflection = true;
+            待判断的内容：
+            %s
             
-            if (isReflectionObj instanceof Boolean) {
-                isReflection = (Boolean) isReflectionObj;
-            } else if (isReflectionObj instanceof String) {
-                isReflection = Boolean.parseBoolean((String) isReflectionObj);
+            请严格按照以下JSON格式返回判断结果（不要包含其他文字，只返回JSON）：
+            {
+                "isReflection": true/false,
+                "reason": "判断理由（简短说明）"
             }
-            
-            result.put("isReflection", isReflection);
-            result.put("reason", validationData.get("reason"));
-            
-            return result;
-        } catch (Exception e) {
-            log.error("内容验证失败: {}", e.getMessage(), e);
-            result.put("isReflection", true);
-            result.put("reason", "验证失败，默认认为是实习心得");
-            return result;
+            """.formatted(content);
+
+        String aiResponse = selectedClient.prompt()
+                .user(validationPrompt)
+                .call()
+                .content();
+
+        log.debug("AI 内容验证响应已返回：length={}",
+                aiResponse != null ? aiResponse.length() : 0);
+
+        Map<String, Object> validationData = parseAIResponse(aiResponse);
+
+        if (!(validationData.get("isReflection") instanceof Boolean)) {
+            throw new IllegalArgumentException("AI JSON缺少有效的实习心得判断");
         }
+        return validationData;
     }
 
     private ChatClient getChatClientByModel(String modelCode) {
@@ -287,10 +327,9 @@ public class InternshipReflectionServiceImpl implements InternshipReflectionServ
         return chatClientFactory.createChatClient(actualModelCode, SYSTEM_PROMPT);
     }
 
-    private String buildAnalysisPrompt(String content) {
+    private String buildAnalysisPrompt(String content, List<CategoryWeight> categoryWeights) {
         List<ScoringRule> scoringRules = scoringRuleService.findByScenario("实习心得分析");
         
-        List<CategoryWeight> categoryWeights = categoryWeightService.findActive();
         String scoringCriteria = buildScoringCriteria(scoringRules, categoryWeights);
         String weightInfo = buildWeightInfo(categoryWeights);
         String aspectsExample = buildAspectsExample(categoryWeights);
@@ -586,106 +625,113 @@ public class InternshipReflectionServiceImpl implements InternshipReflectionServ
         }
     }
 
-    private void calculateWeightedScore(Map<String, Object> analysisResult) {
-        try {
-            Map<String, Object> aspects = (Map<String, Object>) analysisResult.get("aspects");
-            if (aspects == null) {
-                log.warn("AI响应中缺少aspects字段，无法计算加权分数");
-                return;
+    private void validateAnalysisResult(Map<String, Object> data) {
+        validateTextList(data.get("keywords"), "keywords", true);
+        validateTextList(data.get("improvements"), "improvements", false);
+        if (!(data.get("comment") instanceof String comment) || comment.isBlank()
+                || !(data.get("aspects") instanceof Map<?, ?> aspects)) {
+            throw new IllegalArgumentException("AI JSON缺少有效的分析及评分字段");
+        }
+        score(data.get("score"));
+        if (data.containsKey("weightedScore")) score(data.get("weightedScore"));
+        for (Map.Entry<?, ?> aspect : aspects.entrySet()) {
+            if (!(aspect.getKey() instanceof String name) || name.isBlank()) {
+                throw new IllegalArgumentException("AI JSON评分维度无效");
+            }
+            score(aspect.getValue());
+        }
+    }
+
+    private static void validateTextList(Object value, String field, boolean requireNonempty) {
+        if (!(value instanceof List<?> list) || (requireNonempty && list.isEmpty())
+                || list.stream().anyMatch(item -> !(item instanceof String text) || text.isBlank())) {
+            throw new IllegalArgumentException("AI JSON缺少有效的" + field + "字段");
+        }
+    }
+
+    private static double score(Object value) {
+        if (!(value instanceof Number number) || !Double.isFinite(number.doubleValue())
+                || number.doubleValue() < 0 || number.doubleValue() > 100) {
+            throw new IllegalArgumentException("AI JSON评分必须是0到100之间的数字");
+        }
+        return number.doubleValue();
+    }
+
+    private void calculateWeightedScore(Map<String, Object> analysisResult, List<CategoryWeight> categoryWeights) {
+        Map<String, Object> aspects = (Map<String, Object>) analysisResult.get("aspects");
+        if (categoryWeights == null || categoryWeights.isEmpty()) {
+            return;
+        }
+
+        // AI可能使用的别名映射（处理AI自由发挥时返回的近似维度名）
+        Map<String, String> aliasMap = new HashMap<>();
+        aliasMap.put("innovationAbility", "innovation_ability");
+        aliasMap.put("innovation_ability", "innovation_ability");
+        aliasMap.put("learning_reflection", "learningAbility");
+        aliasMap.put("learningReflection", "learningAbility");
+        aliasMap.put("learning", "learningAbility");
+        aliasMap.put("communicationCooperation", "communication");
+        aliasMap.put("communication_cooperation", "communication");
+        aliasMap.put("team_cooperation", "teamwork");
+        aliasMap.put("teamworkAbility", "teamwork");
+        aliasMap.put("taskExecution", "task_execution");
+        aliasMap.put("professionalAwareness", "professional_awareness");
+        aliasMap.put("professionalism", "professional_awareness");
+
+        double weightedSum = 0.0;
+        int totalWeight = 0;
+
+        for (CategoryWeight cw : categoryWeights) {
+            String categoryCode = cw.getCategoryCode();
+            Integer weight = cw.getWeight();
+
+            if (weight == null || weight <= 0) {
+                continue;
             }
 
-            List<CategoryWeight> categoryWeights = categoryWeightService.findActive();
-            if (categoryWeights == null || categoryWeights.isEmpty()) {
-                log.warn("未找到类别权重配置，使用简单平均分");
-                return;
-            }
+            Object scoreObj = aspects.get(categoryCode);
 
-            // 构建 categoryCode -> CategoryWeight 的映射
-            Map<String, CategoryWeight> weightMap = new HashMap<>();
-            for (CategoryWeight cw : categoryWeights) {
-                weightMap.put(cw.getCategoryCode(), cw);
-            }
-
-            // AI可能使用的别名映射（处理AI自由发挥时返回的近似维度名）
-            Map<String, String> aliasMap = new HashMap<>();
-            aliasMap.put("innovationAbility", "innovation_ability");
-            aliasMap.put("innovation_ability", "innovation_ability");
-            aliasMap.put("learning_reflection", "learningAbility");
-            aliasMap.put("learningReflection", "learningAbility");
-            aliasMap.put("learning", "learningAbility");
-            aliasMap.put("communicationCooperation", "communication");
-            aliasMap.put("communication_cooperation", "communication");
-            aliasMap.put("team_cooperation", "teamwork");
-            aliasMap.put("teamworkAbility", "teamwork");
-            aliasMap.put("taskExecution", "task_execution");
-            aliasMap.put("professionalAwareness", "professional_awareness");
-            aliasMap.put("professionalism", "professional_awareness");
-
-            double weightedSum = 0.0;
-            int totalWeight = 0;
-
-            for (CategoryWeight cw : categoryWeights) {
-                String categoryCode = cw.getCategoryCode();
-                Integer weight = cw.getWeight();
-
-                if (weight == null || weight <= 0) {
-                    continue;
+            // 如果精确匹配失败，尝试别名映射
+            if (scoreObj == null && aliasMap.containsKey(categoryCode)) {
+                String aliasedCode = aliasMap.get(categoryCode);
+                scoreObj = aspects.get(aliasedCode);
+                if (scoreObj != null) {
+                    log.info("通过别名映射找到评分：{} -> {} = {}", categoryCode, aliasedCode, scoreObj);
                 }
+            }
 
-                Object scoreObj = aspects.get(categoryCode);
-
-                // 如果精确匹配失败，尝试别名映射
-                if (scoreObj == null && aliasMap.containsKey(categoryCode)) {
-                    String aliasedCode = aliasMap.get(categoryCode);
-                    scoreObj = aspects.get(aliasedCode);
-                    if (scoreObj != null) {
-                        log.info("通过别名映射找到评分：{} -> {} = {}", categoryCode, aliasedCode, scoreObj);
-                    }
-                }
-
-                // 如果仍然失败，尝试在别名映射中查找作为key的情况
-                if (scoreObj == null) {
-                    for (Map.Entry<String, String> alias : aliasMap.entrySet()) {
-                        if (alias.getValue().equals(categoryCode) && aspects.containsKey(alias.getKey())) {
-                            scoreObj = aspects.get(alias.getKey());
-                            if (scoreObj != null) {
-                                log.info("通过反向别名映射找到评分：{} <- {} = {}", categoryCode, alias.getKey(), scoreObj);
-                                break;
-                            }
+            // 如果仍然失败，尝试在别名映射中查找作为key的情况
+            if (scoreObj == null) {
+                for (Map.Entry<String, String> alias : aliasMap.entrySet()) {
+                    if (alias.getValue().equals(categoryCode) && aspects.containsKey(alias.getKey())) {
+                        scoreObj = aspects.get(alias.getKey());
+                        if (scoreObj != null) {
+                            log.info("通过反向别名映射找到评分：{} <- {} = {}", categoryCode, alias.getKey(), scoreObj);
+                            break;
                         }
                     }
                 }
-
-                if (scoreObj != null) {
-                    double score = 0.0;
-                    if (scoreObj instanceof Integer) {
-                        score = ((Integer) scoreObj).doubleValue();
-                    } else if (scoreObj instanceof Double) {
-                        score = (Double) scoreObj;
-                    } else if (scoreObj instanceof String) {
-                        score = Double.parseDouble((String) scoreObj);
-                    }
-
-                    weightedSum += score * weight;
-                    totalWeight += weight;
-                }
             }
 
-            if (totalWeight > 0) {
-                if (totalWeight != 100) {
-                    log.warn("总权重为{}，不为100，将进行归一化处理", totalWeight);
-                }
-
-                double weightedScore = weightedSum / totalWeight;
-                BigDecimal roundedScore = new BigDecimal(weightedScore)
-                    .setScale(1, RoundingMode.HALF_UP);
-                analysisResult.put("weightedScore", roundedScore.doubleValue());
-                log.info("加权分数计算完成：加权总分 = {}，总权重 = {}", roundedScore, totalWeight);
-            } else {
-                log.warn("总权重为0，无法计算加权分数");
+            if (scoreObj == null) {
+                throw new IllegalArgumentException("AI JSON缺少评分维度：" + categoryCode);
             }
-        } catch (Exception e) {
-            log.error("计算加权分数失败: {}", e.getMessage(), e);
+            weightedSum += score(scoreObj) * weight;
+            totalWeight += weight;
+        }
+
+        if (totalWeight > 0) {
+            if (totalWeight != 100) {
+                log.warn("总权重为{}，不为100，将进行归一化处理", totalWeight);
+            }
+
+            double weightedScore = weightedSum / totalWeight;
+            BigDecimal roundedScore = new BigDecimal(weightedScore)
+                .setScale(1, RoundingMode.HALF_UP);
+            analysisResult.put("weightedScore", roundedScore.doubleValue());
+            log.info("加权分数计算完成：加权总分 = {}，总权重 = {}", roundedScore, totalWeight);
+        } else {
+            throw new IllegalArgumentException("系统评分权重无效");
         }
     }
 
@@ -711,20 +757,14 @@ public class InternshipReflectionServiceImpl implements InternshipReflectionServ
     }
 
     private String extractJSON(String response) {
+        if (response == null || response.isBlank()) return null;
         String cleanedResponse = response.trim();
-        
-        cleanedResponse = cleanedResponse.replaceAll("```json", "");
-        cleanedResponse = cleanedResponse.replaceAll("```JSON", "");
-        cleanedResponse = cleanedResponse.replaceAll("```", "");
-        
-        int start = cleanedResponse.indexOf("{");
-        int end = cleanedResponse.lastIndexOf("}");
-        
-        if (start != -1 && end != -1 && end > start) {
-            return cleanedResponse.substring(start, end + 1);
+        if (cleanedResponse.startsWith("```")) {
+            if (!cleanedResponse.matches("(?is)^```(?:json)?\\s*\\{.*}\\s*```$")) return null;
+            cleanedResponse = cleanedResponse.replaceFirst("(?i)^```(?:json)?\\s*", "");
+            cleanedResponse = cleanedResponse.substring(0, cleanedResponse.length() - 3).trim();
         }
-        
-        return null;
+        return cleanedResponse.startsWith("{") && cleanedResponse.endsWith("}") ? cleanedResponse : null;
     }
 
     @Override

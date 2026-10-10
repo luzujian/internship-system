@@ -1,6 +1,7 @@
 package com.internship.service.impl;
 
 import com.internship.entity.InterviewInvitation;
+import com.internship.entity.dto.StudentPositionKey;
 import com.internship.mapper.InterviewInvitationMapper;
 import com.internship.service.InterviewInvitationService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -35,6 +36,14 @@ public class InterviewInvitationServiceImpl implements InterviewInvitationServic
     @Override
     public InterviewInvitation findByStudentAndPosition(Long studentId, Long positionId) {
         return interviewInvitationMapper.findByStudentAndPosition(studentId, positionId);
+    }
+
+    @Override
+    public List<InterviewInvitation> findLatestForStudentPositions(List<StudentPositionKey> pairs) {
+        if (pairs == null || pairs.isEmpty()) {
+            return List.of();
+        }
+        return interviewInvitationMapper.findLatestForStudentPositions(pairs);
     }
 
     @Override

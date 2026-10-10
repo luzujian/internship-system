@@ -139,11 +139,10 @@ const passwordForm = ref({
 const passwordFormRef = ref(null)
 const passwordTabKey = ref(0)
 
-// ===== 智能填表：资料页签（页面级常驻；companyName/industry/scale 只读 disabled，不声明） =====
+// ===== 智能填表：资料页签仅声明可编辑的手机号和邮箱 =====
 const formContext = useFormContext()
 const profileFormRef = ref(null)
 const profileFillFields = [
-  { prop: 'username', label: '用户名', type: 'input' },
   { prop: 'phone', label: '手机号', type: 'input' },
   { prop: 'email', label: '邮箱', type: 'input' }
 ]
@@ -255,17 +254,12 @@ const handleSaveProfile = async () => {
   loading.value = true
   try {
     const response = await CompanyService.updateProfile({
-      username: profileForm.value.username,
       phone: profileForm.value.phone,
       email: profileForm.value.email
     })
     if (response.code === 200) {
       ElMessage.success('个人信息保存成功')
       formContext.reportFormOutcome('company:account', { status: 'saved', label: '企业账号资料已保存', url: '/company/settings' }, fillInstance, savedValues)
-      // 更新store中的用户信息
-      if (authStore.user) {
-        authStore.user.username = profileForm.value.username
-      }
     } else {
       ElMessage.error(response.message || '保存失败')
     }
@@ -339,35 +333,9 @@ const handleLogout = async () => {
     )
     // 如果是只读模式（管理员切换过来的），点击退出应该返回管理员端
     if (authStore.user?.isReadOnly && authStore.user?.originalAdminUsername) {
-      const originalAdminUsername = authStore.user.originalAdminUsername
-      const currentRole = authStore.role
-      if (currentRole) {
-        const rolePrefix = currentRole.startsWith('ROLE_') ? currentRole.toLowerCase() + '_' : ''
-        localStorage.removeItem(rolePrefix + 'accessToken_' + currentRole)
-        localStorage.removeItem(rolePrefix + 'refreshToken_' + currentRole)
-        localStorage.removeItem(rolePrefix + 'token_' + currentRole)
-        localStorage.removeItem(rolePrefix + 'role_' + currentRole)
-        localStorage.removeItem(rolePrefix + 'userId_' + currentRole)
-        localStorage.removeItem(rolePrefix + 'username_' + currentRole)
-        localStorage.removeItem(rolePrefix + 'isReadOnly_' + currentRole)
-        localStorage.removeItem(rolePrefix + 'originalAdminUsername_' + currentRole)
+      if (!authStore.restoreAdminSession()) {
+        throw new Error('管理员会话已失效，请重新登录')
       }
-
-      localStorage.setItem('current_role', 'ROLE_ADMIN')
-      localStorage.setItem('admin_accessToken_ROLE_ADMIN', localStorage.getItem('admin_accessToken_ROLE_ADMIN') || '')
-      localStorage.setItem('admin_refreshToken_ROLE_ADMIN', localStorage.getItem('admin_refreshToken_ROLE_ADMIN') || '')
-      localStorage.setItem('admin_role_ROLE_ADMIN', 'ROLE_ADMIN')
-      localStorage.setItem('admin_userId_ROLE_ADMIN', localStorage.getItem('admin_userId_ROLE_ADMIN') || '')
-      localStorage.setItem('admin_username_ROLE_ADMIN', originalAdminUsername)
-
-      authStore.role = 'ROLE_ADMIN'
-      authStore.user = {
-        id: localStorage.getItem('admin_userId_ROLE_ADMIN'),
-        username: originalAdminUsername,
-        name: originalAdminUsername
-      }
-      authStore.token = localStorage.getItem('admin_accessToken_ROLE_ADMIN')
-      authStore.isAuthenticated = true
 
       await router.push('/admin/dashboard')
     } else {
@@ -394,8 +362,11 @@ const handleLogout = async () => {
       <el-tab-pane label="个人信息" name="profile">
         <div class="form-card">
           <el-form ref="profileFormRef" :model="profileForm" label-width="120px" label-position="left">
-            <el-form-item label="用户名">
-              <el-input v-model="profileForm.username" placeholder="请输入用户名" />
+            <el-form-item label="登录账号">
+              <el-input :model-value="profileForm.username" readonly aria-describedby="company-login-account-hint" />
+              <div id="company-login-account-hint" class="login-account-hint">
+                修改企业名称不会改变登录账号。如需修改登录账号，请联系管理员。
+              </div>
             </el-form-item>
 
             <el-form-item label="手机号">
@@ -654,6 +625,14 @@ const handleLogout = async () => {
 
 :deep(.el-button--danger:hover) {
   background: #f78989;
+}
+
+.login-account-hint {
+  width: 100%;
+  font-size: 12px;
+  color: #606266;
+  margin-top: 4px;
+  line-height: 1.5;
 }
 
 .password-rules-hint {

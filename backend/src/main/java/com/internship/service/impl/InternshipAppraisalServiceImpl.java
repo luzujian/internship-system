@@ -116,8 +116,7 @@ public class InternshipAppraisalServiceImpl implements InternshipAppraisalServic
     public void validateFileUploadAllowed(Long studentId) {
         InternshipAppraisalSubmission submission = mapper.findSubmissionByStudentId(studentId);
         if (submission != null
-                && !"DRAFT".equals(submission.getStatus())
-                && !"RETURNED".equals(submission.getStatus())) {
+                && !EDITABLE_STATUSES.contains(submission.getStatus())) {
             throw new BusinessException("当前鉴定表已提交，不能继续添加文件");
         }
     }

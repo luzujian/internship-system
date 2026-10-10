@@ -11,6 +11,7 @@ import com.internship.entity.Result;
 import com.internship.entity.StudentInternshipStatus;
 import com.internship.entity.StudentJobApplication;
 import com.internship.entity.InternshipStageAssignment;
+import com.internship.entity.dto.StudentPositionKey;
 import com.internship.exception.BusinessException;
 import com.internship.service.AnnouncementService;
 import com.internship.service.CompanyUserService;
@@ -42,6 +43,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import com.internship.entity.InterviewInvitation;
 
@@ -105,6 +107,9 @@ public class CompanyController {
 
     @Autowired(required = false)
     private com.internship.service.UserCacheService userCacheService;
+
+    @Autowired
+    private com.internship.mapper.CompanyInternshipStudentMapper companyInternshipStudentMapper;
 
     @GetMapping("/info")
     public Result getCompanyInfo(@RequestParam Long companyId) {
@@ -401,6 +406,7 @@ public class CompanyController {
             stats.put("pendingConfirmations", pendingConfirmations);
             stats.put("totalConfirmations", totalConfirmations);
             stats.put("confirmedConfirmations", confirmedConfirmations);
+            stats.put("currentInternshipStudents", companyInternshipStudentMapper.countCurrentStudents(companyId, null));
 
             log.info("统计数据：发布职位={}, 待处理申请={}, 待确认实习表={}, 已确认实习表={}",
                     publishedPositions, pendingApplications, pendingConfirmations, confirmedConfirmations);
@@ -847,9 +853,11 @@ public class CompanyController {
             log.info("当前登录企业 ID: {}", companyId);
 
             List<com.internship.entity.StudentJobApplication> applications = studentJobApplicationService.findByCompanyId(companyId);
+            Set<StudentPositionKey> directHirePairs = directHireService.findDirectHirePairs(applications.stream()
+                    .map(application -> new StudentPositionKey(application.getStudentId(), application.getPositionId())).toList());
             for (com.internship.entity.StudentJobApplication application : applications) {
-                application.setDirectHire(directHireService.isDirectHire(
-                        application.getStudentId(), application.getPositionId()));
+                application.setDirectHire(directHirePairs.contains(
+                        new StudentPositionKey(application.getStudentId(), application.getPositionId())));
             }
             log.info("获取到 {} 条学生快速申请记录", applications.size());
             return Result.success(applications);
@@ -888,6 +896,8 @@ public class CompanyController {
                     .normalizeRejectReason(newStatus, statusData.get("rejectReason"));
 
             String currentStatus = application.getStatus();
+            com.internship.service.StudentJobApplicationStatuses
+                    .requireReviewTransition(currentStatus, newStatus);
             if (!com.internship.service.StudentJobApplicationStatuses.isActive(currentStatus)) {
                 return Result.error("该申请已处理，请勿重复操作");
             }
@@ -938,6 +948,8 @@ public class CompanyController {
 
                     // WebSocket推送面试状态更新给学生（handler内部会转换statusText）
                     webSocketHandler.sendInterviewStatusUpdateToUser(application.getStudentId(), invitation.getId(), newStatus);
+
+                    pushTodoUpdate(companyId);
 
                     return Result.success("更新成功");
                 } else {
@@ -1127,6 +1139,8 @@ public class CompanyController {
                     .normalizeRejectReason(newStatus, statusData.get("rejectReason"));
 
             String curStatus2 = application.getStatus();
+            com.internship.service.StudentJobApplicationStatuses
+                    .requireReviewTransition(curStatus2, newStatus);
             if (!com.internship.service.StudentJobApplicationStatuses.isActive(curStatus2)) {
                 return Result.error("该申请已处理，请勿重复操作");
             }
@@ -1221,6 +1235,18 @@ public class CompanyController {
      * 推送企业待办数据更新
      */
     private void pushTodoUpdate(Long companyId) {
+        if (org.springframework.transaction.support.TransactionSynchronizationManager.isActualTransactionActive()
+                && org.springframework.transaction.support.TransactionSynchronizationManager.isSynchronizationActive()) {
+            org.springframework.transaction.support.TransactionSynchronizationManager.registerSynchronization(
+                    new org.springframework.transaction.support.TransactionSynchronization() {
+                        @Override public void afterCommit() { sendCommittedTodoUpdate(companyId); }
+                    });
+        } else {
+            sendCommittedTodoUpdate(companyId);
+        }
+    }
+
+    private void sendCommittedTodoUpdate(Long companyId) {
         try {
             // 待处理申请数
             List<com.internship.entity.StudentJobApplication> applications = studentJobApplicationService.findByCompanyId(companyId);
@@ -1293,6 +1319,9 @@ public class CompanyController {
             invitation.setCompanyId(application.getCompanyId());
             invitation.setPositionName(position.getPositionName());
             invitation.setCompanyName(companyName);
+            invitation.setContactPerson(position.getContactPerson());
+            invitation.setContactPhone(position.getContactPhone());
+            invitation.setContactEmail(position.getContactEmail());
             if (position.getInterviewTime() != null) {
                 invitation.setInterviewTime(position.getInterviewTime().toInstant()
                     .atZone(java.time.ZoneId.systemDefault()).toLocalDateTime());
@@ -1323,6 +1352,9 @@ public class CompanyController {
             data.put("interviewLocation", position.getInterviewLocation());
             data.put("interviewMethod", position.getInterviewMethod());
             data.put("status", "pending_interview");
+            data.put("contactPerson", position.getContactPerson());
+            data.put("contactPhone", position.getContactPhone());
+            data.put("contactEmail", position.getContactEmail());
 
             // 获取学生的 userId 用于 WebSocket 通知
             Long studentUserId = null;
@@ -1364,14 +1396,10 @@ public class CompanyController {
 
             // 获取企业信息
             String companyName = application.getCompanyName() != null ? application.getCompanyName() : "";
-            String contactPerson = "";
-            String contactPhone = "";
             String website = "";
             if (application.getCompanyId() != null) {
                 CompanyUser company = companyUserService.findById(application.getCompanyId());
                 if (company != null) {
-                    contactPerson = company.getContactPerson() != null ? company.getContactPerson() : "";
-                    contactPhone = company.getContactPhone() != null ? company.getContactPhone() : "";
                     website = company.getWebsite() != null ? company.getWebsite() : "";
                 }
             }
@@ -1383,6 +1411,9 @@ public class CompanyController {
             invitation.setCompanyId(application.getCompanyId());
             invitation.setPositionName(position.getPositionName());
             invitation.setCompanyName(companyName);
+            invitation.setContactPerson(position.getContactPerson());
+            invitation.setContactPhone(position.getContactPhone());
+            invitation.setContactEmail(position.getContactEmail());
             if (position.getInterviewTime() != null) {
                 invitation.setInterviewTime(position.getInterviewTime().toInstant()
                     .atZone(java.time.ZoneId.systemDefault()).toLocalDateTime());
@@ -1391,8 +1422,6 @@ public class CompanyController {
             invitation.setInterviewMethod(position.getInterviewMethod());
             invitation.setRemark(position.getInterviewRemark());
             invitation.setStatus("pending_interview");
-            invitation.setContactPerson(contactPerson);
-            invitation.setContactPhone(contactPhone);
             interviewInvitationService.create(invitation);
 
             append(progressRecordService,
@@ -1415,8 +1444,9 @@ public class CompanyController {
             data.put("interviewLocation", position.getInterviewLocation());
             data.put("interviewMethod", position.getInterviewMethod());
             data.put("status", "pending_interview");
-            data.put("contactPerson", contactPerson);
-            data.put("contactPhone", contactPhone);
+            data.put("contactPerson", position.getContactPerson());
+            data.put("contactPhone", position.getContactPhone());
+            data.put("contactEmail", position.getContactEmail());
             data.put("website", website);
 
             // studentId 就是学生的 userId

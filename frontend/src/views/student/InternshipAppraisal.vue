@@ -176,12 +176,12 @@ const fetchInternshipRecords = async () => {
     if (response.code === 200) {
       // 自主实习学生无岗位分配（placementId 为空），仍需保留记录以便上传鉴定表
       internshipRecords.value = (response.data || []).filter((record: any) => (
-        record.recallStatus !== 2
+        Number(record.status) === 1 && Number(record.recallStatus) !== 2
       ))
-      if (!selectedPlacementId.value && internshipRecords.value.length) {
+      if (!internshipRecords.value.some(record => placementKey(record) === selectedPlacementId.value)) {
         const preferred = internshipRecords.value.find((record: any) => record.isCurrent)
           || internshipRecords.value[0]
-        selectedPlacementId.value = placementKey(preferred)
+        selectedPlacementId.value = preferred ? placementKey(preferred) : null
       }
     }
   } catch (error) {

@@ -54,7 +54,7 @@ const teacherRoutes: RouteRecordRaw[] = [
     name: 'teacherInternshipAppraisals',
     component: agentPage('views/teacher/InternshipAppraisalCollection.vue', () => import('../views/teacher/InternshipAppraisalCollection.vue')),
     meta: {
-      title: '鉴定表收集',
+      title: '实习材料收集',
       requiresAuth: true,
       roles: ['ROLE_TEACHER_COLLEGE', 'ROLE_TEACHER_DEPARTMENT', 'ROLE_TEACHER_COUNSELOR']
     }

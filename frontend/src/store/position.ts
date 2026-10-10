@@ -8,6 +8,10 @@ import { normalizeSalaryUnit } from '@/utils/salaryRange.js'
 
 export interface Position {
   id: number
+  contactId?: number | null
+  contactPerson?: string
+  contactPhone?: string
+  contactEmail?: string
   positionName: string
   categoryId: number
   department: string
@@ -124,6 +128,10 @@ export const usePositionStore = defineStore('position', () => {
       if (response.code === 200) {
         positions.value = response.data.map((item: any) => ({
           id: item.id,
+          contactId: item.contactId ?? null,
+          contactPerson: item.contactPerson || '',
+          contactPhone: item.contactPhone || '',
+          contactEmail: item.contactEmail || '',
           positionName: item.positionName,
           categoryId: item.categoryId || 0,
           department: item.department || '',
@@ -146,7 +154,7 @@ export const usePositionStore = defineStore('position', () => {
           positionType: item.positionType || '',
           interviewTime: item.interviewTime || '',
           interviewLocation: item.interviewLocation || '',
-          interviewMethod: item.interviewMethod || '线下',
+          interviewMethod: item.interviewMethod ?? '',
           interviewRemark: item.interviewRemark || '',
           requiredMajors: item.requiredMajors || '',
           internshipEnvironment: item.internshipEnvironment || '',
@@ -225,6 +233,7 @@ export const usePositionStore = defineStore('position', () => {
       const data = {
         companyId: companyId,
         positionName: positionData.positionName.trim(),
+        contactId: positionData.contactId ?? null,
         department: positionData.department || '',
         positionType: positionData.positionType || '',
         province: positionData.province || '',
@@ -243,7 +252,7 @@ export const usePositionStore = defineStore('position', () => {
         publishDate: formatDateToISO(new Date()),
         interviewTime: positionData.interviewTime || null,
         interviewLocation: positionData.interviewLocation || null,
-        interviewMethod: positionData.interviewMethod || null,
+        interviewMethod: positionData.interviewMethod ?? null,
         interviewRemark: positionData.interviewRemark || null,
         requiredMajors: positionData.requiredMajors || null,
         internshipEnvironment: positionData.internshipEnvironment || null,
@@ -268,6 +277,7 @@ export const usePositionStore = defineStore('position', () => {
     try {
       const data = {
         positionName: positionData.positionName,
+        ...(Object.prototype.hasOwnProperty.call(positionData, 'contactId') ? { contactId: positionData.contactId } : {}),
         department: positionData.department,
         positionType: positionData.positionType,
         province: positionData.province,
@@ -282,7 +292,7 @@ export const usePositionStore = defineStore('position', () => {
         plannedRecruit: positionData.plannedRecruit,
         interviewTime: positionData.interviewTime || null,
         interviewLocation: positionData.interviewLocation || null,
-        interviewMethod: positionData.interviewMethod || null,
+        interviewMethod: positionData.interviewMethod ?? null,
         interviewRemark: positionData.interviewRemark || null,
         requiredMajors: positionData.requiredMajors || null,
         internshipEnvironment: positionData.internshipEnvironment || null,

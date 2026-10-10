@@ -13,6 +13,8 @@ import java.util.Map;
  */
 @Data
 public class StudentApplication {
+    @com.fasterxml.jackson.annotation.JsonProperty(access = com.fasterxml.jackson.annotation.JsonProperty.Access.WRITE_ONLY)
+    private java.util.List<Long> agreementFileIds;
     private Long id;
     
     @NotNull(message = "学生ID不能为空")

@@ -11,6 +11,7 @@ import { Star, Plus, Upload, View, Delete, Picture, VideoCamera, Document } from
 import { EluiChinaAreaDht } from 'elui-china-area-dht'
 import CompanyService from '@/api/CompanyService'
 import UploadService from '@/api/UploadService'
+import CompanyContacts from '@/components/company/CompanyContacts.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -40,7 +41,7 @@ const companyId = computed(() => {
   return null
 })
 
-const activeTab = ref('basic')
+const activeTab = ref(route.query.tab === 'contacts' ? 'contacts' : 'basic')
 const loading = ref(false)
 const schoolLiaisons = ref([])
 const schoolLiaisonsLoading = ref(false)
@@ -93,14 +94,12 @@ const validateAlumniMembers = () => {
   return !invalid
 }
 
-// 标签显示与 AI 解释共用字段定义；未知历史编码如实显示，不猜测含义。
+// 系统内企业统一属于校企合作，标签显示与 AI 解释共用字段定义。
 const companyTags = computed(() => {
   const modes = String(basicForm.value.cooperationMode || '').split(',').map(value => value.trim()).filter(Boolean)
-  const tags = companyInfoSchema.tags.filter(tag => !tag.requiresApproval || basicForm.value.auditStatus === 1).filter(tag => tag.prop === 'cooperationMode'
-    ? tag.values.some(value => modes.includes(String(value)))
+  return companyInfoSchema.tags.filter(tag => !tag.requiresApproval || basicForm.value.auditStatus === 1).filter(tag => tag.prop === 'cooperationMode'
+    ? tag.requiresApproval || tag.values.some(value => modes.includes(String(value)))
     : tag.values.includes(basicForm.value[tag.prop]))
-  const unknown = modes.filter(value => !companyInfoSchema.tags.some(tag => tag.prop === 'cooperationMode' && tag.values.includes(value)))
-  return [...tags, ...unknown.map(label => ({ prop: 'cooperationMode', label, type: 'info', description: '历史标签，暂无含义说明' }))]
 })
 
 const promotionForm = ref({
@@ -974,6 +973,10 @@ watch(companyId, (newVal) => {
             </el-form-item>
           </el-form>
         </div>
+      </el-tab-pane>
+
+      <el-tab-pane label="联系人管理" name="contacts" :lazy="true">
+        <CompanyContacts v-if="activeTab === 'contacts'" />
       </el-tab-pane>
 
       <el-tab-pane label="宣传资料" name="promotion" :lazy="true">

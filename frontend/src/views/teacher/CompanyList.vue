@@ -174,24 +174,11 @@ const formatScale = (scale: string): string => {
   return scaleMap[scale] || scale || '-'
 }
 
-// 企业标签合并区：合作模式拆解 + 实习基地/已签协议/校友单位（接受兜底综合 cooperationMode 与 acceptBackup，不重复）
+// 教师查看的系统内企业统一属于校企合作，其他标签按对应字段显示。
 
 const getCompanyTagList = (company: any): Array<{ text: string; type: string }> => {
-  const tags: Array<{ text: string; type: string }> = []
-  const modeMap: Record<string, { text: string; type: string }> = {
-    '双向': { text: '校企双向选择', type: 'success' },
-    '自主': { text: '学生自主联系', type: 'warning' },
-    '兜底': { text: '接受兜底', type: 'danger' },
-    mutual_choice: { text: '校企双向选择', type: 'success' },
-    student_contact: { text: '学生自主联系', type: 'warning' }
-  }
-  const hasBackup = company.acceptBackup === 1
-  if (company.cooperationMode) {
-    company.cooperationMode.split(',').forEach((m: string) => {
-      const t = modeMap[m.trim()]
-      if (t) tags.push(t)
-    })
-  }
+  const tags: Array<{ text: string; type: string }> = [{ text: '校企双向选择', type: 'success' }]
+  const hasBackup = company.acceptBackup === 1 || String(company.cooperationMode || '').split(',').some(mode => mode.trim() === '兜底')
   if (company.isInternshipBase === 1) tags.push({ text: '实习基地', type: 'success' })
   if (hasBackup && !tags.some(t => t.text === '接受兜底')) tags.push({ text: '接受兜底', type: 'danger' })
   if (company.hasTrainingBaseAgreement === 1) tags.push({ text: '已签协议', type: 'info' })
@@ -219,7 +206,6 @@ const isSafeUrl = (url: string): boolean => /^https?:\/\//i.test(url)
 const getTagType = (tag: string): string => {
   const tagMap = {
     '校企双向选择': 'primary',
-    '学生自主联系': 'success',
     '接受兜底': 'warning',
     '国家级': 'danger',
     '省级': 'warning'

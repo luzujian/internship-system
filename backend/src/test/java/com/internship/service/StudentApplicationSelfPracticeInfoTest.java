@@ -42,6 +42,7 @@ class StudentApplicationSelfPracticeInfoTest {
     @Mock private com.internship.service.InternshipLifecycleService lifecycleService;
     @Mock private StudentUserService studentUserService;
     @Mock private EmailService emailService;
+    @Mock private InternshipAgreementService agreementService;
 
     private StudentApplicationServiceImpl service;
 
@@ -51,6 +52,7 @@ class StudentApplicationSelfPracticeInfoTest {
                 applicationMapper, companyUserMapper, timeSettingsService, statusMapper,
                 progressRecordService, confirmationRecordService, stageAssignmentService, statusCache,
                 internshipCalendarService, lifecycleService, studentUserService, emailService);
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "agreementService", agreementService);
     }
 
     @Test
@@ -219,6 +221,7 @@ class StudentApplicationSelfPracticeInfoTest {
 
     private StudentApplication completeApplication() {
         StudentApplication application = new StudentApplication();
+        application.setAgreementFileIds(java.util.List.of(501L));
         application.setStudentId(1L);
         application.setStudentName("测试学生");
         application.setStudentUserId("20260001");

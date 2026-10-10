@@ -99,6 +99,9 @@ public class FileUploadServiceImpl implements FileUploadService {
         if (fileUpload == null) {
             throw new BusinessException("记录不存在");
         }
+        if ("internship_agreement".equals(fileUpload.getBusinessType())) {
+            throw new BusinessException("实习协议须通过协议入口管理，已提交文件须保留历史");
+        }
         
         int result = fileUploadMapper.deleteById(id);
         log.info("文件上传记录删除成功，文件名: {}", fileUpload.getFileName());

@@ -78,13 +78,13 @@ public class PositionVO {
     // 职位描述 -> description (从position.description获取)
     private String description;
 
-    // 联系人 -> contactPerson (从company.contactPerson获取)
+    // 联系人：岗位所选联系人；旧岗位使用企业原联系人
     private String contactPerson;
 
-    // 联系电话 -> contactPhone (从company.contactPhone获取)
+    // 联系电话：与岗位联系人一致
     private String contactPhone;
 
-    // 联系邮箱 -> contactEmail (从company.contactEmail获取)
+    // 联系邮箱：与岗位联系人一致
     private String contactEmail;
 
     // 发布时间 -> publishTime

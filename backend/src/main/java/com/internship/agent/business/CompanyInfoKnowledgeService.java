@@ -44,6 +44,7 @@ public class CompanyInfoKnowledgeService {
             Set<String> modes=new HashSet<>(Arrays.asList(displayValues.get("cooperationMode").asText("").split("\\s*,\\s*")));
             for(JsonNode tag:schema.path("tags")) {
                 String prop=tag.path("prop").asText();boolean active=false;
+                if("cooperationMode".equals(prop) && tag.path("requiresApproval").asBoolean(false)) active=true;
                 for(JsonNode value:tag.path("values")) active|="cooperationMode".equals(prop)?modes.contains(value.asText()):value.equals(displayValues.get(prop));
                 if(tag.path("requiresApproval").asBoolean(false) && !Integer.valueOf(1).equals(company.getAuditStatus())) active=false;
                 Map<String,Object> row=json.convertValue(tag,Map.class);row.put("active",active);tags.add(row);

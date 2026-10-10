@@ -300,6 +300,7 @@ export const useAuthStore = defineStore('auth', {
 
       // 更新状态
       this.updateAuthState(accessToken, userInfo, role, refreshToken)
+      if (this.user) this.user.permissions = permissions || []
 
       // 供学生端 AI 初始化消费：只对真实登录生效，角色切换和页面刷新不会重复触发。
       if (role === CONFIG.ROLES.ROLE_STUDENT) {
@@ -397,15 +398,17 @@ export const useAuthStore = defineStore('auth', {
       localStorage.setItem(STORAGE_KEYS.CURRENT_ROLE, role)
 
       // 更新状态
+      this.role = role
       this.setToken(accessToken)
       this.user = {
         id: String(userInfo.id),
         username: username,
         name: userInfo.name || '',
+        teacherType: userInfo.teacherType,
+        permissions: permissions || [],
         isReadOnly: result.isReadOnly || false,
         originalAdminUsername: result.originalAdminUsername || null
       }
-      this.role = role
       this.isAuthenticated = true
 
       this.allUsers[role] = {
@@ -423,6 +426,33 @@ export const useAuthStore = defineStore('auth', {
     },
 
     // ==================== 登出 ====================
+
+    restoreAdminSession(): boolean {
+      const originalUsername = this.user?.originalAdminUsername
+      if (!originalUsername) return false
+
+      const cached = this.allUsers[CONFIG.ROLES.ROLE_ADMIN]
+      const admin: AllUsers[string] = cached?.username === originalUsername ? cached :
+        this.buildUserFromStorage(CONFIG.ROLES.ROLE_ADMIN, getRoleStoragePrefix(CONFIG.ROLES.ROLE_ADMIN))
+      if (!admin.accessToken || admin.username !== originalUsername) return false
+
+      const previewRole = this.role
+      if (previewRole && localStorage.getItem(getRoleStoragePrefix(previewRole) + 'accessToken_' + previewRole) === this.token) {
+        clearRoleStorage(previewRole)
+      }
+      if (previewRole) delete this.allUsers[previewRole]
+      this.role = CONFIG.ROLES.ROLE_ADMIN
+      this.allUsers[this.role] = admin
+      this.setToken(admin.accessToken)
+      this.user = { id: admin.userId || '', username: originalUsername,
+        name: admin.name || originalUsername, isReadOnly: false, originalAdminUsername: null }
+      this.isAuthenticated = true
+      this.saveRoleInfoToLocalStorage(this.role, admin.accessToken, this.user.id, originalUsername, admin.refreshToken)
+      localStorage.setItem(STORAGE_KEYS.CURRENT_ROLE, this.role)
+      setRoleId(this.role, this.user.id)
+      writeTabSession(this)
+      return true
+    },
 
     async logout(skipBackendLogout = false): Promise<void> {
       try {
@@ -543,6 +573,9 @@ export const useAuthStore = defineStore('auth', {
         this.role = tab.role; this.token = tab.token; this.user = tab.user
         this.allUsers[tab.role] = { accessToken: tab.token, refreshToken: tab.refreshToken,
           role: tab.role, userId: tab.user.id, username: tab.user.username }
+        if (tab.adminUser?.role === CONFIG.ROLES.ROLE_ADMIN && tab.adminUser.username === tab.user.originalAdminUsername) {
+          this.allUsers[CONFIG.ROLES.ROLE_ADMIN] = tab.adminUser
+        }
         if (isTokenExpired(tab.token) && !(await this.refreshAccessToken())) {
           clearTabSession(); this.token = null; this.user = null; this.role = null
           this.isAuthenticated = false
@@ -895,8 +928,8 @@ export const useAuthStore = defineStore('auth', {
     switchToRole(newRole: string): boolean {
       if (this.allUsers && this.allUsers[newRole]) {
         const userInfo = this.allUsers[newRole]
-        this.setToken(userInfo.accessToken || '')
         this.role = userInfo.role
+        this.setToken(userInfo.accessToken || '')
         this.user = {
           id: userInfo.userId || '',
           username: userInfo.username || '',

@@ -174,25 +174,7 @@ function handleLogout(): void {
   if (authStore.user?.isReadOnly) {
     ElMessage.warning('您当前处于只读模式，正在返回管理员端...')
     const originalAdminUsername = authStore.user?.originalAdminUsername
-    if (originalAdminUsername) {
-      localStorage.setItem('current_role', 'ROLE_ADMIN')
-      localStorage.setItem('admin_accessToken_ROLE_ADMIN', localStorage.getItem('admin_accessToken_ROLE_ADMIN') || '')
-      localStorage.setItem('admin_refreshToken_ROLE_ADMIN', localStorage.getItem('admin_refreshToken_ROLE_ADMIN') || '')
-      localStorage.setItem('admin_role_ROLE_ADMIN', 'ROLE_ADMIN')
-      localStorage.setItem('admin_userId_ROLE_ADMIN', localStorage.getItem('admin_userId_ROLE_ADMIN') || '')
-      localStorage.setItem('admin_username_ROLE_ADMIN', originalAdminUsername)
-
-      authStore.role = 'ROLE_ADMIN'
-      authStore.user = {
-        id: localStorage.getItem('admin_userId_ROLE_ADMIN') || '',
-        username: originalAdminUsername,
-        name: originalAdminUsername
-      }
-      authStore.token = localStorage.getItem('admin_accessToken_ROLE_ADMIN') || ''
-      authStore.isAuthenticated = true
-      authStore.user.isReadOnly = false
-      authStore.user.originalAdminUsername = null
-
+    if (originalAdminUsername && authStore.restoreAdminSession()) {
       router.push('/admin/dashboard')
       return
     }

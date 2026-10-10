@@ -29,9 +29,10 @@ public class HealthController {
         Map<String, Object> healthInfo = new HashMap<>();
         
         try {
-            Connection connection = dataSource.getConnection();
-            boolean isValid = connection.isValid(5);
-            connection.close();
+            boolean isValid;
+            try (Connection connection = dataSource.getConnection()) {
+                isValid = connection.isValid(5);
+            }
             
             healthInfo.put("database", "connected");
             healthInfo.put("status", isValid ? "healthy" : "unhealthy");

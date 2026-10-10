@@ -48,11 +48,12 @@
 
     <select id="findByStudentId" resultMap="BaseResultMap">
         SELECT sja.*, p.position_type, p.description, p.requirements, p.view_count, p.publish_date,
-               cu.contact_person, cu.contact_phone, cu.contact_email, COALESCE(pc.name, cu.industry) as industry,
+               <include refid="com.internship.mapper.PositionMapper.ContactColumns"/>, COALESCE(pc.name, cu.industry) as industry,
                (SELECT COUNT(*) FROM student_job_application WHERE position_id = sja.position_id) as apply_count
         FROM student_job_application sja
         LEFT JOIN position p ON sja.position_id = p.id
         LEFT JOIN company_users cu ON sja.company_id = cu.id
+        LEFT JOIN company_contact cc ON p.contact_id = cc.id AND cc.company_id = p.company_id
         LEFT JOIN position_category pc ON p.category_id = pc.id
         WHERE sja.student_id = #{studentId}
         ORDER BY COALESCE(sja.apply_date, sja.create_time) DESC, sja.id DESC
@@ -70,11 +71,12 @@
 
     <select id="findById" resultMap="BaseResultMap">
         SELECT sja.*, p.position_type, p.description, p.requirements, p.view_count, p.publish_date,
-               cu.contact_person, cu.contact_phone, cu.contact_email, COALESCE(pc.name, cu.industry) as industry,
+               <include refid="com.internship.mapper.PositionMapper.ContactColumns"/>, COALESCE(pc.name, cu.industry) as industry,
                (SELECT COUNT(*) FROM student_job_application WHERE position_id = sja.position_id) as apply_count
         FROM student_job_application sja
         LEFT JOIN position p ON sja.position_id = p.id
         LEFT JOIN company_users cu ON sja.company_id = cu.id
+        LEFT JOIN company_contact cc ON p.contact_id = cc.id AND cc.company_id = p.company_id
         LEFT JOIN position_category pc ON p.category_id = pc.id
         WHERE sja.id = #{id}
     </select>
@@ -89,7 +91,7 @@
         (#{studentId}, #{positionId}, #{companyId}, #{positionName}, #{companyName}, #{location}, #{salary}, #{duration},
          #{coverLetter}, #{resumeUrl}, #{studentName}, #{studentNo}, #{phone}, #{email}, #{major}, #{grade},
          #{selfIntroduction}, #{stageNo}, #{stageAssignmentId}, #{sourceType},
-         #{status}, #{applyDate}, NOW(), NOW())
+         #{status}, #{applyDate}, COALESCE(#{createTime}, NOW()), COALESCE(#{updateTime}, NOW()))
     </insert>
 
     <update id="update">
@@ -106,7 +108,11 @@
             reject_reason = #{rejectReason},
             update_time = NOW()
         WHERE id = #{id}
-          AND status IN ('pending', 'approved', 'interview', 'pending_interview', 'interview_passed')
+          AND (
+              (#{status} IN ('approved', 'rejected') AND status = 'pending')
+              OR (#{status} IN ('interview_passed', 'interview_failed')
+                  AND status IN ('approved', 'interview', 'pending_interview'))
+          )
     </update>
 
     <update id="updateLatestStatusIfActive">
@@ -129,7 +135,7 @@
     </update>
 
     <delete id="deleteById">
-        DELETE FROM student_job_application WHERE id = #{id}
+        DELETE FROM student_job_application WHERE id = #{id} AND status = 'pending'
     </delete>
 
     <update id="claimPendingForDirectHire">
@@ -140,11 +146,12 @@
 
     <select id="findByCompanyId" resultMap="BaseResultMap">
         SELECT sja.*, p.position_type, p.description, p.requirements, p.view_count, p.publish_date,
-               cu.contact_person, cu.contact_phone, cu.contact_email, COALESCE(pc.name, cu.industry) as industry,
+               <include refid="com.internship.mapper.PositionMapper.ContactColumns"/>, COALESCE(pc.name, cu.industry) as industry,
                (SELECT COUNT(*) FROM student_job_application WHERE position_id = sja.position_id) as apply_count
         FROM student_job_application sja
         LEFT JOIN position p ON sja.position_id = p.id
         LEFT JOIN company_users cu ON sja.company_id = cu.id
+        LEFT JOIN company_contact cc ON p.contact_id = cc.id AND cc.company_id = p.company_id
         LEFT JOIN position_category pc ON p.category_id = pc.id
         WHERE sja.company_id = #{companyId}
         ORDER BY sja.create_time DESC

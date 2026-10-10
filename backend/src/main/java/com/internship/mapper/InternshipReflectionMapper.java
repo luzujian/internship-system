@@ -21,6 +21,26 @@ public interface InternshipReflectionMapper {
 
     InternshipReflection findById(Long id);
 
+    List<InternshipReflection> findByIds(@Param("ids") List<Long> ids);
+
+    InternshipReflection lockById(@Param("id") Long id);
+
+    boolean hasManualEvaluation(@Param("reflectionId") Long reflectionId);
+
+    Long latestSubmissionEventId(@Param("reflectionId") Long reflectionId, @Param("studentId") Long studentId);
+
+    int completeAiAnalysis(@Param("id") Long id, @Param("accepted") boolean accepted,
+                           @Param("updateTime") java.util.Date updateTime);
+
+    List<Long> findPendingAiAnalysis(@Param("limit") int limit, @Param("maxAttempts") int maxAttempts,
+                                    @Param("retryDelaySeconds") int retryDelaySeconds);
+
+    int countAiFailures(@Param("reflectionId") Long reflectionId, @Param("studentId") Long studentId,
+                        @Param("version") Long version);
+
+    int recordAiFailure(@Param("snapshot") InternshipReflection snapshot, @Param("version") Long version,
+                        @Param("failedAt") java.util.Date failedAt);
+
     InternshipReflection findByStudentId(Long studentId);
 
     List<InternshipReflection> findAll();

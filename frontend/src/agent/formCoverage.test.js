@@ -102,5 +102,5 @@ test('豁免文件存在、无 formId 注册、原因非空', () => {
 })
 
 test('已接表单总数与预期一致（增删需同步改本断言）', () => {
-  assert.equal(new Set(submitIds).size, 57, '已接 formId 数量变化：请同步更新清单与本断言')
+  assert.equal(new Set(submitIds).size, 58, '已接 formId 数量变化：请同步更新清单与本断言')
 })

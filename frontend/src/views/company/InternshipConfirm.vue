@@ -169,8 +169,8 @@ const filteredTableData = computed(() => {
   if (searchForm.value.keyword) {
     const keyword = searchForm.value.keyword.toLowerCase()
     result = result.filter(item => 
-      item.studentName.toLowerCase().includes(keyword) ||
-      item.studentUserId.toLowerCase().includes(keyword)
+      String(item.studentName ?? '').toLowerCase().includes(keyword) ||
+      String(item.studentUserId ?? '').toLowerCase().includes(keyword)
     )
   }
   
@@ -202,6 +202,7 @@ const paginatedTableData = computed(() => {
 })
 
 const handleSearch = () => {
+  currentPage.value = 1
   ElMessage.success('筛选已应用')
 }
 

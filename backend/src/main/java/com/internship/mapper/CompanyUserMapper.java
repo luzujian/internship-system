@@ -22,6 +22,8 @@ public interface CompanyUserMapper {
     
     int update(CompanyUser companyUser);
 
+    int updateImportedProfile(CompanyUser companyUser);
+
     @Update("update company_users set password = #{passwordHash}, update_time = CURRENT_TIMESTAMP")
     int resetAllPasswords(@Param("passwordHash") String passwordHash);
     
@@ -129,6 +131,9 @@ public interface CompanyUserMapper {
      */
     CompanyUser findByCompanyName(@Param("companyName") String companyName);
 
+    @org.apache.ibatis.annotations.Select("SELECT * FROM company_users WHERE LOWER(TRIM(company_name)) = LOWER(TRIM(#{companyName}))")
+    List<CompanyUser> findImportMatches(@Param("companyName") String companyName);
+
     CompanyUser findApprovedByCompanyName(@Param("companyName") String companyName);
 
     List<CompanyUser> findApprovedCompanyMatches(@Param("keyword") String keyword);
@@ -144,7 +149,7 @@ public interface CompanyUserMapper {
     List<String> getDistinctTags();
 
     /**
-     * 合作模式映射的标签（校企双向选择/学生自主联系/接受兜底）
+     * 校企合作标签及兼容旧记录的兜底标签
      */
     List<String> getDistinctCooperationModeTags();
 

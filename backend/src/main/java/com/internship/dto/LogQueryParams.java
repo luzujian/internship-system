@@ -37,4 +37,6 @@ public class LogQueryParams {
     private String sortField;
     /** 排序方向（asc/desc，Controller 校验） */
     private String sortOrder;
+    /** 服务端导出读取上限，普通分页查询不设置 */
+    private Integer limit;
 }

@@ -16,6 +16,10 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class PositionCompanyAuthorizationTest {
+    @org.junit.jupiter.api.BeforeEach
+    void contactDependency() {
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "companyContactService", mock(com.internship.service.CompanyContactService.class));
+    }
     private final PositionMapper mapper = mock(PositionMapper.class);
     private final PositionServiceImpl service = new PositionServiceImpl(mapper, mock(StudentInternshipStatusService.class));
 

@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.internship.mapper.AgentKnowledgeMapper;
 import com.internship.service.SysDictService;
+import com.internship.service.SystemConfigService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.ClassPathResource;
@@ -18,6 +19,9 @@ import static com.internship.agent.business.AgentTypes.*;
 @Slf4j
 public class AgentKnowledge {
     private final ObjectMapper json;
+    private final List<Map<String,Object>> coreCards;
+    private final List<Map<String,Object>> systemCards;
+    private final Map<String,Map<String,Object>> accessRules = new HashMap<>();
     private volatile String version;
     private volatile List<Map<String,Object>> cards;
 
@@ -25,11 +29,19 @@ public class AgentKnowledge {
     private AgentKnowledgeMapper dbMapper;
     @Autowired(required = false)
     private SysDictService dictService;
+    @Autowired(required = false)
+    private SystemConfigService configService;
     private static volatile String statusPattern;
 
     public AgentKnowledge(ObjectMapper json) throws IOException {
         this.json = json;
-        loadFromClasspath();
+        this.coreCards = readCards("agent/knowledge.json");
+        this.systemCards = readCards("agent/system-knowledge.json");
+        coreCards.forEach(card -> accessRules.put(String.valueOf(card.get("id")), card));
+        systemCards.forEach(card -> accessRules.put(String.valueOf(card.get("id")), card));
+        this.cards = coreCards;
+        refreshVersion();
+        log.info("AgentKnowledge 从 classpath 加载：{} 张核心卡片，{} 张系统卡片，版本 {}", coreCards.size(), systemCards.size(), version);
     }
 
     @PostConstruct
@@ -58,17 +70,21 @@ public class AgentKnowledge {
         try {
             List<Map<String, Object>> rows = dbMapper.findAllCards();
             if (rows == null || rows.isEmpty()) { log.info("AgentKnowledge DB 返回空，回退 classpath"); return false; }
-            List<Map<String, Object>> parsed = new ArrayList<>();
+            Map<String,Map<String,Object>> merged = new LinkedHashMap<>();
+            coreCards.forEach(card -> merged.put(String.valueOf(card.get("id")), card));
             for (Map<String, Object> row : rows) {
                 Map<String, Object> card = new LinkedHashMap<>(row);
                 card.put("roles", parseJsonList(card.get("roles")));
                 card.put("keywords", parseJsonList(card.get("keywords")));
                 card.put("states", parseJsonList(card.get("states")));
-                parsed.add(card);
+                String id = String.valueOf(card.get("id"));
+                Map<String,Object> bundled = merged.get(id);
+                // Keep packaged corrections when the database still contains an older guide.
+                if (bundled == null || verifiedDate(card).isAfter(verifiedDate(bundled))) merged.put(id, card);
             }
-            this.cards = List.copyOf(parsed);
-            this.version = computeVersion(json.writeValueAsBytes(parsed));
-            log.info("AgentKnowledge 从 DB 加载：{} 张卡片，版本 {}", parsed.size(), version);
+            this.cards = List.copyOf(merged.values());
+            refreshVersion();
+            log.info("AgentKnowledge 合并 DB 知识：{} 张核心卡片，版本 {}", cards.size(), version);
             return true;
         } catch (Exception e) {
             log.warn("AgentKnowledge DB 加载失败，回退 classpath：{}", e.getMessage());
@@ -76,18 +92,16 @@ public class AgentKnowledge {
         }
     }
 
-    private void loadFromClasspath() {
-        try {
-            byte[] raw;
-            try (var stream = new ClassPathResource("agent/knowledge.json").getInputStream()) {
-                raw = stream.readAllBytes();
-                this.cards = json.readValue(raw, new TypeReference<>() {});
-            }
-            this.version = computeVersion(raw);
-            log.info("AgentKnowledge 从 classpath 加载：{} 张卡片，版本 {}", cards.size(), version);
-        } catch (IOException e) {
-            throw new RuntimeException("AgentKnowledge 加载失败", e);
+    private List<Map<String,Object>> readCards(String path) throws IOException {
+        try (var stream = new ClassPathResource(path).getInputStream()) {
+            return List.copyOf(json.readValue(stream, new TypeReference<List<Map<String,Object>>>() {}));
         }
+    }
+
+    private java.time.LocalDate verifiedDate(Map<String,Object> card) {
+        String date = Objects.toString(card.get("verifiedAt"), "");
+        try { return java.time.LocalDate.parse(date.substring(0, Math.min(10, date.length()))); }
+        catch (java.time.format.DateTimeParseException e) { return java.time.LocalDate.MIN; }
     }
 
     private List<Object> parseJsonList(Object value) {
@@ -104,19 +118,104 @@ public class AgentKnowledge {
             return "kn-" + java.util.HexFormat.of().formatHex(hash).substring(0, 12);
         } catch (Exception e) { return "kn-unknown"; }
     }
+    private void refreshVersion() throws IOException {
+        List<Map<String,Object>> effective = new ArrayList<>(cards);
+        effective.addAll(systemCards);
+        this.version = computeVersion(json.writeValueAsBytes(effective));
+    }
     public String getVersion() { return version; }
     public ToolResult lookup(Actor actor,String topic) {
-        List<Map<String,Object>> visible=cards.stream().filter(c->((List<?>)c.get("roles")).contains(role(actor))).toList();
+        String actorRole = role(actor);
+        boolean admin = "admin".equals(actorRole);
+        Map<String,Map<String,Object>> all = new LinkedHashMap<>();
+        cards.forEach(card -> all.put(String.valueOf(card.get("id")), card));
+        systemCards.forEach(card -> all.put(String.valueOf(card.get("id")), card));
+        Set<String> studentMenus = "student".equals(actorRole) ? studentMenuPaths() : Set.of();
+        List<Map<String,Object>> visible = all.values().stream()
+                .filter(card -> admin || visibleFor(card, actor, actorRole, studentMenus)).toList();
+        String fieldKey = AgentAnswerScope.fieldKey(actor, topic);
+        if (fieldKey != null) {
+            for (Map<String,Object> card : visible) {
+                if (!"CODE_TRACED".equals(card.get("verifyLevel")) || !(card.get("fieldAnswers") instanceof Map<?,?> answers)
+                        || !(answers.get(fieldKey) instanceof String answer) || answer.isBlank()) continue;
+                Map<String,Object> focused = new LinkedHashMap<>();
+                for (String key : List.of("id", "title", "routes", "source", "verifiedAt", "verifyLevel"))
+                    if (card.containsKey(key)) focused.put(key, card.get(key));
+                focused.put("field", fieldKey); focused.put("answer", answer);
+                return AgentReadTools.result("knowledge_lookup", "字段填写说明", actor, List.of(focused), 1,
+                        Map.of("knowledgeVersion", version, "matched", true, "fieldKey", fieldKey, "conciseAnswer", answer), List.of(), List.of());
+            }
+        }
         String normalized=topic==null?"":topic.trim().toLowerCase(Locale.ROOT);
         List<Map<String,Object>> matching=normalized.isEmpty()?visible:visible.stream()
                 .filter(card->matches(card,normalized))
-                .sorted(Comparator.comparingInt(card -> isStatusQuestion(normalized) && "internship-status-guide".equals(card.get("id")) ? 0 : 1))
+                .sorted(Comparator.<Map<String,Object>>comparingInt(card -> isStatusQuestion(normalized) && "internship-status-guide".equals(card.get("id")) ? 0 : 1)
+                        .thenComparing(Comparator.comparingInt((Map<String,Object> card) -> topicScore(card, normalized)).reversed()))
                 .limit(8)
                 .toList();
         List<String> warnings=new ArrayList<>();
         warnings.add("规则解释不代表业务已经执行；具体状态必须查询真实记录。");
-        if(!normalized.isEmpty()&&matching.isEmpty())warnings.add("系统知识资料未登记该内容，不能据现有卡片编造入口、规则或日期。");
-        return AgentReadTools.result("knowledge_lookup","系统功能与流程依据",actor,matching,matching.size(),Map.of("knowledgeVersion",version,"matched",!matching.isEmpty()),List.of(),warnings);
+        if (admin) warnings.add("管理员可了解四端功能规则；知识可见不增加任何业务查询或执行权限，不能据此断言具体用户的状态。");
+        if ("student".equals(actorRole)) warnings.add("学生入口说明按本次可核验的菜单范围筛选；配置无法读取时仅保留基础入口，不能据此断言其他业务不存在。");
+        if(!normalized.isEmpty()&&matching.isEmpty())warnings.add("当前身份可用的知识资料未匹配该内容，请核对权限或缩小问题，不能编造入口、规则或日期。");
+        Map<String,Object> facts = new LinkedHashMap<>(Map.of("knowledgeVersion",version,"matched",!matching.isEmpty()));
+        if ("student".equals(actorRole)) facts.put("visibleStudentMenus", studentMenus.stream().sorted().toList());
+        return AgentReadTools.result("knowledge_lookup","系统功能与流程依据",actor,matching,matching.size(),facts,List.of(),warnings);
+    }
+    private boolean visibleFor(Map<String,Object> card, Actor actor, String actorRole, Set<String> studentMenus) {
+        if (!((List<?>) card.get("roles")).contains(actorRole)) return false;
+        Map<String,Object> policy = accessRules.getOrDefault(String.valueOf(card.get("id")), card);
+        if (!((List<?>) policy.get("roles")).contains(actorRole)) return false;
+        if ("teacher".equals(actorRole) && policy.get("teacherTypes") instanceof List<?> types
+                && !types.contains(actor.teacherType())) return false;
+        if (policy.get("permissionAny") instanceof Map<?,?> byRole
+                && byRole.get(actorRole) instanceof List<?> codes && !codes.isEmpty()
+                && codes.stream().noneMatch(actor.permissions()::contains)) return false;
+        if (policy.get("permissionAll") instanceof Map<?,?> byRole
+                && byRole.get(actorRole) instanceof List<?> codes
+                && !actor.permissions().containsAll(codes)) return false;
+        return !"student".equals(actorRole) || !(policy.get("studentMenus") instanceof List<?> paths)
+                || paths.stream().anyMatch(studentMenus::contains);
+    }
+
+    private Set<String> studentMenuPaths() {
+        Set<String> paths = new HashSet<>(Set.of("/student/home", "/student/profile"));
+        if (configService == null) return paths;
+        try {
+            var config = configService.findByConfigKey("STUDENT_MENU_CONFIG");
+            String configured = config == null ? null : config.getConfigValue();
+            if (configured == null || configured.isBlank()) return paths;
+            var menus = json.readTree(configured);
+            if (!menus.isArray()) return paths;
+            for (var menu : menus) {
+                String path = menu.path("path").asText();
+                if (path.startsWith("/student/") && (!menu.path("visible").isBoolean()
+                        || menu.path("visible").asBoolean())) paths.add(path);
+            }
+        } catch (Exception e) {
+            log.warn("学生知识菜单权限暂时无法读取，仅保留基础功能说明");
+        }
+        return paths;
+    }
+    private int topicScore(Map<String,Object> card, String topic) {
+        String query = compact(topic);
+        if (query.equals(compact(String.valueOf(card.get("id"))))) return 10_000;
+        String title = compact(String.valueOf(card.getOrDefault("title", "")));
+        int score = 4 * longestCommonSubstring(query, title);
+        if (!query.isEmpty() && title.contains(query)) score += 200;
+        for (Object keyword : (List<?>) card.getOrDefault("keywords", List.of())) {
+            String term = compact(String.valueOf(keyword));
+            if (term.length() >= 2 && query.contains(term)) score += 100 + 5 * term.length();
+        }
+        if ("system-business-overview".equals(card.get("id")) && isSystemOverviewQuestion(topic)) score += 1_000;
+        return score;
+    }
+
+    static boolean isGeneralKnowledgeQuestion(String question) {
+        String q = compact(question);
+        return q.matches(".*(怎么|如何|哪里|在哪|入口|流程|步骤|规则|条件|材料清单|含义|区别|功能介绍|主要功能|有哪些功能).*")
+                && !q.matches(".*(这个|这份|这条|该学生|该企业|该岗位|当前学生|当前企业|当前岗位|当前记录|选中|多少|几个|几条).*")
+                && !q.matches(".*(我的|本人|本企业|我当前|我现在).*(状态|进度|结果|人数|数量|为什么|能否|是否|在哪里|在哪|还缺|还差|缺什么).*");
     }
     // Only standalone overview questions bypass current-record evidence. Mixed or
     // personal status questions continue through the normal scoped query path.
@@ -156,6 +255,10 @@ public class AgentKnowledge {
             if(token.length()>=2&&searchableLower.contains(token))return true;
         }
         String compactTopic=compact(topic);
+        for (Object keyword : (List<?>) card.getOrDefault("keywords", List.of())) {
+            String term = compact(String.valueOf(keyword));
+            if (term.length() >= 2 && compactTopic.contains(term)) return true;
+        }
         if(compactTopic.length()>=3){
             int required=Math.min(4,Math.max(3,compactTopic.length()/2));
             if(longestCommonSubstring(compactTopic,compact(searchable))>=required)return true;

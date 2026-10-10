@@ -19,13 +19,19 @@ import com.internship.mapper.InternshipReflectionMapper;
 import com.internship.mapper.StudentApplicationMapper;
 import com.internship.mapper.StudentInternshipStatusMapper;
 import com.internship.mapper.TeacherUserMapper;
+import com.internship.mapper.TeacherAutomationScopeMapper;
 import com.internship.service.CompanyUserService;
 import com.internship.service.HomeService;
 import com.internship.service.InternshipCalendarService;
+import com.internship.service.StudentApplicationService;
+import com.internship.service.TeacherAutomationScopeService;
+import com.internship.exception.BusinessException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
@@ -79,6 +85,12 @@ public class HomeServiceImpl implements HomeService {
     @Autowired
     private CompanyUserService companyUserService;
 
+    @Autowired
+    private TeacherAutomationScopeMapper teacherScopeMapper;
+
+    @Autowired
+    private StudentApplicationService studentApplicationService;
+
     @Override
     public HomeStatsDTO getHomeStats(Long userId, String userType, String startDate, String endDate) {
         log.info("获取首页统计数据，用户 ID: {}, 用户类型：{}", userId, userType);
@@ -105,7 +117,11 @@ public class HomeServiceImpl implements HomeService {
             Map<String, Object> dashboardStats;
 
             // 根据teacherType判断身份：辅导员按班级、系室教师按系、学院教师显示所有
-            if ("COUNSELOR".equals(userType) && userId != null && userId > 0) {
+            if ("TEACHER".equals(userType)
+                    || (("COUNSELOR".equals(userType) || "DEPARTMENT".equals(userType)
+                        || "COLLEGE".equals(userType)) && (userId == null || userId <= 0))) {
+                dashboardStats = Map.of();
+            } else if ("COUNSELOR".equals(userType) && userId != null && userId > 0) {
                 List<ClassCounselorRelation> relations = classCounselorRelationMapper.findByCounselorId(userId);
                 if (relations != null && !relations.isEmpty()) {
                     List<Long> classIds = relations.stream()
@@ -116,8 +132,8 @@ public class HomeServiceImpl implements HomeService {
                     int pendingReflectionCount = internshipReflectionMapper.countPendingByClassIds(classIds);
                     homeStats.setPendingReflectionCount(pendingReflectionCount);
                 } else {
-                    dashboardStats = studentInternshipStatusMapper.getDashboardStats(startDate, endDate);
-                    log.info("辅导员未分配班级，使用全院统计数据");
+                    dashboardStats = Map.of();
+                    log.info("辅导员未分配班级，返回空统计数据");
                 }
             } else if ("DEPARTMENT".equals(userType) && userId != null && userId > 0) {
                 // 系室教师：根据division_id获取对应系的学生数据
@@ -140,8 +156,8 @@ public class HomeServiceImpl implements HomeService {
                     }
                     log.info("系室教师统计（系ID={}）：{} 名学生", divId, dashboardStats != null ? dashboardStats.get("totalStudents") : 0);
                 } else {
-                    dashboardStats = studentInternshipStatusMapper.getDashboardStats(startDate, endDate);
-                    log.info("系室教师未关联系，使用全院统计数据");
+                    dashboardStats = Map.of();
+                    log.info("系室教师未关联系，返回空统计数据");
                 }
             } else if ("COLLEGE".equals(userType) && userId != null && userId > 0) {
                 // 学院教师：根据department_id获取对应学院的学生数据
@@ -163,8 +179,8 @@ public class HomeServiceImpl implements HomeService {
                         dashboardStats = studentInternshipStatusMapper.getDashboardStatsByDivisionIds(divisionIds, startDate, endDate);
                         log.info("学院教师统计（学院ID={}，{} 个系）：{} 名学生", deptId, divisionIds.size(), dashboardStats != null ? dashboardStats.get("totalStudents") : 0);
                     } else {
-                        dashboardStats = studentInternshipStatusMapper.getDashboardStats(startDate, endDate);
-                        log.info("学院教师所属学院下无系，使用全院统计数据");
+                        dashboardStats = Map.of();
+                        log.info("学院教师所属学院下无系，返回空统计数据");
                     }
                     // 获取学院名称
                     var department = departmentMapper.findById(deptId);
@@ -172,8 +188,8 @@ public class HomeServiceImpl implements HomeService {
                         homeStats.setDepartmentName(department.getName());
                     }
                 } else {
-                    dashboardStats = studentInternshipStatusMapper.getDashboardStats(startDate, endDate);
-                    log.info("学院教师未关联学院，使用全院统计数据");
+                    dashboardStats = Map.of();
+                    log.info("学院教师未关联学院，返回空统计数据");
                 }
             } else {
                 dashboardStats = studentInternshipStatusMapper.getDashboardStats(startDate, endDate);
@@ -236,10 +252,7 @@ public class HomeServiceImpl implements HomeService {
             int unreadCount = 0;
             homeStats.setUnreadCount(unreadCount);
             
-            int pendingStudentApps = studentApplicationMapper.countPendingApproval();
-            Long pendingCompanyApps = companyUserService.countByAuditStatus(0);
-            homeStats.setPendingApprovalCount((pendingStudentApps > 0 ? pendingStudentApps : 0)
-                    + (pendingCompanyApps != null ? pendingCompanyApps.intValue() : 0));
+            homeStats.setPendingApprovalCount(countPendingApprovals(userId, userType));
             
             Integer companyCount = companyUserMapper.countApproved();
             homeStats.setCompanyCount(companyCount != null ? companyCount : 0);
@@ -296,6 +309,44 @@ public class HomeServiceImpl implements HomeService {
         }
     }
     
+    private int countPendingApprovals(Long userId, String userType) {
+        boolean counselor = "COUNSELOR".equals(userType);
+        boolean collegeTeacher = "DEPARTMENT".equals(userType) || "COLLEGE".equals(userType);
+        if (!counselor && !collegeTeacher && !"TEACHER".equals(userType)) {
+            int studentCount = studentApplicationMapper.countPendingApproval();
+            Long companyCount = companyUserService.countByAuditStatus(0);
+            return Math.max(studentCount, 0) + (companyCount == null ? 0 : companyCount.intValue());
+        }
+        if ((!counselor && !collegeTeacher) || userId == null || userId <= 0) {
+            return 0;
+        }
+
+        TeacherUser teacher = teacherUserMapper.findById(userId);
+        try {
+            TeacherAutomationScopeService.requireTeacher(teacher);
+        } catch (BusinessException e) {
+            log.warn("首页审核统计的教师身份或管辖范围不可用，用户ID: {}", userId);
+            return 0;
+        }
+        if (!userType.equals(teacher.getTeacherType())) {
+            return 0;
+        }
+
+        List<Long> ids = teacherScopeMapper.studentIds(teacher);
+        List<Long> studentIds = ids == null ? List.of()
+                : ids.stream().filter(id -> id != null && id > 0).distinct().toList();
+        // 与审核列表使用相同的学生范围和申请类型；已停用的单位变更不计入待办。
+        long count = studentIds.isEmpty() ? 0L : studentApplicationService.findPageWithinStudentIds(
+                1, 1, counselor ? "selfPractice" : "delay", "pending", null, null, studentIds).getTotal();
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (collegeTeacher && authentication != null && authentication.getAuthorities().stream()
+                .anyMatch(authority -> "user:company:audit".equals(authority.getAuthority()))) {
+            Long companyCount = companyUserService.countByAuditStatus(0);
+            count += companyCount == null ? 0 : companyCount;
+        }
+        return Math.toIntExact(count);
+    }
+
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void markAnnouncementAsRead(Long announcementId, Long userId, String userType) {

@@ -15,4 +15,16 @@ class QwenRequestSupportTest {
             var json=new ObjectMapper();assertEquals(json.readTree(input),json.readTree(QwenRequestSupport.normalize(input.getBytes(java.nio.charset.StandardCharsets.UTF_8))));
         }
     }
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings={"kimi-k2.5","moonshotai/Kimi-K2.5","kimi-k2.6","kimi-k2.7-code-highspeed","kimi-k3","kimi-k2-thinking"})
+    void kimiUsesProviderFixedSamplingDefaults(String model) throws Exception {
+        var json=new ObjectMapper();
+        var input=json.createObjectNode().put("model",model).put("temperature",0.2).put("top_p",0.7)
+                .put("presence_penalty",1).put("frequency_penalty",1).put("max_tokens",2200);
+        var output=json.readTree(QwenRequestSupport.normalize(json.writeValueAsBytes(input)));
+        assertFalse(output.has("temperature"));assertFalse(output.has("top_p"));
+        assertFalse(output.has("presence_penalty"));assertFalse(output.has("frequency_penalty"));
+        assertEquals(2200,output.path("max_tokens").asInt());
+        assertEquals(model,output.path("model").asText());
+    }
 }

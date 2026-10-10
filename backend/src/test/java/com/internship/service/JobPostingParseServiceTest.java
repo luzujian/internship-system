@@ -126,6 +126,25 @@ class JobPostingParseServiceTest {
         assertTrue(prompt.contains("岗位名称：Java开发实习生"));
     }
 
+    @Test
+    void preservesMultipleInterviewMethodsAndTheirConfidence() {
+        JobPostingParseResult result = parseAndNormalize("""
+                {
+                  "interview_method": "线下，线上视频、电话面试、线下",
+                  "confidence": {"interview_method": 0.95}
+                }
+                """);
+        assertEquals("线下、线上视频、电话面试", result.getInterviewMethod());
+        assertEquals(new BigDecimal("0.95"), result.getConfidence().get("interviewMethod"));
+    }
+
+    @Test
+    void keepsSingleInterviewMethodAndRejectsUnsupportedChoices() {
+        assertEquals("线下", parseAndNormalize("{\"interviewMethod\":\"线下\"}").getInterviewMethod());
+        assertNull(parseAndNormalize("{\"interviewMethod\":\"线下、笔试\"}").getInterviewMethod());
+        assertNull(parseAndNormalize("{\"interviewMethod\":\"\"}").getInterviewMethod());
+    }
+
     private JobPostingParseResult parseAndNormalize(String response) {
         JobPostingParseResult result = ReflectionTestUtils.invokeMethod(service, "parseAiResponse", response);
         ReflectionTestUtils.invokeMethod(service, "normalizeResult", result);

@@ -10,7 +10,6 @@ import com.internship.entity.User;
 import com.internship.entity.StudentReflectionAIAnalysis;
 import com.internship.entity.StudentReflectionEvaluation;
 import com.internship.service.ClassCounselorRelationService;
-import com.internship.service.CounselorAISettingsService;
 import com.internship.service.InternshipConfirmationRecordService;
 import com.internship.service.InternshipEvaluationService;
 import com.internship.service.InternshipProgressRecordService;
@@ -40,7 +39,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.CompletableFuture;
+import com.internship.task.ReflectionAiAnalysisDispatcher;
 
 import static com.internship.service.InternshipProgressEvents.append;
 
@@ -52,7 +51,7 @@ public class StudentInternshipReflectionController {
 
     private static final ZoneId BUSINESS_ZONE = ZoneId.of("Asia/Shanghai");
     private static final Set<String> REFLECTION_PLACEMENT_STATUSES =
-            Set.of("CONFIRMED", "REPLACED", "INTERRUPTED", "ENDED");
+            Set.of("CONFIRMED", "IN_PROGRESS", "REPLACED", "INTERRUPTED", "ENDED");
 
     @Autowired
     private UserService userService;
@@ -70,10 +69,10 @@ public class StudentInternshipReflectionController {
     private InternshipEvaluationService internshipEvaluationService;
 
     @Autowired
-    private CounselorAISettingsService counselorAISettingsService;
+    private StudentReflectionAIAnalysisService studentReflectionAIAnalysisService;
 
     @Autowired
-    private StudentReflectionAIAnalysisService studentReflectionAIAnalysisService;
+    private ReflectionAiAnalysisDispatcher reflectionAiDispatcher;
 
     @Autowired
     private StudentReflectionEvaluationService studentReflectionEvaluationService;
@@ -232,7 +231,7 @@ public class StudentInternshipReflectionController {
             // 异步触发AI分析，分析完成后会自动推送待评分数据给辅导员
             final Long reflectionId = reflection.getId();
             final Long finalCounselorId = counselorId;
-            triggerAIAnalysisForReflection(reflectionId, user.getId(), finalCounselorId);
+            triggerAIAnalysisForReflection(reflectionId);
 
             // 如果是自动生成的任务提交后，生成下一次的任务
             if ("auto".equals(reflection.getTaskType()) && finalCounselorId != null) {
@@ -344,7 +343,7 @@ public class StudentInternshipReflectionController {
             // 异步触发AI分析，分析完成后会自动推送待评分数据给辅导员
             final Long reflectionId = reflection.getId();
             final Long finalCounselorId = counselorId;
-            triggerAIAnalysisForReflection(reflectionId, user.getId(), finalCounselorId);
+            triggerAIAnalysisForReflection(reflectionId);
 
             // 如果是自动生成的任务提交后，生成下一次的任务
             if ("auto".equals(reflection.getTaskType()) && finalCounselorId != null) {
@@ -691,7 +690,14 @@ public class StudentInternshipReflectionController {
                 }
             }
 
+            int attempts = reflectionAiDispatcher.failureCount(id, user.getId());
+            if ("pending".equals(status) && hasAiAnalysis) status = "analysed";
+            if ("pending".equals(status) && attempts >= ReflectionAiAnalysisDispatcher.MAX_ATTEMPTS) status = "failed";
+
             Map<String, Object> result = new HashMap<>();
+            result.put("attempts", attempts);
+            result.put("retryable", "pending".equals(status) && attempts < ReflectionAiAnalysisDispatcher.MAX_ATTEMPTS);
+            if ("failed".equals(status)) result.put("message", ReflectionAiAnalysisDispatcher.FAILURE_MESSAGE);
             result.put("hasAiAnalysis", hasAiAnalysis);
             result.put("isNotReflection", isNotReflection);
             result.put("status", status);
@@ -710,40 +716,8 @@ public class StudentInternshipReflectionController {
      * 1. 检查辅导员是否开启AI评分
      * 2. 如果开启，则调用AI分析服务
      */
-    private void triggerAIAnalysisForReflection(Long reflectionId, Long studentId, Long counselorId) {
-        CompletableFuture.runAsync(() -> {
-            try {
-                if (counselorId == null) {
-                    log.info("学生ID: {} 未分配辅导员，跳过AI分析", studentId);
-                    return;
-                }
-
-                // 1. 检查辅导员是否开启AI评分
-                boolean isAiScoringEnabled = counselorAISettingsService.isAiScoringEnabled(counselorId);
-                if (!isAiScoringEnabled) {
-                    log.info("辅导员ID: {} 未开启AI评分，跳过AI分析", counselorId);
-                    return;
-                }
-
-                // 2. 获取实习心得内容
-                InternshipReflection reflection = internshipReflectionService.findById(reflectionId);
-                if (reflection == null) {
-                    log.error("实习心得ID: {} 不存在", reflectionId);
-                    return;
-                }
-
-                // 3. 调用AI分析服务
-                Map<String, Object> analysisResult = studentReflectionAIAnalysisService.analyzeReflectionContent(
-                        reflection.getContent(), counselorId, studentId, reflectionId);
-
-                log.info("AI分析完成，反射ID: {}，结果: {}", reflectionId, analysisResult);
-
-                // 4. 推送待评分数据更新给辅导员
-                pushTeacherTodoUpdate(counselorId);
-            } catch (Exception e) {
-                log.error("AI分析失败，反射ID: {}，错误: {}", reflectionId, e.getMessage(), e);
-            }
-        });
+    private void triggerAIAnalysisForReflection(Long reflectionId) {
+        reflectionAiDispatcher.dispatchAfterCommit(reflectionId);
     }
 
     private void appendReflectionSubmission(Long studentId,

@@ -10,6 +10,7 @@ export function readTabSession(storage = sessionStorage) {
 export function writeTabSession(state, storage = sessionStorage) {
   if (!state.token || !state.role || !state.user?.username) return
   storage.setItem(KEY, JSON.stringify({ token: state.token, role: state.role,
-    user: state.user, refreshToken: state.allUsers?.[state.role]?.refreshToken || null }))
+    user: state.user, refreshToken: state.allUsers?.[state.role]?.refreshToken || null,
+    adminUser: state.user.originalAdminUsername ? state.allUsers?.ROLE_ADMIN : undefined }))
 }
 export function clearTabSession(storage = sessionStorage) { storage.removeItem(KEY) }

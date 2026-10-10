@@ -287,6 +287,10 @@ public class FileUploadController {
             if (url == null || url.isEmpty()) {
                 return Result.error("文件 URL 不能为空");
             }
+            String path = java.net.URI.create(url).getPath();
+            if (path != null && (path.startsWith("internship-agreement/") || path.contains("/internship-agreement/"))) {
+                return Result.error("实习协议须通过协议入口管理，已提交文件须保留历史");
+            }
 
             // 从 OSS 删除文件
             aliyunOSSOperator.deleteFile(url);

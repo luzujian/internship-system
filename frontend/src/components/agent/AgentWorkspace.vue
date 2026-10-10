@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { CopyDocument, EditPen, RefreshRight, Check, Plus, Clock, RefreshLeft, Delete, Close, Timer } from '@element-plus/icons-vue'
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/store/auth'
 import request from '@/utils/request'
@@ -299,18 +299,24 @@ async function handleUiRequest(message: string): Promise<boolean | 'chat'> {
     if (valid()) agent.error = error?.response?.data?.message || error?.message || '页面操作失败，请重试。'
     return true
   } finally {
+    if (controller.signal.aborted && token === auth.token && owner === agent.capabilities?.actor.ownerKey
+      && (session === agent.sessionId || (!session && receiptSession === agent.sessionId)) && !agent.draft) agent.draft = message
     if (uiController === controller) { uiWorking.value = false; uiController = null; uiNavigationPath = null }
   }
 }
 
+const routingMessage = shallowRef<{ message: string; createdAt: number; state: 'sending'; error?: string } | null>(null)
+const visiblePending = computed(() => agent.pendingMessage || routingMessage.value)
+watch([() => auth.token, () => agent.capabilities?.actor.ownerKey, () => agent.visible], () => { routingMessage.value = null }, { flush: 'sync' })
 async function send(text?: string) {
   if (readOnly.value || !agent.visible || !agent.capabilities?.enabled || agent.loading || !auth.token) return
   const token = auth.token
   const owner = agent.capabilities.actor.ownerKey
+  const originalSession = agent.sessionId
   const formInstance = linkedForm.value?.instanceId
   if (text) agent.draft = text
   const message = agent.draft.trim()
-  if (!message || agent.busy || uiWorking.value || voiceFinishing.value) return
+  if (!message || agent.busy || uiWorking.value || routingMessage.value || voiceFinishing.value) return
   atBottom.value = true
 
   const pendingCaps = ['need_input', 'need_confirm', 'error'].includes(agent.capsFlow.phase) ? agent.capsFlow.message : ''
@@ -333,27 +339,45 @@ async function send(text?: string) {
     await nextTick(); scrollBottom()
     return
   }
-  const hasFillForm = Boolean(linkedForm.value && agent.formFillEnabled)
-  if (shouldResolveFormFill(message, { hasForm: hasFillForm })) {
-    agent.draft = ''
-    const handled = await agent.fillForm(message)
+  const pending = { message, createdAt: Date.now(), state: 'sending' as const }
+  routingMessage.value = pending
+  agent.draft = ''
+  agent.error = ''
+  try {
     await nextTick(); scrollBottom()
-    if (handled || token !== auth.token || owner !== agent.capabilities?.actor.ownerKey || !agent.visible || readOnly.value || !agent.capabilities?.enabled || !agent.formFillEnabled || formInstance !== linkedForm.value?.instanceId) return
-  }
-  const uiResult = shouldResolveUiIntent(message)
-    ? await handleUiRequest(message)
-    : 'chat'
-  if (uiResult === true) return
-  if (uiResult !== 'chat' && linkedForm.value && agent.formFillEnabled) {
-    agent.draft = ''
-    const handled = await agent.fillForm(message)
-    await nextTick(); scrollBottom()
-    if (handled || token !== auth.token || owner !== agent.capabilities?.actor.ownerKey || !agent.visible || readOnly.value || !agent.capabilities?.enabled || !agent.formFillEnabled || formInstance !== linkedForm.value?.instanceId) return
+    if (token !== auth.token || owner !== agent.capabilities?.actor.ownerKey || !agent.visible) return
+    const hasFillForm = Boolean(linkedForm.value && agent.formFillEnabled)
+    if (shouldResolveFormFill(message, { hasForm: hasFillForm })) {
+      agent.draft = ''
+      const handled = await agent.fillForm(message)
+      if (handled) routingMessage.value = null
+      await nextTick(); scrollBottom()
+      if (handled || token !== auth.token || owner !== agent.capabilities?.actor.ownerKey || !agent.visible || readOnly.value || !agent.capabilities?.enabled || !agent.formFillEnabled || formInstance !== linkedForm.value?.instanceId) return
+    }
+    const uiResult = shouldResolveUiIntent(message)
+      ? await handleUiRequest(message)
+      : 'chat'
+    if (uiResult === true) return
+    if (uiResult !== 'chat' && linkedForm.value && agent.formFillEnabled) {
+      agent.draft = ''
+      const handled = await agent.fillForm(message)
+      if (handled) routingMessage.value = null
+      await nextTick(); scrollBottom()
+      if (handled || token !== auth.token || owner !== agent.capabilities?.actor.ownerKey || !agent.visible || readOnly.value || !agent.capabilities?.enabled || !agent.formFillEnabled || formInstance !== linkedForm.value?.instanceId) return
+      routingMessage.value = null
+      await agent.ask(context.value, message)
+      await nextTick(); scrollToLatest(); return
+    }
+    routingMessage.value = null
     await agent.ask(context.value, message)
-    await nextTick(); scrollToLatest(); return
+    await nextTick(); scrollBottom()
+  } catch (error: any) {
+    if (token === auth.token && owner === agent.capabilities?.actor.ownerKey) agent.error = error?.message || '发送失败，请重试。'
+  } finally {
+    if (routingMessage.value === pending) routingMessage.value = null
+    if (token === auth.token && owner === agent.capabilities?.actor.ownerKey && originalSession === agent.sessionId
+      && (agent.error || !agent.visible) && !agent.pendingMessage && !agent.draft) agent.draft = message
   }
-  await agent.ask(context.value, message)
-  await nextTick(); scrollBottom()
 }
 let voiceEpoch = 0
 function stopAsr(preserve = true) {
@@ -613,7 +637,7 @@ async function loadOlder() {
   await agent.loadOlderTasks(); await nextTick()
   if (conversation.value) conversation.value.scrollTop = top + conversation.value.scrollHeight - before
 }
-watch(() => agent.tasks.map(task => task.version).join(','), async () => { if (atBottom.value) { await nextTick(); scrollBottom() } })
+watch([() => agent.tasks.map(task => task.version).join(','), visiblePending], async () => { if (atBottom.value) { await nextTick(); scrollBottom() } })
 watch(() => auth.token, () => { if (auth.token) void agent.initialize(); else agent.dispose() }, { immediate: true })
 onMounted(() => {
   window.addEventListener('focus', refreshVisibleJourney)
@@ -678,8 +702,8 @@ onBeforeUnmount(() => {
         <button v-if="agent.sessionsHasMore" type="button" :disabled="agent.sessionsLoading" @click="agent.loadSessions(true)">加载更多会话</button>
       </div>
       <div v-if="linkedForm && agent.formFillEnabled" class="agent-form-link"><span class="form-link-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M6 14h.01M18 14h.01M9 14h6"/></svg></span><div><strong>{{ linkedForm.title }}</strong></div></div>
-      <div ref="conversation" class="agent-conversation" :class="{ 'is-empty': !timeline.length }" role="log" aria-live="polite" aria-label="对话记录" @scroll="updateScroll"><button v-if="agent.historyHasMore" type="button" class="older-messages" @click="loadOlder">加载更早消息</button>
-        <div v-if="!timeline.length" class="agent-welcome"><div class="welcome-star" aria-hidden="true">✦</div><h3>从你现在的任务开始</h3><button v-if="canAutomate && !showAutomation" type="button" class="automation-shortcut" @click="useAutomationExample(automationTemplate)"><Timer aria-hidden="true" />创建自动化任务</button></div>
+      <div ref="conversation" class="agent-conversation" :class="{ 'is-empty': !timeline.length && !visiblePending }" role="log" aria-live="polite" aria-label="对话记录" @scroll="updateScroll"><button v-if="agent.historyHasMore" type="button" class="older-messages" @click="loadOlder">加载更早消息</button>
+        <div v-if="!timeline.length && !visiblePending" class="agent-welcome"><div class="welcome-star" aria-hidden="true">✦</div><h3>从你现在的任务开始</h3><button v-if="canAutomate && !showAutomation" type="button" class="automation-shortcut" @click="useAutomationExample(automationTemplate)"><Timer aria-hidden="true" />创建自动化任务</button></div>
         <template v-for="entry in timeline" :key="entry.id">
         <article v-for="task in (entry.kind === 'task' ? [entry.task] : [])" :key="task.id" class="agent-turn" :class="{ flash: highlightId === task.id }" :data-task-id="task.id" :data-task-status="task.status">
           <div v-if="editingTaskId === task.id" class="msg-edit"><label class="sr-only" :for="`edit-${task.id}`">编辑消息</label><textarea :id="`edit-${task.id}`" v-model="editText" rows="3" maxlength="4000" @keydown.escape.stop="cancelEdit" @keydown.enter.exact.prevent="saveEdit" /><div class="msg-actions"><button type="button" :disabled="!editText.trim() || agent.sending" @click="saveEdit">发送</button><button type="button" @click="cancelEdit">取消</button></div></div><template v-else><div class="user-question">{{ task.message }}</div><div class="msg-actions user-actions"><time v-if="task.createdAt" class="message-time" :datetime="new Date(task.createdAt).toISOString()">{{ messageTime(task.createdAt) }}</time><button type="button" class="message-icon" :aria-label="copiedId === task.id ? '已复制' : '复制'" :title="copiedId === task.id ? '已复制' : '复制'" @click="copyText(task.message, task.id)"><Check v-if="copiedId === task.id" /><CopyDocument v-else /></button><button v-if="!readOnly && isLatestMessage(task.id)" type="button" class="message-icon" aria-label="编辑" title="编辑" @click="startEdit(task)"><EditPen /></button><span v-if="chainOf(task).length > 1" class="version-pager">第{{ versionLabel(task) }}<template v-for="v in chainOf(task)" :key="v.id"><button v-if="v.id !== task.id" type="button" :aria-label="`查看第${chainOf(task).findIndex(item => item.id === v.id) + 1}版`" @click="jumpToTask(v.id)">{{ chainOf(task).findIndex(item => item.id === v.id) + 1 }}</button><strong v-else>{{ chainOf(task).findIndex(item => item.id === v.id) + 1 }}</strong></template></span></div></template>
@@ -759,6 +783,7 @@ onBeforeUnmount(() => {
           <button v-if="entry.event.link" type="button" class="receipt-link" @click="navigate(entry.event.link)">查看业务记录 ↗</button>
         </article>
         </template>
+      <div v-if="visiblePending" class="agent-turn pending-bubble" :data-pending-state="visiblePending.state"><div class="user-question">{{ visiblePending.message }}</div><div class="msg-actions user-actions"><time class="message-time">{{ messageTime(visiblePending.createdAt) }}</time></div><div v-if="visiblePending.state === 'sending'" class="thinking-indicator" role="status"><span class="thinking-star" aria-hidden="true">✦</span>正在思考</div><div v-if="visiblePending.state === 'failed'" class="task-status" role="status"><span class="busy-dot" aria-hidden="true">◌</span>发送失败，已保留草稿</div><p v-if="visiblePending.state === 'failed' && visiblePending.error" class="agent-task-error" role="alert">{{ visiblePending.error }}</p><div v-if="visiblePending.state === 'failed'" class="pending-actions"><button type="button" :disabled="agent.sending" @click="agent.retryPending">重试</button><button type="button" @click="agent.editPending(); composer?.focus()">编辑</button><button type="button" @click="agent.dismissPending">取消</button></div></div>
       </div>
       <div v-if="agent.applyDialog.open" class="apply-dialog" role="dialog" aria-modal="true" aria-labelledby="apply-title">
         <div class="dialog-card">
@@ -814,7 +839,6 @@ onBeforeUnmount(() => {
         </template>
         </div>
       </div>
-      <div v-if="agent.pendingMessage" class="agent-turn pending-bubble" :data-pending-state="agent.pendingMessage.state"><div class="user-question">{{ agent.pendingMessage.message }}</div><div v-if="agent.pendingMessage.state === 'sending'" class="pending-thinking" role="status" aria-label="正在连接助手"><span class="thinking-star" aria-hidden="true">✦</span></div><div v-if="agent.pendingMessage.state === 'failed'" class="task-status" role="status"><span class="busy-dot" aria-hidden="true">◌</span>发送失败，已保留草稿</div><p v-if="agent.pendingMessage.state === 'failed' && agent.pendingMessage.error" class="agent-task-error" role="alert">{{ agent.pendingMessage.error }}</p><div v-if="agent.pendingMessage.state === 'failed'" class="pending-actions"><button type="button" :disabled="agent.sending" @click="agent.retryPending">重试</button><button type="button" @click="agent.editPending(); composer?.focus()">编辑</button><button type="button" @click="agent.dismissPending">取消</button></div></div>
       <div v-if="agent.error" class="agent-error" role="alert"><span>{{ agent.error }}</span><button type="button" :disabled="agent.sending" @click="agent.reconnect">恢复连接</button></div>
       <div v-if="agent.capabilities && !agent.capabilities.enabled" class="agent-error">系统管理员暂未启用 AI 助手。</div>
       <div class="back-to-latest-wrap">
@@ -869,7 +893,7 @@ body.agent-docked .agent-host.teacher-layout>.el-container{overflow:visible;min-
 .agent-form-link button{margin-left:auto;flex-shrink:0;color:#1d4f91;background:#fff;border:1px solid #b8d2f3;border-radius:7px;padding:6px 9px;font-size:12px;font-weight:600}
 .agent-form-link button:hover{color:#153e75;background:#e8f1fd;border-color:#8ab1e5}
 /* ---- 对话区 ---- */
-.agent-conversation{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:4px 16px 12px;scrollbar-width:thin;scroll-behavior:smooth;scrollbar-color:#d4dbe4 transparent}
+.agent-conversation{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:4px 16px 12px;scrollbar-width:thin;scroll-behavior:auto;scrollbar-color:#d4dbe4 transparent}
 /* ---- 欢迎：收敛留白 ---- */
 .agent-welcome{display:flex;flex-direction:column;gap:14px;justify-content:center;align-items:center;min-height:180px;padding:24px 12px;text-align:center}
 .agent-welcome h3{font-size:24px;margin:0;color:#16233a;font-weight:650}

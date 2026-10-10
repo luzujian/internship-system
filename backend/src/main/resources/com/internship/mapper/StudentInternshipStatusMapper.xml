@@ -953,6 +953,21 @@
         WHERE recall_status IS NOT NULL AND recall_status > 0
     </update>
 
+    <!-- 日历筛选实习实际区间；未落实、延期和中断学生仍属于当前需跟进人数。
+         不能按状态行更新时间过滤，否则学期开始前建档的未就业学生会从分母消失。 -->
+    <sql id="dashboardInternshipPeriodFilter">
+        AND su.status = 1
+        <if test="startDate != null and startDate != ''">
+            AND (COALESCE(sis.status, 0) IN (0, 1, 5, 6)
+                OR sis.internship_end_time IS NULL OR sis.internship_end_time &gt;= #{startDate})
+        </if>
+        <if test="endDate != null and endDate != ''">
+            AND (COALESCE(sis.status, 0) IN (0, 1, 5, 6)
+                OR sis.internship_start_time IS NULL
+                OR sis.internship_start_time &lt; DATE_ADD(#{endDate}, INTERVAL 1 DAY))
+        </if>
+    </sql>
+
     <!-- 获取看板统计数据（只统计还未结束当前阶段实习的学生，排除状态=4已结束） -->
     <select id="getDashboardStats" resultType="java.util.Map">
         SELECT
@@ -968,12 +983,7 @@
         LEFT JOIN student_internship_status sis ON su.id = sis.student_id
         <where>
             AND su.status = 1
-            <if test="startDate != null and startDate != ''">
-                AND (sis.update_time &gt;= #{startDate} OR sis.update_time IS NULL)
-            </if>
-            <if test="endDate != null and endDate != ''">
-                AND (sis.update_time &lt;= #{endDate} OR sis.update_time IS NULL)
-            </if>
+            <include refid="dashboardInternshipPeriodFilter"/>
         </where>
     </select>
 
@@ -989,12 +999,7 @@
         FROM student_users su
         LEFT JOIN student_internship_status sis ON su.id = sis.student_id
         <where>
-            <if test="startDate != null and startDate != ''">
-                AND (sis.update_time &gt;= #{startDate} OR sis.update_time IS NULL)
-            </if>
-            <if test="endDate != null and endDate != ''">
-                AND (sis.update_time &lt;= #{endDate} OR sis.update_time IS NULL)
-            </if>
+            <include refid="dashboardInternshipPeriodFilter"/>
         </where>
         GROUP BY su.grade
         ORDER BY su.grade
@@ -1013,12 +1018,7 @@
         LEFT JOIN student_internship_status sis ON su.id = sis.student_id
         LEFT JOIN major m ON su.major_id = m.id
         <where>
-            <if test="startDate != null and startDate != ''">
-                AND (sis.update_time &gt;= #{startDate} OR sis.update_time IS NULL)
-            </if>
-            <if test="endDate != null and endDate != ''">
-                AND (sis.update_time &lt;= #{endDate} OR sis.update_time IS NULL)
-            </if>
+            <include refid="dashboardInternshipPeriodFilter"/>
         </where>
         GROUP BY m.id, m.name
         ORDER BY m.name
@@ -1037,12 +1037,7 @@
         LEFT JOIN student_internship_status sis ON su.id = sis.student_id
         LEFT JOIN class c ON su.class_id = c.id
         <where>
-            <if test="startDate != null and startDate != ''">
-                AND (sis.update_time &gt;= #{startDate} OR sis.update_time IS NULL)
-            </if>
-            <if test="endDate != null and endDate != ''">
-                AND (sis.update_time &lt;= #{endDate} OR sis.update_time IS NULL)
-            </if>
+            <include refid="dashboardInternshipPeriodFilter"/>
         </where>
         GROUP BY c.id, c.name
         ORDER BY c.name
@@ -1069,12 +1064,7 @@
                     #{classId}
                 </foreach>
             </if>
-            <if test="startDate != null and startDate != ''">
-                AND (sis.update_time &gt;= #{startDate} OR sis.update_time IS NULL)
-            </if>
-            <if test="endDate != null and endDate != ''">
-                AND (sis.update_time &lt;= #{endDate} OR sis.update_time IS NULL)
-            </if>
+            <include refid="dashboardInternshipPeriodFilter"/>
         </where>
     </select>
 
@@ -1100,12 +1090,7 @@
                     #{divId}
                 </foreach>
             </if>
-            <if test="startDate != null and startDate != ''">
-                AND (sis.update_time &gt;= #{startDate} OR sis.update_time IS NULL)
-            </if>
-            <if test="endDate != null and endDate != ''">
-                AND (sis.update_time &lt;= #{endDate} OR sis.update_time IS NULL)
-            </if>
+            <include refid="dashboardInternshipPeriodFilter"/>
         </where>
     </select>
 
@@ -1127,12 +1112,7 @@
                     #{classId}
                 </foreach>
             </if>
-            <if test="startDate != null and startDate != ''">
-                AND (sis.update_time &gt;= #{startDate} OR sis.update_time IS NULL)
-            </if>
-            <if test="endDate != null and endDate != ''">
-                AND (sis.update_time &lt;= #{endDate} OR sis.update_time IS NULL)
-            </if>
+            <include refid="dashboardInternshipPeriodFilter"/>
         </where>
         GROUP BY c.id, c.name
         ORDER BY c.name
@@ -1156,12 +1136,7 @@
                     #{classId}
                 </foreach>
             </if>
-            <if test="startDate != null and startDate != ''">
-                AND (sis.update_time &gt;= #{startDate} OR sis.update_time IS NULL)
-            </if>
-            <if test="endDate != null and endDate != ''">
-                AND (sis.update_time &lt;= #{endDate} OR sis.update_time IS NULL)
-            </if>
+            <include refid="dashboardInternshipPeriodFilter"/>
         </where>
         GROUP BY su.grade
         ORDER BY su.grade
@@ -1186,12 +1161,7 @@
                     #{classId}
                 </foreach>
             </if>
-            <if test="startDate != null and startDate != ''">
-                AND (sis.update_time &gt;= #{startDate} OR sis.update_time IS NULL)
-            </if>
-            <if test="endDate != null and endDate != ''">
-                AND (sis.update_time &lt;= #{endDate} OR sis.update_time IS NULL)
-            </if>
+            <include refid="dashboardInternshipPeriodFilter"/>
         </where>
         GROUP BY m.id, m.name
         ORDER BY m.name
@@ -1216,12 +1186,7 @@
                     #{divisionId}
                 </foreach>
             </if>
-            <if test="startDate != null and startDate != ''">
-                AND (sis.update_time &gt;= #{startDate} OR sis.update_time IS NULL)
-            </if>
-            <if test="endDate != null and endDate != ''">
-                AND (sis.update_time &lt;= #{endDate} OR sis.update_time IS NULL)
-            </if>
+            <include refid="dashboardInternshipPeriodFilter"/>
         </where>
         GROUP BY su.grade
         ORDER BY su.grade
@@ -1246,12 +1211,7 @@
                     #{divisionId}
                 </foreach>
             </if>
-            <if test="startDate != null and startDate != ''">
-                AND (sis.update_time &gt;= #{startDate} OR sis.update_time IS NULL)
-            </if>
-            <if test="endDate != null and endDate != ''">
-                AND (sis.update_time &lt;= #{endDate} OR sis.update_time IS NULL)
-            </if>
+            <include refid="dashboardInternshipPeriodFilter"/>
         </where>
         GROUP BY m.id, m.name
         ORDER BY m.name
@@ -1277,12 +1237,7 @@
                     #{divisionId}
                 </foreach>
             </if>
-            <if test="startDate != null and startDate != ''">
-                AND (sis.update_time &gt;= #{startDate} OR sis.update_time IS NULL)
-            </if>
-            <if test="endDate != null and endDate != ''">
-                AND (sis.update_time &lt;= #{endDate} OR sis.update_time IS NULL)
-            </if>
+            <include refid="dashboardInternshipPeriodFilter"/>
         </where>
         GROUP BY c.id, c.name
         ORDER BY c.name
@@ -1308,12 +1263,7 @@
                     #{divisionId}
                 </foreach>
             </if>
-            <if test="startDate != null and startDate != ''">
-                AND (sis.update_time &gt;= #{startDate} OR sis.update_time IS NULL)
-            </if>
-            <if test="endDate != null and endDate != ''">
-                AND (sis.update_time &lt;= #{endDate} OR sis.update_time IS NULL)
-            </if>
+            <include refid="dashboardInternshipPeriodFilter"/>
         </where>
         GROUP BY d.id, d.name
         ORDER BY d.name

@@ -1,10 +1,8 @@
 package com.internship.config;
 
-import com.internship.entity.AIModel;
 import com.internship.service.impl.AIConfigRefreshServiceImpl;
-import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.deepseek.DeepSeekChatModel;
-import org.springframework.ai.deepseek.DeepSeekChatOptions;
+import com.internship.util.AiEndpointSupport;
+import com.internship.util.AiCallGuard;
 import org.springframework.ai.deepseek.api.DeepSeekApi;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -30,18 +28,22 @@ public class AIConfig {
 
     @Bean
     @Primary
-    public DeepSeekApi deepSeekApi() {
+    public DeepSeekApi deepSeekApi(AiRuntimeProperties limits) {
+        var requests = new org.springframework.http.client.SimpleClientHttpRequestFactory();
+        requests.setConnectTimeout(limits.getConnectTimeoutMillis());
+        requests.setReadTimeout(limits.getReadTimeoutMillis());
         return DeepSeekApi.builder()
-                .baseUrl(baseUrl)
-                .restClientBuilder(org.springframework.web.client.RestClient.builder().requestInterceptor(com.internship.util.QwenRequestSupport.interceptor()))
+                .baseUrl(AiEndpointSupport.normalizeEndpoint(baseUrl))
+                .completionsPath("/chat/completions")
+                .restClientBuilder(org.springframework.web.client.RestClient.builder().requestFactory(requests).requestInterceptor(com.internship.util.QwenRequestSupport.interceptor()))
                 .webClientBuilder(org.springframework.web.reactive.function.client.WebClient.builder().filter(com.internship.util.QwenRequestSupport.filter()))
                 .apiKey(apiKey)
                 .build();
     }
 
     @Bean
-    public DynamicChatClientFactory dynamicChatClientFactory(DeepSeekApi deepSeekApi) {
+    public DynamicChatClientFactory dynamicChatClientFactory(DeepSeekApi deepSeekApi, AiCallGuard calls, AiRuntimeProperties limits) {
         // 全局地址/Key 显式传入：模型行未配独立接入点时回退到这里。
-        return new DynamicChatClientFactory(deepSeekApi, aiConfigRefreshService, baseUrl, apiKey);
+        return new DynamicChatClientFactory(deepSeekApi, aiConfigRefreshService, baseUrl, apiKey, calls, limits);
     }
 }

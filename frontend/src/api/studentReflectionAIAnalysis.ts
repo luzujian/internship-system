@@ -22,10 +22,11 @@ export function getAnalysisByReflectionId(reflectionId: number) {
   })
 }
 
-export function getAnalysisByStudentId(studentId: number) {
+export function getAnalysisByStudentId(studentId: number, reflectionId?: number | string) {
   return request({
     url: `/counselor/ai-analysis/student/${studentId}`,
-    method: 'get'
+    method: 'get',
+    params: reflectionId == null ? undefined : { reflectionId }
   })
 }
 

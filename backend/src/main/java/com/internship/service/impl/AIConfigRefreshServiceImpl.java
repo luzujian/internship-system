@@ -26,7 +26,7 @@ public class AIConfigRefreshServiceImpl implements AIConfigRefreshService {
     @Autowired
     private ApplicationContext applicationContext;
 
-    private final Map<String, AIModel> modelConfigCache = new ConcurrentHashMap<>();
+    private volatile Map<String, AIModel> modelConfigCache = Map.of();
 
     @Override
     public void refreshAIConfig() {
@@ -34,14 +34,16 @@ public class AIConfigRefreshServiceImpl implements AIConfigRefreshService {
         try {
             List<AIModel> enabledModels = aiModelMapper.findEnabledModels();
             
-            modelConfigCache.clear();
+            Map<String, AIModel> refreshed = new ConcurrentHashMap<>();
             
             for (AIModel model : enabledModels) {
-                modelConfigCache.put(model.getModelCode().toLowerCase(), model);
+                if (model.getModelCode() == null || model.getModelCode().isBlank()) continue;
+                refreshed.put(model.getModelCode().trim(), model);
                 log.info("加载AI模型配置: {} (温度: {}, 最大Token: {})", 
                     model.getModelCode(), model.getTemperature(), model.getMaxTokens());
             }
             
+            modelConfigCache = Map.copyOf(refreshed);
             log.info("AI模型配置刷新完成，共加载 {} 个模型", modelConfigCache.size());
         } catch (Exception e) {
             log.error("刷新AI模型配置失败", e);
@@ -59,10 +61,11 @@ public class AIConfigRefreshServiceImpl implements AIConfigRefreshService {
     }
 
     public AIModel getModelConfig(String modelCode) {
+        if (modelCode == null || modelCode.isBlank()) return null;
         if (modelConfigCache.isEmpty()) {
             refreshAIConfig();
         }
-        return modelConfigCache.get(modelCode.toLowerCase());
+        return modelConfigCache.get(modelCode.trim());
     }
 
     public Map<String, AIModel> getAllModelConfigs() {

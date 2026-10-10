@@ -98,8 +98,11 @@ public class AuditIntegrityTask {
         if (!allIssues.isEmpty()) {
             auditAlertService.alert(AuditAlertService.TYPE_INTEGRITY_FAILURE,
                     "每日完整性校验发现 " + allIssues.size() + " 个问题: " + String.join("; ", allIssues));
-        } else {
+        } else if (Boolean.TRUE.equals(report.get("passed"))) {
             log.info("每日审计完整性校验通过");
+        } else {
+            log.warn("每日审计完整性校验无法给出完整结论：status={}, warnings={}",
+                    report.get("status"), report.get("continuityWarnings"));
         }
     }
 
@@ -116,12 +119,28 @@ public class AuditIntegrityTask {
         report.put(TABLE_SECURITY, verifySecurityChain(fullVerify, allIssues));
 
         Map<String, Object> rootsSummary = new LinkedHashMap<>();
-        rootsSummary.put("operate_log", signatureRootMapper.countByTable(TABLE_OPERATE));
-        rootsSummary.put("login_log", signatureRootMapper.countByTable(TABLE_LOGIN));
-        rootsSummary.put("security_event_log", signatureRootMapper.countByTable(TABLE_SECURITY));
+        List<String> warnings = new ArrayList<>();
+        boolean hasData = false;
+        for (String table : List.of(TABLE_OPERATE, TABLE_LOGIN, TABLE_SECURITY)) {
+            Map<?, ?> tableReport = (Map<?, ?>) report.get(table);
+            rootsSummary.put(table, tableReport.get("signatureRoots"));
+            hasData |= !"NO_DATA".equals(tableReport.get("status"));
+            for (Object warning : (List<?>) tableReport.get("continuityWarnings")) {
+                warnings.add("[" + table + "] " + warning);
+            }
+        }
+        String status = !allIssues.isEmpty() ? "FAILED"
+                : !warnings.isEmpty() ? "INCOMPLETE" : hasData ? "PASSED" : "NO_DATA";
         report.put("signatureRoots", rootsSummary);
-        report.put("passed", allIssues.isEmpty());
+        report.put("status", status);
+        report.put("passed", "PASSED".equals(status));
         report.put("totalIssues", allIssues.size());
+        report.put("continuityWarnings", warnings);
+        report.put("totalWarnings", warnings.size());
+        if (fullVerify && !allIssues.isEmpty()) {
+            auditAlertService.alert(AuditAlertService.TYPE_INTEGRITY_FAILURE,
+                    "手动完整性校验发现 " + allIssues.size() + " 个问题: " + String.join("; ", allIssues));
+        }
         return report;
     }
 
@@ -130,60 +149,74 @@ public class AuditIntegrityTask {
     // ================================================================
 
     private Map<String, Object> verifyOperateChain(boolean fullVerify, List<String> allIssues) {
-        Map<String, Object> result = new LinkedHashMap<>();
         List<String> issues = new ArrayList<>();
-        long startId = fullVerify ? 0 : boundaryId(TABLE_OPERATE);
-        long verified = verifyChainLoop(issues,
+        List<String> warnings = new ArrayList<>();
+        AuditSignatureRoot boundary = fullVerify ? null : signatureRootMapper.selectLatest(TABLE_OPERATE);
+        long verified = verifyChainLoop(issues, warnings,
                 (afterId) -> operateLogMapper.selectChainedBatch(afterId, VERIFY_BATCH),
                 row -> auditHashService.computeEntryHash(row.getPrevHash(), auditHashService.canonicalPayload(row), row.getKeyVersion()),
-                row -> row.getId(), row -> row.getPrevHash(), row -> row.getEntryHash(), startId);
-        verifyRoots(TABLE_OPERATE, issues, id -> operateLogMapper.selectById(id));
-        result.put("verifiedEntries", verified);
-        result.put("issues", issues);
+                row -> row.getId(), row -> row.getPrevHash(), row -> row.getEntryHash(), boundary);
+        long roots = verifyRoots(TABLE_OPERATE, issues, warnings, id -> operateLogMapper.selectById(id));
         allIssues.addAll(issues);
-        return result;
+        return tableResult(verified, operateLogMapper.countUnchained(), roots, issues, warnings);
     }
 
     private Map<String, Object> verifyLoginChain(boolean fullVerify, List<String> allIssues) {
-        Map<String, Object> result = new LinkedHashMap<>();
         List<String> issues = new ArrayList<>();
-        long startId = fullVerify ? 0 : boundaryId(TABLE_LOGIN);
-        long verified = verifyChainLoop(issues,
+        List<String> warnings = new ArrayList<>();
+        AuditSignatureRoot boundary = fullVerify ? null : signatureRootMapper.selectLatest(TABLE_LOGIN);
+        long verified = verifyChainLoop(issues, warnings,
                 (afterId) -> loginLogMapper.selectChainedBatch(afterId, VERIFY_BATCH),
                 row -> auditHashService.computeEntryHash(row.getPrevHash(), auditHashService.canonicalPayload(row), row.getKeyVersion()),
-                row -> row.getId(), row -> row.getPrevHash(), row -> row.getEntryHash(), startId);
-        verifyRoots(TABLE_LOGIN, issues, id -> loginLogMapper.selectById(id));
-        result.put("verifiedEntries", verified);
-        result.put("issues", issues);
+                row -> row.getId(), row -> row.getPrevHash(), row -> row.getEntryHash(), boundary);
+        long roots = verifyRoots(TABLE_LOGIN, issues, warnings, id -> loginLogMapper.selectById(id));
         allIssues.addAll(issues);
-        return result;
+        return tableResult(verified, loginLogMapper.countUnchained(), roots, issues, warnings);
     }
 
     private Map<String, Object> verifySecurityChain(boolean fullVerify, List<String> allIssues) {
-        Map<String, Object> result = new LinkedHashMap<>();
         List<String> issues = new ArrayList<>();
-        long startId = fullVerify ? 0 : boundaryId(TABLE_SECURITY);
-        long verified = verifyChainLoop(issues,
+        List<String> warnings = new ArrayList<>();
+        AuditSignatureRoot boundary = fullVerify ? null : signatureRootMapper.selectLatest(TABLE_SECURITY);
+        long verified = verifyChainLoop(issues, warnings,
                 (afterId) -> securityEventLogMapper.selectChainedBatch(afterId, VERIFY_BATCH),
                 row -> auditHashService.computeEntryHash(row.getPrevHash(), auditHashService.canonicalPayload(row), row.getKeyVersion()),
-                row -> row.getId(), row -> row.getPrevHash(), row -> row.getEntryHash(), startId);
-        verifyRoots(TABLE_SECURITY, issues, id -> securityEventLogMapper.selectById(id));
-        result.put("verifiedEntries", verified);
-        result.put("issues", issues);
+                row -> row.getId(), row -> row.getPrevHash(), row -> row.getEntryHash(), boundary);
+        long roots = verifyRoots(TABLE_SECURITY, issues, warnings, id -> securityEventLogMapper.selectById(id));
         allIssues.addAll(issues);
+        return tableResult(verified, securityEventLogMapper.countUnchained(), roots, issues, warnings);
+    }
+
+    private Map<String, Object> tableResult(long verified, long unsigned, long roots,
+                                          List<String> issues, List<String> warnings) {
+        if (unsigned > 0) {
+            warnings.add("存在 " + unsigned + " 条未纳入哈希链的记录，无法验证其内容完整性");
+        }
+        if (verified > 0 && roots == 0) {
+            warnings.add("尚无签名根锚点，当前仅验证记录哈希和现存链链接");
+        }
+        String status = !issues.isEmpty() ? "FAILED" : !warnings.isEmpty() ? "INCOMPLETE"
+                : verified == 0 && roots == 0 ? "NO_DATA" : "PASSED";
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("verifiedEntries", verified);
+        result.put("unsignedEntries", unsigned);
+        result.put("signatureRoots", roots);
+        result.put("issues", issues);
+        result.put("continuityWarnings", warnings);
+        result.put("status", status);
         return result;
     }
 
     /** 泛型链校验循环：链连续性 + 逐条哈希重算 */
-    private <T> long verifyChainLoop(List<String> issues,
+    private <T> long verifyChainLoop(List<String> issues, List<String> warnings,
                                      java.util.function.LongFunction<List<T>> batchFetcher,
                                      java.util.function.Function<T, String> hashComputer,
                                      java.util.function.Function<T, Long> idGetter,
                                      java.util.function.Function<T, String> prevHashGetter,
                                      java.util.function.Function<T, String> entryHashGetter,
-                                     long startId) {
-        long afterId = startId;
-        String prevHash = null;
+                                     AuditSignatureRoot boundary) {
+        long afterId = boundary == null ? 0 : boundary.getLastEntryId();
+        String prevHash = boundary == null ? AuditHashService.GENESIS_PREV_HASH : boundary.getLastEntryHash();
         long verified = 0;
         List<T> batch;
         while (!(batch = batchFetcher.apply(afterId)).isEmpty()) {
@@ -191,7 +224,8 @@ public class AuditIntegrityTask {
                 afterId = idGetter.apply(row);
                 // 链连续性：prev_hash 必须等于前一条的 entry_hash
                 if (prevHash != null && !prevHash.equals(prevHashGetter.apply(row))) {
-                    issues.add("链断裂 id=" + afterId + "（prev_hash 与前一节点不符，可能被删除或篡改）");
+                    warnings.add("链链接无法连续验证 id=" + afterId
+                            + "（前驱节点缺失或链接不符，需结合留存清理记录与归档核对）");
                 }
                 // 哈希重算：内容与哈希一致
                 try {
@@ -209,19 +243,25 @@ public class AuditIntegrityTask {
         return verified;
     }
 
-    /** 签名根验证：签名自验证 + 锚点行核对（行已被留存删除时仅验证签名本身） */
-    private void verifyRoots(String tableName, List<String> issues,
+    /** 签名根验证：缺少在线锚点只验证签名，明确报告覆盖不完整。 */
+    private long verifyRoots(String tableName, List<String> issues, List<String> warnings,
                              java.util.function.LongFunction<?> rowFetcher) {
         List<AuditSignatureRoot> roots = signatureRootMapper.selectByTable(tableName);
         for (AuditSignatureRoot root : roots) {
-            boolean signatureOk = auditHashService.verifyRootSignature(tableName,
-                    toLocalDate(root.getRootDate()), root.getLastEntryId(), root.getLastEntryHash(),
-                    root.getEntryCount(), root.getKeyVersion(), root.getSignature());
+            boolean signatureOk;
+            try {
+                signatureOk = auditHashService.verifyRootSignature(tableName,
+                        toLocalDate(root.getRootDate()), root.getLastEntryId(), root.getLastEntryHash(),
+                        root.getEntryCount(), root.getKeyVersion(), root.getSignature());
+            } catch (Exception e) {
+                issues.add("签名根无法校验 table=" + tableName + " date=" + root.getRootDate() + "（密钥或签名数据不可用）");
+                continue;
+            }
             if (!signatureOk) {
                 issues.add("签名根被篡改 table=" + tableName + " date=" + root.getRootDate());
                 continue;
             }
-            // 锚点行仍存在时核对哈希；已被留存清理的行跳过（属预期删除）
+            // 缺失行可能来自正常留存或其他删除，不把无法证明的原因判定为篡改。
             Object anchor = rowFetcher.apply(root.getLastEntryId());
             if (anchor != null) {
                 String anchorHash = extractEntryHash(anchor);
@@ -229,14 +269,12 @@ public class AuditIntegrityTask {
                     issues.add("根锚点不一致 table=" + tableName + " date=" + root.getRootDate()
                             + " id=" + root.getLastEntryId());
                 }
+            } else {
+                warnings.add("签名根在线锚点缺失 table=" + tableName + " id=" + root.getLastEntryId()
+                        + "（根签名有效，仍需结合归档核对原记录）");
             }
         }
-    }
-
-    /** 增量校验起点：上一签名根的边界ID（无根则从头校验） */
-    private long boundaryId(String tableName) {
-        AuditSignatureRoot latest = signatureRootMapper.selectLatest(tableName);
-        return latest != null ? latest.getLastEntryId() : 0L;
+        return roots.size();
     }
 
     private void saveRoot(String tableName, LocalDate rootDate, Long lastEntryId, String lastEntryHash, long entryCount) {

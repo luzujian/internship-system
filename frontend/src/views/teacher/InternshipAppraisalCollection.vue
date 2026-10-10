@@ -2,20 +2,26 @@
   <div class="appraisal-collection-page">
     <div class="page-heading">
       <div>
-        <h1>鉴定表收集</h1>
-        <p>查看和导出管理范围内学生已提交的实习鉴定表</p>
+        <h1>实习材料收集</h1>
+        <p>查看和导出管理范围内学生提交的实习协议与实习鉴定表</p>
       </div>
       <el-button
         type="primary"
-        :loading="exporting"
-        :disabled="filters.status === 'NOT_SUBMITTED' || summary.submittedCount === 0"
-        @click="handleExport"
+        :loading="activeTab === 'agreement' ? agreementCollection?.exporting : exporting"
+        :disabled="activeTab === 'agreement' ? !agreementCollection?.canExport : filters.status === 'NOT_SUBMITTED' || summary.submittedCount === 0"
+        @click="activeTab === 'agreement' ? agreementCollection?.handleExport() : handleExport()"
       >
         <el-icon><Download /></el-icon>
         全部导出
       </el-button>
     </div>
 
+    <el-tabs v-model="activeTab">
+      <el-tab-pane label="实习协议" name="agreement" />
+      <el-tab-pane label="实习鉴定表" name="appraisal" />
+    </el-tabs>
+    <InternshipAgreementCollection v-if="activeTab === 'agreement'" ref="agreementCollection" />
+    <template v-else>
     <div class="summary-grid">
       <div class="summary-card summary-card--total">
         <span>管理范围学生</span>
@@ -164,11 +170,14 @@
         </el-result>
       </div>
     </el-dialog>
+    </template>
   </div>
 </template>
 
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import InternshipAgreementCollection from './InternshipAgreementCollection.vue'
 import { Document, Download, Search } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import {
@@ -183,6 +192,18 @@ import {
   type AppraisalSubmissionStatus,
   type TeacherAppraisalClassOption
 } from '@/api/internshipAppraisalCollection'
+
+const route = useRoute()
+const router = useRouter()
+const activeTab = ref(route.query.materialType === 'agreement' ? 'agreement' : 'appraisal')
+const agreementCollection = ref<InstanceType<typeof InternshipAgreementCollection> | null>(null)
+watch(() => route.query.materialType, value => { activeTab.value = value === 'agreement' ? 'agreement' : 'appraisal' })
+watch(activeTab, value => {
+  detailVisible.value = false
+  previewVisible.value = false
+  cleanupPreview()
+  void router.replace({ query: { ...route.query, materialType: value === 'agreement' ? 'agreement' : undefined } })
+})
 
 const loading = ref(false)
 const exporting = ref(false)
@@ -199,6 +220,8 @@ const summary = reactive({ totalStudents: 0, submittedCount: 0, notSubmittedCoun
 const detailVisible = ref(false)
 const detailLoading = ref(false)
 const detail = ref<AppraisalStudentDetail | null>(null)
+let collectionRequestToken = 0
+let detailRequestToken = 0
 
 const previewVisible = ref(false)
 const previewLoading = ref(false)
@@ -217,6 +240,7 @@ const queryParams = (includePage = true) => ({
 })
 
 const loadData = async () => {
+  const requestToken = ++collectionRequestToken
   loading.value = true
   try {
     interface AppraisalCollectionPage {
@@ -234,6 +258,7 @@ const loadData = async () => {
       msg?: string
       data?: AppraisalCollectionPage
     }
+    if (requestToken !== collectionRequestToken) return
     const data = (response?.data ?? {}) as AppraisalCollectionPage
     rows.value = Array.isArray(data.rows) ? data.rows : []
     pagination.total = Number(data.total || 0)
@@ -242,9 +267,10 @@ const loadData = async () => {
     summary.notSubmittedCount = Number(data.notSubmittedCount || 0)
     if (Array.isArray(data.classes)) classOptions.value = data.classes
   } catch (error: any) {
+    if (requestToken !== collectionRequestToken) return
     ElMessage.error(error?.message || '加载鉴定表收集数据失败')
   } finally {
-    loading.value = false
+    if (requestToken === collectionRequestToken) loading.value = false
   }
 }
 
@@ -267,6 +293,7 @@ const handlePageSizeChange = () => {
 }
 
 const openDetail = async (studentId: number) => {
+  const requestToken = ++detailRequestToken
   detailVisible.value = true
   detailLoading.value = true
   detail.value = null
@@ -275,15 +302,17 @@ const openDetail = async (studentId: number) => {
       code?: number
       data?: AppraisalStudentDetail
     }
+    if (requestToken !== detailRequestToken) return
     const detailData: unknown = response.data
     detail.value = (detailData !== null && typeof detailData === 'object'
       ? detailData as AppraisalStudentDetail
       : null)
   } catch (error: any) {
+    if (requestToken !== detailRequestToken) return
     ElMessage.error(error?.message || '加载鉴定表详情失败')
     detailVisible.value = false
   } finally {
-    detailLoading.value = false
+    if (requestToken === detailRequestToken) detailLoading.value = false
   }
 }
 

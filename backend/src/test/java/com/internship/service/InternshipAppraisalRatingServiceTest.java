@@ -30,6 +30,7 @@ import java.util.stream.Collectors;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.doAnswer;
@@ -227,6 +228,24 @@ class InternshipAppraisalRatingServiceTest {
         assertEquals(88L, result.getFileUploadId());
         assertEquals(SUBMISSION_ID, result.getSubmissionId());
         verify(appraisalMapper).insertFile(result);
+    }
+
+    @Test
+    void withdrawnAppraisalCanUploadReplacementFile() {
+        InternshipAppraisalSubmission submission = new InternshipAppraisalSubmission();
+        submission.setId(SUBMISSION_ID);
+        submission.setStudentId(STUDENT_ID);
+        submission.setStatus("WITHDRAWN");
+        when(appraisalMapper.findSubmissionByStudentId(STUDENT_ID)).thenReturn(submission);
+        when(appraisalMapper.findFilesBySubmissionId(SUBMISSION_ID)).thenReturn(List.of());
+        InternshipAppraisalFile replacement = new InternshipAppraisalFile();
+        replacement.setFileName("修订鉴定表.pdf");
+        replacement.setFilePath("internship-appraisal/replacement.pdf");
+
+        assertDoesNotThrow(() -> service.validateFileUploadAllowed(STUDENT_ID));
+        service.addFile(STUDENT_ID, replacement);
+
+        verify(appraisalMapper).insertFile(replacement);
     }
 
     @Test

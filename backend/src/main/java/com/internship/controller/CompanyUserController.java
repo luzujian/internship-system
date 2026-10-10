@@ -8,6 +8,7 @@ import com.internship.entity.Result;
 import com.internship.service.CompanyUserService;
 import com.internship.utils.CurrentHolder;
 import com.internship.utils.ExcelUtils;
+import com.internship.utils.CompanyImportReader;
 import com.internship.utils.JwtUtils;
 import com.internship.utils.PasswordValidator;
 import com.internship.utils.UserCredentialDefaults;
@@ -414,7 +415,7 @@ public class CompanyUserController {
                 return Result.error("文件类型错误，请上传 Excel 文件");
             }
 
-            List<Map<String, Object>> companyDataList = ExcelUtils.readExcel(file);
+            List<Map<String, Object>> companyDataList = CompanyImportReader.read(file);
 
             Map<String, Object> importResult = companyUserService.importFromExcel(companyDataList);
 

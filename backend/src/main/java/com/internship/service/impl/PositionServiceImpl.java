@@ -5,6 +5,7 @@ import com.internship.entity.Position;
 import com.internship.exception.BusinessException;
 import com.internship.mapper.PositionMapper;
 import com.internship.service.PositionService;
+import com.internship.service.CompanyContactService;
 import com.internship.service.StudentInternshipStatusService;
 import com.github.pagehelper.PageHelper;
 import com.github.pagehelper.PageInfo;
@@ -29,6 +30,9 @@ public class PositionServiceImpl implements PositionService {
     private final StudentInternshipStatusService studentInternshipStatusService;
 
     @Autowired
+    private CompanyContactService companyContactService;
+
+    @Autowired
     public PositionServiceImpl(PositionMapper positionMapper,
                                @Lazy StudentInternshipStatusService studentInternshipStatusService) {
         this.positionMapper = positionMapper;
@@ -42,6 +46,9 @@ public class PositionServiceImpl implements PositionService {
         
         // 参数校验
         validatePositionInfo(position);
+
+        companyContactService.lockCompany(position.getCompanyId());
+        companyContactService.requireOwned(position.getCompanyId(), position.getContactId());
         
         // 设置创建和更新时间
         Date now = new Date();
@@ -75,11 +82,17 @@ public class PositionServiceImpl implements PositionService {
             throw new BusinessException("岗位ID无效");
         }
         
-        // 检查岗位是否存在
-        Position existingPosition = positionMapper.findById(position.getId());
+        // Lock the owning company before assigning or releasing a contact.
+        Position owner = positionMapper.findById(position.getId());
+        if (owner == null) throw new BusinessException("岗位不存在");
+        Long targetCompanyId = position.getCompanyId() != null ? position.getCompanyId() : owner.getCompanyId();
+        companyContactService.lockCompany(targetCompanyId);
+        Position existingPosition = positionMapper.findByIdForUpdate(position.getId());
         if (existingPosition == null) {
             throw new BusinessException("岗位不存在");
         }
+        companyContactService.requireOwned(targetCompanyId, position.isContactSpecified()
+                ? position.getContactId() : existingPosition.getContactId());
         
         // 设置更新时间
         position.setUpdateTime(new Date());
@@ -95,10 +108,13 @@ public class PositionServiceImpl implements PositionService {
         if (companyId == null || position == null || position.getId() == null || position.getId() <= 0) {
             throw new AccessDeniedException("无权修改该岗位");
         }
+        companyContactService.lockCompany(companyId);
         Position existing = positionMapper.findByIdForUpdate(position.getId());
         if (existing == null || !companyId.equals(existing.getCompanyId())) {
             throw new AccessDeniedException("无权修改该岗位");
         }
+        companyContactService.requireOwned(companyId, position.isContactSpecified()
+                ? position.getContactId() : existing.getContactId());
         // Ownership comes from the locked row, never from client input.
         position.setCompanyId(null);
         position.setUpdateTime(new Date());
@@ -362,8 +378,7 @@ public class PositionServiceImpl implements PositionService {
             throw new BusinessException("企业ID无效");
         }
         
-        List<Position> positions = positionMapper.findByCompanyId(companyId);
-        return (long) positions.size();
+        return positionMapper.countByCompanyId(companyId);
     }
     
     /**

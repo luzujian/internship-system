@@ -1,6 +1,7 @@
 package com.internship.controller;
 
 import com.internship.anno.Log;
+import com.internship.agent.business.AgentException;
 import com.internship.entity.InternshipReflection;
 import com.internship.entity.Result;
 import com.internship.service.InternshipReflectionService;
@@ -110,36 +111,13 @@ public class InternshipReflectionController {
         try {
             Map<String, Object> analysisResult = internshipReflectionService.analyzeReflection(id);
             
-            if ((Boolean) analysisResult.get("success")) {
-                InternshipReflection reflection = internshipReflectionService.findById(id);
-                if (reflection != null) {
-                    Map<String, Object> data = (Map<String, Object>) analysisResult.get("data");
-
-                    reflection.setAiKeywords(data.get("keywords") != null ? data.get("keywords").toString() : null);
-                    reflection.setAiAnalysis(data.get("comment") != null ? data.get("comment").toString() : null);
-
-                    // 保存改进建议
-                    Object improvementsObj = data.get("improvements");
-                    if (improvementsObj instanceof List) {
-                        List<?> improvementsList = (List<?>) improvementsObj;
-                        reflection.setAiImprovements(improvementsList.toString());
-                    }
-
-                    Object scoreObj = data.get("score");
-                    if (scoreObj != null) {
-                        reflection.setAiScore(new java.math.BigDecimal(scoreObj.toString()));
-                    }
-
-                    reflection.setAiAnalysisTime(new Date());
-                    reflection.setStatus(1);
-
-                    internshipReflectionService.updateById(reflection);
-                }
-                
+            if (Boolean.TRUE.equals(analysisResult.get("success"))) {
                 return Result.success("分析成功", analysisResult.get("data"));
             } else {
                 return Result.error("分析失败: " + analysisResult.get("message"));
             }
+        } catch (AgentException e) {
+            throw e;
         } catch (Exception e) {
             log.error("AI分析实习心得失败: {}", e.getMessage());
             return Result.error("分析失败: " + e.getMessage());
@@ -164,6 +142,8 @@ public class InternshipReflectionController {
             } else {
                 return Result.error("分析失败: " + analysisResult.get("message"));
             }
+        } catch (AgentException e) {
+            throw e;
         } catch (Exception e) {
             log.error("AI分析实习心得内容失败: {}", e.getMessage());
             return Result.error("分析失败: " + e.getMessage());
@@ -265,6 +245,8 @@ public class InternshipReflectionController {
             response.put("analysis", data);
             
             return Result.success("上传并分析成功", response);
+        } catch (AgentException e) {
+            throw e;
         } catch (IllegalArgumentException e) {
             log.error("文件格式错误: {}", e.getMessage());
             return Result.error(e.getMessage());
@@ -314,6 +296,8 @@ public class InternshipReflectionController {
                 }
                 return Result.error("分析失败: " + analysisResult.get("message"));
             }
+        } catch (AgentException e) {
+            throw e;
         } catch (IllegalArgumentException e) {
             log.error("文件格式错误: {}", e.getMessage());
             return Result.error(e.getMessage());

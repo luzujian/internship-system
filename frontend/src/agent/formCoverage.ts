@@ -53,8 +53,9 @@ export const SUBMIT_FORMS: SubmitFormEntry[] = [
   { formId: 'admin:security', title: '安全设置', file: 'views/admin/SystemSettingsManagement.vue', persistence: 'server', validation: 'native' },
   { formId: 'admin:student', title: '学生新增/编辑', file: 'views/admin/StudentUserManagement.vue', persistence: 'server', validation: 'native' },
   { formId: 'admin:teacher', title: '教师新增/编辑', file: 'views/admin/TeacherUserManagement.vue', persistence: 'server', validation: 'native' },
-  // ===== 企业端（5）=====
+  // ===== 企业端（6）=====
   { formId: 'company:account', title: '企业资料', file: 'views/company/AccountSettings.vue', persistence: 'server', validation: 'native' },
+  { formId: 'company:contact', title: '企业联系人', file: 'components/company/CompanyContacts.vue', persistence: 'server', validation: 'native' },
   { formId: 'company:info', title: '企业基本信息', file: 'views/company/CompanyInfo.vue', persistence: 'server', validation: 'native' },
   { formId: 'company:interview-template', title: '面试信息模板', file: 'views/company/RecruitmentManagement.vue', persistence: 'browser', validation: 'native' },
   { formId: 'company:position', title: '岗位发布/编辑', file: 'views/company/RecruitmentManagement.vue', persistence: 'server', validation: 'native' },
@@ -127,6 +128,7 @@ export const EXEMPT_FILES: ExemptEntry[] = [
   { file: 'views/company/ApplicationView.vue', reason: 'search-only', detail: '搜索 + 导出 + 行级同意/拒绝/录用二次确认框' },
   { file: 'views/company/CompanyHome.vue', reason: 'search-only', detail: '看板 + 公告详情只读弹窗' },
   { file: 'views/company/InternshipConfirm.vue', reason: 'search-only', detail: '搜索 + 确认/拒绝行操作（无文本表单）' },
+  { file: 'views/company/InternshipStudents.vue', reason: 'search-only', detail: '当前实习学生名单与搜索，只读页面' },
   { file: 'views/teacher/CompanyList.vue', reason: 'search-only', detail: '搜索 + 企业详情只读弹窗' },
   { file: 'views/teacher/Home.vue', reason: 'search-only', detail: '看板 + 心得详情只读弹窗 + 文件预览' },
   { file: 'views/student/InternshipAppraisal.vue', reason: 'unsupported-widget', detail: '上传实习鉴定材料与手动评分，实习公司选择不作为 AI 填表对象' },

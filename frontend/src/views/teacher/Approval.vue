@@ -467,6 +467,7 @@ const materialItems = ref({
 })
 
 const applications = ref<any[]>([])
+const listRequestId = ref(0)
 
 const fetchStats = async () => {
   try {
@@ -476,54 +477,57 @@ const fetchStats = async () => {
       companyQualificationPending?: number
       data?: { selfPracticePending?: number; delayPending?: number; companyQualificationPending?: number }
     }
-    // 保持原运行时取值路径（顶层字段），仅用精确断言收敛类型
-    approvalTabs.value[0].count = response.selfPracticePending ?? 0
-    approvalTabs.value[1].count = response.delayPending ?? 0
-    approvalTabs.value[2].count = response.companyQualificationPending ?? 0
+    const counts = {
+      selfPractice: response.selfPracticePending ?? 0,
+      delay: response.delayPending ?? 0,
+      companyQualification: response.companyQualificationPending ?? 0
+    }
+    approvalTabs.value.forEach(tab => { tab.count = counts[tab.key] ?? 0 })
   } catch (error) {
     console.error('[Approval] 获取统计数据失败:', error)
-    approvalTabs.value[0].count = 0
-    approvalTabs.value[1].count = 0
-    approvalTabs.value[2].count = 0
+    approvalTabs.value.forEach(tab => { tab.count = 0 })
   }
 }
 
 const fetchApplications = async () => {
+  const requestId = ++listRequestId.value
+  const applicationType = activeTab.value
   loading.value = true
+  applications.value = []
+  total.value = 0
   try {
     let response
-    if (activeTab.value === 'companyQualification') {
+    if (applicationType === 'companyQualification') {
       response = await approvalApi.getCompanyQualifications({
         page: currentPage.value,
         pageSize: pageSize.value,
         companyName: searchForm.keyword || undefined,
         status: searchForm.status || undefined
       })
-      applications.value = response.rows || []
-      total.value = response.total || 0
     } else {
       response = await approvalApi.getStudentApplications({
         page: currentPage.value,
         pageSize: pageSize.value,
-        applicationType: activeTab.value,
+        applicationType,
         status: searchForm.status || undefined,
         studentName: searchForm.keyword || undefined,
         studentUserId: searchForm.keyword || undefined
       })
-      applications.value = response.rows || []
-      total.value = response.total || 0
     }
-    
-    applications.value = applications.value.map((app: any) => ({
+
+    if (requestId !== listRequestId.value) return
+    applications.value = (response.rows || []).map((app: any) => ({
       ...app,
-      type: activeTab.value,
+      type: applicationType,
       studentId: app.studentUserId || app.studentId
     }))
+    total.value = response.total || 0
   } catch (error) {
+    if (requestId !== listRequestId.value) return
     console.error('[Approval] 获取申请列表失败:', error)
     ElMessage.error('获取申请列表失败')
   } finally {
-    loading.value = false
+    if (requestId === listRequestId.value) loading.value = false
   }
 }
 

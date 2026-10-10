@@ -1,9 +1,9 @@
 package com.internship.util;
 
 import java.util.List;
-import java.util.ArrayList;
+import java.util.Locale;
 
-/** Supported adapters, not claims about arbitrary provider model names. */
+/** Chat uses the OpenAI-compatible protocol; voice still requires a specific adapter. */
 public final class AIModelCapabilities {
     private AIModelCapabilities() {}
     public static boolean dictation(String code) {
@@ -13,11 +13,15 @@ public final class AIModelCapabilities {
         return code != null && code.matches("qwen3-asr-flash-realtime(?:-\\d{4}-\\d{2}-\\d{2})?");
     }
     public static List<String> supported(String code) {
-        var result = new ArrayList<String>();
+        if (code == null || code.isBlank()) return List.of();
+        code = code.trim();
         if (dictation(code)) return List.of("chat", "voice");
         if (realtime(code)) return List.of("voice");
-        if (code != null && !code.matches(".*(?:asr|tts|realtime|embedding|rerank|whisper|audio|omni).*")
-                && code.matches("(?:deepseek|qwen(?:\\d+(?:\\.\\d+)?)?|gpt|glm|claude|gemini|o[134])[-.].+")) result.add("chat");
-        return result;
+        String normalized = code.toLowerCase(Locale.ROOT);
+        if (normalized.matches(".*(?:asr|tts|realtime|embed|rerank|whisper|text-to-speech|speech-to-text).*")
+                || normalized.matches("(?:.*/)?(?:bge|e5|gte)[-_.].*")) return List.of();
+        // Gateways may expose arbitrary aliases, deployment IDs or vendor/model paths.
+        // Connectivity testing, not a provider-name whitelist, establishes availability.
+        return List.of("chat");
     }
 }

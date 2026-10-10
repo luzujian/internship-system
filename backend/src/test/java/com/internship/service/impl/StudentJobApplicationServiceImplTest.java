@@ -28,6 +28,22 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class StudentJobApplicationServiceImplTest {
     @Test
+    void mirroredSubmissionSharesThePersistedCreationTimestamp() {
+        var app = application(31L, 12L);
+        var position = position(12L, 2); position.setCompanyId(7L);
+        when(positionMapper.findByIdForUpdate(12L)).thenReturn(position);
+        when(mapper.insert(app)).thenReturn(1);
+        when(internshipApplicationMapper.insert(org.mockito.ArgumentMatchers.any())).thenReturn(1);
+        assertEquals(1, service.create(app));
+        var mirror = org.mockito.ArgumentCaptor.forClass(com.internship.entity.InternshipApplicationEntity.class);
+        verify(internshipApplicationMapper).insert(mirror.capture());
+        org.junit.jupiter.api.Assertions.assertNotNull(app.getCreateTime());
+        assertEquals(app.getCreateTime(), mirror.getValue().getApplyTime());
+        assertEquals(app.getCreateTime(), mirror.getValue().getCreateTime());
+        assertEquals(app.getUpdateTime(), mirror.getValue().getUpdateTime());
+    }
+
+    @Test
     void companyRoutingComesFromLockedPosition() {
         var app=application(31L,12L); app.setCompanyId(999L); app.setCompanyName("forged");
         var job=position(12L,2); job.setCompanyId(7L); job.setPositionName("real job");
@@ -147,6 +163,34 @@ class StudentJobApplicationServiceImplTest {
         verify(internshipApplicationMapper)
                 .updateLatestStatusByStudentAndPosition(42L, 16L, "withdrawn");
         verify(positionMapper, never()).findByIdForUpdate(16L);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"approved", "interview_passed", "rejected", "interview_failed", "withdrawn"})
+    void withdrawalCannotDeleteProcessedApplicationOrAffectLaterRetry(String status) {
+        StudentJobApplication existing = application(42L, 16L);
+        existing.setId(101L);
+        existing.setStatus(status);
+        when(mapper.findById(101L)).thenReturn(existing);
+
+        assertThrows(BusinessException.class, () -> service.deleteById(101L, 42L));
+
+        verify(mapper, never()).deleteById(101L);
+        verify(internshipApplicationMapper, never())
+                .updateLatestStatusByStudentAndPosition(42L, 16L, "withdrawn");
+    }
+
+    @Test
+    void withdrawalFailsWhenCompanyProcessesApplicationAfterItWasRead() {
+        StudentJobApplication existing = application(42L, 16L);
+        existing.setStatus("pending");
+        when(mapper.findById(101L)).thenReturn(existing);
+        when(mapper.deleteById(101L)).thenReturn(0);
+
+        assertThrows(BusinessException.class, () -> service.deleteById(101L, 42L));
+
+        verify(internshipApplicationMapper, never())
+                .updateLatestStatusByStudentAndPosition(42L, 16L, "withdrawn");
     }
 
     private StudentJobApplication application(Long studentId, Long positionId) {

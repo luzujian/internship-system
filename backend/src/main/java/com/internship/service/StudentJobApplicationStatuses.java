@@ -27,6 +27,18 @@ public final class StudentJobApplicationStatuses {
         return !canRetry(status);
     }
 
+    /** Ordinary review actions; direct hire claims a pending application separately. */
+    public static void requireReviewTransition(String currentStatus, String newStatus) {
+        boolean allowed = "pending".equals(currentStatus)
+                && ("approved".equals(newStatus) || "rejected".equals(newStatus))
+                || ("approved".equals(currentStatus) || "interview".equals(currentStatus)
+                    || "pending_interview".equals(currentStatus))
+                && ("interview_passed".equals(newStatus) || "interview_failed".equals(newStatus));
+        if (!allowed) {
+            throw new BusinessException("不允许此申请状态变更，请刷新后重试");
+        }
+    }
+
     public static String normalizeRejectReason(String status, String rejectReason) {
         if (!"rejected".equals(status)) {
             return null;

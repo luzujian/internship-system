@@ -1,6 +1,7 @@
 package com.internship.mapper;
 
 import com.internship.entity.InterviewInvitation;
+import com.internship.entity.dto.StudentPositionKey;
 import org.apache.ibatis.annotations.*;
 
 import java.util.List;
@@ -22,23 +23,10 @@ public interface InterviewInvitationMapper {
 
     List<InterviewInvitation> findByStudentId(@Param("studentId") Long studentId);
 
-    @Results({
-        @Result(property = "interviewMethod", column = "interview_type"),
-        @Result(property = "contactPerson", column = "contact_person"),
-        @Result(property = "contactPhone", column = "contact_phone")
-    })
-    @Select("SELECT ii.*, cu.website FROM interview_invitation ii " +
-            "LEFT JOIN company_users cu ON ii.company_id = cu.id " +
-            "WHERE ii.student_id = #{studentId} AND ii.position_id = #{positionId} " +
-            "ORDER BY COALESCE(ii.update_time, ii.create_time) DESC, ii.id DESC LIMIT 1")
     InterviewInvitation findByStudentAndPosition(@Param("studentId") Long studentId, @Param("positionId") Long positionId);
 
-    @Results({
-        @Result(property = "interviewMethod", column = "interview_type"),
-        @Result(property = "contactPerson", column = "contact_person"),
-        @Result(property = "contactPhone", column = "contact_phone")
-    })
-    @Select("SELECT * FROM interview_invitation WHERE id = #{id}")
+    List<InterviewInvitation> findLatestForStudentPositions(@Param("pairs") List<StudentPositionKey> pairs);
+
     InterviewInvitation findById(@Param("id") Long id);
 
     List<InterviewInvitation> findByStudentIdAndStatus(@Param("studentId") Long studentId, @Param("status") String status);

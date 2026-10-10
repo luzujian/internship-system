@@ -67,11 +67,12 @@ public interface OperateLogMapper {
             " and operation_type in <foreach collection='q.actionList' item='action' open='(' separator=',' close=')'>#{action}</foreach>" +
             "</if>" +
             "<if test='q.result != null and q.result != \"\"'> and operation_result = #{q.result}</if>" +
-            "<if test='q.riskLevel != null and q.riskLevel != \"\"'> and risk_level = #{q.riskLevel}</if>" +
+            "<if test='q.riskLevel != null and q.riskLevel != \"\"'> and (risk_level = #{q.riskLevel} or (#{q.riskLevel} = 'HIGH,CRITICAL' and risk_level in ('HIGH','CRITICAL')))</if>" +
             "<if test='q.ip != null and q.ip != \"\"'> and ip_address like concat('%', #{q.ip}, '%')</if>" +
             "<if test='q.targetId != null and q.targetId != \"\"'> and target_id = #{q.targetId}</if>" +
             "<if test='q.requestId != null and q.requestId != \"\"'> and request_id = #{q.requestId}</if>" +
-            " order by ${q.sortField} ${q.sortOrder}" +
+            " order by ${q.sortField} ${q.sortOrder}, id ${q.sortOrder}" +
+            "<if test='q.limit != null'> limit #{q.limit}</if>" +
             "</script>")
     List<OperateLog> selectByFilter(@Param("q") LogQueryParams q);
 
@@ -97,7 +98,7 @@ public interface OperateLogMapper {
             " and operation_type in <foreach collection='q.actionList' item='action' open='(' separator=',' close=')'>#{action}</foreach>" +
             "</if>" +
             "<if test='q.result != null and q.result != \"\"'> and operation_result = #{q.result}</if>" +
-            "<if test='q.riskLevel != null and q.riskLevel != \"\"'> and risk_level = #{q.riskLevel}</if>" +
+            "<if test='q.riskLevel != null and q.riskLevel != \"\"'> and (risk_level = #{q.riskLevel} or (#{q.riskLevel} = 'HIGH,CRITICAL' and risk_level in ('HIGH','CRITICAL')))</if>" +
             "<if test='q.ip != null and q.ip != \"\"'> and ip_address like concat('%', #{q.ip}, '%')</if>" +
             "<if test='q.targetId != null and q.targetId != \"\"'> and target_id = #{q.targetId}</if>" +
             "<if test='q.requestId != null and q.requestId != \"\"'> and request_id = #{q.requestId}</if>" +
@@ -137,11 +138,19 @@ public interface OperateLogMapper {
     @Select("select count(*) from operate_log where entry_hash is not null")
     long countChained();
 
+    @Select("select count(*) from operate_log where entry_hash is null")
+    long countUnchained();
+
     /**
      * P2 归档：分页取到期高风险记录（删除前归档用）
      */
     @Select("select * from operate_log where operate_time < #{beforeTime} and risk_level in ('HIGH','CRITICAL') and id > #{afterId} order by id asc limit #{limit}")
     List<OperateLog> selectExpiredHighRiskBatch(@Param("beforeTime") Date beforeTime, @Param("afterId") long afterId, @Param("limit") int limit);
+
+    /** 仅删除已经成功归档的这一批高风险记录，避免并发新增记录被误删。 */
+    @Delete("<script>delete from operate_log where risk_level in ('HIGH','CRITICAL') and id in " +
+            "<foreach collection='ids' item='id' open='(' separator=',' close=')'>#{id}</foreach></script>")
+    int deleteArchivedHighRisk(@Param("ids") List<Long> ids);
 
     /**
      * P1 获取操作类型选项（去重，供前端筛选用）
@@ -201,6 +210,9 @@ public interface OperateLogMapper {
      */
     @Select("select count(*) from operate_log where operate_time < #{beforeTime}")
     long countBeforeTime(@Param("beforeTime") Date beforeTime);
+
+    @Select("select count(*) from operate_log where operate_time < #{beforeTime} and risk_level in ('HIGH','CRITICAL')")
+    long countBeforeTimeHighRisk(@Param("beforeTime") Date beforeTime);
 
     /**
      * P1 时间留存：统计指定时间之前的非高风险数据量（预览用）

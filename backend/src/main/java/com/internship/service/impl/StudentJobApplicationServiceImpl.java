@@ -67,7 +67,6 @@ public class StudentJobApplicationServiceImpl implements StudentJobApplicationSe
 
         application.setStatus("pending");
         application.setRejectReason(null);
-        application.setApplyDate(new Date());
 
         // 岗位锁仅用于串行化同岗位防重检查；申请不会占用最终名额。
         if (application.getPositionId() != null) {
@@ -88,6 +87,11 @@ public class StudentJobApplicationServiceImpl implements StudentJobApplicationSe
             }
         }
 
+        // Share one timestamp with the mirror; apply_date alone only stores the calendar date.
+        Date submittedAt = new Date();
+        application.setApplyDate(submittedAt);
+        application.setCreateTime(submittedAt);
+        application.setUpdateTime(submittedAt);
         int result = mapper.insert(application);
 
         if (result > 0) {
@@ -113,9 +117,9 @@ public class StudentJobApplicationServiceImpl implements StudentJobApplicationSe
             internshipApp.setCompanyId(application.getCompanyId());
             internshipApp.setStatus("pending");
             internshipApp.setViewed(false);
-            internshipApp.setApplyTime(new Date());
-            internshipApp.setCreateTime(new Date());
-            internshipApp.setUpdateTime(new Date());
+            internshipApp.setApplyTime(submittedAt);
+            internshipApp.setCreateTime(submittedAt);
+            internshipApp.setUpdateTime(submittedAt);
             internshipApp.setStageNo(application.getStageNo());
             internshipApp.setStageAssignmentId(application.getStageAssignmentId());
             internshipApp.setSourceType(application.getSourceType());
@@ -157,7 +161,13 @@ public class StudentJobApplicationServiceImpl implements StudentJobApplicationSe
         if (!existing.getStudentId().equals(studentId)) {
             throw new BusinessException("无权删除此申请");
         }
+        if (!"pending".equals(existing.getStatus())) {
+            throw new BusinessException("只有待审核申请可以撤回");
+        }
         int result = mapper.deleteById(id);
+        if (result <= 0) {
+            throw new BusinessException("申请状态已变化，请刷新后重试");
+        }
 
         if (result > 0) {
             if (existing.getPositionId() != null) {

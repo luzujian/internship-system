@@ -1,0 +1,137 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.internship.mapper.InternshipAgreementMapper">
+    <!-- 自主实习获批后生成的确认记录仍属于原申请，不重复建立收集行。 -->
+    <sql id="Sources">
+        SELECT CONVERT('CONFIRMATION' USING utf8mb4) COLLATE utf8mb4_unicode_ci AS source_type, cr.id AS source_id, cr.student_id,
+               CONVERT(cr.company_name USING utf8mb4) COLLATE utf8mb4_unicode_ci AS company_name,
+               CONVERT(cr.position_name USING utf8mb4) COLLATE utf8mb4_unicode_ci AS position_name, cr.create_time AS record_submitted_at,
+               CONVERT(CASE WHEN cr.recall_status = 2 THEN 'WITHDRAWN'
+                    WHEN cr.status = 2 THEN 'REJECTED'
+                    WHEN cr.status = 0 THEN 'PENDING'
+                    ELSE COALESCE(p.status, 'CONFIRMED') END USING utf8mb4) COLLATE utf8mb4_unicode_ci AS business_status
+        FROM internship_confirmation_record cr
+        LEFT JOIN internship_stage_assignment p ON p.id = (
+            SELECT MAX(p2.id) FROM internship_stage_assignment p2 WHERE p2.confirmation_record_id = cr.id
+        )
+        WHERE (cr.recall_status IS NOT NULL OR cr.status IN (1, 2))
+          AND NOT EXISTS (
+              SELECT 1 FROM internship_stage_assignment sp
+              WHERE sp.confirmation_record_id = cr.id AND sp.source_type = 'SELF_PRACTICE'
+          )
+        UNION ALL
+        SELECT CONVERT('SELF_PRACTICE' USING utf8mb4) COLLATE utf8mb4_unicode_ci, a.id, a.student_id,
+               CONVERT(a.company USING utf8mb4) COLLATE utf8mb4_unicode_ci,
+               CONVERT(a.position_name USING utf8mb4) COLLATE utf8mb4_unicode_ci,
+               COALESCE(a.apply_time, a.create_time),
+               CONVERT(CASE WHEN a.status = 'withdrawn' THEN 'WITHDRAWN'
+                    WHEN a.status = 'rejected' THEN 'REJECTED'
+                    WHEN a.status = 'pending' THEN 'PENDING'
+                    ELSE COALESCE(p.status, 'CONFIRMED') END USING utf8mb4) COLLATE utf8mb4_unicode_ci
+        FROM student_application a
+        LEFT JOIN internship_stage_assignment p ON p.id = (
+            SELECT MAX(p2.id) FROM internship_stage_assignment p2
+            WHERE p2.source_type = 'SELF_PRACTICE' AND p2.source_assignment_id = a.id
+        )
+        WHERE a.application_type = 'selfPractice'
+    </sql>
+    <sql id="FromRecords">
+        FROM (<include refid="Sources"/>) r
+        INNER JOIN student_users su ON su.id = r.student_id
+        LEFT JOIN `class` c ON c.id = su.class_id
+        LEFT JOIN major m ON m.id = su.major_id
+        LEFT JOIN internship_agreement_submission v ON v.id = (
+            SELECT av.id FROM internship_agreement_submission av
+            WHERE av.source_type = r.source_type COLLATE utf8mb4_unicode_ci AND av.source_id = r.source_id
+            ORDER BY av.version DESC LIMIT 1
+        )
+    </sql>
+    <sql id="Filters">
+        WHERE 1 = 1
+        <if test="scope != null">
+            <include refid="com.internship.mapper.TeacherInternshipAppraisalMapper.TeacherScopePredicate"/>
+        </if>
+        <if test="studentId != null">AND r.student_id = #{studentId}</if>
+        <if test="sourceType != null">AND r.source_type = #{sourceType}</if>
+        <if test="sourceId != null">AND r.source_id = #{sourceId}</if>
+        <if test="classId != null">AND su.class_id = #{classId}</if>
+        <if test="keyword != null and keyword != ''">
+            AND (su.name LIKE CONCAT('%', #{keyword}, '%') OR su.student_user_id LIKE CONCAT('%', #{keyword}, '%'))
+        </if>
+        <if test="status == 'SUBMITTED'">AND v.id IS NOT NULL</if>
+        <if test="status == 'NOT_SUBMITTED'">AND v.id IS NULL</if>
+        <choose>
+            <when test="businessStatus == 'ACTIVE'">AND r.business_status NOT IN ('WITHDRAWN', 'REJECTED')</when>
+            <when test="businessStatus == 'HISTORY'">AND r.business_status IN ('WITHDRAWN', 'REJECTED')</when>
+            <when test="businessStatus != null and businessStatus != 'ALL'">AND r.business_status = #{businessStatus}</when>
+        </choose>
+    </sql>
+    <select id="findRecords" resultType="com.internship.entity.dto.InternshipAgreementModels$AgreementRecord">
+        SELECT r.*, su.student_user_id AS student_number, su.name AS student_name,
+               su.class_id, c.name AS class_name, m.name AS major_name,
+               CASE WHEN v.id IS NULL THEN 'NOT_SUBMITTED' ELSE 'SUBMITTED' END AS submission_status,
+               COALESCE(v.version, 0) AS version, v.submitted_at,
+               (SELECT COUNT(*) FROM internship_agreement_file af WHERE af.submission_id = v.id) AS file_count
+        <include refid="FromRecords"/>
+        <include refid="Filters"/>
+        ORDER BY r.record_submitted_at DESC, r.source_type, r.source_id DESC
+        <if test="pageSize != null">LIMIT #{offset}, #{pageSize}</if>
+    </select>
+    <select id="countRecords" resultType="long">
+        SELECT COUNT(*) <include refid="FromRecords"/> <include refid="Filters"/>
+    </select>
+    <select id="findExportFiles" resultType="com.internship.entity.dto.InternshipAgreementModels$ExportFile">
+        SELECT af.id, r.source_type, r.source_id, c.name AS class_name,
+               su.student_user_id AS student_number, su.name AS student_name,
+               v.company_name, v.version, fu.file_name, fu.file_path
+        <include refid="FromRecords"/>
+        INNER JOIN internship_agreement_file af ON af.submission_id = v.id
+        INNER JOIN file_upload fu ON fu.id = af.file_upload_id
+        <include refid="Filters"/>
+        ORDER BY c.name, su.student_user_id, r.source_type, r.source_id, af.sort_order, af.id
+    </select>
+    <select id="findVersions" resultType="com.internship.entity.dto.InternshipAgreementModels$AgreementVersion">
+        SELECT * FROM internship_agreement_submission
+        WHERE source_type = #{sourceType} AND source_id = #{sourceId} ORDER BY version DESC
+    </select>
+    <select id="findVersionsForUpdate" resultType="com.internship.entity.dto.InternshipAgreementModels$AgreementVersion">
+        SELECT * FROM internship_agreement_submission
+        WHERE source_type = #{sourceType} AND source_id = #{sourceId} ORDER BY version DESC FOR UPDATE
+    </select>
+    <sql id="FileColumns">
+        af.id, fu.id AS upload_id, fu.file_name, fu.file_type, fu.file_size, fu.upload_time, fu.file_path,
+        v.student_id, v.source_type, v.source_id
+    </sql>
+    <sql id="FromFiles">
+        FROM internship_agreement_file af
+        INNER JOIN internship_agreement_submission v ON v.id = af.submission_id
+        INNER JOIN file_upload fu ON fu.id = af.file_upload_id
+    </sql>
+    <select id="findVersionFiles" resultType="com.internship.entity.dto.InternshipAgreementModels$AgreementFile">
+        SELECT <include refid="FileColumns"/> <include refid="FromFiles"/>
+        WHERE af.submission_id = #{versionId} ORDER BY af.sort_order, af.id
+    </select>
+    <select id="findFile" resultType="com.internship.entity.dto.InternshipAgreementModels$AgreementFile">
+        SELECT <include refid="FileColumns"/> <include refid="FromFiles"/> WHERE af.id = #{fileId}
+    </select>
+    <select id="findUploadForUpdate" resultType="com.internship.entity.FileUpload">
+        SELECT * FROM file_upload WHERE id = #{uploadId} FOR UPDATE
+    </select>
+    <select id="findUploadBindings" resultType="com.internship.entity.dto.InternshipAgreementModels$AgreementVersion">
+        SELECT v.* FROM internship_agreement_file af
+        INNER JOIN internship_agreement_submission v ON v.id = af.submission_id
+        WHERE af.file_upload_id = #{uploadId}
+    </select>
+    <select id="lockStudent" resultType="java.lang.Long">
+        SELECT id FROM student_users WHERE id = #{studentId} FOR UPDATE
+    </select>
+    <insert id="insertVersion" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO internship_agreement_submission
+        (student_id, source_type, source_id, version, company_name, position_name, submitted_at)
+        VALUES (#{studentId}, #{sourceType}, #{sourceId}, #{version}, #{companyName}, #{positionName}, NOW())
+    </insert>
+    <insert id="insertFile">
+        INSERT INTO internship_agreement_file (submission_id, file_upload_id, sort_order)
+        VALUES (#{versionId}, #{uploadId}, #{sortOrder})
+    </insert>
+</mapper>

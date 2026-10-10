@@ -23,6 +23,7 @@ function fixture(shared = memory(), session = memory()) {
     const localRequire = name => {
       if(name === '@/utils/request') return {__esModule:true,default:request,cleanupTokens(){tabSession.clearTabSession(session)}}
       if(name === '@/utils/logger') return {__esModule:true,default:quiet}
+      if(name === '@/store/auth') return {useAuthStore:()=>store}
       if(name === 'element-plus') return {ElMessage:{error(){},warning(){}}}
       if(name.endsWith('tabSession.mjs')) return {readTabSession:()=>tabSession.readTabSession(session),writeTabSession:state=>tabSession.writeTabSession(state,session),clearTabSession:()=>tabSession.clearTabSession(session)}
       if(name.startsWith('.')) return load(resolve(dirname(file),name+'.ts'))
@@ -36,7 +37,7 @@ function fixture(shared = memory(), session = memory()) {
   const ast=ts.createSourceFile('request.ts',requestSource,ts.ScriptTarget.Latest,true)
   const func=ast.statements.find(node=>ts.isFunctionDeclaration(node)&&node.name?.text==='getAccessToken').getText(ast).replace(/^export /,'')
   const getToken=vm.runInNewContext(ts.transpileModule(func+'\ngetAccessToken',{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText,{useAuthStore:()=>store})
-  return {store,shared,session,getToken,requests}
+  return {store,shared,session,getToken,requests,load}
 }
 function jwt(username, role) { return 'header.'+Buffer.from(JSON.stringify({username,role,userId:username,name:username,teacherType:role.replace('ROLE_TEACHER_',''),exp:Math.floor(Date.now()/1000)+3600,jti:username,typ:'access'})).toString('base64url')+'.signature' }
 function login(f, username, role) {
@@ -71,9 +72,98 @@ test('same-role tabs restore their own account and refresh with their own creden
   assert.equal(reload.requests[0].body.refreshToken,'teacherA-refresh')
   assert.equal(tabSession.readTabSession(reload.session).refreshToken,'next-refresh')
 })
+test('teacher route permissions and identity survive another-role login and reload',async()=>{
+  const teacher=fixture()
+  teacher.store.handleLoginSuccess({code:200,data:{token:jwt('counselor','ROLE_TEACHER_COUNSELOR'),refreshToken:'teacher-refresh',
+    userInfo:{id:'t1',username:'counselor',name:'Counselor',role:'ROLE_TEACHER_COUNSELOR',teacherType:'COUNSELOR'},
+    permissions:['menu:evaluation']}},'')
+  login(fixture(teacher.shared),'student','ROLE_STUDENT')
+  teacher.shared.setItem('teacherType','COLLEGE')
+  const check=f=>{
+    const helper=f.load(fileURLToPath(new URL('../src/utils/teacherPermissions.ts',import.meta.url)))
+    assert.equal(helper.getCurrentTeacherType(),'COUNSELOR')
+    assert.equal(helper.currentUserHasRoutePermission('teacherEvaluation'),true)
+    assert.equal(helper.currentUserHasRoutePermission('teacherReports'),false)
+  }
+  check(teacher)
+  const reload=fixture(teacher.shared,teacher.session)
+  await reload.store.restoreAuthState(false)
+  check(reload)
+})
 test('cleared tab credentials are not reused by getAccessToken',()=>{
   const f=fixture(); login(f,'s001','ROLE_STUDENT'); f.store.clearAllAuthInfo()
   assert.equal(f.getToken(),null); assert.equal(tabSession.readTabSession(f.session),null)
+})
+
+test('administrator preview keeps the administrator credential and saved roles stay distinct',()=>{
+  const f=fixture(), admin=login(f,'admin','ROLE_ADMIN'), preview=jwt('s001','ROLE_STUDENT')
+  assert.equal(f.store.handleSwitchRoleSuccess({accessToken:preview,refreshToken:'preview-refresh',
+    user:{id:'student-1',username:'s001',name:'Student'},role:'ROLE_STUDENT',isReadOnly:true,originalAdminUsername:'admin'},'student'),true)
+  assert.equal(f.store.allUsers.ROLE_ADMIN.accessToken,admin)
+  assert.equal(f.store.switchToRole('ROLE_ADMIN'),true)
+  assert.equal(f.getToken(),admin)
+  assert.equal(f.store.allUsers.ROLE_STUDENT.accessToken,preview)
+})
+
+for (const [file,handler,role] of [
+  ['student/StudentLayout.vue','returnToAdmin','ROLE_STUDENT'],
+  ['teacher/TeacherLayout.vue','returnToAdmin','ROLE_TEACHER_COLLEGE'],
+  ['company/CompanyLayout.vue','returnToAdmin','ROLE_COMPANY'],
+  ['student/Profile.vue','handleLogout','ROLE_STUDENT'],
+  ['company/AccountSettings.vue','handleLogout','ROLE_COMPANY']
+]) {
+  test(`${file} returns to administrator and stays there after page reload`,async()=>{
+    let f=fixture()
+    const admin=login(f,'admin','ROLE_ADMIN')
+    login(f,'preview',role)
+    f.store.user.isReadOnly=true; f.store.user.originalAdminUsername='admin'
+    tabSession.writeTabSession(f.store,f.session)
+    login(fixture(f.shared),'another-admin','ROLE_ADMIN')
+    login(fixture(f.shared),'another-student','ROLE_STUDENT')
+    f=fixture(f.shared,f.session)
+    assert.equal(await f.store.restoreAuthState(false),true)
+    const source=readFileSync(new URL('../src/views/'+file,import.meta.url),'utf8').match(/<script[^>]*>([\s\S]*?)<\/script>/)[1]
+    const ast=ts.createSourceFile(file+'.ts',source,ts.ScriptTarget.Latest,true)
+    const declaration=ast.statements.filter(ts.isVariableStatement).flatMap(s=>[...s.declarationList.declarations]).find(d=>d.name.getText(ast)===handler)
+    const compiled=ts.transpileModule('('+declaration.initializer.getText(ast)+')',{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText
+    const destinations=[]
+    const run=vm.runInNewContext(compiled,{authStore:f.store,localStorage:f.shared,
+      ElMessageBox:{confirm:async()=>{}},ElMessage:{error(message){throw new Error(message)}},
+      router:{push:async path=>destinations.push(path)},console:{log(){},error(){}}})
+    await run()
+    assert.equal(destinations.at(-1),'/admin/dashboard')
+    assert.equal(f.shared.getItem('current_role'),'ROLE_ADMIN')
+    const restored=fixture(f.shared,f.session)
+    assert.equal(await restored.store.restoreAuthState(false),true)
+    assert.equal(restored.store.role,'ROLE_ADMIN')
+    assert.equal(restored.getToken(),admin)
+    assert.equal(tabSession.readTabSession(f.session).refreshToken,'admin-refresh')
+  })
+}
+
+test('expired preview returns to its original administrator, while missing admin credentials require login',async()=>{
+  const original=fixture(), admin=login(original,'admin','ROLE_ADMIN')
+  original.store.handleSwitchRoleSuccess({accessToken:jwt('preview','ROLE_STUDENT'),refreshToken:'preview-refresh',
+    user:{id:'preview',username:'preview',name:'Preview'},role:'ROLE_STUDENT',isReadOnly:true,originalAdminUsername:'admin'},'student')
+  const f=fixture(original.shared,original.session)
+  await f.store.restoreAuthState(false)
+  login(fixture(f.shared),'another-admin','ROLE_ADMIN')
+  const source=readFileSync(new URL('../src/utils/request.ts',import.meta.url),'utf8')
+  const ast=ts.createSourceFile('request.ts',source,ts.ScriptTarget.Latest,true)
+  const func=ast.statements.find(node=>ts.isFunctionDeclaration(node)&&node.name?.text==='handleLogout').getText(ast)
+  const destinations=[]
+  const run=vm.runInNewContext(ts.transpileModule(func+'\nhandleLogout',{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText,
+    {useAuthStore:()=>f.store,ElMessage:{warning(){}},router:{push:path=>destinations.push(path)},cleanupTokens:()=>tabSession.clearTabSession(f.session)})
+  run()
+  assert.equal(destinations.at(-1),'/admin/dashboard')
+  assert.equal(f.getToken(),admin)
+  assert.equal(tabSession.readTabSession(f.session).refreshToken,'admin-refresh')
+  f.store.user={username:'preview',isReadOnly:true,originalAdminUsername:'missing-admin'}
+  f.store.role='ROLE_STUDENT'; f.store.token='preview-token'
+  run()
+  assert.equal(destinations.at(-1),'/login')
+  assert.equal(f.store.isAuthenticated,false)
+  assert.equal(tabSession.readTabSession(f.session),null)
 })
 
 test('old account responses and retries are rejected after switching identity',()=>{
