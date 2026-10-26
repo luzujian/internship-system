@@ -1141,6 +1141,7 @@ onMounted(() => {
 .settings-content {
   max-width: 1200px;
   margin: 0 auto;
+  container: system-settings / inline-size;
 }
 
 .settings-card {
@@ -1246,19 +1247,23 @@ onMounted(() => {
   border-radius: 12px;
   border: 1px solid #e4e7ed;
   width: 100%;
+  box-sizing: border-box;
+  min-width: 0;
 }
 
 .complexity-card .el-checkbox-group {
   margin: 0;
-  display: flex;
-  flex-direction: row;
-  flex-wrap: nowrap;
-  gap: 12px;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
 }
 
 .complexity-card .el-checkbox {
-  flex: 1;
+  width: 100%;
+  min-width: 0;
+  min-height: 36px;
+  height: auto;
+  margin: 0;
   padding: 8px 10px;
   background: white;
   border-radius: 8px;
@@ -1266,6 +1271,12 @@ onMounted(() => {
   text-align: center;
   justify-content: center;
   transition: all 0.3s ease;
+}
+
+.complexity-card :deep(.el-checkbox__label) {
+  min-width: 0;
+  white-space: normal;
+  line-height: 1.5;
 }
 
 .complexity-card .el-checkbox:hover {
@@ -1281,7 +1292,7 @@ onMounted(() => {
 /* ===== 基础配置：紧凑面板布局 ===== */
 .basic-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(360px, 100%), 1fr));
   gap: 18px;
   margin-bottom: 18px;
 }
@@ -1300,6 +1311,7 @@ onMounted(() => {
 
 .cfg-panel-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
@@ -1387,6 +1399,7 @@ onMounted(() => {
 
 .cfg-actions {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: 10px;
 }
@@ -1403,13 +1416,63 @@ onMounted(() => {
 /* ===== 安全配置：两列紧凑布局 ===== */
 .security-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(330px, 1fr));
-  gap: 0 40px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 32px;
   max-width: 100%;
+}
+
+.security-grid > .el-form-item {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.security-grid :deep(.el-form-item__label) {
+  width: auto !important;
+  height: auto;
+  justify-content: flex-start;
+  margin-bottom: 8px;
+  line-height: 22px;
+}
+
+.security-grid :deep(.el-form-item__content) {
+  width: 100%;
+  min-width: 0;
+  margin-left: 0 !important;
+}
+
+.security-grid .form-tip {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.security-grid .button-group {
+  flex-wrap: wrap;
 }
 
 .security-grid > .el-form-item:last-child {
   grid-column: 1 / -1;
+}
+
+@container system-settings (max-width: 640px) {
+  .security-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
+
+  .settings-card :deep(.el-card__body) {
+    padding: 8px 16px 20px;
+  }
+
+  .scope-group {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
+  .system-settings-container {
+    padding: 16px 12px;
+  }
 }
 
 .clear-data-container {
