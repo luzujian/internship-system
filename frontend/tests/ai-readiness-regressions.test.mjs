@@ -7,6 +7,7 @@ import ts from 'typescript'
 import { ref, reactive, computed, watch, nextTick, effectScope } from 'vue'
 import { createPinia } from 'pinia'
 import * as protocol from '../src/agent/protocol.mjs'
+import * as sendRouting from '../src/agent/sendRouting.mjs'
 import { decideJobPostingAutoFill } from '../src/utils/jobPostingAutoFill.js'
 import { normalizeInterviewMethods } from '../src/utils/interviewMethods.js'
 
@@ -153,7 +154,7 @@ function agentFixture(t) {
   vm.runInNewContext(compile(source('agent/store.ts'), ts.ModuleKind.CommonJS), { module, exports: module.exports,
     console, localStorage: memory(), sessionStorage: memory(), window: { setTimeout, clearTimeout }, AbortController, setTimeout, clearTimeout,
     require: name => name === '@/utils/request' ? { __esModule: true, default: request, getAccessToken: () => owner }
-      : name === './protocol.mjs' ? protocol : name === './formContext' ? { currentForm: ref(null), formBusinessReceipt: ref(null), setFormSession() {} } : require(name) })
+      : name === './protocol.mjs' ? protocol : name === './sendRouting.mjs' ? sendRouting : name === './formContext' ? { currentForm: ref(null), formBusinessReceipt: ref(null), setFormSession() {} } : require(name) })
   const pinia = createPinia(), store = scope.run(() => module.exports.useAgentStore(pinia))
   t.after(() => { store.$dispose(); scope.stop() })
   return { store, switchOwner() { owner = 'student-B' } }

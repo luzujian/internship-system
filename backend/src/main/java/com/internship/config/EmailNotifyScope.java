@@ -16,7 +16,10 @@ public enum EmailNotifyScope {
     JOB_APPLICATION("岗位申请结果"),
 
     /** 实习确认结果通知学生邮箱 */
-    INTERNSHIP_CONFIRMATION("实习确认结果");
+    INTERNSHIP_CONFIRMATION("实习确认结果"),
+
+    /** 新问题反馈通知已设置邮箱的启用管理员 */
+    PROBLEM_FEEDBACK("问题反馈提醒");
 
     private final String label;
 

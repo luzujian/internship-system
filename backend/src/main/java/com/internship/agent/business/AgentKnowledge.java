@@ -52,16 +52,16 @@ public class AgentKnowledge {
 
     private void initStatusPattern() {
         try {
-            String names = "未投递|无offer|待确认|已确定|实习中|已结束|已中断|延期";
+            String names = "暂无有效投递|已投递未录用|已录用待确认|已定单位待实习|实习进行中|实习已结束|实习已中断|已延期实习|未投递|无offer|待确认|已确定|实习中|已结束|已中断|延期";
             if (dictService != null) {
                 String configured = dictService.codesByType("internship_status").stream()
                         .map(code -> dictService.label("internship_status", code))
                         .collect(Collectors.joining("|"));
-                if (!configured.isBlank()) names = configured;
+                if (!configured.isBlank()) names = names + "|" + configured;
             }
             statusPattern = ".*(" + names + ").*";
         } catch (Exception e) {
-            statusPattern = ".*(未投递|无offer|待确认|已确定|实习中|已结束|已中断|延期).*";
+            statusPattern = ".*(暂无有效投递|已投递未录用|已录用待确认|已定单位待实习|实习进行中|实习已结束|实习已中断|已延期实习|未投递|无offer|待确认|已确定|实习中|已结束|已中断|延期).*";
         }
     }
 
@@ -235,7 +235,7 @@ public class AgentKnowledge {
 
     static boolean isStatusQuestion(String question) {
         String q=compact(question);
-        return q.contains("实习状态") || q.matches(statusPattern != null ? statusPattern : ".*(未投递|无offer|待确认|已确定|实习中|已结束|已中断|延期).*")
+        return q.contains("实习状态") || q.matches(statusPattern != null ? statusPattern : ".*(暂无有效投递|已投递未录用|已录用待确认|已定单位待实习|实习进行中|实习已结束|实习已中断|已延期实习|未投递|无offer|待确认|已确定|实习中|已结束|已中断|延期).*")
                 || q.matches(".*(我的|我当前|我现在|学生|实习).*(状态有哪些|什么状态|状态怎么|状态如何|状态变化|状态变更|状态流转).* ".trim());
     }
     private boolean matches(Map<String,Object> card,String topic){

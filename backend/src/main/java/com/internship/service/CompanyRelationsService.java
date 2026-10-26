@@ -48,6 +48,7 @@ public class CompanyRelationsService {
                                                               Integer pageSize,
                                                               String companyName,
                                                               Integer status,
+                                                              Integer auditStatus,
                                                               Integer recallStatus,
                                                               String companyTag,
                                                               String industry,
@@ -70,7 +71,7 @@ public class CompanyRelationsService {
 
         PageHelper.startPage(page, pageSize);
         List<TeacherCompanyDTO> companies = companyUserMapper.findTeacherCompanies(
-                companyName, status, recallStatus, companyTags, industry, keyword,
+                companyName, status, auditStatus, recallStatus, companyTags, industry, keyword,
                 selectedYear, visitState, visitTeacherId, liaisonTeacherId);
         PageInfo<TeacherCompanyDTO> pageInfo = new PageInfo<>(companies);
         decorateCompanies(pageInfo.getList(), selectedYear, currentYear);

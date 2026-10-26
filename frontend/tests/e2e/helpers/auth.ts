@@ -18,6 +18,13 @@ export type TestRole = 'student' | 'company' | 'teacher' | 'admin'
 /** JWT 过期时间：2030-01-01（远未来，即使 Date 被固定到 2026 也不会过期） */
 export const JWT_FUTURE_EXP = 1893456000
 
+export const TEACHER_PERMISSIONS = [
+  'menu:home', 'menu:announcements', 'menu:dashboard', 'menu:student-tracking',
+  'menu:resources', 'menu:reports', 'menu:account-settings', 'menu:approval',
+  'menu:evaluation', 'menu:settings', 'menu:company-list', 'menu:recruitment',
+  'menu:classes', 'menu:appraisal-collection', 'menu:teacherAiScoringConfig'
+]
+
 interface RoleConfig {
   role: string
   prefix: string
@@ -25,7 +32,7 @@ interface RoleConfig {
 
 const ROLE_CONFIG: Record<TestRole, RoleConfig> = {
   student: { role: 'ROLE_STUDENT', prefix: 'student_' },
-  teacher: { role: 'ROLE_TEACHER', prefix: 'teacher_' },
+  teacher: { role: 'ROLE_TEACHER_COLLEGE', prefix: 'teacher_' },
   admin: { role: 'ROLE_ADMIN', prefix: 'admin_' },
   company: { role: 'ROLE_COMPANY', prefix: 'company_' }
 }
@@ -53,12 +60,12 @@ export const DEFAULT_USERS: Record<TestRole, { userId: string; username: string;
 export async function authenticateAs(
   page: Page,
   role: TestRole,
-  options: { mockWebSocket?: boolean; user?: Partial<{ userId: string; username: string; name: string }> } = {}
+  options: { mockWebSocket?: boolean; user?: Partial<{ userId: string; username: string; name: string }>; adminPermissionCodes?: string[] } = {}
 ) {
   const roleConfig = ROLE_CONFIG[role]
   const user = { ...DEFAULT_USERS[role], ...options.user }
 
-  await page.addInitScript(({ roleConfig, user, exp, mockWebSocket }) => {
+  await page.addInitScript(({ roleConfig, user, exp, mockWebSocket, teacherPermissions, adminPermissionCodes }) => {
     const makeJwt = (payload: any) => {
       const header = { alg: 'HS256', typ: 'JWT' }
       // btoa 不支持非 ASCII 字符（如中文），需先转 UTF-8 字节再 base64
@@ -82,7 +89,9 @@ export async function authenticateAs(
       userId: user.userId,
       username: user.username,
       name: user.name,
-      sub: user.userId
+      sub: user.userId,
+      role: roleConfig.role,
+      ...(roleConfig.role.startsWith('ROLE_TEACHER') ? { teacherType: 'COLLEGE', permissions: teacherPermissions } : {})
     })
 
     localStorage.setItem('current_role', roleConfig.role)
@@ -100,30 +109,11 @@ export async function authenticateAs(
       localStorage.setItem('student_studentId_ROLE_STUDENT', user.userId)
     }
 
-    // 教师权限码注入：teacherRouter 的同步 beforeEnter 守卫通过
-    // currentUserHasRoutePermission → hasRoutePermission 检查
-    // localStorage['teacherPermissions']（menu:xxx 权限码数组），
-    // 未注入时受控路由会被弹回 /teacher/home（fail-closed）。
-    // 测试用户默认拥有全部默认菜单权限；同时固定 teacherType 供
-    // getCurrentTeacherType / Approval.vue 等页面使用。
-    if (roleConfig.role === 'ROLE_TEACHER') {
+    // Authenticated teacher routes read current-user/JWT permissions. Legacy keys
+    // are retained only for page compatibility; they do not bypass route guards.
+    if (roleConfig.role.startsWith('ROLE_TEACHER')) {
       localStorage.setItem('teacherType', 'COLLEGE')
-      localStorage.setItem('teacherPermissions', JSON.stringify([
-        'menu:home',
-        'menu:announcements',
-        'menu:dashboard',
-        'menu:student-tracking',
-        'menu:resources',
-        'menu:reports',
-        'menu:account-settings',
-        'menu:approval',
-        'menu:evaluation',
-        'menu:settings',
-        'menu:company-list',
-        'menu:classes',
-        'menu:appraisal-collection',
-        'menu:teacherAiScoringConfig'
-      ]))
+      localStorage.setItem('teacherPermissions', JSON.stringify(teacherPermissions))
     }
 
     // 管理员权限注入：permissionGuard 检查 meta.permission →
@@ -132,7 +122,7 @@ export async function authenticateAs(
     // 权限码全集与 src/utils/adminMenuPermissions.ts 的
     // ADMIN_MENU_PERMISSIONS 值对齐。
     if (roleConfig.role === 'ROLE_ADMIN') {
-      localStorage.setItem('adminPermissions', JSON.stringify([
+      localStorage.setItem('adminPermissions', JSON.stringify((adminPermissionCodes || [
         'user:teacher:view',
         'user:student:view',
         'user:company:view',
@@ -157,7 +147,7 @@ export async function authenticateAs(
         'application:withdrawal:view',
         'internship:confirm:view',
         'recruitment:view'
-      ].map((permissionCode) => ({ permissionCode }))))
+      ]).map((permissionCode) => ({ permissionCode }))))
     }
 
     if (mockWebSocket) {
@@ -198,7 +188,7 @@ export async function authenticateAs(
       }
       ;(window as any).WebSocket = MockWebSocket
     }
-  }, { roleConfig, user, exp: JWT_FUTURE_EXP, mockWebSocket: options.mockWebSocket ?? true })
+  }, { roleConfig, user, exp: JWT_FUTURE_EXP, mockWebSocket: options.mockWebSocket ?? true, teacherPermissions: TEACHER_PERMISSIONS, adminPermissionCodes: options.adminPermissionCodes })
 }
 
 /**
@@ -253,6 +243,7 @@ export async function mockApis(page: Page, handlers: Record<string, ApiMockHandl
           '/student/applications',
           '/student/interviews',
           '/student/internship-confirmation-form',
+          '/student/internship-registration',
           '/student/internships',
           '/student/internship-appraisal',
           '/student/profile'

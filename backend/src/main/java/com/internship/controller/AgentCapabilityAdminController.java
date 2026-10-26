@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.internship.agent.business.AgentCapabilityService;
+import com.internship.agent.business.AgentCapabilityPreviewService;
 import com.internship.agent.business.AgentFeatureGate;
 import com.internship.agent.business.AgentActionService;
 import com.internship.agent.business.AgentIdentityService;
@@ -12,13 +13,11 @@ import com.internship.mapper.AgentCapabilityUserMapper;
 import com.internship.mapper.SystemConfigMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Transactional;
-import com.internship.agent.business.AgentCapabilityService.AutomationPolicy;
 import com.internship.agent.business.AgentTypes.Actor;
 import com.internship.anno.Log;
 import com.internship.entity.Result;
 import com.internship.entity.SystemConfig;
 import com.internship.entity.TeacherAutoTask;
-import com.internship.entity.TeacherUser;
 import com.internship.exception.BusinessException;
 import com.internship.mapper.AdminUserMapper;
 import com.internship.mapper.CompanyUserMapper;
@@ -62,6 +61,17 @@ public class AgentCapabilityAdminController {
     private AgentIdentityService identities;
     private SystemConfigMapper configRows;
     private AgentCapabilityUserMapper accountLookup;
+    private AgentCapabilityPreviewService previews;
+
+    @Autowired
+    public void configurePreviewService(AgentCapabilityPreviewService previews) { this.previews=previews; }
+
+    private AgentCapabilityPreviewService previewService() {
+        if(previews!=null)return previews;
+        // Compatibility for existing isolated controller tests constructed without a Spring container.
+        return new AgentCapabilityPreviewService(parser, capabilityService, featureGate, configs, autoTasks,
+                students, teachers, companies, admins, json, actions, accountLookup);
+    }
 
     @Autowired
     public void configureConfirmation(AgentActionService actions, AgentIdentityService identities,
@@ -107,47 +117,12 @@ public class AgentCapabilityAdminController {
     @PostMapping("/parse")
     @Log(module = "SYSTEM_MANAGEMENT", operationType = "SELECT", description = "AI解析能力权限变更")
     public Result parse(@RequestHeader("Authorization") String authorization, @RequestBody Map<String, String> body) throws Exception {
-        featureGate.requireEnabled();
-        Actor actor = admin(authorization);
-        String message = body == null ? null : body.get("message");
-        if (message != null) {
-            for (String clause : message.split("[，,。；;\\n]")) {
-                if (clause.matches(".*(?:学生|企业|管理员).*" )
-                        && !clause.matches(".*(?:教师|老师|辅导员).*" )
-                        && clause.matches(".*(?:自动化任务|自动任务|自动跟进|自动提醒).*" )
-                        && clause.matches(".*(?:赋予|授予|开通|开启|启用|允许|授权|开放|赋权).*" )
-                        && !clause.matches(".*(?:取消|关闭|禁止|不允许|撤销|禁用|不要).*" ))
-                    throw new BusinessException("自动化任务目前仅支持教师，不能为学生、企业或管理员开通。尚未保存任何权限变更。");
-            }
-        }
-        JsonNode root = readRootWithUserOverrides();
-        Map<String, Object> parsed = parser.parse(message, readRoleDefaults(root), readAutoTaskPolicy(root));
-        List<String> questions = new ArrayList<>((List<String>) parsed.getOrDefault("questions", List.of()));
-        List<Map<String,Object>> selected = new ArrayList<>();
-        for (Map<String,Object> request : (List<Map<String,Object>>) parsed.getOrDefault("userRequests", List.of())) {
-            String role = String.valueOf(request.get("role"));
-            String query = String.valueOf(request.get("query"));
-            List<Map<String,Object>> matches = accountLookup.findExact(role, query);
-            if (matches == null || matches.isEmpty()) { questions.add("未找到"+query+"，请提供该用户的角色和完整账号。"); continue; }
-            if (matches.size() != 1) {
-                questions.add(query+"存在重名，请明确完整账号："+matches.stream().map(row -> String.valueOf(row.get("account"))).toList());
-                continue;
-            }
-            Map<String,Object> item = new LinkedHashMap<>(request);
-            item.put("userId",matches.get(0).get("id")); item.remove("query"); selected.add(item);
-        }
-        parsed.put("questions", questions); parsed.remove("userRequests");
-        if (!questions.isEmpty()) { parsed.put("userChanges", List.of()); return Result.success(parsed); }
-        Map<String,Object> request = new LinkedHashMap<>();
-        request.put("roleDefaults",parsed.get("proposedRoleDefaults")); request.put("autoTaskPolicy",parsed.get("proposedAutoTaskPolicy"));
-        request.put("userChanges",selected);
-        parsed.putAll(preview(actor, root, request));
-        return Result.success(parsed);
+        return Result.success(previewService().parse(admin(authorization), body == null ? null : body.get("message")));
     }
 
     @PostMapping("/config/preview")
     public Result previewConfig(@RequestHeader("Authorization") String authorization, @RequestBody Map<String,Object> body) throws Exception {
-        return Result.success(preview(admin(authorization), readRootWithUserOverrides(), body));
+        return Result.success(previewService().preview(admin(authorization), body));
     }
 
     /** 读取角色矩阵与自动化策略；角色能力未配置时返回代码内默认值。 */
@@ -180,7 +155,7 @@ public class AgentCapabilityAdminController {
                 if (!configurationVersion(current).equals(parameters.get("configurationVersion")))
                     throw new AgentException("CONFIG_CHANGED", "配置已被其他管理员修改，请重新预览。", 409);
                 JsonNode input = json.valueToTree(parameters);
-                ObjectNode updated = normalizedProposal(current, input);
+                ObjectNode updated = previewService().validateConfiguration(actor, current, input);
                 writeConfig(updated);
                 List<TeacherAutoTask> paused = autoTaskService.pauseTasksWithoutEffectivePolicy();
                 return Map.of("saved", true, "pausedTasks", paused == null ? List.of() : paused,
@@ -208,91 +183,6 @@ public class AgentCapabilityAdminController {
         result.put("autoTaskPolicy",body.getOrDefault("proposedAutoTaskPolicy",body.get("autoTaskPolicy")));
         result.put("userChanges",body.getOrDefault("userChanges",List.of()));
         result.put("configurationVersion",body.get("configurationVersion"));
-        return result;
-    }
-
-    private Map<String,Object> preview(Actor actor, JsonNode root, Map<String,Object> body) throws Exception {
-        Map<String,Object> input = confirmationParameters(body);
-        if (input.get("roleDefaults") == null) input.put("roleDefaults", readRoleDefaults(root));
-        if (input.get("autoTaskPolicy") == null) input.put("autoTaskPolicy", readAutoTaskPolicy(root));
-        List<Map<String,Object>> changes = normalizeUserChanges(root, json.valueToTree(input.get("userChanges")));
-        input.put("userChanges",changes);
-        input.put("configurationVersion",configurationVersion(root));
-        ObjectNode normalized = normalizedProposal(root, json.valueToTree(input));
-        input.put("roleDefaults",json.convertValue(normalized.path("roleDefaults"),Map.class));
-        input.put("autoTaskPolicy",json.convertValue(normalized.path("autoTaskPolicy"),Map.class));
-        var action = actions.preview(actor, "CAPABILITY_SAVE", CONFIG_KEY, input, String.valueOf(input.get("configurationVersion")));
-        Map<String,Object> result = new LinkedHashMap<>();
-        result.put("actionId",action.id()); result.put("configurationVersion",input.get("configurationVersion"));
-        result.put("proposedRoleDefaults", input.get("roleDefaults")); result.put("proposedAutoTaskPolicy", input.get("autoTaskPolicy"));
-        result.put("userChanges",changes); result.put("questions",List.of());
-        result.put("impact",buildImpact(normalized, (Map<String,List<String>>)input.get("roleDefaults"), (Map<String,Object>)input.get("autoTaskPolicy")));
-        return result;
-    }
-
-    private ObjectNode normalizedProposal(JsonNode current, JsonNode input) {
-        ObjectNode updated = json.createObjectNode();
-        updated.set("roleDefaults",normalizeRoleDefaults(input.path("roleDefaults")));
-        for (String role : List.of("student", "company", "admin")) {
-            for (String capability : List.of("auto_task", "auto_task_notify")) {
-                boolean before = false;
-                for (JsonNode value : current.path("roleDefaults").path(role)) if (capability.equals(value.asText())) before = true;
-                for (JsonNode value : updated.path("roleDefaults").path(role)) {
-                    if (!before && capability.equals(value.asText())) throw new BusinessException("自动化任务目前仅支持教师，不能为学生、企业或管理员开通。尚未保存任何权限变更。");
-                }
-            }
-        }
-        updated.set("autoTaskPolicy",normalizeAutoTaskPolicy(input.path("autoTaskPolicy")));
-        ObjectNode overrides = current.path("userOverrides").isObject() ? ((ObjectNode)current.path("userOverrides")).deepCopy() : json.createObjectNode();
-        for (JsonNode row : input.path("userChanges")) {
-            String role = row.path("role").asText(); long id = row.path("userId").asLong();
-            String key = roleKeyOf(role, requireExistingUser(role,id));
-            if (!"teacher".equals(role)) {
-                for (String capability : List.of("auto_task", "auto_task_notify"))
-                    if (row.path("overrides").path(capability).asBoolean(false)
-                            && !current.path("userOverrides").path(key).path(capability).asBoolean(false))
-                        throw new BusinessException("自动化任务目前仅支持教师，不能向该用户开放。尚未保存任何权限变更。");
-            }
-            if (!key.equals(row.path("roleKey").asText())) throw new BusinessException("用户身份已变化，请重新预览。");
-            overrides.set(key,row.path("overrides"));
-            if (row.path("automationPolicy").isObject()) ((ObjectNode)updated.path("autoTaskPolicy").path("userOverrides")).set(key,row.path("automationPolicy"));
-        }
-        updated.set("autoTaskPolicy",normalizeAutoTaskPolicy(updated.path("autoTaskPolicy")));
-        updated.set("userOverrides",overrides);
-        return updated;
-    }
-
-    private List<Map<String,Object>> normalizeUserChanges(JsonNode current, JsonNode input) {
-        if (!input.isArray() || input.size() > 10) throw new BusinessException("每次最多配置10位用户。");
-        List<Map<String,Object>> result = new ArrayList<>();
-        Set<String> seen = new java.util.HashSet<>();
-        for (JsonNode row : input) {
-            String role = row.path("role").asText(); long id = row.path("userId").asLong();
-            if (!AgentCapabilityParseService.ROLES.contains(role) || id <= 0) throw new BusinessException("请明确用户的角色和账号。");
-            Object user = requireExistingUser(role,id); String key = roleKeyOf(role,user);
-            if (!seen.add(key)) throw new BusinessException("同一用户存在重复变更，请合并后重新预览。");
-            JsonNode before = current.path("userOverrides").path(key);
-            ObjectNode next = row.path("replace").asBoolean(false) || !before.isObject() ? json.createObjectNode() : ((ObjectNode)before).deepCopy();
-            if (!row.path("overrides").isObject()) throw new BusinessException("用户能力覆盖不能为空。");
-            row.path("overrides").fields().forEachRemaining(entry -> {
-                if (!AgentCapabilityParseService.CAPABILITIES.contains(entry.getKey()) || !entry.getValue().isBoolean()) throw new BusinessException("用户能力覆盖不正确。");
-                next.set(entry.getKey(),entry.getValue());
-            });
-            Map<String,Object> item = new LinkedHashMap<>();
-            item.put("role",role); item.put("userId",id); item.put("roleKey",key); item.put("replace",true);
-            item.put("fromOverrides",before.isObject() ? before : json.createObjectNode()); item.put("overrides",next);
-            JsonNode userNode = json.valueToTree(user);
-            item.put("name",userNode.path("name").asText(userNode.path("companyName").asText("")));
-            item.put("account",userNode.path("username").asText(""));
-            if (row.has("automationPolicy")) {
-                if (!"teacher".equals(role) || !row.path("automationPolicy").isObject()) throw new BusinessException("只有教师可以配置自动跟进策略。");
-                ObjectNode policy = current.path("autoTaskPolicy").path("userOverrides").path(key).isObject()
-                        ? ((ObjectNode)current.path("autoTaskPolicy").path("userOverrides").path(key)).deepCopy() : json.createObjectNode();
-                item.put("fromAutomationPolicy",policy.deepCopy());
-                policy.setAll((ObjectNode)row.path("automationPolicy")); item.put("automationPolicy",policy);
-            }
-            result.add(item);
-        }
         return result;
     }
 
@@ -488,154 +378,11 @@ public class AgentCapabilityAdminController {
         return result;
     }
 
-    private ObjectNode normalizeRoleDefaults(JsonNode input) {
-        ObjectNode result = json.createObjectNode();
-        for (String role : AgentCapabilityParseService.ROLES) {
-            JsonNode list = input.path(role);
-            if (!list.isArray()) throw new BusinessException("角色能力矩阵缺少" + role + "。");
-            List<String> caps = new ArrayList<>();
-            for (JsonNode item : list) {
-                String cap = item.asText("").trim();
-                if (!AgentCapabilityParseService.CAPABILITIES.contains(cap)) {
-                    throw new BusinessException("不支持的AI能力：" + cap);
-                }
-                if (!caps.contains(cap)) caps.add(cap);
-            }
-            result.set(role, json.valueToTree(caps));
-        }
-        return result;
-    }
-
-    private ObjectNode normalizeAutoTaskPolicy(JsonNode input) {
-        if (input.path("version").asInt(-1) != 1) {
-            throw new BusinessException("自动化策略版本不正确。");
-        }
-        ObjectNode result = json.createObjectNode();
-        result.put("version", 1);
-        int cooldown = input.path("globalCooldownMinutes").asInt(1440);
-        if (cooldown < 1 || cooldown > 10080) throw new BusinessException("统一提醒间隔需为1至10080分钟。");
-        result.put("globalCooldownMinutes", cooldown);
-        ObjectNode roleDefaults = json.createObjectNode();
-        JsonNode teacher = input.path("roleDefaults").path("teacher");
-        if (!teacher.isObject()) throw new BusinessException("自动化策略缺少教师角色。");
-
-        ObjectNode normalizedTeacher = json.createObjectNode();
-        normalizedTeacher.set("actions", normalizeEnums(teacher.path("actions"),
-                AgentCapabilityService.AUTO_TASK_ACTIONS, "自动化动作"));
-        normalizedTeacher.set("channels", normalizeEnums(teacher.path("channels"),
-                AgentCapabilityService.AUTO_TASK_CHANNELS, "自动化渠道"));
-        normalizedTeacher.set("scopes", normalizeEnums(teacher.path("scopes"),
-                AgentCapabilityService.AUTO_TASK_SCOPES, "数据范围"));
-        JsonNode maxTargets = teacher.path("maxTargetsPerRun");
-        if (!maxTargets.canConvertToInt() || maxTargets.asInt(-1) < 1
-                || maxTargets.asInt(-1) > AgentCapabilityService.MAX_TARGETS_PER_RUN_LIMIT) {
-            throw new BusinessException("单次触达人数需在1至1000000之间。");
-        }
-        normalizedTeacher.put("maxTargetsPerRun", maxTargets.asInt());
-        String limitMode=teacher.path("audienceLimitMode").asText("LIMITED");
-        if(!Set.of("LIMITED","ALL_AUTHORIZED").contains(limitMode))throw new BusinessException("自动化人数限制方式不正确。");
-        normalizedTeacher.put("audienceLimitMode",limitMode);
-        roleDefaults.set("teacher", normalizedTeacher);
-        result.set("roleDefaults", roleDefaults);
-
-        ObjectNode userOverrides = json.createObjectNode();
-        JsonNode inputOverrides = input.path("userOverrides");
-        if (inputOverrides.isObject()) {
-            inputOverrides.fields().forEachRemaining(entry -> {
-                String key = entry.getKey();
-                if (!key.matches("ROLE_TEACHER_(COLLEGE|DEPARTMENT|COUNSELOR):\\d+")
-                        || !entry.getValue().isObject()) {
-                    throw new BusinessException("自动化用户覆盖键不正确：" + key);
-                }
-                ObjectNode override = json.createObjectNode();
-                entry.getValue().fields().forEachRemaining(cap -> {
-                    if (!Set.of("actions", "channels", "scopes", "maxTargetsPerRun").contains(cap.getKey())) {
-                        throw new BusinessException("自动化用户覆盖字段不正确：" + cap.getKey());
-                    }
-                    if ("maxTargetsPerRun".equals(cap.getKey())) {
-                        if (!cap.getValue().canConvertToInt() || cap.getValue().asInt() < 1 || cap.getValue().asInt() > 1000000)
-                            throw new BusinessException("用户单次触达人数需在1至1000000之间。");
-                        override.put(cap.getKey(), cap.getValue().asInt());
-                    } else {
-                        Set<String> allowed = switch(cap.getKey()) {
-                            case "actions" -> AgentCapabilityService.AUTO_TASK_ACTIONS;
-                            case "channels" -> AgentCapabilityService.AUTO_TASK_CHANNELS;
-                            default -> AgentCapabilityService.AUTO_TASK_SCOPES;
-                        };
-                        override.set(cap.getKey(), normalizeEnums(cap.getValue(), allowed, "用户自动化策略"));
-                    }
-                });
-                userOverrides.set(key, override);
-            });
-        }
-        result.set("userOverrides", userOverrides);
-        return result;
-    }
-
-    private com.fasterxml.jackson.databind.node.ArrayNode normalizeEnums(JsonNode input,
-                                                                         Set<String> allowed,
-                                                                         String label) {
-        if (!input.isArray()) throw new BusinessException(label + "必须是数组。");
-        List<String> values = new ArrayList<>();
-        for (JsonNode item : input) {
-            String value = item.asText("").trim();
-            if (!allowed.contains(value)) throw new BusinessException("不支持的" + label + "：" + value);
-            if (!values.contains(value)) values.add(value);
-        }
-        return json.valueToTree(values);
-    }
-
     @SuppressWarnings("unchecked")
     private Map<String, Object> readAutoTaskPolicy(JsonNode root) {
         JsonNode policy = root.path("autoTaskPolicy");
         return policy.isObject() ? json.convertValue(policy, Map.class) : Map.of("version",1,"globalCooldownMinutes",1440,
                 "roleDefaults",Map.of("teacher",Map.of("actions",List.of(),"channels",List.of(),"scopes",List.of(),"maxTargetsPerRun",200)),"userOverrides",Map.of());
-    }
-
-    /** 影响面：列出将被暂停的任务和用户覆盖键，避免管理员只看到抽象数量。 */
-    private Map<String, Object> buildImpact(JsonNode currentRoot, Map<String, List<String>> proposed,
-                                            Map<String, Object> proposedPolicy) {
-        ObjectNode proposedRoot = json.createObjectNode();
-        proposedRoot.set("roleDefaults", json.valueToTree(proposed));
-        proposedRoot.set("autoTaskPolicy", json.valueToTree(proposedPolicy));
-        proposedRoot.set("userOverrides", currentRoot.path("userOverrides"));
-
-        List<Map<String, Object>> impactedTasks = new ArrayList<>();
-        List<TeacherAutoTask> active = autoTasks.findActiveIncludingExpired();
-        if (active != null) {
-            for (TeacherAutoTask task : active) {
-                TeacherUser teacher = teachers.findById(task.getTeacherId());
-                if (teacher == null) continue;
-                AutomationPolicy policy = capabilityService.automationPolicyFor(actorOf(teacher), proposedRoot);
-                String reason = taskImpactReason(policy, task.getAction());
-                if (reason == null) continue;
-                impactedTasks.add(Map.of(
-                        "id", task.getId(),
-                        "name", task.getName() == null ? "" : task.getName(),
-                        "teacherId", task.getTeacherId(),
-                        "teacherName", teacher.getName() == null ? "" : teacher.getName(),
-                        "reason", reason
-                ));
-            }
-        }
-
-        List<String> userOverrideKeys = new ArrayList<>();
-        JsonNode overrides = currentRoot.path("userOverrides");
-        if (overrides.isObject()) overrides.fieldNames().forEachRemaining(userOverrideKeys::add);
-        return Map.of(
-                "tasks", impactedTasks,
-                "tasksAtRisk", impactedTasks.size(),
-                "userOverrideKeys", userOverrideKeys,
-                "usersWithOverrides", userOverrideKeys.size()
-        );
-    }
-
-    private String taskImpactReason(AutomationPolicy policy, String action) {
-        if (!policy.canManage()) return "auto_task 能力将被关闭";
-        if (!policy.canNotify()) return "auto_task_notify 能力将被关闭";
-        if (!policy.allowsChannel(action)) return "当前策略不允许该提醒渠道";
-        if (policy.scopes().isEmpty()) return "当前策略不允许该教师负责范围";
-        return null;
     }
 
     private Object requireExistingUser(String role, long userId) {
@@ -661,12 +408,6 @@ public class AgentCapabilityAdminController {
         else if (user instanceof com.internship.entity.AdminUser admin) id = admin.getId();
         else throw new BusinessException("用户类型不正确。");
         return "ROLE_" + role.toUpperCase() + ":" + id;
-    }
-
-    private Actor actorOf(TeacherUser teacher) {
-        String role = "ROLE_TEACHER_" + teacher.getTeacherType();
-        return new Actor(role + ":" + teacher.getId() + ":false:", teacher.getId(), role,
-                teacher.getName(), teacher.getTeacherType(), null, null, false, Set.of());
     }
 
     private static String str(Map<String, Object> body, String key) {

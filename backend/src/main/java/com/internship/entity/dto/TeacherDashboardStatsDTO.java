@@ -11,6 +11,7 @@ public class TeacherDashboardStatsDTO {
     private Integer offer;
     private Integer noOffer;
     private Integer delay;
+    private Integer interrupted;
     private String scopeName;
     private List<GradeStatsDTO> gradeData;
     private List<MajorStatsDTO> majorData;
@@ -25,6 +26,7 @@ public class TeacherDashboardStatsDTO {
         private Integer offer;
         private Integer noOffer;
         private Integer delay;
+        private Integer interrupted;
     }
 
     @Data
@@ -35,6 +37,7 @@ public class TeacherDashboardStatsDTO {
         private Integer offer;
         private Integer noOffer;
         private Integer delay;
+        private Integer interrupted;
     }
 
     @Data
@@ -45,6 +48,7 @@ public class TeacherDashboardStatsDTO {
         private Integer offer;
         private Integer noOffer;
         private Integer delay;
+        private Integer interrupted;
     }
 
     @Data
@@ -55,5 +59,6 @@ public class TeacherDashboardStatsDTO {
         private Integer offer;
         private Integer noOffer;
         private Integer delay;
+        private Integer interrupted;
     }
 }

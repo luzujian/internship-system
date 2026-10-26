@@ -321,18 +321,22 @@ public class FileUploadController {
 
     private Result uploadFileInternal(MultipartFile file, boolean announcement) {
         try {
+            com.internship.utils.AuditFailureContext.uploadStage("EMPTY_FILE");
             if (file.isEmpty()) {
                 return Result.error("文件不能为空");
             }
 
+            com.internship.utils.AuditFailureContext.uploadStage("FILE_SIZE");
             if (file.getSize() > maxSize) {
                 return Result.error("文件大小不能超过" + (maxSize / 1024 / 1024) + "MB");
             }
 
             String contentType = file.getContentType();
+            com.internship.utils.AuditFailureContext.uploadStage("MEDIA_TYPE");
             if (!ALLOWED_FILE_TYPES.contains(contentType) && !ALLOWED_IMAGE_TYPES.contains(contentType)) {
                 return Result.error("不支持的文件格式");
             }
+            com.internship.utils.AuditFailureContext.uploadStage("FILE_SIGNATURE");
             if (ALLOWED_IMAGE_TYPES.contains(contentType) && !matchesImageSignature(file, contentType)) {
                 return Result.error("图片内容格式不匹配");
             }
@@ -362,6 +366,7 @@ public class FileUploadController {
             }
 
             // 上传到 OSS
+            com.internship.utils.AuditFailureContext.uploadStage("STORAGE");
             String objectName = applicationUploadPath(category, datePath, fileName);
             String fileUrl = aliyunOSSOperator.uploadWithObjectName(file.getBytes(), objectName);
 

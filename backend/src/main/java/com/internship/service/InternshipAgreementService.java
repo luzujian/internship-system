@@ -235,7 +235,7 @@ public class InternshipAgreementService {
         return loadFile(file, preview);
     }
 
-    private TeacherAppraisalFileContent loadFile(AgreementFile file, boolean preview) throws Exception {
+    TeacherAppraisalFileContent loadFile(AgreementFile file, boolean preview) throws Exception {
         byte[] content = oss.downloadFile(file.getFilePath());
         String name = safeFileName(file.getFileName());
         if (preview && "doc".equals(extension(name))) {

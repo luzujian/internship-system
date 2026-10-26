@@ -9,10 +9,14 @@ import { usePositionStore } from '../../store/position'
 import { useAuthStore } from '@/store/auth'
 import applicationApi from '@/api/InternshipApplicationService'
 import studentArchiveService from '@/api/StudentArchiveService'
+import FilePreviewDialog from '@/components/FilePreviewDialog.vue'
+import { companyArchiveByteUrl } from '@/utils/authorizedFileUrl'
+import { downloadAuthorizedFile } from '@/utils/authorizedFileDownload'
 import { onNewApplication, offNewApplication, onCompanyTodoUpdate, offCompanyTodoUpdate } from '@/utils/websocket'
 import { fetchCompanyActivityDetail, fetchActivityForApplication, markCompanyActivityRead,
   type CompanyApplicationActivity } from '@/api/companyApplicationActivities'
 import { readCompanyActivity, activityStatusText, activityStatusType } from '@/utils/companyActivityFeed.mjs'
+import { useIsMobile } from '@/composables/useIsMobile'
 
 const positionStore = usePositionStore()
 const authStore = useAuthStore()
@@ -31,12 +35,16 @@ interface ApplicationViewRow {
   createTime?: string
   studentName?: string
   studentNo?: string
+  directHire?: boolean
+  major?: string
+  phone?: string
   [key: string]: unknown
 }
 const asApplicationRows = (input: unknown): ApplicationViewRow[] =>
   Array.isArray(input) ? (input as ApplicationViewRow[]) : []
 
 const companyId = computed(() => {
+  if (!authStore.token || authStore.role !== 'ROLE_COMPANY') return null
   if (authStore.user?.id) {
     return parseInt(authStore.user.id)
   }
@@ -51,15 +59,21 @@ const companyId = computed(() => {
 })
 
 const exporting = ref(false)
+const archiveDownloading = ref('')
+const filePreviewVisible = ref(false)
+const previewFileName = ref('')
+const previewAuthorizedUrl = ref('')
+const archiveFileTypeText = (type: string) => ({ resume: '简历', certificate: '证书' }[type] || type || '申请材料')
 const exportMode = ref('excel')
-// 模板使用 isMobile 做响应式列数适配；本页此前未定义（运行时恒为 undefined 即 falsy），此处以静态 false 收敛类型，渲染结果等价
-const isMobile = ref(false)
+const isMobile = useIsMobile()
+const showMobileFilters = ref(false)
 
 const searchForm = ref({
   keyword: '',
   position: '',
   status: ''
 })
+const activeFilterCount = computed(() => Number(Boolean(searchForm.value.position)))
 
 const currentApplicationRows = computed(() => {
   const positionsById = new Map(positionStore.positions.map(position => [String(position.id), position]))
@@ -207,6 +221,7 @@ const filteredTableData = computed(() => {
 
 const currentPage = ref(1)
 const pageSize = ref(10)
+watch([searchForm, pageSize], () => { currentPage.value = 1 }, { deep: true })
 
 const paginatedTableData = computed(() => {
   const start = (currentPage.value - 1) * pageSize.value
@@ -474,6 +489,7 @@ const retryActivityRead = () => {
 }
 
 const closeActivityDetail = () => {
+  filePreviewVisible.value = false
   detailRequest++
   activityRequest++
   if (route.query.activityId) {
@@ -487,53 +503,38 @@ watch(() => route.query.activityId, openActivityDetail, { immediate: true })
 
 // 下载申请材料
 const handleDownloadArchive = async (archive) => {
+  if (archiveDownloading.value) return
+  const authorizedUrl = companyArchiveByteUrl(archive.id, 'download')
+  if (!authorizedUrl) {
+    ElMessage.error('材料记录不可用，请重新打开申请详情')
+    return
+  }
+  archiveDownloading.value = String(archive.id)
   try {
-    const response = await studentArchiveService.downloadArchive(archive.id) as unknown as Blob
-    // 根据文件类型设置正确的 MIME type
-    const fileExt = archive.fileName?.split('.').pop()?.toLowerCase() || ''
-    let mimeType = 'application/octet-stream'
-    if (['jpg', 'jpeg'].includes(fileExt)) mimeType = 'image/jpeg'
-    else if (fileExt === 'png') mimeType = 'image/png'
-    else if (fileExt === 'gif') mimeType = 'image/gif'
-    else if (fileExt === 'pdf') mimeType = 'application/pdf'
-    else if (fileExt === 'doc') mimeType = 'application/msword'
-    else if (fileExt === 'docx') mimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-
-    const blob = new Blob([response], { type: mimeType })
-    const url = window.URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = archive.fileName || '申请材料'
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-    window.URL.revokeObjectURL(url)
-    ElMessage.success('下载成功')
+    await downloadAuthorizedFile(authorizedUrl, archive.fileName || '申请材料')
+    ElMessage.success('开始下载')
   } catch (error) {
     console.error('下载失败:', error)
     ElMessage.error('下载失败，请稍后重试')
+  } finally {
+    archiveDownloading.value = ''
   }
 }
 
 // 预览申请材料
-const handlePreviewArchive = async (archive) => {
-  try {
-    const response = await studentArchiveService.previewArchive(archive.id) as unknown as {
-      code?: number
-      data?: Blob
-    }
-    const previewBlob = response.data as unknown as Blob
-    const blob = new Blob([previewBlob])
-    const url = window.URL.createObjectURL(blob)
-    window.open(url, '_blank')
-  } catch (error) {
-    console.error('预览失败:', error)
-    ElMessage.error('预览失败，请稍后重试')
+const handlePreviewArchive = (archive) => {
+  const authorizedUrl = companyArchiveByteUrl(archive.id)
+  if (!authorizedUrl) {
+    ElMessage.error('材料记录不可用，请重新打开申请详情')
+    return
   }
+  previewFileName.value = archive.fileName || '申请材料'
+  previewAuthorizedUrl.value = authorizedUrl
+  filePreviewVisible.value = true
 }
 
 const handleExport = async () => {
-  let dataToExport = asApplicationRows([...positionStore.jobApplications])
+  let dataToExport = [...currentApplicationRows.value]
 
   if (searchForm.value.keyword) {
     dataToExport = dataToExport.filter(item =>
@@ -578,7 +579,7 @@ const handleExport = async () => {
       '专业': item.major,
       '联系电话': item.phone,
       '申请日期': item.applyDate,
-      '申请状态': item.status === 'pending' ? '待审核' : item.status === 'approved' ? '已通过' : item.status === 'rejected' ? '已拒绝' : item.status === 'interview_passed' && item.directHire ? '直接录取（免面试）' : item.status === 'interview_passed' ? '面试通过' : item.status === 'interview_failed' ? '面试没通过' : item.status === 'withdrawn' ? '已撤回' : item.status === 'defaulted' ? '已失效' : '未知状态',
+      '申请状态': item.status === 'pending' ? '待审核' : item.status === 'approved' ? '已同意' : item.status === 'rejected' ? '已拒绝' : item.status === 'interview_passed' && item.directHire ? '已录取，待提交确认表' : item.status === 'interview_passed' ? '面试通过' : item.status === 'interview_failed' ? '面试没通过' : item.status === 'withdrawn' ? '已撤回' : item.status === 'defaulted' ? '已失效' : '未知状态',
       '拒绝理由': item.rejectReason || '',
       '自我介绍': item.selfIntroduction
     }))
@@ -607,6 +608,7 @@ const exportWithFiles = async (workbook, baseFileName, data) => {
   try {
     const JSZip = (await import('jszip')).default
     const zip = new JSZip()
+    const failures: string[] = []
 
     const excelBuffer = await writeWorkbookToBuffer(workbook)
     zip.file(baseFileName + '.xlsx', excelBuffer)
@@ -627,14 +629,17 @@ const exportWithFiles = async (workbook, baseFileName, data) => {
               studentFolder.file(archive.fileName, arrayBuffer)
             } catch (fileError) {
               console.warn(`下载文件失败: ${archive.fileName}`, fileError)
+              failures.push(`${item.studentName}/${archive.fileName}：文件下载失败`)
             }
           }
         }
       } catch (studentError) {
         console.warn(`获取学生档案失败: ${item.studentName}`, studentError)
+        failures.push(`${item.studentName}：无法读取申请材料列表`)
       }
     }
 
+    if (failures.length) zip.file('_导出失败清单.txt', failures.join('\n'))
     const content = await zip.generateAsync({ type: 'blob' })
     const url = window.URL.createObjectURL(content)
     const link = document.createElement('a')
@@ -645,7 +650,8 @@ const exportWithFiles = async (workbook, baseFileName, data) => {
     document.body.removeChild(link)
     window.URL.revokeObjectURL(url)
 
-    ElMessage.success(`成功导出 ${data.length} 条数据及附件`)
+    if (failures.length) ElMessage.warning(`名单已导出，${failures.length} 项附件读取失败，请查看压缩包内失败清单`)
+    else ElMessage.success(`成功导出 ${data.length} 条数据及附件`)
   } catch (error) {
     console.error('导出压缩包失败:', error)
     throw error
@@ -714,9 +720,10 @@ useAgentPageContext(() => {
               placeholder="请输入学生姓名或学号" 
               clearable
               style="width: 200px"
+              @keyup.enter="handleSearch"
             />
           </el-form-item>
-          <el-form-item label="应聘岗位">
+          <el-form-item v-show="!isMobile || showMobileFilters" label="应聘岗位">
             <el-select v-model="searchForm.position" placeholder="请选择岗位" clearable style="width: 180px">
               <el-option
                 v-for="item in positionOptions"
@@ -727,6 +734,7 @@ useAgentPageContext(() => {
             </el-select>
           </el-form-item>
           <el-form-item>
+            <el-button v-if="isMobile" :aria-expanded="showMobileFilters" @click="showMobileFilters = !showMobileFilters">{{ showMobileFilters ? '收起筛选' : '筛选' }}{{ activeFilterCount ? `（${activeFilterCount}）` : '' }}</el-button>
             <el-button type="primary" @click="handleSearch">搜索</el-button>
             <el-button @click="handleReset">重置</el-button>
           </el-form-item>
@@ -882,19 +890,56 @@ useAgentPageContext(() => {
         </el-table-column>
       </el-table>
 
+      <div v-else class="mobile-card-list" aria-label="岗位申请列表">
+        <el-empty v-if="!paginatedTableData.length" description="暂无符合条件的申请" />
+        <article v-for="row in paginatedTableData" :key="row.id" class="mobile-card">
+          <div class="mobile-card-header">
+            <span class="mobile-card-title">{{ row.studentName || '未填写姓名' }}</span>
+            <el-tag v-if="row.status === 'pending'" type="warning">待审核</el-tag>
+            <el-tag v-else-if="row.status === 'approved'" type="success">已同意</el-tag>
+            <el-tag v-else-if="row.status === 'rejected'" type="danger">已拒绝</el-tag>
+            <el-tag v-else-if="row.status === 'interview_passed' && row.directHire" type="success">已录取，待提交确认表</el-tag>
+            <el-tag v-else-if="row.status === 'interview_passed'" type="success">面试通过</el-tag>
+            <el-tag v-else-if="row.status === 'interview_failed'" type="danger">面试没通过</el-tag>
+            <el-tag v-else-if="row.status === 'withdrawn'" type="info">已撤回</el-tag>
+            <el-tag v-else-if="row.status === 'defaulted'" type="info">已失效</el-tag>
+            <el-tag v-else type="info">未知状态</el-tag>
+          </div>
+          <div class="mobile-card-body">
+            <div class="mobile-card-row"><span class="mobile-card-label">应聘岗位</span><span class="mobile-card-value">{{ row.positionName || '未填写' }}</span></div>
+            <div class="mobile-card-row"><span class="mobile-card-label">学号</span><span class="mobile-card-value">{{ row.studentNo || '未填写' }}</span></div>
+            <div class="mobile-card-row"><span class="mobile-card-label">专业</span><span class="mobile-card-value">{{ row.major || '未填写' }}</span></div>
+            <div v-if="row.phone" class="mobile-card-row"><span class="mobile-card-label">联系电话</span><a class="mobile-card-value mobile-contact-link" :href="`tel:${row.phone}`">{{ row.phone }}</a></div>
+            <div class="mobile-card-row"><span class="mobile-card-label">申请日期</span><span class="mobile-card-value">{{ row.applyDate || '未填写' }}</span></div>
+          </div>
+          <div class="mobile-card-actions">
+            <el-button type="primary" @click="handleViewDetail(row)">查看详情</el-button>
+            <template v-if="row.status === 'pending'">
+              <el-button type="success" @click="handleApprove(row)">同意面试</el-button>
+              <el-button type="danger" @click="handleReject(row)">拒绝申请</el-button>
+              <el-button type="warning" @click="handleDirectHire(row)">直接录取</el-button>
+            </template>
+            <template v-else-if="row.status === 'approved'">
+              <el-button type="success" @click="handleInterviewPass(row)">面试通过</el-button>
+              <el-button type="danger" @click="handleInterviewFail(row)">面试没通过</el-button>
+            </template>
+          </div>
+        </article>
+      </div>
+
       <div class="pagination">
         <el-pagination
           v-model:current-page="currentPage"
           v-model:page-size="pageSize"
           background
-          layout="total, sizes, prev, pager, next, jumper"
+          :layout="isMobile ? 'total, sizes, prev, next' : 'total, sizes, prev, pager, next, jumper'"
           :total="filteredTableData.length"
           :page-sizes="[10, 20, 50, 100]"
         />
       </div>
     </div>
 
-    <div v-if="paginatedTableData.length === 0" class="empty-state">
+    <div v-if="!isMobile && paginatedTableData.length === 0" class="empty-state">
       暂无数据
     </div>
 
@@ -957,7 +1002,7 @@ useAgentPageContext(() => {
         </el-alert>
         <div class="detail-section">
           <h3 class="section-title">基本信息</h3>
-          <el-descriptions :column="2" border>
+          <el-descriptions :column="isMobile ? 1 : 2" border>
             <el-descriptions-item label="学号">{{ currentStudent.studentNo }}</el-descriptions-item>
             <el-descriptions-item label="姓名">{{ currentStudent.studentName }}</el-descriptions-item>
             <el-descriptions-item label="年级">{{ currentStudent.grade }}</el-descriptions-item>
@@ -1000,10 +1045,11 @@ useAgentPageContext(() => {
               <div class="archive-info">
                 <el-icon class="archive-icon"><Document /></el-icon>
                 <span class="archive-name">{{ archive.fileName }}</span>
-                <el-tag size="small" type="info">{{ archive.fileType }}</el-tag>
+                <el-tag size="small" type="info">{{ archiveFileTypeText(archive.fileType) }}</el-tag>
               </div>
               <div class="archive-actions">
-                <el-button size="small" type="primary" link @click="handleDownloadArchive(archive)">下载</el-button>
+                <el-button size="small" type="primary" link @click="handlePreviewArchive(archive)">预览</el-button>
+                <el-button size="small" type="primary" link :loading="archiveDownloading === String(archive.id)" :disabled="Boolean(archiveDownloading)" @click="handleDownloadArchive(archive)">下载</el-button>
               </div>
             </div>
           </div>
@@ -1019,6 +1065,13 @@ useAgentPageContext(() => {
         </span>
       </template>
     </el-dialog>
+
+    <FilePreviewDialog
+      v-model="filePreviewVisible"
+      file-url=""
+      :file-name="previewFileName"
+      :authorized-url="previewAuthorizedUrl"
+    />
   </div>
 </template>
 
@@ -1612,6 +1665,58 @@ useAgentPageContext(() => {
   .search-form :deep(.el-input),
   .search-form :deep(.el-select) {
     width: 100% !important;
+  }
+
+  .search-form :deep(.el-form-item__content) {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  .search-form :deep(.el-button) {
+    flex: 1;
+    margin-left: 0;
+    min-height: 44px;
+  }
+
+  .mobile-card-header :deep(.el-tag) {
+    height: auto;
+    min-height: 24px;
+    max-width: 65%;
+    padding: 4px 8px;
+    white-space: normal;
+    flex-shrink: 0;
+  }
+
+  .mobile-contact-link {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    color: #409eff;
+  }
+
+  .file-item {
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 12px;
+  }
+
+  .file-name {
+    min-width: 0;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .file-actions {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .file-actions :deep(.el-button) {
+    flex: 1;
+    margin-left: 0;
+    min-height: 44px;
   }
 
   .export-actions,

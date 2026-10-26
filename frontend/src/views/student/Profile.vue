@@ -47,6 +47,7 @@
                 <span class="status-dot"></span>
                 {{ getStatusText(internshipStatus.status, internshipStatus.jobSearchStatusText) }}
               </div>
+              <span v-for="text in internshipStatus.pendingApplicationTexts" :key="text" class="status-badge">{{ text }}</span>
             </div>
           </div>
 
@@ -1185,7 +1186,8 @@ const internshipStatus = ref({
   status: null,
   positionId: null,
   jobSearchStatus: null,
-  jobSearchStatusText: ''
+  jobSearchStatusText: '',
+  pendingApplicationTexts: []
 })
 
 const ACTIVE_APPLICATION_STATUSES = new Set([
@@ -1923,6 +1925,7 @@ const fetchInternshipStatus = async () => {
       internshipStatus.value.positionId = response.data.positionId || null
       internshipStatus.value.jobSearchStatus = response.data.jobSearchStatus || null
       internshipStatus.value.jobSearchStatusText = response.data.jobSearchStatusText || ''
+      internshipStatus.value.pendingApplicationTexts = response.data.pendingApplicationTexts || []
       internshipStatus.value.companyName = response.data.companyName
       internshipStatus.value.positionName = response.data.positionName
       internshipStatus.value.internshipStartTime = response.data.internshipStartTime
@@ -1936,17 +1939,17 @@ const fetchInternshipStatus = async () => {
 // 优先使用后端统一计算的求职进度，旧接口数据回退到数字状态
 const getStatusText = (status, jobSearchStatusText = '') => {
   if (jobSearchStatusText) return jobSearchStatusText
-  if (status === null) return '未申请'
+  if (status === null) return '状态待核实'
   const statusMap = {
-    0: '无offer',
-    1: '待确认',
-    2: '已确定',
-    3: '实习中',
-    4: '已结束',
-    5: '已中断',
-    6: '延期'
+    0: '尚未获录用',
+    1: '已录用待确认',
+    2: '已定单位待实习',
+    3: '实习进行中',
+    4: '实习已结束',
+    5: '实习已中断',
+    6: '已延期实习'
   }
-  return statusMap[status] || '未知'
+  return statusMap[status] || '状态待核实'
 }
 
 // 实习状态样式映射

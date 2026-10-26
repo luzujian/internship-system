@@ -2,12 +2,14 @@ package com.internship.controller;
 
 import com.internship.entity.CompanyUser;
 import com.internship.entity.Major;
+import com.internship.entity.Division;
 import com.internship.entity.Position;
 import com.internship.entity.Result;
 import com.internship.entity.StudentInternshipStatus;
 import com.internship.entity.StudentUser;
 import com.internship.mapper.CompanyUserMapper;
 import com.internship.mapper.MajorMapper;
+import com.internship.mapper.DivisionMapper;
 import com.internship.mapper.PositionMapper;
 import com.internship.mapper.StudentInternshipStatusMapper;
 import com.internship.mapper.StudentUserMapper;
@@ -39,10 +41,16 @@ public class StatisticsController {
     private StudentInternshipStatusMapper internshipStatusMapper;
 
     @Autowired
+    private com.internship.service.JobSearchStatusService jobSearchStatusService;
+
+    @Autowired
     private CompanyUserMapper companyUserMapper;
 
     @Autowired
     private MajorMapper majorMapper;
+
+    @Autowired
+    private DivisionMapper divisionMapper;
 
     @Autowired
     private PositionMapper positionMapper;
@@ -406,33 +414,46 @@ public class StatisticsController {
      * 获取实习状态分布
      */
     private List<Map<String, Object>> getStatusDistribution(String departmentId, String majorId, String classId) {
-        List<Map<String, Object>> result = new ArrayList<>();
         try {
-            List<StudentInternshipStatus> statusList = internshipStatusMapper.selectAll();
-            
-            Map<Integer, Integer> statusCount = new HashMap<>();
-            for (StudentInternshipStatus status : statusList) {
-                statusCount.put(status.getStatus(), statusCount.getOrDefault(status.getStatus(), 0) + 1);
+            List<Long> ids = scopedStatusStudentIds(departmentId, majorId, classId);
+            Map<String, Long> counts = new HashMap<>();
+            for (var status : jobSearchStatusService.resolveForStudentIds(ids).values()) {
+                counts.merge(status.jobSearchStatus(), 1L, Long::sum);
             }
-            
-            result.add(MapUtils.of("name", "待就业", "value", statusCount.getOrDefault(0, 0)));
-            result.add(MapUtils.of("name", "待确认", "value", statusCount.getOrDefault(1, 0)));
-            result.add(MapUtils.of("name", "已确定", "value", statusCount.getOrDefault(2, 0)));
-            result.add(MapUtils.of("name", "实习中", "value", statusCount.getOrDefault(3, 0)));
-            result.add(MapUtils.of("name", "已结束", "value", statusCount.getOrDefault(4, 0)));
-            result.add(MapUtils.of("name", "已中断", "value", statusCount.getOrDefault(5, 0)));
-            result.add(MapUtils.of("name", "延期", "value", statusCount.getOrDefault(6, 0)));
+            List<Map<String, Object>> result = new ArrayList<>();
+            for (var status : com.internship.enums.JobSearchStatus.values()) {
+                if (status != com.internship.enums.JobSearchStatus.UNKNOWN) {
+                    result.add(MapUtils.of("name", status.getText(), "value", counts.getOrDefault(status.name(), 0L)));
+                }
+            }
+            return result;
         } catch (Exception e) {
-            log.error("获取实习状态分布失败: {}", e.getMessage());
-            result.add(MapUtils.of("name", "待就业", "value", 0));
-            result.add(MapUtils.of("name", "待确认", "value", 0));
-            result.add(MapUtils.of("name", "已确定", "value", 0));
-            result.add(MapUtils.of("name", "实习中", "value", 0));
-            result.add(MapUtils.of("name", "已结束", "value", 0));
-            result.add(MapUtils.of("name", "已中断", "value", 0));
-            result.add(MapUtils.of("name", "延期", "value", 0));
+            log.error("获取实习状态分布失败", e);
+            throw new IllegalStateException("实习状态统计暂时不可用", e);
         }
-        return result;
+    }
+
+    private List<Long> scopedStatusStudentIds(String departmentId, String majorId, String classId) {
+        Map<Long, Long> departmentByMajor = new HashMap<>();
+        if (departmentId != null && !departmentId.isBlank()) {
+            Map<Long, Division> divisions = new HashMap<>();
+            for (Division division : divisionMapper.findAll()) divisions.put(division.getId(), division);
+            for (Major major : majorMapper.findAll()) {
+                Division division = divisions.get(major.getDivisionId());
+                Long department = major.getDepartmentId() != null ? major.getDepartmentId()
+                        : division == null ? null : division.getDepartmentId();
+                departmentByMajor.put(major.getId(), department);
+            }
+        }
+        return studentUserMapper.findAll().stream()
+                .filter(student -> Integer.valueOf(1).equals(student.getStatus()))
+                .filter(student -> majorId == null || majorId.isBlank()
+                        || majorId.equals(String.valueOf(student.getMajorId())))
+                .filter(student -> classId == null || classId.isBlank()
+                        || classId.equals(String.valueOf(student.getClassId())))
+                .filter(student -> departmentId == null || departmentId.isBlank()
+                        || departmentId.equals(String.valueOf(departmentByMajor.get(student.getMajorId()))))
+                .map(StudentUser::getId).toList();
     }
 
     /**
@@ -442,31 +463,31 @@ public class StatisticsController {
         List<Map<String, Object>> result = new ArrayList<>();
         try {
             List<StudentInternshipStatus> statusList = internshipStatusMapper.selectAll();
+            Set<Long> studentIds = new HashSet<>(scopedStatusStudentIds(departmentId, majorId, classId));
             
             int interruptedCount = 0;
             int complaintCount = 0;
             int delayCount = 0;
             
             for (StudentInternshipStatus status : statusList) {
-                if (Boolean.TRUE.equals(status.getIsInterrupted())) {
+                if (!studentIds.contains(status.getStudentId())) continue;
+                if (Integer.valueOf(5).equals(status.getStatus())) {
                     interruptedCount++;
                 }
                 if (Boolean.TRUE.equals(status.getHasComplaint())) {
                     complaintCount++;
                 }
-                if (Boolean.TRUE.equals(status.getIsDelayed())) {
+                if (Integer.valueOf(6).equals(status.getStatus())) {
                     delayCount++;
                 }
             }
             
-            result.add(MapUtils.of("name", "已中断", "count", interruptedCount));
+            result.add(MapUtils.of("name", "实习已中断", "count", interruptedCount));
             result.add(MapUtils.of("name", "投诉", "count", complaintCount));
-            result.add(MapUtils.of("name", "延期", "count", delayCount));
+            result.add(MapUtils.of("name", "已延期实习", "count", delayCount));
         } catch (Exception e) {
-            log.error("获取异常状态分析失败: {}", e.getMessage());
-            result.add(MapUtils.of("name", "已中断", "count", 0));
-            result.add(MapUtils.of("name", "投诉", "count", 0));
-            result.add(MapUtils.of("name", "延期", "count", 0));
+            log.error("获取异常状态分析失败", e);
+            throw new IllegalStateException("实习状态统计暂时不可用", e);
         }
         return result;
     }

@@ -37,8 +37,11 @@ export interface StudentUser {
   email?: string
   status?: number
   internshipStatus?: number | string
+  internshipStatusId?: number | null
   jobSearchStatus?: string
   jobSearchStatusText?: string
+  pendingApplicationTexts?: string[]
+  internshipPath?: 'selfPractice' | 'mutualChoice' | 'delay'
   companyId?: number
   company?: string
   progress?: number
@@ -68,6 +71,7 @@ export interface StudentFilters {
   major?: string
   class?: string
   status?: string
+  internshipPath?: string
   company?: string
   search?: string
 }

@@ -61,6 +61,16 @@ class StudentJourneyServiceTest {
         var p=project("SEARCH",basis(true,false,false,true,false,false,false,false),null);
         assertEquals("SELF",p.route()); assertEquals("WAITING",p.steps().get(1).state()); assertFalse(p.canChoose());
     }
+    @Test void cooperativeSelfPracticeWaitsForCompanyWithoutAdvancingToFormalInternship() {
+        var b = new StudentPlanService.JourneyBasis(true, true, true, false, false, true,
+                false, true, false, false, false, false, "SELF", "pending", "", "COMPANY");
+        var p = project("CONFIRM", b, null);
+        assertEquals("SELF", p.route());
+        assertEquals(2, p.currentIndex());
+        assertEquals("等待企业确认", p.title());
+        assertTrue(p.steps().get(1).detail().contains("等待企业确认"));
+        assertEquals("PENDING", p.steps().get(2).state());
+    }
     @Test void rejectedSelfPracticeShowsTeacherReasonAndResubmission() {
         var b = new StudentPlanService.JourneyBasis(true, true, true, false, false, false,
                 false, false, false, false, false, false, "SELF", "rejected", "材料不完整");

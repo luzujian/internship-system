@@ -9,12 +9,15 @@ const OVERFLOW_TOLERANCE_PX = 10
 const KEY_SPOT_ROUTES: Array<{ role: SmokeRole; path: string }> = [
   { role: 'public', path: '/login' },
   { role: 'public', path: '/company-register' },
+  { role: 'public', path: '/forgot-password' },
   { role: 'student', path: '/student/jobs' },
   { role: 'student', path: '/student/applications' },
+  { role: 'student', path: '/student/internship-registration' },
   { role: 'teacher', path: '/teacher/approval' },
   { role: 'teacher', path: '/teacher/student-tracking' },
   { role: 'company', path: '/company/jobs' },
   { role: 'company', path: '/company/application-view' },
+  { role: 'company', path: '/company/internship-students' },
   { role: 'admin', path: '/admin/student-users' },
   { role: 'admin', path: '/admin/recruitment' }
 ]
@@ -39,7 +42,9 @@ async function openRoute(page: Page, role: SmokeRole, path: string) {
     await mockApis(page, getRoleApiMocks(role))
     await page.goto(path)
     await expect(page.locator('.sidebar-toggle-btn')).toBeVisible()
+    await expect(page.locator('[data-navigation-content]')).not.toHaveText('')
   }
+  await expect.poll(() => new URL(page.url()).pathname, { message: `必须进入目标路由 ${path}，禁止重定向后误报通过` }).toBe(path)
   await settlePage(page)
 }
 
@@ -91,10 +96,10 @@ async function expectNoFullPageHorizontalOverflow(page: Page, label: string) {
   ).toBeLessThanOrEqual(OVERFLOW_TOLERANCE_PX)
 }
 
-test.describe('全路由整页横向溢出 smoke（手机竖屏 375）', () => {
+test.describe('全路由整页横向溢出 smoke（375 / 768，含真实路由断言）', () => {
   for (const path of PUBLIC_ROUTES) {
     test(`公开页 ${path}`, async ({ page }, testInfo) => {
-      test.skip(testInfo.project.name !== 'mobile', '仅手机视口')
+      test.skip(!['mobile', 'webkit-mobile', 'tablet', 'webkit-tablet'].includes(testInfo.project.name), '仅手机视口')
       await openRoute(page, 'public', path)
       await expectNoFullPageHorizontalOverflow(page, `公开页 ${path}`)
     })
@@ -103,7 +108,7 @@ test.describe('全路由整页横向溢出 smoke（手机竖屏 375）', () => {
   for (const role of Object.keys(ROLE_ROUTES) as TestRole[]) {
     for (const path of ROLE_ROUTES[role]) {
       test(`${role} ${path}`, async ({ page }, testInfo) => {
-        test.skip(testInfo.project.name !== 'mobile', '仅手机视口')
+        test.skip(!['mobile', 'webkit-mobile', 'tablet', 'webkit-tablet'].includes(testInfo.project.name), '全路由 375/768')
         await openRoute(page, role, path)
         await expectNoFullPageHorizontalOverflow(page, `${role} ${path}`)
       })
@@ -114,7 +119,7 @@ test.describe('全路由整页横向溢出 smoke（手机竖屏 375）', () => {
 test.describe('关键页面横屏 667×375 抽查', () => {
   for (const { role, path } of KEY_SPOT_ROUTES) {
     test(`${role} ${path}`, async ({ page }, testInfo) => {
-      test.skip(testInfo.project.name !== 'mobile', '仅手机视口')
+      test.skip(!['mobile', 'webkit-mobile'].includes(testInfo.project.name), '仅手机视口')
       await openRoute(page, role, path)
       await expectNoFullPageHorizontalOverflow(page, `竖屏 ${role} ${path}`)
 
@@ -125,12 +130,13 @@ test.describe('关键页面横屏 667×375 抽查', () => {
   }
 })
 
-test.describe('关键页面平板 768×1024 抽查', () => {
+test.describe('关键页面平板横屏 1024×768 抽查', () => {
   for (const { role, path } of KEY_SPOT_ROUTES) {
     test(`${role} ${path}`, async ({ page }, testInfo) => {
-      test.skip(testInfo.project.name !== 'tablet', '仅平板视口')
+      test.skip(!['tablet', 'webkit-tablet'].includes(testInfo.project.name), '仅平板视口')
+      await page.setViewportSize({ width: 1024, height: 768 })
       await openRoute(page, role, path)
-      await expectNoFullPageHorizontalOverflow(page, `平板 ${role} ${path}`)
+      await expectNoFullPageHorizontalOverflow(page, `平板横屏 ${role} ${path}`)
     })
   }
 })

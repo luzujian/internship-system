@@ -1,4 +1,6 @@
 export interface BusinessObject { type: string; id: string }
+export interface MessageAttachment { name: string; size?: number }
+export interface MessageAttachmentPreview { contextId: string; files: MessageAttachment[] }
 export interface PageContext {
   pageKey: string; route: string; title: string; view: string
   object: BusinessObject | null; selectedObjects: BusinessObject[]
@@ -6,6 +8,10 @@ export interface PageContext {
 }
 export interface Actor { ownerKey: string; id: string | number; role: string; name: string; readOnly: boolean }
 export interface AgentLink { label: string; action: string; objectId?: string; parameters: Record<string, string> }
+export type AgentUiAction =
+  | { id: string; type: 'NAVIGATE'; targetId: string; continue?: boolean }
+  | { id: string; type: 'FORM_FILL'; formId: string; instanceId: number; assignments: FillAssignment[]; questions?: string[]; skippedFields?: FillSkipped[] }
+  | { id: string; type: 'AUTO_TASK_PREVIEW' | 'CAPABILITIES_PREVIEW'; preview: Record<string, unknown> }
 export interface ResultCard {
   tool: string; title: string; status: string; observedAt: string; scope: string
   items: Record<string, unknown>[]; total: number; hasMore: boolean
@@ -17,10 +23,15 @@ export interface AgentTask {
   editOf?: string | null; editRound?: number;
   createdAt?: number; rootMessageId?: string; revisionNumber?: number
   generationKind?: string; operation?: string; responseKind?: string; allowedOperations?: string[]
+  parentTaskId?: string
+  harness?: string; attachmentContextId?: string | null
+  runtime?: { engine: string; workflowId: string; pendingQuestion?: unknown; revision?: number }
+  uiActions?: AgentUiAction[]
+  importReceipt?: { actionId: string; successCount: number; skippedCount: number; blockedCount: number; credentialCount: number } | null
   steps: { tool: string; title: string; status: string; durationMs: number; errorCode?: string }[]
   cards: ResultCard[]
 }
-export interface Capabilities { enabled: boolean; actor: Actor; mode: string; tools: { name: string; description: string }[]; capabilities?: Record<string, boolean> }
+export interface Capabilities { enabled: boolean; actor: Actor; mode: string; engine?: string; attachmentImport?: boolean; resume?: boolean; harness?: string; tools: { name: string; description: string }[]; capabilities?: Record<string, boolean> }
 
 // ===== 智能填表 =====
 export interface FormFieldDescriptor {
@@ -51,6 +62,7 @@ export interface FormBusinessReceipt {
 export interface FillEvent {
   id: string
   kind: 'fill'
+  sourceTaskId?: string
   formId: string
   formTitle: string
   message: string

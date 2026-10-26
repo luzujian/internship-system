@@ -245,18 +245,25 @@
     <!-- 自主实习申请弹窗 -->
     <el-dialog
       v-model="showSelfPracticeDialog"
-      width="500px"
-      class="onboarding-dialog"
+      :width="selfPracticeApplicationView === 'result' ? '560px' : '720px'"
+      class="onboarding-dialog self-practice-dialog"
       append-to-body
       lock-scroll
       modal-class="global-modal"
-      :title="''"
+      title="自主实习申请"
     >
-      <div class="dialog-content">
-        <div class="header-section">
-          <h1 class="header-title">自主实习申请</h1>
+      <template #header="{ titleId }">
+        <div class="self-practice-header">
+          <div class="self-practice-heading">
+            <el-icon class="self-practice-heading-icon"><Briefcase /></el-icon>
+            <div>
+              <h2 :id="titleId">自主实习申请</h2>
+              <p>{{ selfPracticeApplicationView === 'result' ? '查看申请进度与实习信息' : '填写实习信息，上传申请材料' }}</p>
+            </div>
+          </div>
         </div>
-
+      </template>
+      <div class="dialog-content">
         <div v-if="selfPracticeApplicationLoading" class="delay-state-panel">
           <el-icon class="delay-state-icon"><Clock /></el-icon>
           <div class="delay-state-title">正在核对申请状态</div>
@@ -274,17 +281,16 @@
             <CircleCheck v-if="selfPracticeApplication?.status === 'approved'" />
             <Clock v-else />
           </el-icon>
-          <div class="delay-state-title">{{ studentApplicationStatusText[selfPracticeApplication?.status] || '等待教师审核' }}</div>
+          <div class="delay-state-title">{{ selfPracticeResultText }}</div>
           <div class="delay-state-detail">
-            {{ selfPracticeApplication?.status === 'approved' ? '自主实习申请已通过。如需更换实习单位，可点击“再次申请”；新申请审核通过后才会切换当前实习。' : '教师尚未进行通过或驳回操作，可撤回后重新提交。' }}
+            {{ selfPracticeApplication?.status === 'approved' ? '自主实习申请已通过。如需更换实习单位，可点击“再次申请”；新申请通过后才会切换当前实习。' : selfPracticeApplication?.reviewTarget === 'COMPANY' ? '企业尚未确认接收，可撤回后修改申请。' : '辅导员尚未审核，可撤回后修改申请。' }}
           </div>
           <div class="delay-state-meta">
             <span>实习单位：{{ selfPracticeApplication?.company || '-' }}</span>
             <span>实习岗位：{{ selfPracticeApplication?.positionName || '-' }}</span>
             <span>提交时间：{{ selfPracticeApplication?.applyTime || selfPracticeApplication?.createTime || '-' }}</span>
-            <span v-if="selfPracticeApplication?.reviewTime">审核时间：{{ selfPracticeApplication.reviewTime }}</span>
-            <span v-if="selfPracticeApplication?.materials?.['个人申请书']">个人申请书：已上传</span>
-            <span v-if="selfPracticeApplication?.materials?.['实习接收函']">实习接收函：已上传</span>
+            <span v-if="selfPracticeApplication?.reviewTime">处理时间：{{ selfPracticeApplication.reviewTime }}</span>
+            <span v-if="Object.values(selfPracticeApplication?.materials || {}).some(Boolean)">其他资料：已上传 {{ Object.values(selfPracticeApplication?.materials || {}).filter(Boolean).length }} 份</span>
           </div>
         </div>
 
@@ -296,8 +302,8 @@
             :closable="false"
             show-icon
           >
-            <template #title>教师已驳回</template>
-            驳回理由：{{ selfPracticeApplication?.rejectReason || '教师未填写理由' }}
+            <template #title>{{ selfPracticeApplication?.reviewTarget === 'COMPANY' ? '企业未通过确认' : '辅导员已驳回' }}</template>
+            处理理由：{{ selfPracticeApplication?.rejectReason || '未填写理由' }}
           </el-alert>
           <el-alert
             v-else-if="selfPracticeApplication?.status === 'withdrawn'"
@@ -309,8 +315,14 @@
             <template #title>原申请已撤回</template>
             可以修改申请内容后重新提交；未替换的已上传材料会保留。
           </el-alert>
-          <el-form label-width="160px">
-            <el-form-item label="实习单位" required>
+          <el-form label-position="top" class="self-practice-form">
+            <section class="self-practice-section" aria-labelledby="practice-info-title">
+              <div class="practice-section-heading">
+                <el-icon><Briefcase /></el-icon>
+                <h3 id="practice-info-title">实习信息</h3>
+              </div>
+              <div class="practice-form-grid">
+            <el-form-item label="实习单位" class="practice-field-full" required>
               <div class="company-field">
                 <el-autocomplete
                   v-model="selfPracticeForm.company"
@@ -337,10 +349,7 @@
                   :closable="false"
                   show-icon
                 >
-                  <template #title>校企合作单位</template>
-                  <div>
-                    已匹配系统登记的校企合作单位“{{ matchedCooperativeCompany.companyName }}”，可继续提交自主实习申请，教师端将显示校企合作标识。
-                  </div>
+                  <template #title>校企合作单位 · 提交后由企业确认接收</template>
                 </el-alert>
                 <el-alert
                   v-else-if="similarCooperativeCompanies.length > 0"
@@ -349,17 +358,27 @@
                   :closable="false"
                   show-icon
                 >
-                  <template #title>存在名称相近的校企合作单位</template>
+                  <template #title>请核对单位名称</template>
                   <div>
-                    系统企业库中存在名称相近的企业：{{ similarCooperativeCompanies.map((item) => item.companyName).join('、') }}。为避免同一企业因名称不一致产生错误，请从下拉候选中选择系统登记的标准企业名称；若该企业确实不在系统中，请核对名称后再提交。
+                    发现相近企业：{{ similarCooperativeCompanies.map((item) => item.companyName).join('、') }}。如为同一单位，请从候选中选择；如不是，请核对完整名称。
                   </div>
                 </el-alert>
               </div>
             </el-form-item>
-            <el-form-item label="实习岗位" required>
-              <el-input v-model="selfPracticeForm.positionName" placeholder="请输入实习岗位名称" maxlength="255" clearable />
+            <el-form-item label="实习岗位" class="practice-field-full" required>
+              <div class="practice-position-field">
+                <el-select v-if="matchedCooperativeCompany" v-model="selfPracticeForm.positionId" style="width:100%" :loading="companyPositionsLoading"
+                  placeholder="选择企业已发布岗位，或选择手动填写" @change="handleSelfPracticePositionSelect">
+                  <el-option v-for="position in cooperativePositions" :key="position.id" :value="position.id"
+                    :label="`${position.positionName}${position.city ? ' · ' + position.city : ''}（剩余 ${position.remainingQuota ?? 0} 人）`" />
+                  <el-option label="没有对应岗位，手动填写" :value="0" />
+                </el-select>
+                <el-input v-if="!matchedCooperativeCompany || !selfPracticeForm.positionId" v-model="selfPracticeForm.positionName"
+                  placeholder="请输入实际录取的岗位名称" maxlength="255" clearable :style="matchedCooperativeCompany ? 'margin-top:8px' : ''" />
+                <div v-if="matchedCooperativeCompany && selfPracticeForm.positionId === 0" class="practice-field-tip">岗位信息由企业确认。</div>
+              </div>
             </el-form-item>
-            <el-form-item label="单位所在城市" required>
+            <el-form-item label="单位所在城市" class="practice-field-full" required>
               <el-input v-model="selfPracticeForm.companyCity" placeholder="例如：广东省广州市" maxlength="100" clearable />
             </el-form-item>
             <el-form-item label="人事经理姓名" required>
@@ -368,43 +387,47 @@
             <el-form-item label="人事经理联系电话" required>
               <el-input v-model="selfPracticeForm.hrManagerPhone" placeholder="请输入手机或固定电话号码" maxlength="30" inputmode="tel" clearable />
             </el-form-item>
-            <el-form-item label="申请理由" required>
+            <el-form-item label="申请理由" class="practice-field-full" required>
               <el-input v-model="selfPracticeForm.reason" type="textarea" placeholder="请简要说明自主实习原因" :rows="3" clearable />
             </el-form-item>
-            <el-form-item label="个人申请书">
-              <el-upload
-                class="onboarding-upload"
-                action="#"
-                :auto-upload="false"
-                :on-change="(file) => handleOnboardingFileChange(file, 'selfPractice', 'applicationLetter')"
-                :file-list="selfPracticeFileList"
-                accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
-                :show-file-list="true"
-                drag
-              >
-                <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
-                <div class="el-upload__text">点击或拖拽上传个人申请书</div>
-              </el-upload>
-            </el-form-item>
-            <el-form-item label="实习接收函">
-              <el-upload
-                class="onboarding-upload"
-                action="#"
-                :auto-upload="false"
-                :on-change="(file) => handleOnboardingFileChange(file, 'selfPractice', 'acceptanceLetter')"
-                :file-list="selfPracticeAcceptanceFileList"
-                accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
-                :show-file-list="true"
-                drag
-              >
-                <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
-                <div class="el-upload__text">点击或拖拽上传企业实习接收函</div>
-              </el-upload>
-            </el-form-item>
-            <el-form-item label="盖章实习协议" required>
+              </div>
+            </section>
+            <section class="self-practice-section" aria-labelledby="practice-material-title">
+              <div class="practice-section-heading">
+                <el-icon><Document /></el-icon>
+                <h3 id="practice-material-title">申请材料</h3>
+              </div>
+            <el-form-item label="盖章实习协议" class="practice-agreement-field" required>
               <InternshipAgreementUpload ref="selfPracticeAgreementUploader" v-model="selfPracticeAgreementFiles"
                 :disabled="onboardingSubmitting" :company-key="selfPracticeForm.company" />
             </el-form-item>
+            <el-form-item label="其他资料（选填）">
+              <div class="practice-other-materials">
+              <el-upload
+                class="onboarding-upload"
+                v-model:file-list="selfPracticeOtherFileList"
+                action="#"
+                :auto-upload="false"
+                :on-change="handleSelfPracticeOtherFileChange"
+                :on-remove="removeSelfPracticeOtherFile"
+                :disabled="onboardingSubmitting"
+                accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+                :show-file-list="true"
+                multiple
+                drag
+              >
+                <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
+                <div class="el-upload__text">点击或拖拽上传其他资料</div>
+              </el-upload>
+              <p class="practice-field-tip">可上传申请书、接收函等补充资料，支持 Word、PDF 或图片。</p>
+              <div v-for="(presence, name) in retainedSelfPracticeMaterials" :key="name" class="practice-retained-file">
+                <el-icon><Document /></el-icon>
+                <span>{{ name }}</span>
+                <el-tag size="small" type="info">已上传</el-tag>
+              </div>
+              </div>
+            </el-form-item>
+            </section>
           </el-form>
         </div>
       </div>
@@ -442,7 +465,8 @@
             @click="submitOnboardingApplication('selfPractice')"
           >{{ selfPracticeApplication ? '重新提交申请' : '提交申请' }}</el-button>
         </template>
-      </template>    </el-dialog>
+      </template>
+    </el-dialog>
 
     <!-- 考研延迟申请弹窗 -->
     <InternshipAgreementDialog v-if="selfPracticeApplication?.id" v-model="selfPracticeAgreementVisible"
@@ -515,12 +539,14 @@
             <el-form-item label="申请理由" required>
               <el-input v-model="delayForm.reason" type="textarea" placeholder="请简要说明考研延迟原因" :rows="3" clearable />
             </el-form-item>
-            <el-form-item label="考研计划">
+            <el-form-item label="考研计划" required>
               <el-upload
                 class="onboarding-upload"
                 action="#"
                 :auto-upload="false"
                 :on-change="(file) => handleOnboardingFileChange(file, 'delay')"
+                :on-remove="handleDelayFileRemove"
+                :disabled="onboardingSubmitting"
                 :file-list="delayFileList"
                 accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
                 :show-file-list="true"
@@ -554,7 +580,7 @@
         </template>
         <template v-else>
           <el-button @click="showDelayDialog = false">取消</el-button>
-          <el-button type="primary" @click="submitOnboardingApplication('delay')" :loading="onboardingSubmitting">{{ delayApplication ? '重新提交申请' : '提交申请' }}</el-button>
+          <el-button type="primary" @click="submitOnboardingApplication('delay')" :loading="onboardingSubmitting" :disabled="delayUploadStatus === 'uploading' || delayUploadStatus === 'fail'">{{ delayApplication ? '重新提交申请' : '提交申请' }}</el-button>
         </template>
       </template>
     </el-dialog>
@@ -599,7 +625,7 @@ import {
   Warning
 } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import type { UploadUserFile } from 'element-plus'
+import type { UploadFile, UploadUserFile } from 'element-plus'
 import type { FormFieldDescriptor } from '@/agent/types'
 import { canResubmitDelay, delayApplicationStatusText, delayDialogMode, delayFileListFromApplication, delayFormFromApplication, latestDelayApplication } from '@/utils/delayApplication'
 import {
@@ -645,6 +671,8 @@ interface OnboardingApplication {
   reason: string
   status: string
   company?: string
+  companyId?: number | null
+  positionId?: number | null
   positionName?: string
   companyCity?: string
   hrManagerName?: string
@@ -652,6 +680,10 @@ interface OnboardingApplication {
   materials?: Record<string, string>
 }
 interface StudentApplicationRecord extends OnboardingApplication {
+  reviewTarget?: 'COMPANY' | 'COUNSELOR'
+  companyId?: number
+  positionId?: number
+  confirmationRecordId?: number
   id?: number
   rejectReason?: string
   reviewerId?: number
@@ -1101,21 +1133,64 @@ const selfPracticeAgreementVisible = ref(false)
 const selfPracticeForm = ref({
   agreementFileIds: [] as number[],
   company: '',
+  positionId: null as number | null,
   positionName: '',
   companyCity: '',
   hrManagerName: '',
   hrManagerPhone: '',
   reason: '',
-  applicationLetterUrl: '',
-  acceptanceLetterUrl: ''
+  otherMaterials: {} as Record<string, string>
 })
+const cooperativePositions = ref<Array<{ id: number; positionName: string; city?: string; remainingQuota?: number }>>([])
+const companyPositionsLoading = ref(false)
+let companyPositionToken = 0
+const selfPracticeResultText = computed(() => {
+  const item = selfPracticeApplication.value
+  if (item?.reviewTarget === 'COMPANY') return ({ pending: '待企业确认', approved: '企业已确认接收', rejected: '企业已拒绝', withdrawn: '你已撤回' })[item.status] || ''
+  return studentApplicationStatusText[item?.status || ''] || '待辅导员审核'
+})
+watch(() => matchedCooperativeCompany.value?.companyId, async (companyId, previousId) => {
+  const token = ++companyPositionToken
+  cooperativePositions.value = []
+  if (previousId !== undefined && previousId !== companyId) {
+    selfPracticeForm.value.positionId = null
+    selfPracticeForm.value.positionName = ''
+  }
+  if (!companyId) return
+  companyPositionsLoading.value = true
+  try {
+    const response: any = await request.get('/student/applications/company-positions', { params: { companyId } })
+    if (token === companyPositionToken) cooperativePositions.value = Array.isArray(response.data) ? response.data : []
+  } catch (error: any) {
+    if (token === companyPositionToken) ElMessage.error(error?.message || '岗位列表加载失败，可手动填写后交企业核实')
+  } finally { if (token === companyPositionToken) companyPositionsLoading.value = false }
+})
+const handleSelfPracticePositionSelect = (id: number) => {
+  selfPracticeForm.value.positionName = id ? cooperativePositions.value.find(item => item.id === id)?.positionName || '' : ''
+}
 const delayForm = ref({ reason: '', materialUrl: '' })
-const selfPracticeFileList = ref<UploadUserFile[]>([])
+const selfPracticeOtherFileList = ref<UploadUserFile[]>([])
+const selfPracticeOtherMaterialKeys = new Map<number, string>()
+const selfPracticeOriginalMaterials = ref<Record<string, string>>({})
+const selfPracticeOriginalCompany = ref('')
+const retainedSelfPracticeMaterials = computed(() =>
+  normalizeCompanyName(selfPracticeForm.value.company) === normalizeCompanyName(selfPracticeOriginalCompany.value)
+    ? selfPracticeOriginalMaterials.value : {})
 watch(selfPracticeAgreementFiles, files => {
   selfPracticeForm.value.agreementFileIds = files.filter(file => file.status === 'success').map(file => file.uploadId)
 }, { flush: 'sync' })
-const selfPracticeAcceptanceFileList = ref<UploadUserFile[]>([])
 const delayFileList = ref([])
+const retainedDelayPlan = ref(false)
+const delayUploadStatus = ref<'idle' | 'uploading' | 'success' | 'fail'>('idle')
+let delayUploadSequence = 0
+const getDelayValidation = () => ({
+  missingFields: [
+    ...(!delayForm.value.reason?.trim() ? ['申请理由'] : []),
+    ...(!delayForm.value.materialUrl && !retainedDelayPlan.value ? ['考研计划'] : [])
+  ],
+  validationErrors: delayUploadStatus.value === 'uploading' ? ['考研计划正在上传，请稍候']
+    : delayUploadStatus.value === 'fail' ? ['考研计划上传失败，请移除后重新上传'] : []
+})
 const delayApplication = ref(null)
 const delayApplicationLoading = ref(false)
 const delayApplicationError = ref('')
@@ -1132,8 +1207,7 @@ const selfPracticeFields: FormFieldDescriptor[] = [
   { prop: 'hrManagerName', label: '人事经理姓名', type: 'input', required: true },
   { prop: 'hrManagerPhone', label: '人事经理联系电话', type: 'input', required: true, patternHint: '手机或固定电话' },
   { prop: 'reason', label: '申请理由', type: 'textarea', required: true },
-  { prop: 'applicationLetterUrl', label: '个人申请书', type: 'upload', required: true },
-  { prop: 'acceptanceLetterUrl', label: '实习接收函', type: 'upload', required: true }
+  { prop: 'otherMaterials', label: '其他资料', type: 'upload', required: false }
 ]
 const delayFields: FormFieldDescriptor[] = [
   { prop: 'reason', label: '申请理由', type: 'textarea', required: true },
@@ -1141,8 +1215,10 @@ const delayFields: FormFieldDescriptor[] = [
 ]
 // 弹窗关闭时注销，防止侧栏继续把内容填进已关闭的表单
 watch(showSelfPracticeDialog, open => { if (!open) formContext.unregister('home:self-practice') })
-watch(showDelayDialog, open => { if (!open) formContext.unregister('home:delay') })
-onUnmounted(() => { formContext.unregister('home:self-practice'); formContext.unregister('home:delay') })
+watch(showDelayDialog, open => {
+  if (!open) { delayUploadSequence++; formContext.unregister('home:delay') }
+})
+onUnmounted(() => { delayUploadSequence++; formContext.unregister('home:self-practice'); formContext.unregister('home:delay') })
 
 const goToJobs = () => {
   router.push('/student/jobs')
@@ -1214,20 +1290,18 @@ const resetSelfPracticeForm = (application?: StudentApplicationRecord | null) =>
   selfPracticeForm.value = {
     agreementFileIds: [],
     company: application?.company || '',
+    positionId: application?.positionId || null,
     positionName: application?.positionName || '',
     companyCity: application?.companyCity || '',
     hrManagerName: application?.hrManagerName || '',
     hrManagerPhone: application?.hrManagerPhone || '',
     reason: application?.reason || '',
-    applicationLetterUrl: '',
-    acceptanceLetterUrl: ''
+    otherMaterials: {}
   }
-  selfPracticeFileList.value = application?.materials?.['个人申请书']
-    ? [{ name: '个人申请书（已上传，可替换）', status: 'success' }]
-    : []
-  selfPracticeAcceptanceFileList.value = application?.materials?.['实习接收函']
-    ? [{ name: '实习接收函（已上传，可替换）', status: 'success' }]
-    : []
+  selfPracticeOtherFileList.value = []
+  selfPracticeOtherMaterialKeys.clear()
+  selfPracticeOriginalMaterials.value = { ...(application?.materials || {}) }
+  selfPracticeOriginalCompany.value = application?.company || ''
   matchedCooperativeCompany.value = null
   similarCooperativeCompanies.value = []
 }
@@ -1286,6 +1360,9 @@ const startNewSelfPracticeApplication = () => {
   registerSelfPracticeForm()
 }
 const resetDelayForm = (application?: StudentApplicationRecord | null) => {
+  delayUploadSequence++
+  delayUploadStatus.value = 'idle'
+  retainedDelayPlan.value = Boolean(application?.materials?.delayPlan)
   delayForm.value = delayFormFromApplication(application)
   delayFileList.value = delayFileListFromApplication(application)
 }
@@ -1300,7 +1377,7 @@ const registerDelayForm = () => {
     title: '考研延迟申请',
     fields: delayFields,
     getModel: () => delayForm.value,
-    getValidationSummary: () => ({ missingFields: [...(!delayForm.value.reason?.trim() ? ['申请理由'] : []), ...(!delayForm.value.materialUrl && !delayApplication.value?.materials?.delayPlan ? ['考研计划'] : [])], validationErrors: [] })
+    getValidationSummary: getDelayValidation
   })
 }
 
@@ -1363,7 +1440,7 @@ const withdrawDelayApplication = async () => {
 const withdrawSelfPracticeApplication = async () => {
   if (!selfPracticeApplication.value?.id || selfPracticeApplication.value?.status !== 'pending') return
   try {
-    await ElMessageBox.confirm('撤回后教师将无法继续审核原申请，你可以重新填写并提交。', '撤回自主实习申请', {
+    await ElMessageBox.confirm('撤回后将停止办理原申请，你可以重新填写并提交。', '撤回自主实习申请', {
       type: 'warning',
       confirmButtonText: '确认撤回',
       cancelButtonText: '继续保留'
@@ -1386,33 +1463,89 @@ const withdrawSelfPracticeApplication = async () => {
     withdrawingSelfPracticeApplication.value = false
   }
 }
-const handleOnboardingFileChange = async (file, type, subType?: string) => {
+const removeSelfPracticeOtherFile = (file: UploadFile) => {
+  const key = selfPracticeOtherMaterialKeys.get(file.uid)
+  if (key) delete selfPracticeForm.value.otherMaterials[key]
+  selfPracticeOtherMaterialKeys.delete(file.uid)
+}
+
+const handleSelfPracticeOtherFileChange = async (file: UploadFile) => {
+  if (!file.raw || onboardingSubmitting.value) return
+  const company = selfPracticeForm.value.company
+  file.status = 'uploading'
+  try {
+    const data = new FormData()
+    data.append('file', file.raw)
+    const response: any = await request.post('/upload/file', data, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    })
+    if (response.code !== 200 || typeof response.data?.url !== 'string') {
+      throw new Error(response.message || '资料上传失败')
+    }
+    if (!selfPracticeOtherFileList.value.some(item => item.uid === file.uid) || selfPracticeForm.value.company !== company) return
+    const base = file.name.replace(/\.(pdf|docx?|jpe?g|png)$/i, '').replace(/[\\/\r\n]/g, '_').trim() || '其他资料'
+    let key = base
+    let suffix = 2
+    while (selfPracticeForm.value.otherMaterials[key] || retainedSelfPracticeMaterials.value[key]) key = `${base}（${suffix++}）`
+    selfPracticeForm.value.otherMaterials[key] = response.data.url
+    selfPracticeOtherMaterialKeys.set(file.uid, key)
+    file.status = 'success'
+  } catch (error: any) {
+    file.status = 'fail'
+    ElMessage.error(error?.message || '资料上传失败，请移除后重新上传')
+  }
+}
+
+watch(() => selfPracticeForm.value.company, (value, previous) => {
+  if (value !== previous) {
+    selfPracticeOtherFileList.value = []
+    selfPracticeOtherMaterialKeys.clear()
+    selfPracticeForm.value.otherMaterials = {}
+  }
+})
+
+const handleDelayFileRemove = (file) => {
+  delayUploadSequence++
+  delayUploadStatus.value = 'idle'
+  delayForm.value.materialUrl = ''
+  if (!file.raw) retainedDelayPlan.value = false
+  delayFileList.value = retainedDelayPlan.value
+    ? delayFileListFromApplication(delayApplication.value) : []
+}
+
+const handleOnboardingFileChange = async (file, type) => {
+  if (type !== 'delay' || !file.raw || onboardingSubmitting.value) return
+  const sequence = ++delayUploadSequence
+  delayUploadStatus.value = 'uploading'
+  delayForm.value.materialUrl = ''
+  delayFileList.value = [{ ...file, status: 'uploading' }]
   try {
     const formData = new FormData()
     formData.append('file', file.raw)
     const response = await request.post('/upload/file', formData, {
       headers: { 'Content-Type': 'multipart/form-data' }
     })
+    if (sequence !== delayUploadSequence || !showDelayDialog.value) return
     // 上传返回的 data 为 { url } 对象，收窄后使用（保持原真值语义）
     const uploadRaw: unknown = response.data
     const uploadObj: { url?: unknown } | null =
       uploadRaw !== null && typeof uploadRaw === 'object' ? (uploadRaw as { url?: unknown }) : null
     const uploadedUrl: unknown = uploadObj?.url
     if (response.code === 200 && uploadObj && typeof uploadedUrl === 'string' && uploadedUrl) {
-      if (type === 'selfPractice') {
-        if (subType === 'applicationLetter') {
-          selfPracticeForm.value.applicationLetterUrl = uploadedUrl
-        } else if (subType === 'acceptanceLetter') {
-          selfPracticeForm.value.acceptanceLetterUrl = uploadedUrl
-        }
-      } else {
-        delayForm.value.materialUrl = uploadedUrl
-      }
+      delayForm.value.materialUrl = uploadedUrl
+      retainedDelayPlan.value = false
+      delayUploadStatus.value = 'success'
+      delayFileList.value = [{ ...file, status: 'success' }]
       ElMessage.success('文件上传成功')
     } else {
+      delayUploadStatus.value = 'fail'
+      delayFileList.value = [{ ...file, status: 'fail' }]
       ElMessage.error(response.message || '文件上传失败')
     }
   } catch (error) {
+    if (sequence !== delayUploadSequence || !showDelayDialog.value) return
+    delayUploadStatus.value = 'fail'
+    delayFileList.value = [{ ...file, status: 'fail' }]
     console.error('文件上传失败:', error)
     ElMessage.error('文件上传失败')
   }
@@ -1452,6 +1585,7 @@ const ensureSelfPracticeCompanyName = async () => {
 }
 
 const submitOnboardingApplication = async (type) => {
+  if (onboardingSubmitting.value) return
   if (type === 'selfPractice') {
     if (!selfPracticeForm.value.company.trim()) {
       ElMessage.error('请填写实习单位')
@@ -1481,9 +1615,18 @@ const submitOnboardingApplication = async (type) => {
       return
     }
     if (!selfPracticeAgreementUploader.value?.validate()) return
+    if (selfPracticeOtherFileList.value.some(file => file.status === 'uploading')) {
+      ElMessage.warning('其他资料正在上传，请稍候')
+      return
+    }
+    if (selfPracticeOtherFileList.value.some(file => file.status === 'fail')) {
+      ElMessage.warning('请移除上传失败的资料后重新上传')
+      return
+    }
   } else if (type === 'delay') {
-    if (!delayForm.value.reason) {
-      ElMessage.error('请填写申请理由')
+    const validation = getDelayValidation()
+    if (validation.validationErrors.length || validation.missingFields.length) {
+      ElMessage.error(validation.validationErrors[0] || `请填写或上传${validation.missingFields[0]}`)
       return
     }
   }
@@ -1506,14 +1649,13 @@ const submitOnboardingApplication = async (type) => {
     if (type === 'selfPractice') {
       applicationData.agreementFileIds = selfPracticeAgreementFiles.value.map(file => file.uploadId)
       applicationData.company = selfPracticeForm.value.company.trim()
+      applicationData.companyId = matchedCooperativeCompany.value?.companyId || null
+      applicationData.positionId = matchedCooperativeCompany.value && selfPracticeForm.value.positionId ? selfPracticeForm.value.positionId : null
       applicationData.positionName = selfPracticeForm.value.positionName.trim()
       applicationData.companyCity = selfPracticeForm.value.companyCity.trim()
       applicationData.hrManagerName = selfPracticeForm.value.hrManagerName.trim()
       applicationData.hrManagerPhone = selfPracticeForm.value.hrManagerPhone.trim()
-      const materials: Record<string, string> = {}
-      if (selfPracticeForm.value.applicationLetterUrl) materials['个人申请书'] = selfPracticeForm.value.applicationLetterUrl
-      if (selfPracticeForm.value.acceptanceLetterUrl) materials['实习接收函'] = selfPracticeForm.value.acceptanceLetterUrl
-      applicationData.materials = materials
+      applicationData.materials = { ...selfPracticeForm.value.otherMaterials }
     } else if (type === 'delay') {
       applicationData.materials = delayForm.value.materialUrl ? { delayPlan: delayForm.value.materialUrl } : {}
     }
@@ -1529,7 +1671,7 @@ const submitOnboardingApplication = async (type) => {
       : await request.post('/student/applications', applicationData)
     if (response.code === 200) {
       if (type === 'selfPractice') selfPracticeAgreementUploader.value?.markCommitted()
-      operation.complete({ status: 'submitted', label: '申请已提交，等待审核', url: '/student/applications' })
+      operation.complete({ status: 'submitted', label: type === 'selfPractice' && matchedCooperativeCompany.value ? '申请已提交，等待企业确认' : '申请已提交，等待辅导员审核', url: '/student/applications' })
       ElMessage.success(response.message || (studentApplicationResubmitId ? '申请已重新提交' : '申请提交成功'))
       scheduleProgressRefresh()
       if (type === 'selfPractice') {
@@ -2853,6 +2995,308 @@ onUnmounted(() => {
 .onboarding-upload :deep(.el-upload-dragger:hover) {
   border-color: #1e88e5;
   background: #f0f9ff;
+}
+
+/* 自主实习弹窗：沿用蓝绿主题，固定标题和操作区，内容独立滚动。 */
+:global(.el-dialog.self-practice-dialog) {
+  display: flex;
+  flex-direction: column;
+  max-width: calc(100vw - 32px);
+  max-height: calc(100% - 64px);
+  margin: 32px auto;
+  padding: 0;
+  overflow: hidden;
+  border-radius: 12px;
+}
+
+:global(.self-practice-dialog .el-dialog__header) {
+  flex-shrink: 0;
+  margin: 0;
+  padding: 0;
+}
+
+:global(.self-practice-dialog .el-dialog__headerbtn) {
+  top: 12px;
+  right: 12px;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+:global(.self-practice-dialog .el-dialog__headerbtn .el-dialog__close) {
+  color: white;
+}
+
+:global(.self-practice-dialog .el-dialog__body) {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+  padding: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+:global(.self-practice-dialog .el-dialog__footer) {
+  flex-shrink: 0;
+  padding: 16px 24px;
+  border-top: 1px solid #ebeef5;
+  background: #fff;
+}
+
+:global(.self-practice-dialog .el-dialog__footer .el-button) {
+  min-height: 38px;
+  border-radius: 8px;
+}
+
+.self-practice-header {
+  padding: 22px 54px 22px 24px;
+  background: linear-gradient(90deg, #1e88e5 0%, #4caf50 100%);
+}
+
+.self-practice-heading {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  color: #fff;
+}
+
+.self-practice-heading-icon {
+  flex-shrink: 0;
+  width: 42px;
+  height: 42px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.12);
+  font-size: 23px;
+}
+
+.self-practice-heading h2 {
+  margin: 0;
+  color: inherit;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.self-practice-heading p {
+  margin: 5px 0 0;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.self-practice-dialog .onboarding-form {
+  padding: 20px 24px;
+  background: #f7f9fc;
+}
+
+.self-practice-section {
+  min-width: 0;
+  padding: 20px;
+  border: 1px solid #ebeef5;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.self-practice-section + .self-practice-section {
+  margin-top: 16px;
+}
+
+.practice-section-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 18px;
+  color: #1e88e5;
+}
+
+.practice-section-heading h3 {
+  margin: 0;
+  color: #303133;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.practice-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 20px;
+}
+
+.practice-field-full {
+  grid-column: 1 / -1;
+}
+
+.self-practice-form :deep(.el-form-item) {
+  min-width: 0;
+  margin-bottom: 18px;
+}
+
+.self-practice-form :deep(.el-form-item__label) {
+  height: auto;
+  margin-bottom: 7px;
+  color: #475569;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.self-practice-form :deep(.el-form-item__content),
+.practice-position-field {
+  width: 100%;
+  min-width: 0;
+}
+
+.self-practice-form :deep(.el-input__wrapper),
+.self-practice-form :deep(.el-select__wrapper) {
+  min-height: 38px;
+  border-radius: 6px;
+}
+
+.self-practice-form :deep(.el-textarea__inner) {
+  padding: 10px 12px;
+  border-radius: 6px;
+}
+
+.self-practice-form :deep(.el-alert) {
+  padding: 9px 12px;
+  border-radius: 6px;
+}
+
+.self-practice-form :deep(.el-alert__title) {
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.self-practice-form :deep(.el-alert__description) {
+  margin-top: 4px;
+  line-height: 1.6;
+}
+
+.practice-field-tip {
+  margin: 7px 0 0;
+  color: #909399;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.practice-form-grid > .el-form-item:last-child,
+.self-practice-section > .el-form-item:last-child {
+  margin-bottom: 0;
+}
+
+.practice-other-materials {
+  width: 100%;
+  min-width: 0;
+}
+
+.practice-retained-file {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 9px 12px;
+  border: 1px solid #ebeef5;
+  border-radius: 6px;
+  background: #f8fafc;
+  color: #606266;
+  font-size: 12px;
+}
+
+.practice-retained-file > span:first-of-type {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.self-practice-form :deep(.el-upload),
+.self-practice-form :deep(.onboarding-upload) {
+  width: 100%;
+}
+
+.self-practice-form :deep(.el-upload-dragger) {
+  padding: 16px 12px;
+  border: 1px dashed #d5dde8;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.self-practice-form :deep(.el-upload-dragger:hover) {
+  border-color: #409eff;
+  background: #f0f7ff;
+}
+
+.self-practice-form :deep(.el-icon--upload) {
+  margin-bottom: 8px;
+  color: #7c9fc4;
+  font-size: 28px;
+  line-height: 1;
+}
+
+.self-practice-form :deep(.el-upload__text) {
+  color: #606266;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.self-practice-dialog .delay-state-meta {
+  align-self: stretch;
+  padding: 16px;
+  border-radius: 8px;
+  background: #f7f9fc;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 600px) {
+  :global(.el-dialog.self-practice-dialog) {
+    max-width: calc(100vw - 24px);
+    max-height: calc(100% - 32px);
+    margin: 16px auto;
+  }
+
+  .self-practice-header {
+    padding: 18px 48px 18px 16px;
+  }
+
+  .self-practice-heading {
+    gap: 10px;
+  }
+
+  .self-practice-heading-icon {
+    width: 36px;
+    height: 36px;
+    font-size: 20px;
+  }
+
+  .self-practice-heading h2 {
+    font-size: 18px;
+  }
+
+  .self-practice-dialog .onboarding-form {
+    padding: 14px 12px;
+  }
+
+  .self-practice-section {
+    padding: 16px 14px;
+  }
+
+  .practice-form-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  :global(.self-practice-dialog .el-dialog__footer) {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 12px;
+    padding-bottom: max(12px, env(safe-area-inset-bottom));
+  }
+
+  :global(.self-practice-dialog .el-dialog__footer .el-button) {
+    margin-left: 0;
+  }
 }
 
 /* 响应式：小屏时路径选择器换行 */

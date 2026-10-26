@@ -83,8 +83,9 @@ export const getProcessingCount = () => {
   return request.get('/problem-feedback/processing-count')
 }
 
-export const exportFeedbackData = () => {
+export const exportFeedbackData = (params: Record<string, unknown> = {}) => {
   return request.get('/problem-feedback/export', {
+      params,
     responseType: 'blob'
   })
 }

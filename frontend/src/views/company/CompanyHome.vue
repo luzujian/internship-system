@@ -74,7 +74,7 @@ const statsData = ref([
     route: '/company/application-view'
   },
   {
-    title: '待确认',
+    title: '待企业确认',
     value: 0,
     icon: markRaw(Bell),
     color: '#E6A23C',
@@ -1132,6 +1132,8 @@ onUnmounted(() => {
   color: #606266;
   line-height: 1.8;
   min-height: 100px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .attachments-section {

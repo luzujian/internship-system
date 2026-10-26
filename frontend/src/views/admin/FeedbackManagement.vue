@@ -680,7 +680,7 @@ const handleExportToExcel = async (): Promise<void> => {
   try {
     ElMessage({ message: '正在准备导出数据...', type: 'info' })
 
-    const blob = await problemFeedbackApi.exportFeedbackData()
+    const blob = await problemFeedbackApi.exportFeedbackData({ ...searchForm })
     const url = window.URL.createObjectURL(blob as unknown as Blob)
     const link = document.createElement('a')
     link.href = url

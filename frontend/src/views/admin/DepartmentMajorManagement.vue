@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useSmartImportRefresh } from '@/components/import/useSmartImportRefresh'
 import logger from '@/utils/logger'
 import { onMounted, onUnmounted, ref, computed, nextTick, watch } from 'vue'
 import { useFormContext } from '@/agent/formContext'
@@ -604,7 +605,8 @@ const handleExportToExcel = async (): Promise<void> => {
     ElMessage({ message: '正在准备导出数据...', type: 'info' })
     exportLoading.value = true
 
-    const blob = await DepartmentService.exportMajorData()
+    const blob = await DepartmentService.exportMajorData({ departmentName: searchDepartment.value.name,
+      majorName: searchMajorName.value, departmentId: fixedDepartmentId.value, divisionId: fixedDivisionId.value })
     const url = window.URL.createObjectURL(blob as unknown as Blob)
     const link = document.createElement('a')
     link.href = url
@@ -1842,6 +1844,7 @@ searchMajorResult.value = null
 await queryDepartments()
 }
 }
+useSmartImportRefresh('department_major', () => { getMajorList(); queryDepartments() })
 </script>
 <template>
   <div class="department-major-management-container">
@@ -1849,7 +1852,7 @@ await queryDepartments()
     <div class="page-header">
       <div class="header-content">
         <h1 class="page-title">学院系专业管理</h1>
-        <p class="page-description">管理系统中的所有学院、系与专业信息</p>
+        <p class="page-description">管理系统中的所有学院、系与专业信息<span v-if="authStore.hasPermission('major:add')">。非标准表格可交给右上角「问问 AI」导入。</span></p>
       </div>
       <div class="header-illustration">
         <div class="illustration-circle circle-1"></div>
@@ -1922,7 +1925,7 @@ await queryDepartments()
           </el-button>
         </div>
         <div class="secondary-actions">
-                    <el-dropdown v-if="authStore.hasPermission('department:view')" trigger="click" class="import-dropdown">
+                    <el-dropdown v-if="authStore.hasPermission('major:add')" trigger="click" class="import-dropdown">
             <el-button type="primary" class="action-btn success" :loading="importLoading">
               <el-icon><Upload /></el-icon>&nbsp;导入 Excel<el-icon class="el-icon--right"><ArrowDown /></el-icon>
             </el-button>

@@ -179,7 +179,7 @@ public class CompanyController {
             Map<String, Object> profile = new HashMap<>();
             profile.put("id", company.getId());
             profile.put("username", company.getUsername());
-            profile.put("phone", company.getPhone());
+            profile.put("phone", company.getPhone() == null || company.getPhone().isBlank() ? company.getContactPhone() : company.getPhone());
             profile.put("email", company.getEmail());
             profile.put("companyName", company.getCompanyName());
             profile.put("industry", company.getIndustry());
@@ -204,25 +204,25 @@ public class CompanyController {
                 return Result.error("企业不存在");
             }
 
-            if (profileData.containsKey("username")) {
-                company.setUsername((String) profileData.get("username"));
+            String currentPhone = company.getPhone() == null || company.getPhone().isBlank() ? company.getContactPhone() : company.getPhone();
+            String phone = profileData.containsKey("phone") ? java.util.Objects.toString(profileData.get("phone"), "").replaceAll("\\s+", "") : currentPhone;
+            String email = profileData.containsKey("email") ? java.util.Objects.toString(profileData.get("email"), "").trim() : company.getEmail();
+            if (phone != null && !phone.isBlank() && !phone.matches("^[+0-9()（）\\-转]{7,20}$")) {
+                return Result.error("请输入有效的手机或固定电话号码");
             }
-            if (profileData.containsKey("phone")) {
-                company.setPhone((String) profileData.get("phone"));
+            if (email == null || email.isBlank()) return Result.error("请填写账号邮箱，用于找回密码");
+            if (email.length() > 100 || !email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$")) {
+                return Result.error("账号邮箱格式不正确");
             }
-            if (profileData.containsKey("email")) {
-                String email = profileData.get("email") == null ? "" : profileData.get("email").toString().trim();
-                if (!email.isEmpty()) {
-                    if (!email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$")) {
-                        return Result.error("邮箱格式不正确");
-                    }
-                    company.setEmail(email);
-                }
-            }
-
-            company.setUpdateTime(new java.util.Date());
-            int result = companyUserService.updateProfile(company);
+            // 仅写入账号绑定字段，保留企业资料、岗位联系人和登录账号。
+            CompanyUser changes = new CompanyUser();
+            changes.setId(companyId);
+            changes.setPhone(phone);
+            changes.setEmail(email);
+            changes.setUpdateTime(new java.util.Date());
+            int result = companyUserService.updateProfile(changes);
             if (result > 0) {
+                if (userCacheService != null) userCacheService.evictUserCache(company.getUsername());
                 return Result.success("个人信息更新成功");
             }
             return Result.error("个人信息更新失败");

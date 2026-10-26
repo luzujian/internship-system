@@ -22,6 +22,7 @@ const chinaData = new EluiChinaAreaDht.ChinaArea().chinaAreaflat
 
 // 从 auth store 获取当前用户 ID
 const companyId = computed(() => {
+  if (!authStore.token || authStore.role !== 'ROLE_COMPANY') return null
   const id = authStore.user?.id
   console.log('[companyId] authStore.user?.id:', id, 'type:', typeof id)
   if (id) {

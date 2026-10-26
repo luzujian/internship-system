@@ -69,6 +69,7 @@ public class StudentInternshipStatus {
     private Integer internshipStatus;
     private String jobSearchStatus;
     private String jobSearchStatusText;
+    private java.util.List<String> pendingApplicationTexts = java.util.List.of();
 
     private StudentUser student;
     private Major major;

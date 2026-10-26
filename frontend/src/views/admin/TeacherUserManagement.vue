@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useSmartImportRefresh } from '@/components/import/useSmartImportRefresh'
 import logger from '@/utils/logger'
 import request from '@/utils/request'
 import { createRequiredValidator, createPhoneValidator, createEmailValidator } from '@/utils/validation'
@@ -103,6 +104,10 @@ import { ElMessage, ElMessageBox, ElForm, ElTable } from 'element-plus'
 import { queryPageApi, addApi, queryInfoApi, updateApi, deleteApi, resetPasswordApi, resetAllPasswordsApi, exportTeacherDataApi, importTeacherDataApi, updateStatusApi } from '../../api/TeacherUserService'
 import { exportToExcel } from '../../utils/xlsx'
 import MobileMoreActions from '../../components/MobileMoreActions.vue'
+import { useIsMobile } from '@/composables/useIsMobile'
+
+const isMobile = useIsMobile()
+const advancedFiltersOpen = ref(false)
 
 const systemSettingsStore = useSystemSettingsStore()
 const authStore = useAuthStore()
@@ -191,6 +196,9 @@ let searchForm = ref<TeacherSearch>({
   status: null,
   teacherType: ''
 })
+const activeFilterCount = computed(() => [
+  searchForm.value.department, searchForm.value.status, searchForm.value.teacherType
+].filter(value => value !== '' && value !== null && value !== undefined).length)
 
 //列表展示数据
 let tableData = ref<TeacherRow[]>([])
@@ -1209,7 +1217,7 @@ const handleExportToExcel = async () => {
     ElMessage({ message: '正在准备导出数据...', type: 'info' })
 
     // 响应拦截器已返回 Blob（类型声明为 ApiResult，运行时即 Blob，用断言保持运行时一致）
-    const blob = await exportTeacherDataApi() as unknown as Blob
+    const blob = await exportTeacherDataApi({ ...searchForm.value, departmentId: searchForm.value.department }) as unknown as Blob
 
     const url = window.URL.createObjectURL(blob)
     const link = document.createElement('a')
@@ -1267,6 +1275,7 @@ onMounted(async () => {
   }
   logger.log('数据加载完成')
 })
+useSmartImportRefresh('teacher', () => { queryPage() })
 </script>
 
 <template>
@@ -1275,7 +1284,7 @@ onMounted(async () => {
     <div class="page-header">
       <div class="header-content">
         <h1 class="page-title">教师管理</h1>
-        <p class="page-description">管理系统中的所有教师账户信息</p>
+        <p class="page-description">管理系统中的所有教师账户信息<span v-if="authStore.hasPermission('user:teacher:add')">。非标准表格可交给右上角「问问 AI」导入。</span></p>
       </div>
       <div class="header-illustration">
         <div class="illustration-circle circle-1"></div>
@@ -1285,7 +1294,7 @@ onMounted(async () => {
 
     <!-- 搜索区域卡片 -->
     <el-card class="search-card" shadow="never">
-      <el-form ref="searchFormRef" :inline="true" :model="searchForm" class="search-form" @keyup.enter="queryPage">
+      <el-form ref="searchFormRef" :inline="!isMobile" :label-position="isMobile ? 'top' : 'right'" :model="searchForm" class="search-form" @keyup.enter="queryPage">
         <div class="search-row">
           <el-form-item label="工号">
             <el-input
@@ -1303,18 +1312,23 @@ onMounted(async () => {
               @keyup.enter="queryPage"
             ></el-input>
           </el-form-item>
-          <el-form-item label="学院">
+          <el-form-item v-if="isMobile" class="mobile-filter-toggle">
+            <el-button :aria-expanded="advancedFiltersOpen" @click="advancedFiltersOpen = !advancedFiltersOpen">
+              {{ advancedFiltersOpen ? '收起筛选' : '更多筛选' }}{{ activeFilterCount ? `（${activeFilterCount}）` : '' }}
+            </el-button>
+          </el-form-item>
+          <el-form-item v-show="!isMobile || advancedFiltersOpen" label="学院">
             <el-select v-model="searchForm.department" placeholder="请选择学院" clearable style="width: 150px;" filterable>
               <el-option v-for="department in departments" :key="department.value" :label="department.name" :value="department.value" />
             </el-select>
           </el-form-item>
-          <el-form-item label="状态">
+          <el-form-item v-show="!isMobile || advancedFiltersOpen" label="状态">
             <el-select v-model="searchForm.status" placeholder="请选择状态" clearable style="width: 120px;">
               <el-option :value="1" label="已启用" />
               <el-option :value="0" label="已禁用" />
             </el-select>
           </el-form-item>
-          <el-form-item label="身份">
+          <el-form-item v-show="!isMobile || advancedFiltersOpen" label="身份">
             <el-select v-model="searchForm.teacherType" placeholder="请选择身份" clearable style="width: 120px;">
               <el-option value="COLLEGE" label="学院教师" />
               <el-option value="DEPARTMENT" label="系室教师" />
@@ -1350,7 +1364,7 @@ onMounted(async () => {
           </el-button>
         </div>
         <div class="secondary-actions">
-                    <el-dropdown v-if="authStore.hasPermission('user:teacher:view')" trigger="click" class="import-dropdown">
+                    <el-dropdown v-if="authStore.hasPermission('user:teacher:add')" trigger="click" class="import-dropdown">
             <el-button type="primary" class="action-btn success">
               <el-icon><Upload /></el-icon>&nbsp;导入 Excel<el-icon class="el-icon--right"><ArrowDown /></el-icon>
             </el-button>

@@ -32,8 +32,8 @@ public class DataExportServiceImpl implements DataExportService {
     public byte[] exportStudentStatus(Integer status) {
         List<Map<String, Object>> data = internshipStatusMapper.findAllWithDetails(status);
         
-        String[] headers = {"学号", "姓名", "专业", "班级", "实习状态", "实习企业", "实习岗位", "更新时间"};
-        String[] fields = {"studentUserId", "studentName", "majorName", "className", "statusText", "companyName", "positionName", "updatedTime"};
+        String[] headers = {"学号", "姓名", "专业", "班级", "实习状态", "在办申请", "实习企业", "实习岗位", "更新时间"};
+        String[] fields = {"studentUserId", "studentName", "majorName", "className", "statusText", "pendingApplicationText", "companyName", "positionName", "updatedTime"};
         
         return createExcel("学生实习状态汇总", headers, fields, data);
     }
@@ -42,7 +42,7 @@ public class DataExportServiceImpl implements DataExportService {
     public byte[] exportMajorProgress() {
         List<Map<String, Object>> data = internshipStatusMapper.getMajorProgressForExport();
         
-        String[] headers = {"专业名称", "学生总数", "已确定", "有Offer", "尚无 Offer", "实习结束", "完成率(%)"};
+        String[] headers = {"专业名称", "学生总数", "已定单位待实习", "已录用待确认", "尚未获录用", "实习进行中", "实习落实率(%)"};
         String[] fields = {"majorName", "totalStudents", "confirmedCount", "hasOfferCount", "notFoundCount", "completedCount", "progressRate"};
         
         return createExcel("各专业实习进度", headers, fields, data);
@@ -72,7 +72,7 @@ public class DataExportServiceImpl implements DataExportService {
     public byte[] exportClassStatistics() {
         List<Map<String, Object>> data = internshipStatusMapper.getClassStatisticsForExport();
         
-        String[] headers = {"班级名称", "专业", "学生总数", "已确定", "有Offer", "尚无 Offer", "完成率(%)"};
+        String[] headers = {"班级名称", "专业", "学生总数", "已定单位待实习", "已录用待确认", "尚未获录用", "实习落实率(%)"};
         String[] fields = {"className", "majorName", "totalStudents", "confirmedCount", "hasOfferCount", "notFoundCount", "progressRate"};
         
         return createExcel("班级实习统计", headers, fields, data);
@@ -90,6 +90,12 @@ public class DataExportServiceImpl implements DataExportService {
             Integer status = (Integer) row.get("status");
             String statusText = status == null ? "未知" : (status == 0 ? "待审核" : (status == 1 ? "已通过" : "已拒绝"));
             row.put("statusText", statusText);
+            row.put("fileType", switch (String.valueOf(row.get("fileType"))) {
+                case "resume" -> "简历";
+                case "certificate" -> "证书";
+                case "null" -> "";
+                default -> row.get("fileType");
+            });
         }
         
         return createExcel("学生材料归档", headers, fields, data);
@@ -121,6 +127,8 @@ public class DataExportServiceImpl implements DataExportService {
                 sheet.setColumnWidth(i, 4000);
             }
             
+            CellStyle dateStyle = workbook.createCellStyle();
+            dateStyle.setDataFormat(workbook.createDataFormat().getFormat("yyyy-mm-dd hh:mm:ss"));
             // 创建数据行
             int rowNum = 1;
             for (Map<String, Object> rowData : data) {
@@ -128,9 +136,9 @@ public class DataExportServiceImpl implements DataExportService {
                 for (int i = 0; i < fields.length; i++) {
                     Cell cell = row.createCell(i);
                     Object value = rowData.get(fields[i]);
-                    if (value != null) {
-                        cell.setCellValue(value.toString());
-                    }
+                    if (value instanceof Number number) cell.setCellValue(number.doubleValue());
+                    else if (value instanceof java.util.Date date) { cell.setCellValue(date); cell.setCellStyle(dateStyle); }
+                    else if (value != null) cell.setCellValue(value.toString());
                 }
             }
             

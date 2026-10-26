@@ -56,6 +56,7 @@ class TeacherControllerScopeSecurityTest {
     @Mock private StudentUserService studentUserService;
     @Mock private MajorService majorService;
     @Mock private ResourceService resourceService;
+    @Mock private com.internship.service.JobSearchStatusService jobSearchStatusService;
 
     @AfterEach
     void clearUser() {

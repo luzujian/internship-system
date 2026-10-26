@@ -8,6 +8,7 @@ function fixture() {
   const timers = new Map()
   const sockets = []
   const notices = []
+  const listeners = new Map()
   let nextId = 0
   class Socket {
     static CONNECTING = 0
@@ -26,6 +27,8 @@ function fixture() {
     document: { cookie: '' },
     window: {
       location: { protocol: 'https:', host: 'app.example.test' },
+      addEventListener(name, listener) { listeners.set(name, listener) },
+      dispatchEvent(event) { listeners.get(event.type)?.(event) },
       setTimeout(fn, delay) { const id = ++nextId; timers.set(id, { fn, delay }); return id },
       setInterval() { return ++nextId }
     },
@@ -49,7 +52,7 @@ function fixture() {
     timer.fn()
     return timer.delay
   }
-  return { client, sockets, timers, notices, tick }
+  return { client, sockets, timers, notices, tick, context }
 }
 
 test('prolonged outage retries slowly and recovers without a page refresh or repeated warnings', () => {
@@ -93,4 +96,57 @@ test('leaving the page cancels recovery and dismisses its notice', () => {
   sockets.at(-1).fail()
   assert.equal(timers.size, 0)
   assert.equal(notices[0].closed, true)
+})
+
+function authActions(websocket) {
+  const source = readFileSync(new URL('../src/store/auth/index.ts', import.meta.url), 'utf8')
+  const ast = ts.createSourceFile('auth.ts', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
+  const methods = []
+  function visit(node) {
+    if (ts.isMethodDeclaration(node) && ['setToken', 'refreshAccessToken', 'logout'].includes(node.name.getText(ast))) methods.push(node.getText(ast))
+    ts.forEachChild(node, visit)
+  }
+  visit(ast); assert.equal(methods.length, 3)
+  const context = {
+    ...websocket.context.exports,
+    window: websocket.context.window,
+    CustomEvent: class { constructor(type, { detail }) { this.type = type; this.detail = detail } },
+    decodeToken: token => JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString()),
+    logger: { log() {}, warn() {}, error() {} }, STORAGE_KEYS: { CURRENT_ROLE: 'current_role' },
+    localStorage: { getItem() {}, setItem() {}, removeItem() {} },
+    writeTabSession() {}, clearRoleStorage() {}, cleanupTokens() {}, setTimeout() {},
+    async refreshTokenUtil() { return context.nextToken }
+  }
+  vm.runInNewContext(ts.transpileModule('globalThis.actions = {' + methods.join(',') + '}', {
+    compilerOptions: { target: ts.ScriptTarget.ES2022 }
+  }).outputText, context)
+  return context
+}
+const jwt = claims => 'header.' + Buffer.from(JSON.stringify(claims)).toString('base64url') + '.signature'
+
+test('actual auth refresh synchronizes the next reconnect without interrupting a healthy socket', async () => {
+  const ws = fixture(), authContext = authActions(ws)
+  const old = jwt({ userId: 1, username: 'test', role: 'ROLE_STUDENT', exp: 1 })
+  const next = jwt({ userId: '1', username: 'test', role: 'ROLE_STUDENT', isReadOnly: false, exp: 2 })
+  const auth = { token: old, role: 'ROLE_STUDENT', allUsers: { ROLE_STUDENT: { refreshToken: 'test-refresh' } }, ...authContext.actions }
+  const client = ws.context.exports.initAnnouncementWebSocket(old, () => {})
+  ws.sockets.at(-1).open(); authContext.nextToken = next
+  assert.equal(await auth.refreshAccessToken(), true)
+  assert.equal(client.isConnected(), true); assert.equal(ws.sockets.length, 1)
+  ws.sockets.at(-1).fail(); ws.tick()
+  assert.equal(ws.context.document.cookie, `ws_token=${encodeURIComponent(next)}; path=/; SameSite=Lax`)
+  assert.equal(ws.timers.size, 0)
+})
+
+test('role changes and logout disconnect the old identity and cancel pending recovery', async () => {
+  const ws = fixture(), authContext = authActions(ws)
+  const old = jwt({ userId: 1, username: 'test', role: 'ROLE_STUDENT' })
+  const next = jwt({ userId: 2, username: 'company', role: 'ROLE_COMPANY' })
+  const auth = { token: old, role: 'ROLE_STUDENT', allUsers: { ROLE_STUDENT: {} }, ...authContext.actions }
+  ws.context.exports.initAnnouncementWebSocket(old, () => {}); ws.sockets.at(-1).fail()
+  auth.setToken(next)
+  assert.equal(ws.context.exports.getAnnouncementWebSocket(), null); assert.equal(ws.timers.size, 0)
+  ws.context.exports.initAnnouncementWebSocket(next, () => {}); ws.sockets.at(-1).open()
+  await auth.logout(true)
+  assert.equal(ws.context.exports.getAnnouncementWebSocket(), null); assert.equal(auth.token, null)
 })

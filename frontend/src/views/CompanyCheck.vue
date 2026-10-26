@@ -43,7 +43,7 @@
               <p class="contact-info">联系人：{{ companyInfo.contactPerson }}（{{ companyInfo.contactPhone }}）</p>
               <div class="notice-box">
                 <p>• 相关负责人会在1-3个工作日内完成审核</p>
-                <p>• 审核通过后，可使用企业账号登录；也可通过个人邮箱找回密码</p>
+                <p>• 审核通过后，可使用企业账号登录；联系邮箱同时用于找回密码</p>
                 <p>• 如有疑问，请联系相关负责人</p>
               </div>
             </div>

@@ -35,6 +35,8 @@ interface InternshipStatusData {
     positionName: string
   }
   status: number
+  jobSearchStatusText?: string
+  pendingApplicationTexts?: string[]
   companyConfirmStatus: number
   createTime: string
   updateTime: string
@@ -77,13 +79,13 @@ const formatGender = (_row: unknown, _column: unknown, cellValue: number): strin
 const formatStatus = (_row: unknown, _column: unknown, cellValue: number): string => {
   // 学生状态统一标签：0无offer 1待确认 2已确定 3实习中 4已结束 5已中断 6延期
   switch (cellValue) {
-    case 0: return '无offer'
-    case 1: return '待确认'
-    case 2: return '已确定'
-    case 3: return '实习中'
-    case 4: return '已结束'
-    case 5: return '已中断'
-    case 6: return '延期'
+    case 0: return '尚未获录用'
+    case 1: return '已录用待确认'
+    case 2: return '已定单位待实习'
+    case 3: return '实习进行中'
+    case 4: return '实习已结束'
+    case 5: return '实习已中断'
+    case 6: return '已延期实习'
     default: return '未知状态'
   }
 }
@@ -336,12 +338,15 @@ onMounted(async (): Promise<void> => {
           </el-form-item>
           <el-form-item label="实习状态">
             <el-select v-model="searchForm.status" placeholder="请选择实习状态" clearable>
-              <el-option label="尚无 Offer" :value="0"></el-option>
-              <el-option label="已有Offer" :value="1"></el-option>
-              <el-option label="已确认" :value="2"></el-option>
-              <el-option label="已结束" :value="3"></el-option>
-              <el-option label="已中断" :value="4"></el-option>
-              <el-option label="延期" :value="5"></el-option>
+              <el-option label="尚未获录用（全部）" :value="0"></el-option>
+              <el-option label="暂无有效投递" :value="-1"></el-option>
+              <el-option label="已投递未录用" :value="-2"></el-option>
+              <el-option label="已录用待确认" :value="1"></el-option>
+              <el-option label="已定单位待实习" :value="2"></el-option>
+              <el-option label="实习进行中" :value="3"></el-option>
+              <el-option label="实习已结束" :value="4"></el-option>
+              <el-option label="实习已中断" :value="5"></el-option>
+              <el-option label="已延期实习" :value="6"></el-option>
             </el-select>
           </el-form-item>
           <el-form-item label="企业名称">
@@ -402,11 +407,12 @@ onMounted(async (): Promise<void> => {
             <span v-else class="no-data-text">暂无岗位</span>
           </template>
         </el-table-column>
-        <el-table-column prop="status" label="实习状态" width="140" align="center">
+        <el-table-column prop="status" label="实习状态" min-width="180" align="center">
           <template #default="scope">
             <el-tag :type="getStatusTagType(scope.row.status)" size="small" class="status-tag">
-              {{ formatStatus(null, null, scope.row.status) }}
+              {{ scope.row.jobSearchStatusText || formatStatus(null, null, scope.row.status) }}
             </el-tag>
+            <div v-for="text in scope.row.pendingApplicationTexts" :key="text" style="font-size:12px;color:var(--el-color-warning)">{{ text }}</div>
           </template>
         </el-table-column>
         <el-table-column prop="companyConfirmStatus" label="企业确认状态" width="110" align="center">
@@ -466,7 +472,7 @@ onMounted(async (): Promise<void> => {
             <el-descriptions-item label="性别">{{ formatGender(null, null, currentRow.student?.gender ?? 0) }}</el-descriptions-item>
             <el-descriptions-item label="实习状态">
               <el-tag :type="getStatusTagType(currentRow.status)" size="small" class="status-tag">
-                {{ formatStatus(null, null, currentRow.status) }}
+                {{ currentRow.jobSearchStatusText || formatStatus(null, null, currentRow.status) }}
               </el-tag>
             </el-descriptions-item>
             <el-descriptions-item label="实习单位" :span="2">

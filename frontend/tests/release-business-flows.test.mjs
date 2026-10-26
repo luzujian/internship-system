@@ -146,6 +146,41 @@ test('late approval requests cannot overwrite another tab or relabel its records
   assert.equal(scope.loading.value, false)
 })
 
+for (const applicationType of ['selfPractice', 'delay', 'companyQualification']) {
+  test(`loading ${applicationType} page 2 preserves pagination until the response arrives`, async () => {
+    let finishRequest
+    const calls = []
+    const getPage = params => {
+      calls.push(params)
+      return new Promise(resolve => { finishRequest = resolve })
+    }
+    const scope = {
+      activeTab: ref(applicationType), currentPage: ref(2), pageSize: ref(10),
+      searchForm: { keyword: '', status: '', majorId: 4, classId: 7 },
+      applications: ref([{ id: 1 }]), total: ref(25), loading: ref(false), listRequestId: ref(0),
+      console: { error: noop }, ElMessage: messages,
+      approvalApi: { getStudentApplications: getPage, getCompanyQualifications: getPage }
+    }
+    const pending = declaration('teacher/Approval', 'fetchApplications', scope)()
+    assert.equal(scope.loading.value, true)
+    assert.equal(scope.total.value, 25, 'clearing total would make the pagination component reset page 2 to page 1')
+    assert.equal(scope.currentPage.value, 2)
+    assert.equal(calls.length, 1)
+    assert.equal(calls[0].page, 2)
+    assert.equal(calls[0].pageSize, 10)
+    if (applicationType !== 'companyQualification') {
+      assert.equal(calls[0].majorId, 4)
+      assert.equal(calls[0].classId, 7)
+    }
+    finishRequest({ rows: [{ id: 11 }], total: 26 })
+    await pending
+    assert.equal(scope.total.value, 26)
+    assert.equal(scope.applications.value[0].id, 11)
+    assert.equal(scope.applications.value[0].type, applicationType)
+    assert.equal(scope.loading.value, false)
+  })
+}
+
 test('appraisal companies include only confirmed internships and retain self-practice', async () => {
   const internshipRecords = ref([])
   const selectedPlacementId = ref('R1')

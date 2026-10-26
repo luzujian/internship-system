@@ -49,21 +49,22 @@ test('malformed model preview actually renders without inventing a schedule',asy
   }
 })
 
-test('open-and-fill retains the original assignments and clears the sent draft',async()=>{
+test('unified Agent fill actions retain original assignments without a second intent request',async()=>{
   const source=readFileSync(new URL('../src/components/agent/AgentWorkspace.vue',import.meta.url),'utf8')
   const {descriptor}=parse(source)
   const ast=ts.createSourceFile('workspace.ts',descriptor.scriptSetup.content,ts.ScriptTarget.Latest,true)
-  const func=ast.statements.find(node=>ts.isFunctionDeclaration(node)&&node.name?.text==='handleUiRequest').getText(ast)
+  const func=ast.statements.find(node=>ts.isFunctionDeclaration(node)&&node.name?.text==='executeAgentUiActions').getText(ast)
   const message='打开发布岗位表单，岗位名称填写测试，招聘人数填写5，只填写不要发布。'
-  const linkedForm={value:null},calls=[]
-  const agent={capabilities:{actor:{ownerKey:'company'},enabled:true},sessionId:'session',visible:true,formFillEnabled:true,draft:message,
-    fillForm:async text=>{calls.push(text);return true},cancelFill(){}}
-  const scope={agent,linkedForm,auth:{token:'company-token'},route:{fullPath:'/company/recruitment',path:'/company/recruitment'},router:{},readOnly:{value:false},uiWorking:{value:false},AbortController,
-    collectUiTargets:()=>[{kind:'open',label:'发布岗位',element:{click(){linkedForm.value={instanceId:1}}}}],
-    nextTick:async()=>{},waitForUiTargets:async()=>{},uiController:null,uiExpectedPath:'',uiNavigationPath:null}
-  const invoke=vm.runInNewContext(ts.transpileModule(func+'\nhandleUiRequest',{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText,scope)
-  assert.equal(await invoke(message),true)
-  assert.deepEqual(calls,[message]);assert.equal(agent.draft,'');assert.equal(scope.uiWorking.value,false)
+  const calls=[],action={id:'fill-one',type:'FORM_FILL',formId:'position',instanceId:1,assignments:[{prop:'plannedRecruit',value:'5',confidence:1}]}
+  const task={id:'task-one',ownerKey:'company',sessionId:'session',status:'SUCCEEDED',message,uiActions:[action]}
+  const delivery={task,pageContext:{route:'/company/recruitment',revision:1,filters:{}},epoch:1}
+  const agent={capabilities:{actor:{ownerKey:'company'},enabled:true},sessionId:'session',visible:true,draft:'下一条草稿',revision:1,tasks:[task],uiActionQueue:[delivery],
+    takeUiActions(){return this.uiActionQueue.shift()},isUiActionCurrent:()=>true,applyUiFormAction:(...args)=>{calls.push(args);return true}}
+  const scope={agent,auth:{token:'company-token'},route:{fullPath:'/company/recruitment',path:'/company/recruitment'},router:{},readOnly:{value:false},uiWorking:{value:false},AbortController,
+    lastOf:items=>items.at(-1),uiController:null,uiExpectedPath:'',uiNavigationPath:null}
+  const invoke=vm.runInNewContext(ts.transpileModule(func+'\nexecuteAgentUiActions',{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText,scope)
+  await invoke()
+  assert.deepEqual(calls,[[task,action,delivery]]);assert.equal(agent.draft,'下一条草稿');assert.equal(scope.uiWorking.value,false)
 })
 
 test('explicit reminder channel survives opening the confirmation card',()=>{

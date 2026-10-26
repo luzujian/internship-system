@@ -130,6 +130,7 @@ export const EXEMPT_FILES: ExemptEntry[] = [
   { file: 'views/company/InternshipConfirm.vue', reason: 'search-only', detail: '搜索 + 确认/拒绝行操作（无文本表单）' },
   { file: 'views/company/InternshipStudents.vue', reason: 'search-only', detail: '当前实习学生名单与搜索，只读页面' },
   { file: 'views/teacher/CompanyList.vue', reason: 'search-only', detail: '搜索 + 企业详情只读弹窗' },
+  { file: 'views/teacher/RecruitmentDetails.vue', reason: 'search-only', detail: '招聘岗位筛选 + 岗位和企业只读详情，无提交表单' },
   { file: 'views/teacher/Home.vue', reason: 'search-only', detail: '看板 + 心得详情只读弹窗 + 文件预览' },
   { file: 'views/student/InternshipAppraisal.vue', reason: 'unsupported-widget', detail: '上传实习鉴定材料与手动评分，实习公司选择不作为 AI 填表对象' },
   { file: 'views/teacher/InternshipAppraisalCollection.vue', reason: 'search-only', detail: '筛选 + 鉴定详情抽屉（只读）' },

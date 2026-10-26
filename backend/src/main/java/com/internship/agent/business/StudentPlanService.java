@@ -72,7 +72,17 @@ public class StudentPlanService {
                                boolean established, boolean selfPractice, boolean selfPending,
                                boolean delayPending, boolean confirming, boolean passed,
                                boolean appraisalSubmitted, boolean reflectionEnabled, boolean reflectionDue,
-                               String observedRoute, String selfApplicationStatus, String selfRejectReason) {
+                               String observedRoute, String selfApplicationStatus, String selfRejectReason,
+                               String selfReviewTarget) {
+        public JourneyBasis(boolean reliable, boolean hasHistory, boolean profileDone,
+                            boolean established, boolean selfPractice, boolean selfPending,
+                            boolean delayPending, boolean confirming, boolean passed,
+                            boolean appraisalSubmitted, boolean reflectionEnabled, boolean reflectionDue,
+                            String observedRoute, String selfApplicationStatus, String selfRejectReason) {
+            this(reliable, hasHistory, profileDone, established, selfPractice, selfPending, delayPending,
+                    confirming, passed, appraisalSubmitted, reflectionEnabled, reflectionDue, observedRoute,
+                    selfApplicationStatus, selfRejectReason, "COUNSELOR");
+        }
         public JourneyBasis(boolean reliable, boolean hasHistory, boolean profileDone,
                             boolean established, boolean selfPractice, boolean selfPending,
                             boolean delayPending, boolean confirming, boolean passed,
@@ -251,6 +261,8 @@ public class StudentPlanService {
                 .orElse(null);
         String selfPracticeStatus = latestSelfPractice == null ? "" : Objects.toString(latestSelfPractice.getStatus(), "");
         boolean selfPracticePending = "pending".equals(selfPracticeStatus);
+        boolean companySelfPractice = latestSelfPractice != null && latestSelfPractice.isCompanyReview();
+        String selfHandler = companySelfPractice ? "企业确认" : "辅导员审核";
         StudentApplication latestDelay = selfApps.stream()
                 .filter(a -> "delay".equals(a.getApplicationType()))
                 .max(Comparator.comparing((StudentApplication a) -> latestMillis(a.getApplyTime(), a.getCreateTime(), a.getUpdateTime()))
@@ -274,19 +286,19 @@ public class StudentPlanService {
         items.add(new PlanItem("apply", established ? "落实实习岗位" : "投递岗位",
                 established || hasApplied ? "DONE" : (selfPracticePending ? "WAITING" : "TODO"),
                 established ? (selfPracticeApproved ? "自主实习已通过，本次无需投递系统岗位。" : "当前实习已落实，不要求重新投递。")
-                        : selfPracticePending ? "自主实习申请正在审核，无需为本申请重复投递岗位。"
+                        : selfPracticePending ? "自主实习申请正在等待" + selfHandler + "，无需为本申请重复投递岗位。"
                         : hasApplied ? "已有当前有效投递，可在我的申请中核对。" : "去职位浏览按意向投递，或在首页申请自主实习。",
                 selfPracticeApproved || selfPracticePending ? "OPEN_APPLICATION" : "OPEN_JOBS"));
-        items.add(new PlanItem("interview", selfPracticeApproved ? "自主实习审核" : "面试与录用",
+        items.add(new PlanItem("interview", selfPracticeApproved ? "自主实习申请" : "面试与录用",
                 established || hasPassed ? "DONE" : hasWaitingInterview ? "TODO" : "WAITING",
-                selfPracticeApproved ? "自主实习审核已通过，无需办理企业面试。"
+                selfPracticeApproved ? "自主实习已落实，无需办理企业面试。"
                         : established ? "当前实习已经确认，不要求重走面试流程。"
                         : hasPassed ? "有当前可处理的 Offer，可去确认页核对。"
                         : (hasWaitingInterview ? "有待参加的面试，按邀约时间参加。"
-                        : (selfPracticePending ? "等待自主实习审核。" : hasApplied ? "等待企业邀约；也可继续投递。" : "先落实岗位或提交自主实习申请。")),
+                        : (selfPracticePending ? "等待" + selfHandler + "。" : hasApplied ? "等待企业邀约；也可继续投递。" : "先落实岗位或提交自主实习申请。")),
                 selfPracticeApproved ? "OPEN_APPLICATION" : "OPEN_INTERVIEWS"));
         String confirmState = "TODO", confirmDetail = "获得 Offer 后在实习确认页提交确认表。";
-        if (confirmed) { confirmState = "DONE"; confirmDetail = selfPracticeApproved ? "自主实习审核已完成，无需再次让企业确认。" : "当前实习已确认，按当前进度继续办理。"; }
+        if (confirmed) { confirmState = "DONE"; confirmDetail = selfPracticeApproved ? "自主实习已落实，无需重复确认。" : "当前实习已确认，按当前进度继续办理。"; }
         else if (confirming) { confirmState = "WAITING"; confirmDetail = "确认表已提交，等待企业确认，无需重复提交。"; }
         else if (rejected || todoKeys.contains("CONFIRMATION_RESUBMISSION_REQUIRED")) {
             confirmDetail = "确认表被企业拒绝，可换 Offer 重新提交。";
@@ -302,14 +314,14 @@ public class StudentPlanService {
                 default -> "WAITING";
             };
             String selfPracticeDetail = switch (selfPracticeStatus) {
-                case "rejected" -> "自主实习申请已驳回。教师填写的理由："
+                case "rejected" -> "自主实习申请已驳回。" + (companySelfPractice ? "企业" : "辅导员") + "填写的理由："
                         + Objects.toString(latestSelfPractice.getRejectReason(), "未填写") + "。可修改后重新提交。";
                 case "withdrawn" -> "你已撤回自主实习申请，可重新填写并提交。";
-                default -> "自主实习申请已提交，等待教师审核；教师尚未通过或驳回，可撤回后重新提交。";
+                default -> "自主实习申请已提交，等待" + selfHandler + "；可撤回后重新提交。";
             };
             items.add(0, new PlanItem("self_practice",
                     "rejected".equals(selfPracticeStatus) ? "自主实习申请已驳回"
-                            : "withdrawn".equals(selfPracticeStatus) ? "自主实习申请已撤回" : "自主实习审核",
+                            : "withdrawn".equals(selfPracticeStatus) ? "自主实习申请已撤回" : "等待" + selfHandler,
                     selfPracticeState, selfPracticeDetail,
                     selfPracticePending ? "OPEN_APPLICATION" : "OPEN_SELF_PRACTICE"));
         }
@@ -419,7 +431,8 @@ public class StudentPlanService {
                         confirming, hasPassed || Integer.valueOf(1).equals(code), hasApplied, hasWaitingInterview,
                         apps, invites, confirms, selfApps, assignmentList),
                 selfPracticeStatus,
-                latestSelfPractice == null ? "" : Objects.toString(latestSelfPractice.getRejectReason(), ""));        return new PlanView(stage, STAGE_LABELS.getOrDefault(stage, stage), items, nextTitle, nextHow,
+                latestSelfPractice == null ? "" : Objects.toString(latestSelfPractice.getRejectReason(), ""),
+                companySelfPractice ? "COMPANY" : "COUNSELOR");        return new PlanView(stage, STAGE_LABELS.getOrDefault(stage, stage), items, nextTitle, nextHow,
                 version, snapshotStatus == SnapshotStatus.SAVED, snapshotStatus, placementFacts(current), basis);
     }
 

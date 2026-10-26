@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.internship.mapper.TeacherRecruitmentMapper">
+    <resultMap id="RecruitmentPosition" type="com.internship.dto.TeacherRecruitmentPositionDTO"
+               extends="com.internship.mapper.PositionMapper.PositionResultMap">
+        <result property="companyName" column="company_name" />
+        <result property="companyPositionCount" column="company_position_count" />
+        <result property="categoryName" column="category_name" />
+    </resultMap>
+
+    <sql id="PublishedPositionQuery">
+        SELECT
+            COALESCE((SELECT COUNT(DISTINCT sis.student_id)
+                      FROM student_internship_status sis
+                      WHERE sis.position_id = p.id AND sis.status IN (1, 2, 3)
+                        AND COALESCE(sis.recall_status, 0) != 2), 0) AS recruited_count,
+            GREATEST(p.planned_recruit - COALESCE(
+                (SELECT COUNT(DISTINCT sis.student_id)
+                 FROM student_internship_status sis
+                 WHERE sis.position_id = p.id AND sis.status IN (1, 2, 3)
+                   AND COALESCE(sis.recall_status, 0) != 2), 0), 0) AS remaining_quota,
+            p.*, cu.company_name, pc.name AS category_name,
+            (SELECT COUNT(*) FROM position published
+             WHERE published.company_id = p.company_id
+               AND published.status IN ('active', 'paused')) AS company_position_count,
+            <include refid="com.internship.mapper.PositionMapper.ContactColumns" />
+        FROM position p
+        JOIN company_users cu ON cu.id = p.company_id
+        LEFT JOIN position_category pc ON pc.id = p.category_id
+        LEFT JOIN company_contact cc ON p.contact_id = cc.id AND cc.company_id = p.company_id
+        WHERE p.status IN ('active', 'paused')
+    </sql>
+
+    <select id="findPublishedPositions" resultMap="RecruitmentPosition">
+        <include refid="PublishedPositionQuery" />
+        <if test="companyName != null and companyName != ''">
+            AND cu.company_name LIKE CONCAT('%', #{companyName}, '%')
+        </if>
+        <if test="positionName != null and positionName != ''">
+            AND p.position_name LIKE CONCAT('%', #{positionName}, '%')
+        </if>
+        <if test="status != null and status != ''">
+            AND p.status = #{status}
+        </if>
+        <if test="categoryId != null">
+            AND p.category_id = #{categoryId}
+        </if>
+        ORDER BY cu.company_name ASC, cu.id ASC, p.publish_date DESC, p.create_time DESC, p.id DESC
+    </select>
+
+    <select id="findPublishedPositionById" resultMap="RecruitmentPosition">
+        <include refid="PublishedPositionQuery" />
+        AND p.id = #{id}
+    </select>
+</mapper>

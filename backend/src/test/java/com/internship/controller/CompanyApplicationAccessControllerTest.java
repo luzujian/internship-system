@@ -118,6 +118,22 @@ class CompanyApplicationAccessControllerTest {
     }
 
     @Test
+    void recalledApplicationBindsTheSingleContactEmailAndPhone() {
+        company.setRecallStatus(2);
+        Result result = controller.updateCompany(7L, Map.of("contactPerson", "新联系人",
+                "contactPhone", "02088888888", "contactEmail", "new@example.com")).getBody();
+        assertNotNull(result);
+        assertEquals(200, result.getCode());
+        var changed = org.mockito.ArgumentCaptor.forClass(CompanyUser.class);
+        verify(companyService).update(changed.capture());
+        assertEquals("new@example.com", changed.getValue().getEmail());
+        assertEquals("new@example.com", changed.getValue().getContactEmail());
+        assertEquals("02088888888", changed.getValue().getPhone());
+        assertEquals("02088888888", changed.getValue().getContactPhone());
+        assertNull(changed.getValue().getPassword());
+    }
+
+    @Test
     void unusedCompanyEmailCodeHandlerIsNotExposed() {
         boolean mapped = Arrays.stream(CompanyRegisterController.class.getDeclaredMethods())
                 .map(method -> method.getAnnotation(PostMapping.class))

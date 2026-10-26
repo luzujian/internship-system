@@ -12,12 +12,14 @@ const plan = computed(() => agent.currentPlan)
 const enabled = computed(() => agent.capabilities?.enabled && agent.chatEnabled && agent.planEnabled && agent.capabilities?.actor.role === 'ROLE_STUDENT')
 const status: Record<string, string> = { DONE: '已完成', CURRENT: '进行中', WAITING: '等待处理', PENDING: '待开始', TODO: '待完善', REJECTED: '已驳回', WITHDRAWN: '已撤回' }
 watch(() => plan.value?.needsChoice, (value, previous) => {
-  if (value) { expanded.value = true; choosing.value = true }
+  if (value) choosing.value = true
   else if (previous) choosing.value = false
 }, { immediate: true })
-watch(() => agent.studentLoginAutoOpenJourney, value => { if (value) expanded.value = true }, { immediate: true })
+watch(() => agent.studentLoginAutoOpenJourney, value => {
+  if (value) { expanded.value = true; agent.studentLoginAutoOpenJourney = false }
+}, { immediate: true })
 watch(() => plan.value?.canChoose, value => { if (!value) choosing.value = false })
-watch(() => agent.capabilities?.actor.ownerKey, () => { expanded.value = false; choosing.value = false; navigationError.value = '' })
+watch(() => agent.capabilities?.actor.ownerKey, () => { expanded.value = false; choosing.value = false; navigationError.value = '' }, { flush: 'sync' })
 async function choose(choice: string) {
   if (await agent.savePlanPreference(choice)) choosing.value = false
 }

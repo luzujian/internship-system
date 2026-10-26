@@ -23,6 +23,12 @@ public class InternshipConfirmationRecord {
     private String companyPhone;
     private Long positionId;
     private String positionName;
+    @com.fasterxml.jackson.annotation.JsonProperty(access = com.fasterxml.jackson.annotation.JsonProperty.Access.READ_ONLY)
+    private Long sourceApplicationId;
+    @com.fasterxml.jackson.annotation.JsonProperty(access = com.fasterxml.jackson.annotation.JsonProperty.Access.READ_ONLY)
+    private Long agreementSubmissionId;
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    private String applicationSnapshot;
     private LocalDateTime internshipStartTime;
     private LocalDateTime internshipEndTime;
     private Integer internshipDuration;

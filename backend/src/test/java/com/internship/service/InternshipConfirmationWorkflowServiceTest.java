@@ -44,6 +44,8 @@ class InternshipConfirmationWorkflowServiceTest {
     @Mock private InternshipCalendarService internshipCalendarService;
     @Mock private InternshipConfirmationResultNotifier confirmationResultNotifier;
     @Mock private InternshipAgreementService agreementService;
+    @Mock private com.internship.mapper.StudentApplicationMapper studentApplicationMapper;
+    @Mock private com.internship.mapper.CompanyUserMapper companyUserMapper;
 
     private InternshipConfirmationWorkflowService service;
 
@@ -54,6 +56,8 @@ class InternshipConfirmationWorkflowServiceTest {
                 progressRecordService, statusCache, internshipCalendarService,
                 confirmationResultNotifier);
         org.springframework.test.util.ReflectionTestUtils.setField(service, "agreementService", agreementService);
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "studentApplicationMapper", studentApplicationMapper);
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "companyUserMapper", companyUserMapper);
     }
 
     @Test
@@ -256,6 +260,124 @@ class InternshipConfirmationWorkflowServiceTest {
         verify(positionMapper, never()).findByIdForUpdate(any());
         // 学生撤回不触发结果邮件，仅企业确认/拒绝各一次
         verify(confirmationResultNotifier, org.mockito.Mockito.times(1)).afterCommit(any());
+    }
+
+    @Test
+    void textOnlyCompanyConfirmationCreatesCompanyLinkedPlacementWithoutTouchingPositionQuota() {
+        InternshipConfirmationRecord record = pendingRecord(7L, 200L, null, 70L);
+        record.setSourceApplicationId(500L); record.setPositionName("线下定向岗位");
+        var app = companyApplication(record);
+        stubCompanyPending(record, app);
+        when(assignmentMapper.findCurrentByStudentForUpdate(7L)).thenReturn(List.of());
+        when(confirmationMapper.resolvePending(70L, 1, record.getRemark())).thenReturn(1);
+        when(confirmationMapper.update(record)).thenReturn(1);
+        when(statusMapper.insert(any())).thenReturn(1);
+        when(studentApplicationMapper.resolveCompanyApplication(500L, 70L, "approved", null, null)).thenReturn(1);
+
+        var result = service.confirm(200L, 70L, new Date(), null, true);
+
+        assertEquals(200L, result.record().getCompanyId());
+        assertNull(result.record().getPositionId());
+        ArgumentCaptor<StudentInternshipStatus> status = ArgumentCaptor.forClass(StudentInternshipStatus.class);
+        verify(statusMapper).insert(status.capture());
+        assertEquals(200L, status.getValue().getCompanyId());
+        assertEquals("线下定向岗位", status.getValue().getPositionName());
+        assertEquals("02088888888", record.getCompanyPhone());
+        assertEquals("02088888888", status.getValue().getCompanyPhone());
+        verify(positionMapper, never()).findByIdForUpdate(any());
+        verify(positionMapper, never()).update(any());
+    }
+
+    @Test
+    void manuallyWrittenPositionCanBeBoundToOwnedExistingPositionAndConsumesItsQuota() {
+        InternshipConfirmationRecord record = pendingRecord(7L, 200L, null, 70L);
+        record.setSourceApplicationId(500L); record.setPositionName("程序员");
+        stubCompanyPending(record, companyApplication(record));
+        when(assignmentMapper.findCurrentByStudentForUpdate(7L)).thenReturn(List.of());
+        Position position = position(20L, 200L, 3, 2); position.setPositionName("Java开发实习生");
+        position.setContactPhone("13800000000");
+        when(positionMapper.findByIdForUpdate(20L)).thenReturn(position);
+        when(positionMapper.update(position)).thenReturn(1);
+        when(confirmationMapper.resolvePending(70L, 1, record.getRemark())).thenReturn(1);
+        when(confirmationMapper.update(record)).thenReturn(1);
+        when(statusMapper.insert(any())).thenReturn(1);
+        when(studentApplicationMapper.resolveCompanyApplication(500L, 70L, "approved", null, 20L)).thenReturn(1);
+
+        service.confirm(200L, 70L, new Date(), 20L, false);
+
+        assertEquals(20L, record.getPositionId());
+        assertEquals("Java开发实习生", record.getPositionName());
+        assertEquals("13800000000", record.getCompanyPhone());
+        ArgumentCaptor<StudentInternshipStatus> status = ArgumentCaptor.forClass(StudentInternshipStatus.class);
+        verify(statusMapper).insert(status.capture());
+        assertEquals("13800000000", status.getValue().getCompanyPhone());
+        assertEquals(2, position.getRemainingQuota());
+        assertEquals(3, position.getRecruitedCount());
+    }
+
+    @Test
+    void studentSelectedPositionCannotBeConvertedToTextToBypassQuota() {
+        InternshipConfirmationRecord record = pendingRecord(7L, 200L, 20L, 70L);
+        record.setSourceApplicationId(500L);
+        when(confirmationMapper.findById(70L)).thenReturn(record);
+        when(confirmationMapper.lockStudent(7L)).thenReturn(7L);
+        when(confirmationMapper.findByIdForUpdate(70L)).thenReturn(record);
+        when(studentApplicationMapper.findByIdForUpdate(500L)).thenReturn(companyApplication(record));
+        when(companyUserMapper.findById(200L)).thenReturn(validCompany());
+        assertThrows(BusinessException.class, () -> service.confirm(200L, 70L, new Date(), null, true));
+        verify(positionMapper, never()).update(any());
+        verify(statusMapper, never()).insert(any());
+    }
+
+    @Test
+    void typedNameMatchingAnExistingPositionCannotBypassQuotaWithTextConfirmation() {
+        InternshipConfirmationRecord record = pendingRecord(7L, 200L, null, 70L);
+        record.setSourceApplicationId(500L); record.setPositionName("Ｊａｖａ 开发实习生");
+        when(confirmationMapper.findById(70L)).thenReturn(record);
+        when(confirmationMapper.lockStudent(7L)).thenReturn(7L);
+        when(confirmationMapper.findByIdForUpdate(70L)).thenReturn(record);
+        when(studentApplicationMapper.findByIdForUpdate(500L)).thenReturn(companyApplication(record));
+        when(companyUserMapper.findById(200L)).thenReturn(validCompany());
+        Position existing = position(20L, 200L, 0, 3); existing.setPositionName("Java开发实习生");
+        when(positionMapper.findByCompanyId(200L)).thenReturn(List.of(existing));
+        assertThrows(BusinessException.class, () -> service.confirm(200L, 70L, new Date(), null, true));
+        verify(positionMapper, never()).update(any());
+        verify(statusMapper, never()).insert(any());
+    }
+
+    @Test
+    void staleConfirmationCannotResolveAResubmittedApplication() {
+        InternshipConfirmationRecord record = pendingRecord(7L, 200L, null, 70L);
+        record.setSourceApplicationId(500L);
+        var application = companyApplication(record); application.setConfirmationRecordId(71L);
+        when(confirmationMapper.findById(70L)).thenReturn(record);
+        when(confirmationMapper.lockStudent(7L)).thenReturn(7L);
+        when(studentApplicationMapper.findByIdForUpdate(500L)).thenReturn(application);
+        assertThrows(BusinessException.class, () -> service.confirm(200L, 70L, new Date(), null, true));
+        verify(confirmationMapper, never()).resolvePending(any(), any(), any());
+    }
+
+    private com.internship.entity.StudentApplication companyApplication(InternshipConfirmationRecord record) {
+        var app = new com.internship.entity.StudentApplication(); app.setId(500L); app.setStudentId(7L);
+        app.setCompanyId(200L); app.setReviewTarget("COMPANY"); app.setStatus("pending"); app.setConfirmationRecordId(record.getId());
+        return app;
+    }
+
+    private com.internship.entity.CompanyUser validCompany() {
+        var company = new com.internship.entity.CompanyUser(); company.setId(200L); company.setStatus(1); company.setAuditStatus(1);
+        company.setContactPhone("02088888888");
+        return company;
+    }
+
+    private void stubCompanyPending(InternshipConfirmationRecord record, com.internship.entity.StudentApplication app) {
+        when(confirmationMapper.findById(70L)).thenReturn(record);
+        when(confirmationMapper.lockStudent(7L)).thenReturn(7L);
+        when(confirmationMapper.findByIdForUpdate(70L)).thenReturn(record);
+        when(studentApplicationMapper.findByIdForUpdate(500L)).thenReturn(app);
+        when(companyUserMapper.findById(200L)).thenReturn(validCompany());
+        var pending = assignment(90L, 7L, 200L, null, "PENDING_CONFIRMATION", 0, 70L);
+        when(assignmentMapper.findByConfirmationRecordIdForUpdate(70L)).thenReturn(pending);
+        when(assignmentMapper.update(pending)).thenReturn(1);
     }
 
     private InternshipConfirmationRecord pendingRecord(Long studentId, Long companyId,

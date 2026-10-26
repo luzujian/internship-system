@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useAgentPageContext } from '@/agent/useAgentPageContext'
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Download } from '@element-plus/icons-vue'
 import { usePositionStore } from '../../store/position'
@@ -9,6 +9,8 @@ import internshipStatusApi from '../../api/InternshipStatusService'
 import { exportToExcel } from '../../utils/xlsx'
 import emitter from '@/utils/event-bus'
 import { onCompanyTodoUpdate, offCompanyTodoUpdate } from '@/utils/websocket'
+import InternshipAgreementPreview from '@/components/student/InternshipAgreementPreview.vue'
+import { blobRequest, saveAgreementBlob, type AgreementFile, type AgreementVersion } from '@/api/internshipAgreements'
 import type { CompanyTodoUpdateData } from '@/utils/websocket'
 import { useIsMobile } from '@/composables/useIsMobile'
 
@@ -17,6 +19,7 @@ const authStore = useAuthStore()
 const isMobile = useIsMobile()
 
 const companyId = computed(() => {
+  if (!authStore.token || authStore.role !== 'ROLE_COMPANY') return null
   if (authStore.user?.id) {
     return parseInt(authStore.user.id)
   }
@@ -51,6 +54,8 @@ const searchForm = ref({
   status: '',
   position: ''
 })
+const showMobileFilters = ref(false)
+const activeFilterCount = computed(() => [searchForm.value.status, searchForm.value.position].filter(Boolean).length)
 
 onMounted(() => {
   if (!companyId.value) {
@@ -80,12 +85,50 @@ const handleCompanyTodoUpdate = (data: CompanyTodoUpdateData) => {
 }
 
 const detailDialogVisible = ref(false)
-const currentStudent = ref(null)
+const currentStudent = ref<any>(null)
+const detailApplication = ref<any>(null)
+const detailContact = ref<{ name?: string; phone?: string } | null>(null)
+const detailAgreements = ref<AgreementVersion[]>([])
+const detailLoading = ref(false)
+let detailToken = 0
+const filePreview = ref<InstanceType<typeof InternshipAgreementPreview> | null>(null)
+const previewRecordId = ref<number>(0)
+const readCompanyAgreement = (fileId: number, preview: boolean) => blobRequest(`/company/confirmation/${previewRecordId.value}/agreements/${fileId}/${preview ? 'preview' : 'download'}`)
+const previewAgreement = (file: AgreementFile) => { previewRecordId.value = currentStudent.value.id; filePreview.value?.show(file) }
+const downloadAgreement = async (file: AgreementFile) => {
+  try { saveAgreementBlob(await blobRequest(`/company/confirmation/${currentStudent.value.id}/agreements/${file.id}/download`), file.fileName) }
+  catch (error: any) { ElMessage.error(error?.message || '文件读取失败') }
+}
+const downloadApplicationMaterial = async (name: string) => {
+  try { saveAgreementBlob(await blobRequest(`/company/confirmation/${currentStudent.value.id}/materials/${encodeURIComponent(name)}/download`), `${name}.${String(detailApplication.value.materials[name]).split('.').pop()}`) }
+  catch (error: any) { ElMessage.error(error?.message || '材料读取失败') }
+}
+const confirmationActionVisible = ref(false)
+const confirmationActionRecord = ref<any>(null)
+const confirmationMode = ref<'TEXT' | 'EXISTING'>('TEXT')
+const confirmationPositionId = ref<number | null>(null)
+const confirmationSubmitting = ref(false)
+const openPositionManagement = () => window.open('/company/jobs', '_blank', 'noopener')
+const refreshConfirmationPositions = () => positionStore.fetchPositions(companyId.value)
+const handleConfirm = (row: any) => {
+  if (row.positionId || !row.sourceApplicationId) { void performConfirm(row); return }
+  confirmationActionRecord.value = row
+  confirmationMode.value = 'TEXT'
+  confirmationPositionId.value = null
+  confirmationActionVisible.value = true
+}
+const submitConfirmationAction = async () => {
+  if (confirmationMode.value === 'EXISTING' && !confirmationPositionId.value) { ElMessage.warning('请选择已发布的岗位'); return }
+  confirmationSubmitting.value = true
+  try {
+    if (await performConfirm(confirmationActionRecord.value, confirmationMode.value === 'EXISTING' ? confirmationPositionId.value : null, confirmationMode.value === 'TEXT')) confirmationActionVisible.value = false
+  } finally { confirmationSubmitting.value = false }
+}
 
 const statusMap = {
-  0: '待确认',
-  1: '已确认',
-  2: '已拒绝'
+  0: '待企业确认',
+  1: '企业已确认',
+  2: '企业已拒绝'
 }
 
 const statusTypeMap = {
@@ -95,9 +138,9 @@ const statusTypeMap = {
 }
 
 const companyConfirmStatusMap = {
-  0: '待确认',
-  1: '已确认',
-  2: '已拒绝'
+  0: '待企业确认',
+  1: '企业已确认',
+  2: '企业已拒绝'
 }
 
 const positionOptions = computed(() => {
@@ -158,6 +201,7 @@ const positionStats = computed(() => {
 
 const currentPage = ref(1)
 const pageSize = ref(10)
+watch([searchForm, pageSize], () => { currentPage.value = 1 }, { deep: true })
 
 const filteredTableData = computed(() => {
   if (!Array.isArray(confirmationRecords.value)) {
@@ -216,9 +260,9 @@ const handleReset = () => {
   ElMessage.info('已重置搜索条件')
 }
 
-const handleConfirm = async (row) => {
+const performConfirm = async (row: any, positionId: number | null = row.positionId, textPosition = false) => {
   try {
-    const position = positionStore.positions.find(p => p.id === row.positionId)
+    const position = positionStore.positions.find(p => p.id === positionId)
     const isFull = position && position.remainingQuota <= 0
 
     if (isFull) {
@@ -227,7 +271,7 @@ const handleConfirm = async (row) => {
     }
 
     await ElMessageBox.confirm(
-      `确认接收 ${row.studentName}(${row.studentUserId}) 来公司实习吗？确认后占用 1 个岗位名额。`,
+      `确认接收 ${row.studentName}(${row.studentUserId}) 到“${position?.positionName || row.positionName}”实习吗？${positionId ? '确认后占用该岗位名额。' : '确认后加入本企业实习名单。'}`,
       '实习确认',
       {
         confirmButtonText: '确认接收',
@@ -238,13 +282,14 @@ const handleConfirm = async (row) => {
       }
     )
 
-    await internshipStatusApi.confirmRecord(row.id)
+    await internshipStatusApi.confirmRecord(row.id, { positionId, textPosition })
     await positionStore.fetchPositions(companyId.value)
     await loadConfirmationRecords()
     ElMessage.success(`已确认 ${row.studentName} 的实习申请`)
     
     console.log('触发通知刷新事件')
     emitter.emit('notification-refresh')
+    return true
   } catch (error: any) {
     if (error !== 'cancel' && error !== 'close') {
       ElMessage.error(error?.message || '操作失败，请稍后重试')
@@ -283,9 +328,22 @@ const handleReject = async (row) => {
   }
 }
 
-const handleViewDetail = (row) => {
+const handleViewDetail = async (row: any) => {
+  const token = ++detailToken
   currentStudent.value = row
+  detailApplication.value = null
+  detailContact.value = null
+  detailAgreements.value = []
   detailDialogVisible.value = true
+  detailLoading.value = true
+  try {
+    const response: any = await internshipStatusApi.getConfirmationDetails(row.id)
+    if (token !== detailToken) return
+    detailApplication.value = response.data?.application || null
+    detailContact.value = response.data?.internshipContact || null
+    detailAgreements.value = response.data?.agreementVersions || []
+  } catch (error: any) { if (token === detailToken) ElMessage.error(error?.message || '申请材料加载失败') }
+  finally { if (token === detailToken) detailLoading.value = false }
 }
 
 const formatDate = (date) => {
@@ -337,10 +395,12 @@ const handleExport = async () => {
 
     const exportData = sortedData.map(item => ({
       '应聘岗位': item.positionName,
+      '来源': item.sourceApplicationId ? '自主实习申请' : '平台录取',
       '学生姓名': item.studentName,
       '学号': item.studentUserId,
       '年级': item.grade,
-      '申请日期': formatDate(item.createTime),
+      '专业': item.majorName || '',
+      '确认表提交日期': formatDate(item.createTime),
       '确认状态': companyConfirmStatusMap[item.companyConfirmStatus],
       '备注': item.remark || ''
     }))
@@ -373,7 +433,7 @@ useAgentPageContext(() => {
   <div class="internship-confirm">
     <div class="page-header">
       <h2>实习确认</h2>
-      <p>处理学生提交的实习确认表；确认后占用岗位名额，学生原实习自动转为历史记录</p>
+      <p>处理学生提交的实习确认申请；关联岗位确认后扣减对应名额，文字岗位不占其他岗位名额。确认成功后切换当前实习。</p>
     </div>
 
     <div class="search-card">
@@ -384,16 +444,17 @@ useAgentPageContext(() => {
             placeholder="请输入学生姓名或学号" 
             clearable
             style="width: 200px"
+            @keyup.enter="handleSearch"
           />
         </el-form-item>
-        <el-form-item label="状态">
+        <el-form-item v-show="!isMobile || showMobileFilters" label="状态">
           <el-select v-model="searchForm.status" placeholder="请选择状态" clearable style="width: 150px">
-            <el-option label="待确认" value="0" />
-            <el-option label="已确认" value="1" />
-            <el-option label="已拒绝" value="2" />
+            <el-option label="待企业确认" value="0" />
+            <el-option label="企业已确认" value="1" />
+            <el-option label="企业已拒绝" value="2" />
           </el-select>
         </el-form-item>
-        <el-form-item label="应聘岗位">
+        <el-form-item v-show="!isMobile || showMobileFilters" label="应聘岗位">
           <el-select v-model="searchForm.position" placeholder="请选择岗位" clearable style="width: 180px">
             <el-option
               v-for="item in positionOptions"
@@ -404,6 +465,7 @@ useAgentPageContext(() => {
           </el-select>
         </el-form-item>
         <el-form-item>
+          <el-button v-if="isMobile" :aria-expanded="showMobileFilters" @click="showMobileFilters = !showMobileFilters">{{ showMobileFilters ? '收起筛选' : '筛选' }}{{ activeFilterCount ? `（${activeFilterCount}）` : '' }}</el-button>
           <el-button type="primary" @click="handleSearch">搜索</el-button>
           <el-button @click="handleReset">重置</el-button>
           <el-button type="success" @click="handleExport" :loading="exporting">
@@ -436,15 +498,15 @@ useAgentPageContext(() => {
         </div>
         <div class="stat-details">
           <div class="stat-item">
-            <span class="stat-label">待确认</span>
+            <span class="stat-label">待企业确认</span>
             <span class="stat-value pending">{{ stat.pending }}</span>
           </div>
           <div class="stat-item">
-            <span class="stat-label">已确认</span>
+            <span class="stat-label">企业已确认</span>
             <span class="stat-value confirmed">{{ stat.confirmed }}</span>
           </div>
           <div class="stat-item">
-            <span class="stat-label">已拒绝</span>
+            <span class="stat-label">企业已拒绝</span>
             <span class="stat-value rejected">{{ stat.rejected }}</span>
           </div>
         </div>
@@ -459,6 +521,7 @@ useAgentPageContext(() => {
         style="width: 100%"
       >
         <el-table-column prop="positionName" label="应聘岗位" min-width="100" />
+        <el-table-column label="来源" width="120"><template #default="{ row }">{{ row.sourceApplicationId ? '自主实习申请' : '平台录取' }}</template></el-table-column>
         <el-table-column prop="studentName" label="学生姓名" width="90" />
         <el-table-column prop="studentUserId" label="学号" width="120" />
         <el-table-column label="年级和专业" min-width="120">
@@ -523,6 +586,10 @@ useAgentPageContext(() => {
           </div>
           <div class="mobile-card-body">
             <div class="mobile-card-row">
+              <span class="mobile-card-label">来源</span>
+              <span class="mobile-card-value">{{ row.sourceApplicationId ? '自主实习申请' : '平台录取' }}</span>
+            </div>
+            <div class="mobile-card-row">
               <span class="mobile-card-label">学生姓名</span>
               <span class="mobile-card-value">{{ row.studentName || '-' }}</span>
             </div>
@@ -569,23 +636,49 @@ useAgentPageContext(() => {
           v-model:current-page="currentPage"
           v-model:page-size="pageSize"
           background
-          layout="total, sizes, prev, pager, next, jumper"
+          :layout="isMobile ? 'total, sizes, prev, next' : 'total, sizes, prev, pager, next, jumper'"
           :total="filteredTableData.length"
           :page-sizes="[10, 20, 50, 100]"
         />
       </div>
     </div>
 
+    <InternshipAgreementPreview ref="filePreview" :read-file="readCompanyAgreement" />
+    <el-dialog v-model="confirmationActionVisible" title="确认实习岗位" class="confirmation-position-dialog" :width="isMobile ? '94%' : '560px'" :close-on-click-modal="false">
+      <template v-if="confirmationActionRecord">
+        <p class="confirmation-position-summary">{{ confirmationActionRecord.studentName }}申请的岗位：<strong>{{ confirmationActionRecord.positionName }}</strong></p>
+        <el-radio-group v-model="confirmationMode" class="confirmation-position-modes">
+          <el-radio value="TEXT">岗位未发布，直接确认</el-radio>
+          <el-radio value="EXISTING">岗位已发布，从列表选择</el-radio>
+        </el-radio-group>
+        <p v-if="confirmationMode === 'TEXT'" class="confirmation-position-tip">若岗位已发布，请选择对应岗位。</p>
+        <div v-else>
+          <el-select v-model="confirmationPositionId" placeholder="请选择已发布的岗位" class="confirmation-position-select">
+            <el-option v-for="position in positionStore.positions" :key="position.id" :value="position.id"
+              :label="`${position.positionName}（剩余 ${position.remainingQuota ?? 0} 人）`" />
+          </el-select>
+          <p class="confirmation-position-tip">确认后占用所选岗位的名额。</p>
+        </div>
+        <div class="confirmation-position-actions">
+          <button v-if="confirmationMode === 'EXISTING'" type="button" class="confirmation-text-action" @click="refreshConfirmationPositions">刷新岗位</button>
+          <button type="button" class="confirmation-text-action" @click="openPositionManagement">新建岗位</button>
+        </div>
+      </template>
+      <template #footer>
+        <el-button @click="confirmationActionVisible = false">取消</el-button>
+        <el-button type="primary" :loading="confirmationSubmitting" @click="submitConfirmationAction">确认接收</el-button>
+      </template>
+    </el-dialog>
     <el-dialog
       v-model="detailDialogVisible"
       title="学生实习确认详情"
       width="900px"
       :close-on-click-modal="false"
     >
-      <div v-if="currentStudent" class="student-detail">
+      <div v-if="currentStudent" v-loading="detailLoading" class="student-detail">
         <div class="detail-section">
           <h3 class="section-title">学生信息</h3>
-          <el-descriptions :column="2" border>
+          <el-descriptions :column="isMobile ? 1 : 2" border>
             <el-descriptions-item label="姓名">{{ currentStudent.studentName || '-' }}</el-descriptions-item>
             <el-descriptions-item label="学号">{{ currentStudent.studentUserId || '-' }}</el-descriptions-item>
             <el-descriptions-item label="年级">{{ currentStudent.grade ? currentStudent.grade + '级' : '-' }}</el-descriptions-item>
@@ -601,11 +694,35 @@ useAgentPageContext(() => {
           <el-descriptions :column="isMobile ? 1 : 2" border>
             <el-descriptions-item label="实习企业">{{ currentStudent.companyName || '-' }}</el-descriptions-item>
             <el-descriptions-item label="实习岗位">{{ currentStudent.positionName || '-' }}</el-descriptions-item>
-            <el-descriptions-item label="企业地址">{{ currentStudent.companyAddress || '-' }}</el-descriptions-item>
-            <el-descriptions-item label="企业电话">{{ currentStudent.companyPhone || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="企业地址" :span="2">{{ currentStudent.companyAddress || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="联系人">{{ detailContact?.name || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="联系电话">{{ detailContact?.phone || '-' }}</el-descriptions-item>
           </el-descriptions>
         </div>
 
+        <div v-if="detailApplication" class="detail-section">
+          <h3 class="section-title">自主实习申请信息</h3>
+          <el-descriptions :column="isMobile ? 1 : 2" border>
+            <el-descriptions-item label="学生填写岗位">{{ detailApplication.positionName }}</el-descriptions-item>
+            <el-descriptions-item label="单位所在城市">{{ detailApplication.companyCity }}</el-descriptions-item>
+            <el-descriptions-item label="人事联系人">{{ detailApplication.hrManagerName }}</el-descriptions-item>
+            <el-descriptions-item label="联系电话">{{ detailApplication.hrManagerPhone }}</el-descriptions-item>
+            <el-descriptions-item label="申请理由" :span="2">{{ detailApplication.reason }}</el-descriptions-item>
+          </el-descriptions>
+          <template v-for="(presence, name) in detailApplication.materials || {}" :key="name">
+            <el-button v-if="presence" link type="primary" @click="downloadApplicationMaterial(String(name))">下载{{ name }}</el-button>
+          </template>
+        </div>
+        <div v-if="detailAgreements.length" class="detail-section">
+          <h3 class="section-title">本次提交的实习协议</h3>
+          <div v-for="version in detailAgreements" :key="version.id">
+            <div v-for="file in version.files" :key="file.id" class="agreement-file-row">
+              <span>{{ file.fileName }}</span>
+              <el-button link type="primary" @click="previewAgreement(file)">预览</el-button>
+              <el-button link type="primary" @click="downloadAgreement(file)">下载</el-button>
+            </div>
+          </div>
+        </div>
         <div class="detail-section">
           <h3 class="section-title">备注</h3>
           <div class="remark-content">
@@ -638,6 +755,81 @@ useAgentPageContext(() => {
 </template>
 
 <style scoped>
+.confirmation-position-summary {
+  margin: 0 0 14px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+
+.confirmation-position-summary strong {
+  color: #303133;
+  font-weight: 500;
+}
+
+.confirmation-position-modes {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 100%;
+}
+
+.confirmation-position-modes :deep(.el-radio) {
+  height: auto;
+  margin-right: 0;
+  padding: 6px 0;
+  white-space: normal;
+}
+
+.confirmation-position-modes :deep(.el-radio__label) {
+  line-height: 1.6;
+  white-space: normal;
+}
+
+.confirmation-position-select {
+  width: 100%;
+  margin-top: 12px;
+}
+
+.confirmation-position-tip {
+  margin: 8px 0 12px;
+  color: #909399;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.confirmation-position-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 20px;
+  margin-top: 12px;
+}
+
+.confirmation-text-action,
+.confirmation-text-action:hover,
+.confirmation-text-action:active {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--el-color-primary);
+  font: inherit;
+  line-height: 1.6;
+  cursor: pointer;
+  transform: none;
+}
+
+.confirmation-text-action:hover {
+  text-decoration: underline;
+}
+
+.confirmation-text-action:focus-visible {
+  outline: 2px solid var(--el-color-primary);
+  outline-offset: 3px;
+}
+
+.agreement-file-row { display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin:8px 0; }
 .internship-confirm {
   padding: 0;
 }
@@ -979,8 +1171,9 @@ useAgentPageContext(() => {
   }
 
   .search-form :deep(.el-form-item__content) {
-    flex-direction: column;
-    align-items: stretch;
+    flex-direction: row;
+    flex-wrap: wrap;
+    min-width: 0;
     gap: 8px;
   }
 
@@ -990,7 +1183,8 @@ useAgentPageContext(() => {
   }
 
   .search-form :deep(.el-button) {
-    width: 100%;
+    flex: 1;
+    min-height: 44px;
     margin-left: 0;
   }
 

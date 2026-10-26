@@ -85,22 +85,17 @@
     </select>
 
     <!-- 根据 ID 查询岗位信息并加行锁（FOR UPDATE，防止并发超发） -->
-    <select id="findByIdForUpdate" resultMap="PositionResultMap">
-        SELECT
-            p.planned_recruit - COALESCE(
-                (SELECT COUNT(DISTINCT sis.student_id) FROM student_internship_status sis
-                 WHERE sis.position_id = p.id AND sis.status IN (1, 2, 3)
-                   AND COALESCE(sis.recall_status, 0) != 2), 0
-            ) AS remaining_quota,
-            COALESCE(
-                (SELECT COUNT(DISTINCT sis.student_id) FROM student_internship_status sis
-                 WHERE sis.position_id = p.id AND sis.status IN (1, 2, 3)
-                   AND COALESCE(sis.recall_status, 0) != 2), 0
-            ) AS recruited_count,
-            p.*, <include refid="ContactColumns"/>
+    <select id="lockPositionRow" resultMap="PositionResultMap">
+        SELECT p.*, <include refid="ContactColumns"/>
         FROM position p
         <include refid="ContactJoins"/>
         WHERE p.id = #{id} FOR UPDATE
+    </select>
+    <!-- 必须在取得岗位行锁后单独当前读；嵌套子查询可能仍沿用等待行锁之前的事务快照。 -->
+    <select id="countCurrentOccupancyForUpdate" resultType="int">
+        SELECT COUNT(DISTINCT student_id) FROM student_internship_status
+        WHERE position_id = #{id} AND status IN (1, 2, 3) AND COALESCE(recall_status, 0) != 2
+        FOR UPDATE
     </select>
 
     <!-- 更新岗位信息 -->
@@ -453,12 +448,14 @@
             m.name AS majorName,
             sis.status,
             CASE sis.status
-                WHEN 0 THEN '尚无 Offer'
-                WHEN 1 THEN '有 Offer 未确定'
-                WHEN 2 THEN '已确定实习'
+                WHEN 0 THEN '尚未获录用'
+                WHEN 1 THEN '已录用待确认'
+                WHEN 2 THEN '已定单位待实习'
                 WHEN 3 THEN '实习进行中'
                 WHEN 4 THEN '实习已结束'
-                ELSE '未知'
+                WHEN 5 THEN '实习已中断'
+                WHEN 6 THEN '已延期实习'
+                ELSE '状态待核实'
             END AS statusText
         FROM student_internship_status sis
         INNER JOIN student_users su ON sis.student_id = su.id

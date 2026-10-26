@@ -617,13 +617,13 @@ const getApplicantRoleType = (role: string): string => {
 
 const getStatusText = (status: number | string): string => {
   const statusMap = {
-    0: '无offer',
-    1: '待确认',
-    2: '已确定',
-    3: '实习中',
-    4: '已结束',
-    5: '已中断',
-    6: '延期'
+    0: '尚未获录用',
+    1: '已录用待确认',
+    2: '已定单位待实习',
+    3: '实习进行中',
+    4: '实习已结束',
+    5: '实习已中断',
+    6: '已延期实习'
   }
   return statusMap[status] || '未知'
 }

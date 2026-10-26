@@ -40,6 +40,17 @@ public class StudentApplication {
 
     private String positionName; // 自主实习申请：实习岗位
 
+    /** 审核目标在提交时确定；历史记录仍由辅导员处理。 */
+    private String reviewTarget;
+    private Long companyId;
+    private Long positionId;
+    private Long confirmationRecordId;
+
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    public boolean isCompanyReview() {
+        return "COMPANY".equals(reviewTarget);
+    }
+
     private String companyCity; // 自主实习申请：单位所在城市
 
     private String hrManagerName; // 自主实习申请：人事经理姓名

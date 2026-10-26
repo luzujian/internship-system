@@ -89,8 +89,14 @@ public class ApprovalController {
     }
 
     private List<Long> scopedStudentIds(TeacherUser teacher) {
+        return scopedStudentIds(teacher, null, null);
+    }
+
+    private List<Long> scopedStudentIds(TeacherUser teacher, Long majorId, Long classId) {
         try {
-            List<Long> ids = teacherScopeMapper.studentIds(teacher);
+            List<Long> ids = majorId == null && classId == null
+                    ? teacherScopeMapper.studentIds(teacher)
+                    : teacherScopeMapper.filteredStudentIds(teacher, majorId, classId);
             return ids == null ? List.of() : ids.stream().filter(id -> id != null && id > 0).distinct().toList();
         } catch (Exception e) {
             throw new AccessDeniedException("教师管辖范围不可用", e);
@@ -171,16 +177,19 @@ public class ApprovalController {
             @RequestParam(required = false) String applicationType,
             @RequestParam(required = false) String status,
             @RequestParam(required = false) String studentName,
-            @RequestParam(required = false) String studentUserId) {
-        log.info("获取学生申请列表: page={}, pageSize={}, type={}, status={}, name={}, userId={}",
-                page, pageSize, applicationType, status, studentName, studentUserId);
+            @RequestParam(required = false) String studentUserId,
+            @RequestParam(required = false) Long majorId,
+            @RequestParam(required = false) Long classId) {
+        log.info("获取学生申请列表: page={}, pageSize={}, type={}, status={}, name={}, userId={}, majorId={}, classId={}",
+                page, pageSize, applicationType, status, studentName, studentUserId, majorId, classId);
         TeacherUser teacher = requireTeacher();
         try {
             if (!canHandleApplicationType(teacher, applicationType)) {
                 return Result.success(emptyPage(page, pageSize));
             }
             PageResult<StudentApplication> result = studentApplicationService.findPageWithinStudentIds(
-                    page, pageSize, applicationType, status, studentName, studentUserId, scopedStudentIds(teacher));
+                    page, pageSize, applicationType, status, studentName, studentUserId,
+                    scopedStudentIds(teacher, majorId, classId));
             return Result.success(MaterialMetadataRedactor.studentPage(result));
         } catch (AccessDeniedException e) {
             throw e;

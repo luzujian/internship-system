@@ -120,11 +120,12 @@
         <el-table-column prop="studentUserId" label="学号" align="center" width="120" />
         <el-table-column prop="name" label="姓名" align="center" width="100" />
         <el-table-column prop="grade" label="年级" align="center" width="80" />
-        <el-table-column prop="internshipStatus" label="实习状态" align="center" width="100">
+        <el-table-column prop="internshipStatus" label="实习状态" align="center" min-width="170">
           <template #default="scope">
             <el-tag :type="getStatusTagType(scope.row.jobSearchStatus || scope.row.internshipStatus)" size="small">
               {{ scope.row.jobSearchStatusText || getStatusText(scope.row.internshipStatus) }}
             </el-tag>
+            <div v-for="text in scope.row.pendingApplicationTexts" :key="text" style="font-size:12px;color:var(--el-color-warning)">{{ text }}</div>
           </template>
         </el-table-column>
         <el-table-column prop="companyName" label="实习单位" align="center" min-width="150">
@@ -229,26 +230,26 @@ const getStatusText = (status: number | string | null | undefined): string => {
   if (status === null || status === undefined) return '待核实'
   if (typeof status === 'string') {
     const derivedText: Record<string, string> = {
-      NOT_FOUND: '未投递',
-      NO_OFFER: '无 Offer',
-      PENDING_CONFIRMATION: '待确认',
-      CONFIRMED: '已确定',
-      IN_PROGRESS: '实习中',
-      ENDED: '已结束',
-      INTERRUPTED: '已中断',
-      DELAYED: '延期'
+      NOT_FOUND: '暂无有效投递',
+      NO_OFFER: '已投递未录用',
+      PENDING_CONFIRMATION: '已录用待确认',
+      CONFIRMED: '已定单位待实习',
+      IN_PROGRESS: '实习进行中',
+      ENDED: '实习已结束',
+      INTERRUPTED: '实习已中断',
+      DELAYED: '已延期实习'
     }
     if (derivedText[status]) return derivedText[status]
   }
   const statusNum = typeof status === 'string' ? Number(status) : status
   switch (statusNum) {
-    case 1: return '待确认'
-    case 2: return '已确定'
-    case 3: return '实习中'
-    case 4: return '已结束'
-    case 5: return '已中断'
-    case 6: return '延期'
-    case 0: return '尚无 Offer'
+    case 1: return '已录用待确认'
+    case 2: return '已定单位待实习'
+    case 3: return '实习进行中'
+    case 4: return '实习已结束'
+    case 5: return '实习已中断'
+    case 6: return '已延期实习'
+    case 0: return '尚未获录用'
     default: return '待核实'
   }
 }

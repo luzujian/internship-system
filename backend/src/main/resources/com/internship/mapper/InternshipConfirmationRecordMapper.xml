@@ -19,6 +19,9 @@
         <result property="companyPhone" column="company_phone"/>
         <result property="positionId" column="position_id"/>
         <result property="positionName" column="position_name"/>
+        <result property="sourceApplicationId" column="source_application_id"/>
+        <result property="agreementSubmissionId" column="agreement_submission_id"/>
+        <result property="applicationSnapshot" column="application_snapshot"/>
         <result property="internshipStartTime" column="internship_start_time"/>
         <result property="internshipEndTime" column="internship_end_time"/>
         <result property="internshipDuration" column="internship_duration"/>
@@ -37,13 +40,13 @@
             contact_phone, email, company_id, company_name, company_address, company_phone,
             position_id, position_name, internship_start_time, internship_end_time,
             internship_duration, remark, status, recall_status, recall_reason, recall_apply_time,
-            create_time, update_time
+            source_application_id, agreement_submission_id, application_snapshot, create_time, update_time
         ) VALUES (
             #{studentId}, #{studentName}, #{studentUserId}, #{gender}, #{grade}, #{major}, #{className},
             #{contactPhone}, #{email}, #{companyId}, #{companyName}, #{companyAddress}, #{companyPhone},
             #{positionId}, #{positionName}, #{internshipStartTime}, #{internshipEndTime},
             #{internshipDuration}, #{remark}, #{status}, #{recallStatus}, #{recallReason}, #{recallApplyTime},
-            NOW(), NOW()
+            #{sourceApplicationId}, #{agreementSubmissionId}, #{applicationSnapshot}, NOW(), NOW()
         )
     </insert>
 

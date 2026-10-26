@@ -13,6 +13,7 @@
 
 # Local runtime data
 backend/backups/
+backend/agent-runtime/
 backend/.env
 **/.my.cnf
 

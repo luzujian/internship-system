@@ -66,6 +66,7 @@ const majorOptions = ref([]);
 
 // 从 auth store 获取当前企业用户 ID
 const companyId = computed(() => {
+  if (!authStore.token || authStore.role !== 'ROLE_COMPANY') return null;
   if (authStore.user?.id) {
     return parseInt(authStore.user.id);
   }
@@ -383,6 +384,7 @@ const tableData = computed(() => positionStore.positions || []);
 
 const currentPage = ref(1);
 const pageSize = ref(10);
+watch(pageSize, () => { currentPage.value = 1; });
 
 const paginatedTableData = computed(() => {
   const start = (currentPage.value - 1) * pageSize.value;
@@ -431,6 +433,8 @@ const searchForm = ref({
   status: '',
   department: '',
 });
+const showMobileFilters = ref(false);
+const activeFilterCount = computed(() => [searchForm.value.department, searchForm.value.status].filter(Boolean).length);
 
 // 岗位类别选项（从管理员端岗位管理获取）
 const categoryOptions = ref<{ label: string; value: string }[]>([]);
@@ -1674,9 +1678,10 @@ useAgentPageContext(() => ({
               placeholder="请输入岗位名称"
               clearable
               style="width: 200px"
+              @keyup.enter="handleSearch"
             />
           </el-form-item>
-          <el-form-item label="部门">
+          <el-form-item v-show="!isMobile || showMobileFilters" label="部门">
             <el-select
               v-model="searchForm.department"
               placeholder="请选择部门"
@@ -1691,7 +1696,7 @@ useAgentPageContext(() => ({
               />
             </el-select>
           </el-form-item>
-          <el-form-item label="状态">
+          <el-form-item v-show="!isMobile || showMobileFilters" label="状态">
             <el-select
               v-model="searchForm.status"
               placeholder="请选择状态"
@@ -1703,6 +1708,7 @@ useAgentPageContext(() => ({
             </el-select>
           </el-form-item>
           <el-form-item>
+            <el-button v-if="isMobile" :aria-expanded="showMobileFilters" @click="showMobileFilters = !showMobileFilters">{{ showMobileFilters ? '收起筛选' : '筛选' }}{{ activeFilterCount ? `（${activeFilterCount}）` : '' }}</el-button>
             <el-button type="primary" @click="handleSearch">搜索</el-button>
             <el-button @click="handleReset">重置</el-button>
           </el-form-item>
@@ -1865,6 +1871,7 @@ useAgentPageContext(() => ({
       </el-table>
       <!-- 手机端卡片列表 -->
       <div v-else class="mobile-card-list">
+        <el-empty v-if="!hasSearched && !paginatedTableData.length" description="暂无招聘岗位，点击发布岗位开始招聘" />
         <div
           v-for="row in paginatedTableData"
           :key="row.id"
@@ -1956,7 +1963,7 @@ useAgentPageContext(() => ({
           v-model:current-page="currentPage"
           v-model:page-size="pageSize"
           background
-          layout="total, sizes, prev, pager, next, jumper"
+          :layout="isMobile ? 'total, sizes, prev, next' : 'total, sizes, prev, pager, next, jumper'"
           :total="filteredTableData.length"
           :page-sizes="[10, 20, 50, 100]"
         />
@@ -2721,6 +2728,17 @@ useAgentPageContext(() => ({
   .search-form :deep(.el-input),
   .search-form :deep(.el-select) {
     width: 100% !important;
+  }
+  .search-form :deep(.el-form-item__content) {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    min-width: 0;
+  }
+  .search-form :deep(.el-button) {
+    margin-left: 0;
+    flex: 1;
+    min-height: 44px;
   }
 }
 </style>

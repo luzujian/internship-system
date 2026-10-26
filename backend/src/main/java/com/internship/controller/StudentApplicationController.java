@@ -5,6 +5,7 @@ import com.internship.entity.Result;
 import com.internship.entity.StudentApplication;
 import com.internship.entity.StudentUser;
 import com.internship.entity.User;
+import com.internship.entity.CompanyUser;
 import com.internship.service.StudentApplicationService;
 import com.internship.service.StudentUserService;
 import com.internship.service.UserService;
@@ -53,6 +54,26 @@ public class StudentApplicationController {
 
     @Autowired
     private AliyunOSSOperator aliyunOSSOperator;
+    @Autowired
+    private com.internship.service.PositionService positionService;
+
+    @GetMapping("/company-positions")
+    public Result getCompanyPositions(@RequestParam Long companyId) {
+        CompanyUser company = companyUserMapper.findById(companyId);
+        if (company == null || !Integer.valueOf(1).equals(company.getStatus())
+                || !Integer.valueOf(1).equals(company.getAuditStatus()) || Integer.valueOf(1).equals(company.getRecallStatus())) {
+            return Result.error("该企业不属于有效合作企业");
+        }
+        var rows = positionService.findByCompanyId(companyId).stream()
+                .filter(p -> "active".equals(p.getStatus()))
+                .map(p -> {
+                    var item = new java.util.LinkedHashMap<String, Object>();
+                    item.put("id", p.getId()); item.put("positionName", p.getPositionName());
+                    item.put("city", p.getCity()); item.put("remainingQuota", p.getRemainingQuota());
+                    return item;
+                }).toList();
+        return Result.success(rows);
+    }
 
     @GetMapping("/company-matches")
     public Result getCooperativeCompanyMatches(@RequestParam String keyword) {

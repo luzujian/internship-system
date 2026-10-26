@@ -160,21 +160,10 @@ export const usePositionStore = defineStore('position', () => {
           internshipEnvironment: item.internshipEnvironment || '',
           providesAccommodation: item.providesAccommodation || 0
         }))
-        syncRecruitedCountFromInternshipStatuses()
       }
     } catch (error) {
       console.error('获取岗位列表失败:', error)
     }
-  }
-
-  const syncRecruitedCountFromInternshipStatuses = () => {
-    positions.value.forEach(position => {
-      const confirmedStatuses = internshipStatuses.value.filter(
-        status => status.positionId === position.id && status.companyConfirmStatus === 1
-      )
-      position.recruitedCount = confirmedStatuses.length
-      position.remainingQuota = position.plannedRecruit - confirmedStatuses.length
-    })
   }
 
   const formatWorkLocation = (item: any): string => {
@@ -400,7 +389,6 @@ export const usePositionStore = defineStore('position', () => {
           experience: item.experience || '',
           selfEvaluation: item.selfEvaluation || ''
         }))
-        syncRecruitedCountFromInternshipStatuses()
       }
     } catch (error) {
       console.error('获取申请列表失败:', error)
@@ -473,7 +461,6 @@ export const usePositionStore = defineStore('position', () => {
       const application = applications.value.find(app => app.id === applicationId)
       if (application) {
         application.status = newStatus
-        syncRecruitedCountFromInternshipStatuses()
       }
       return true
     } catch (error) {
@@ -551,7 +538,6 @@ export const usePositionStore = defineStore('position', () => {
           contactPhone: item.contactPhone || '',
           email: item.email || ''
         }))
-        syncRecruitedCountFromInternshipStatuses()
       }
     } catch (error) {
       console.error('获取实习确认申请失败:', error)

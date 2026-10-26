@@ -82,6 +82,8 @@ export const approvalApi = {
     status?: string
     studentName?: string
     studentUserId?: string
+    majorId?: number
+    classId?: number
   }) => {
     try {
       const response = await request.get<{ code: number; message: string; data: { total: number; rows: StudentApplication[] } }>('/approval/student-applications', { params })

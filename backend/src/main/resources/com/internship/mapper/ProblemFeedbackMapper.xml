@@ -26,7 +26,7 @@
         <result property="updateTime" column="update_time" />
     </resultMap>
 
-    <insert id="insert" parameterType="com.internship.entity.ProblemFeedback">
+    <insert id="insert" parameterType="com.internship.entity.ProblemFeedback" useGeneratedKeys="true" keyProperty="id">
         insert into problem_feedback (user_type, user_id, user_name, user_account, title, content, feedback_type, status, priority, attachment_url, create_time, update_time)
         values (#{userType}, #{userId}, #{userName}, #{userAccount}, #{title}, #{content}, #{feedbackType}, #{status}, #{priority}, #{attachmentUrl}, NOW(), NOW())
     </insert>

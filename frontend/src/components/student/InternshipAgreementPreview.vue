@@ -14,7 +14,8 @@
 import { nextTick, onBeforeUnmount, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { readAgreementFile, saveAgreementBlob, type AgreementFile, type AgreementRole } from '@/api/internshipAgreements'
-const props = defineProps<{ role: AgreementRole }>()
+const props = defineProps<{ role?: AgreementRole; readFile?: (fileId: number, preview: boolean) => Promise<Blob> }>()
+const readFile = (id: number, preview = false) => props.readFile ? props.readFile(id, preview) : readAgreementFile(props.role || 'student', id, preview)
 const visible = ref(false)
 const loading = ref(false)
 const file = ref<AgreementFile | null>(null)
@@ -39,7 +40,7 @@ const show = async (target: AgreementFile) => {
   const requestToken = token
   try {
     if (!target.id) throw new Error('文件编号不存在')
-    const blob = await readAgreementFile(props.role, target.id, true)
+    const blob = await readFile(target.id, true)
     if (requestToken !== token || !visible.value) return
     if (target.fileName.toLowerCase().endsWith('.docx')) {
       mode.value = 'docx'
@@ -61,7 +62,7 @@ const show = async (target: AgreementFile) => {
 }
 const download = async () => {
   if (!file.value?.id) return
-  try { saveAgreementBlob(await readAgreementFile(props.role, file.value.id), file.value.fileName) }
+  try { saveAgreementBlob(await readFile(file.value.id), file.value.fileName) }
   catch (cause: any) { ElMessage.error(cause?.message || '文件下载失败') }
 }
 onBeforeUnmount(cleanup)

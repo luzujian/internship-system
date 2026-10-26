@@ -79,6 +79,57 @@ class TeacherAutoTaskParseServiceTest {
         assertEquals(true, draft.get("needsConfirm"));
     }
 
+    @Test void immediateMeetingNoticeDoesNotAskForTheMeetingDaySendTime() throws Exception {
+        var model = raw("SCHEDULED_REMINDER", null, "STATION_REMINDER", 1440);
+        model.put("schedule", Map.of("mode", "WINDOW"));
+        model.put("targetMode", "SCOPE");
+        model.put("messageTemplate", "请明天参加实习会议。");
+        model.put("questions", List.of("明天希望在哪个具体时间发送这条站内通知？"));
+        var draft = invokeValidate(model, "现在通过站内通知全部负责的学生，明天参加实习会议，只发一次。");
+        assertEquals("{\"mode\":\"MANUAL\"}", draft.get("scheduleConfig"));
+        assertEquals(List.of(), draft.get("questions"));
+        assertEquals(true, draft.get("needsConfirm"));
+        assertEquals("请明天参加实习会议。", draft.get("messageTemplate"));
+    }
+
+    @Test void explicitImmediateSendOverridesAnInventedFutureSendTime() throws Exception {
+        var model = raw("SCHEDULED_REMINDER", null, "STATION_REMINDER", 1440);
+        model.put("schedule", Map.of("mode", "ONCE", "date", "2099-10-11", "time", "09:00"));
+        model.put("targetMode", "SCOPE");
+        model.put("messageTemplate", "请明天参加会议。");
+        var draft = invokeValidate(model, "请现在通知全部负责的学生，明天参加会议。");
+        assertEquals("{\"mode\":\"MANUAL\"}", draft.get("scheduleConfig"));
+        assertEquals(true, draft.get("needsConfirm"));
+    }
+
+    @Test void immediateSendDoesNotRemoveAnAudienceQuestion() throws Exception {
+        var model = raw("SCHEDULED_REMINDER", null, "EMAIL", 1440);
+        model.put("schedule", Map.of("mode", "WINDOW"));
+        model.put("messageTemplate", "请参加会议。");
+        model.put("questions", List.of("请补充发送时间和提醒对象。"));
+        var draft = invokeValidate(model, "现在发送会议提醒。");
+        assertEquals(false, draft.get("needsConfirm"));
+        assertTrue(draft.get("questions").toString().contains("提醒对象"));
+    }
+
+    @Test void laterCorrectionCanReplaceImmediateSendWithADailySchedule() throws Exception {
+        var model = raw("SCHEDULED_REMINDER", null, "EMAIL", 1440);
+        model.put("schedule", Map.of("mode", "DAILY", "time", "09:00"));
+        model.put("targetMode", "SCOPE");
+        model.put("messageTemplate", "请参加会议。");
+        var draft = invokeValidate(model, "现在通知全部学生参加会议。\n教师补充或修正，冲突处以本次为准：改成每天09:00提醒。");
+        assertEquals("{\"mode\":\"DAILY\",\"time\":\"09:00\"}", draft.get("scheduleConfig"));
+    }
+
+    @Test void negatedImmediateSendKeepsTheSpecifiedFutureSchedule() throws Exception {
+        var model = raw("SCHEDULED_REMINDER", null, "EMAIL", 1440);
+        model.put("schedule", Map.of("mode", "ONCE", "date", "2099-10-11", "time", "09:00"));
+        model.put("targetMode", "SCOPE");
+        model.put("messageTemplate", "请参加会议。");
+        var draft = invokeValidate(model, "不要现在发送，2099-10-11 09:00通知全部负责的学生。");
+        assertEquals("{\"mode\":\"ONCE\",\"date\":\"2099-10-11\",\"time\":\"09:00\"}", draft.get("scheduleConfig"));
+    }
+
     @Test void recipientCorrectionDoesNotRetainTheOldAccount() throws Exception {
         var model = raw("SCHEDULED_REMINDER", null, "EMAIL", 1440);
         model.put("messageTemplate", "请返岗");

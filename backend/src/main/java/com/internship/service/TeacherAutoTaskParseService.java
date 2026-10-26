@@ -42,6 +42,8 @@ public class TeacherAutoTaskParseService {
             .configure(JsonParser.Feature.ALLOW_UNQUOTED_CONTROL_CHARS, true)
             .configure(JsonParser.Feature.ALLOW_TRAILING_COMMA, true);
     private static final Pattern CODE_FENCE = Pattern.compile("```(?:json)?\\s*([\\s\\S]*?)```");
+    private static final Pattern IMMEDIATE_EXECUTION = Pattern.compile(
+            "(?:^|[，。；：\\n]|请|执行时间(?:是)?)\\s*(?:立即|现在|马上|确认后)[^，。；\\n！？?]{0,30}(?:发送|通知|提醒|执行)");
     private static final ZoneId ZONE = ZoneId.of("Asia/Shanghai");
     private static final DateTimeFormatter DATE = DateTimeFormatter.ofPattern("uuuu-MM-dd")
             .withResolverStyle(ResolverStyle.STRICT);
@@ -64,6 +66,7 @@ public class TeacherAutoTaskParseService {
             endAt: 任务结束日期，格式yyyy-MM-dd；教师明确说了结束日期才填，否则null。
             schedule: 固定调度对象；未提及固定时间时固定返回 {"mode":"WINDOW"}。
               明确要求立即、现在、确认后发送一次：{"mode":"MANUAL"}，不编造一个日期或钟点。系统仍需用户确认创建、启用和执行才会发送。
+              “现在通知学生，明天开会”表示通知现在执行，明天仅属于提醒内容，返回MANUAL且不得追问明天的发送时间。
               仅指定日期和时间：{"mode":"ONCE","date":"yyyy-MM-dd","time":"HH:mm"}。
               每天指定钟点：{"mode":"DAILY","time":"HH:mm"}。
               每周指定星期和钟点：{"mode":"WEEKLY","time":"HH:mm","weekdays":[1-7]}，周一=1、周日=7。
@@ -89,23 +92,35 @@ public class TeacherAutoTaskParseService {
         if (naturalLanguage == null || naturalLanguage.isBlank() || naturalLanguage.length() > 500) {
             throw new BusinessException("请用一句话描述任务（1至500字）。");
         }
-        ModelResult modelResult = callModel(naturalLanguage.trim());
-        Map<String, Object> result = readJson(modelResult.text());
+        String text = naturalLanguage.trim();
+        int tokenBudget = Math.max(300, Math.min(maxOutputTokens, 2000));
+        ModelResult modelResult = callModel(text, tokenBudget);
+        AgentUsage usage = modelResult.usage();
+        Map<String, Object> result;
+        try {
+            result = readJson(modelResult.text());
+        } catch (BusinessException invalidJson) {
+            // Regenerate an incomplete draft once; never repair or execute partial model output.
+            log.warn("教师任务草稿为空或JSON无效，扩大输出上限后重新生成一次");
+            ModelResult retry = callModel(text, Math.min(2000, Math.max(1600, tokenBudget * 2)));
+            usage = usage.merge(retry.usage());
+            result = readJson(retry.text());
+        }
         Map<String, Object> draft = validate(result, naturalLanguage);
-        draft.put("usage", modelResult.usage().toMap());
+        draft.put("usage", usage.toMap());
         log.info("教师自动化任务解析完成 trigger={} days={} action={} frequency={} schedule={}",
                 draft.get("triggerCondition"), draft.get("triggerDays"),
                 draft.get("action"), draft.get("frequencyMinutes"), draft.get("scheduleConfig"));
         return draft;
     }
 
-    private ModelResult callModel(String text) {
+    private ModelResult callModel(String text, int tokenBudget) {
         String code = modelCode == null || modelCode.isBlank() ? "deepseek-chat" : modelCode.trim();
         try {
             ChatClient client = chatClientFactory.createPreviewChatClient(code, SYSTEM + "\n" + AgentClock.nowLine());
             DeepSeekChatOptions options = DeepSeekChatOptions.builder()
                     .temperature(0.1)
-                    .maxTokens(Math.max(300, Math.min(maxOutputTokens, 2000)))
+                    .maxTokens(tokenBudget)
                     .responseFormat(ResponseFormat.builder().type(ResponseFormat.Type.JSON_OBJECT).build())
                     .build();
             long started = System.currentTimeMillis();
@@ -113,9 +128,6 @@ public class TeacherAutoTaskParseService {
             AgentUsage usage = AgentUsage.from(response, System.currentTimeMillis() - started);
             String content = response == null || response.getResult() == null
                     ? null : response.getResult().getOutput().getText();
-            if (content == null || content.isBlank()) {
-                throw new BusinessException("AI未返回任务解析结果，请稍后重试或使用手动配置。");
-            }
             return new ModelResult(content, usage);
         } catch (BusinessException e) {
             throw e;
@@ -126,6 +138,9 @@ public class TeacherAutoTaskParseService {
     }
 
     private Map<String, Object> readJson(String raw) {
+        if (raw == null || raw.isBlank()) {
+            throw new BusinessException("AI未返回任务解析结果，请稍后重试或使用手动配置。");
+        }
         String text = raw.trim();
         Matcher fence = CODE_FENCE.matcher(text);
         if (fence.find()) text = fence.group(1).trim();
@@ -133,9 +148,11 @@ public class TeacherAutoTaskParseService {
         int end = text.lastIndexOf('}');
         if (start >= 0 && end > start) text = text.substring(start, end + 1);
         try {
-            return MAPPER.readValue(text, Map.class);
+            Map<String, Object> value = MAPPER.readValue(text, Map.class);
+            if (value == null) throw new IllegalArgumentException("Expected a JSON object");
+            return value;
         } catch (Exception e) {
-            log.warn("教师自动化任务解析JSON无效: {}", raw.substring(0, Math.min(200, raw.length())));
+            log.warn("教师自动化任务解析JSON无效，返回字符数={}，错误类型={}", raw.length(), e.getClass().getSimpleName());
             throw new BusinessException("AI返回的任务结构无效，请重试或使用手动配置。");
         }
     }
@@ -190,7 +207,10 @@ public class TeacherAutoTaskParseService {
         String scheduleConfig = TeacherAutoTaskSchedule.window().toJson(MAPPER);
         try {
             Object rawSchedule = result.get("schedule");
-            if (rawSchedule != null) {
+            if ("SCHEDULED_REMINDER".equals(trigger) && immediateExecutionRequested(original)) {
+                scheduleConfig = TeacherAutoTaskSchedule.parse("{\"mode\":\"MANUAL\"}", MAPPER).toJson(MAPPER);
+                questions.removeIf(this::onlyAsksExecutionTime);
+            } else if (rawSchedule != null) {
                 scheduleConfig = TeacherAutoTaskSchedule.fromDraft(rawSchedule, MAPPER);
             } else {
                 TeacherAutoTaskSchedule inferred = inferSchedule(original);
@@ -259,8 +279,21 @@ public class TeacherAutoTaskParseService {
 
     private record ModelResult(String text, AgentUsage usage) {}
 
+    private boolean immediateExecutionRequested(String original) {
+        String marker = "教师补充或修正，冲突处以本次为准：";
+        int correction = original.lastIndexOf(marker);
+        String latest = correction < 0 ? original : original.substring(correction + marker.length());
+        return IMMEDIATE_EXECUTION.matcher(latest).find();
+    }
+
+    private boolean onlyAsksExecutionTime(String question) {
+        return Pattern.compile("时间|日期|钟点|几点").matcher(question).find()
+                && !Pattern.compile("对象|名单|哪些|姓名|学号|渠道|内容|条件|截止|班级|专业|范围|多少|几人")
+                        .matcher(question).find();
+    }
+
     private TeacherAutoTaskSchedule inferSchedule(String text) {
-        if (Pattern.compile("立即|现在|马上|确认后(?:发送|执行)").matcher(text).find()) {
+        if (immediateExecutionRequested(text)) {
             return TeacherAutoTaskSchedule.parse("{\"mode\":\"MANUAL\"}", MAPPER);
         }
         Matcher weekly = Pattern.compile("每周([一二三四五六日天])[^0-9]{0,8}(\\d{1,2}:\\d{2})").matcher(text);

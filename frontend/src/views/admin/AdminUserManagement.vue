@@ -108,7 +108,6 @@ import { Download } from '@element-plus/icons-vue'
 import Pagination from '../../components/Pagination.vue'
 import AdminUserService from '../../api/AdminUserService'
 import AdminService from '../../api/adminService'
-import { exportToExcel } from '../../utils/xlsx'
 import MobileMoreActions from '../../components/MobileMoreActions.vue'
 import { useSystemSettingsStore } from '../../store/systemSettings'
 import { useAuthStore } from '../../store/auth'
@@ -378,37 +377,20 @@ const handleCurrentChange = (current) => {
 
 // 导出管理员数据到Excel
 const handleExportToExcel = async () => {
-  if (users.value.length === 0) {
-    ElMessage.warning('没有数据可导出')
-    return
-  }
-
   try {
-    const exportData = users.value.map(user => ({
-      '用户ID': user.id,
-      '用户名': user.username,
-      '手机号': user.phone,
-      '角色': user.username === 'admin' ? '超级管理员' : '普通管理员',
-      '创建时间': formatDateForExcel(user.createTime),
-      '更新时间': formatDateForExcel(user.updateTime)
-    }))
-
-    const columnWidths = [
-      { wch: 10 },
-      { wch: 20 },
-      { wch: 15 },
-      { wch: 12 },
-      { wch: 25 },
-      { wch: 25 }
-    ]
-
-    const fileName = `管理员数据_${new Date().toLocaleDateString('zh-CN').replace(/\//g, '-')}`
-
-    await exportToExcel(exportData, fileName, { sheetName: '管理员数据', columnWidths })
+    const blob = await AdminUserService.exportAdmins(searchQuery.value) as unknown as Blob
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = '管理员数据.xlsx'
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
     ElMessage.success('导出成功')
   } catch (error) {
     logger.error('导出Excel失败:', error)
-    ElMessage.error('导出失败: ' + (error.message || '未知错误'))
+    ElMessage.error('导出失败: ' + (error instanceof Error ? error.message : '未知错误'))
   }
 }
 

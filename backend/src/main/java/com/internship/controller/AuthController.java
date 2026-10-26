@@ -24,6 +24,7 @@ import com.internship.service.TeacherPermissionService;
 import com.internship.utils.IpUtils;
 import com.internship.utils.JwtUtils;
 import com.internship.utils.PasswordValidator;
+import com.internship.utils.AuditFailureContext;
 import com.internship.config.SystemSettingsConfig;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationContext;
@@ -112,26 +113,35 @@ public class AuthController {
 
     @PostMapping("/login")
     public Result login(@RequestBody Map<String, Object> loginRequest, HttpServletRequest request) {
-        String username = (String) loginRequest.get("username");
-        String password = (String) loginRequest.get("password");
+        AuditFailureContext.beginAuthentication("LOGIN");
+        String username = loginRequest.get("username") instanceof String value ? value : null;
+        String password = loginRequest.get("password") instanceof String value ? value : null;
 
         log.debug("用户登录请求: username={}", username);
 
         if (username == null || username.isEmpty()) {
+            AuditFailureContext.authenticationFailure("USERNAME_REQUIRED", "登录账号为空或格式错误");
+            recordLoginAudit(null, "UNKNOWN", username, request, "FAILURE", false);
             return Result.error("用户名不能为空");
         }
         if (password == null || password.isEmpty()) {
+            AuditFailureContext.authenticationFailure("PASSWORD_REQUIRED", "未提供登录密码或格式错误");
+            recordLoginAudit(null, "UNKNOWN", username, request, "FAILURE", false);
             return Result.error("密码不能为空");
         }
 
-        // 快速检查是否已被锁定（无锁，仅读取）
-        if (loginAttemptService.isLocked(username)) {
-            long remainingTime = loginAttemptService.getRemainingLockTime(username);
-            log.warn("用户账号已被锁定: username={}, 剩余锁定时间={}秒", username, remainingTime);
-            return Result.error("账号已被锁定，请" + remainingTime + "秒后再试");
-        }
-
         try {
+            // 快速检查是否已被锁定（无锁，仅读取）
+            if (loginAttemptService.isLocked(username)) {
+                long remainingTime = loginAttemptService.getRemainingLockTime(username);
+                log.warn("用户账号已被锁定: username={}, 剩余锁定时间={}秒", username, remainingTime);
+                if (!AuditFailureContext.hasAuthenticationFailure()) {
+                    AuditFailureContext.authenticationFailure("ACCOUNT_LOCKED", "账号仍在登录失败锁定期内");
+                }
+                recordLoginAudit(null, "UNKNOWN", username, request, "FAILURE", true);
+                return Result.error("账号已被锁定，请" + remainingTime + "秒后再试");
+            }
+
             Map<String, Object> result = new HashMap<>();
 
             TeacherUser teacher = teacherUserService.findByTeacherUserId(username);
@@ -150,12 +160,22 @@ public class AuthController {
             log.error("用户登录失败: {}, 错误信息: {}", username, e.getMessage());
 
             // 原子递增失败计数（Redis INCR 或 synchronized 递增，仅保护计数器）
-            int currentCount = loginAttemptService.recordFailure(username);
+            int currentCount;
+            try {
+                currentCount = loginAttemptService.recordFailure(username);
+            } catch (RuntimeException stateFailure) {
+                AuditFailureContext.authenticationFailure("AUTH_STATE_UNAVAILABLE", "登录失败计数服务不可用", stateFailure);
+                recordLoginAudit(null, "UNKNOWN", username, request, "FAILURE", false);
+                return Result.error("登录失败，请稍后再试或联系管理员");
+            }
 
             boolean locked = currentCount < 0 || loginAttemptService.isLocked(username);
 
             // 记录登录失败日志与安全事件（锁定时事件等级提升为 HIGH）
-            recordLoginAudit(username, "UNKNOWN", username, request, "FAILURE", locked);
+            if (!AuditFailureContext.hasAuthenticationFailure()) {
+                AuditFailureContext.authenticationFailure("AUTH_FAILED", "账号认证失败", e);
+            }
+            recordLoginAudit(null, "UNKNOWN", username, request, "FAILURE", locked);
 
             String errorMessage = e.getMessage();
             if (errorMessage != null && errorMessage.contains("账号已被禁用")) {
@@ -172,7 +192,9 @@ public class AuthController {
             return Result.error("用户名或密码错误，剩余尝试次数: " + remainingAttempts);
         } catch (Exception e) {
             log.error("登录过程中发生异常: {}", e.getMessage(), e);
-            return Result.error("登录失败: " + e.getMessage());
+            AuditFailureContext.authenticationFailure("INTERNAL_ERROR", "登录处理异常，请根据请求 ID 排查", e);
+            recordLoginAudit(null, "UNKNOWN", username, request, "FAILURE", false);
+            return Result.error("登录失败，请稍后再试或联系管理员");
         }
     }
     
@@ -181,16 +203,19 @@ public class AuthController {
         
         TeacherUser teacher = teacherUserService.findByTeacherUserId(username);
         if (teacher == null) {
+            AuditFailureContext.authenticationFailure("ACCOUNT_NOT_FOUND", "未找到对应登录账号");
             log.warn("教师登录失败: 教师编号不存在 - {}", username);
             throw new AuthenticationException("教师编号或密码错误") {};
         }
 
         if (!passwordEncoder.matches(password, teacher.getPassword())) {
+            AuditFailureContext.authenticationFailure("PASSWORD_MISMATCH", "登录密码校验未通过");
             log.warn("教师登录失败: 密码错误 - {}", username);
             throw new AuthenticationException("教师编号或密码错误") {};
         }
 
         if (teacher.getStatus() == 0) {
+            AuditFailureContext.authenticationFailure("ACCOUNT_DISABLED", "账号已被禁用");
             log.warn("教师登录失败: 账号已被禁用 - {}", username);
             throw new AuthenticationException("账号已被禁用") {};
         }
@@ -198,6 +223,7 @@ public class AuthController {
         String teacherType = teacher.getTeacherType();
         String role = getRoleByTeacherType(teacherType);
         if (role == null) {
+            AuditFailureContext.authenticationFailure("ROLE_NOT_CONFIGURED", "教师身份未配置");
             log.warn("教师登录失败: 教师身份未配置 - {}", username);
             throw new AuthenticationException("教师身份未配置，请联系管理员") {};
         }
@@ -249,6 +275,8 @@ public class AuthController {
         // 直接使用 passwordEncoder 进行密码验证，避免 DelegatingPasswordEncoder 问题
         User loginUser = userService.findByUsername(username);
         if (loginUser == null || loginUser.getPassword() == null) {
+            AuditFailureContext.authenticationFailure(loginUser == null ? "ACCOUNT_NOT_FOUND" : "PASSWORD_NOT_CONFIGURED",
+                    loginUser == null ? "未找到对应登录账号" : "账号未配置登录密码");
             log.warn("用户不存在或密码为空：{}", username);
             throw new AuthenticationException("用户名或密码错误") {};
         }
@@ -273,6 +301,7 @@ public class AuthController {
                     status = companyUser.getStatus();
                 }
                 if (companyUser.getAuditStatus() != null && companyUser.getAuditStatus() != 1) {
+                    AuditFailureContext.authenticationFailure("COMPANY_NOT_APPROVED", "企业注册申请尚未审核通过");
                     log.warn("企业登录失败: 审核未通过 - {}, auditStatus={}", username, companyUser.getAuditStatus());
                     throw new AuthenticationException("企业注册申请尚未审核通过，请等待教师审核") {};
                 }
@@ -285,12 +314,14 @@ public class AuthController {
         }
 
         if (status == 0) {
+            AuditFailureContext.authenticationFailure("ACCOUNT_DISABLED", "账号已被禁用");
             log.warn("用户登录失败: 账号已被禁用 - {}", username);
             throw new AuthenticationException("账号已被禁用") {};
         }
 
         // 使用 CustomPasswordEncoder 的 matches 方法进行密码验证
         if (!passwordEncoder.matches(password, loginUser.getPassword())) {
+            AuditFailureContext.authenticationFailure("PASSWORD_MISMATCH", "登录密码校验未通过");
             log.warn("密码验证失败：{}", username);
             throw new AuthenticationException("用户名或密码错误") {};
         }
@@ -1073,7 +1104,9 @@ public class AuthController {
      * 身份校验失败统一提示，防止账号枚举。
      */
     @PostMapping("/forgot-password/send-code")
+    @Log(operationType = "SEND_CODE", module = "AUTH", description = "找回密码发送验证码", riskLevel = "MEDIUM", targetType = "USER")
     public Result sendPasswordResetCode(@RequestBody Map<String, String> requestData, HttpServletRequest request) {
+        AuditFailureContext.beginAuthentication("RESET_SEND_CODE");
         try {
             passwordResetService.sendResetCode(
                     requestData.get("username"),
@@ -1085,6 +1118,7 @@ public class AuthController {
             return Result.error(e.getMessage());
         } catch (Exception e) {
             log.error("忘记密码发码异常: {}", e.getMessage(), e);
+            AuditFailureContext.authenticationFailure("INTERNAL_ERROR", "发送验证码处理异常，请根据请求 ID 排查", e);
             return Result.error("发送验证码失败，请稍后再试");
         }
     }
@@ -1093,7 +1127,9 @@ public class AuthController {
      * 忘记密码：第一步身份确认（账号 + 邮箱 + 验证码预校验，不消费验证码）
      */
     @PostMapping("/forgot-password/verify-code")
+    @Log(operationType = "VERIFY", module = "AUTH", description = "找回密码确认身份", riskLevel = "MEDIUM", targetType = "USER")
     public Result verifyPasswordResetCode(@RequestBody Map<String, String> requestData, HttpServletRequest request) {
+        AuditFailureContext.beginAuthentication("RESET_VERIFY_CODE");
         try {
             passwordResetService.verifyResetCode(
                     requestData.get("username"),
@@ -1106,6 +1142,7 @@ public class AuthController {
             return Result.error(e.getMessage());
         } catch (Exception e) {
             log.error("忘记密码身份确认异常: {}", e.getMessage(), e);
+            AuditFailureContext.authenticationFailure("INTERNAL_ERROR", "身份确认处理异常，请根据请求 ID 排查", e);
             return Result.error("身份验证失败，请稍后再试");
         }
     }
@@ -1116,6 +1153,7 @@ public class AuthController {
     @PostMapping("/forgot-password/reset")
     @Log(operationType = "RESET_PASSWORD", module = "AUTH", description = "邮箱验证重置密码", riskLevel = "HIGH", targetType = "USER", critical = true)
     public Result resetPasswordByEmail(@RequestBody Map<String, String> requestData, HttpServletRequest request) {
+        AuditFailureContext.beginAuthentication("RESET_PASSWORD");
         try {
             passwordResetService.resetPassword(
                     requestData.get("username"),
@@ -1129,6 +1167,7 @@ public class AuthController {
             return Result.error(e.getMessage());
         } catch (Exception e) {
             log.error("忘记密码重置异常: {}", e.getMessage(), e);
+            AuditFailureContext.authenticationFailure("INTERNAL_ERROR", "密码重置处理异常，请根据请求 ID 排查", e);
             return Result.error("密码重置失败，请稍后再试");
         }
     }
@@ -1140,34 +1179,53 @@ public class AuthController {
      */
     private void recordLoginAudit(String userId, String userType, String userName, HttpServletRequest request, String status, boolean locked) {
         boolean failure = "FAILURE".equalsIgnoreCase(status);
+        boolean serviceFailure = failure && ("AUTH_STATE_UNAVAILABLE".equals(AuditFailureContext.authenticationReasonCode())
+                || "INTERNAL_ERROR".equals(AuditFailureContext.authenticationReasonCode()));
 
         LoginLog loginLog = new LoginLog();
         loginLog.setUserId(userId);
         loginLog.setUserType(userType);
-        loginLog.setUserName(userName);
+        loginLog.setUserName(auditUsername(userName));
         loginLog.setIpAddress(IpUtils.getClientIp(request));
         loginLog.setDeviceInfo(request.getHeader("User-Agent"));
         loginLog.setLoginStatus(status);
-        loginLog.setRiskLevel(failure ? AuditLogService.RISK_MEDIUM : AuditLogService.RISK_LOW);
+        loginLog.setRiskLevel(serviceFailure ? AuditLogService.RISK_HIGH : failure ? AuditLogService.RISK_MEDIUM : AuditLogService.RISK_LOW);
         loginLog.setDeviceType(resolveDeviceType(request));
         loginLog.setErrorCode(failure ? "AUTH_FAILED" : null);
-        auditLogService.recordLoginLog(loginLog);
+        loginLog.setDetailJson(failure ? AuditFailureContext.authenticationDetailJson() : null);
+        try {
+            auditLogService.recordLoginLog(loginLog);
+        } catch (RuntimeException auditFailure) {
+            log.error("记录登录日志失败: type={}", auditFailure.getClass().getSimpleName());
+        }
 
         SecurityEventLog event = new SecurityEventLog();
-        event.setEventType(locked ? "ACCOUNT_LOCK" : (failure ? "LOGIN_FAILURE" : "LOGIN_SUCCESS"));
+        event.setEventType(serviceFailure ? "AUTH_SERVICE_FAILURE" : locked ? "ACCOUNT_LOCK" : (failure ? "LOGIN_FAILURE" : "LOGIN_SUCCESS"));
         event.setUserId(userId);
-        event.setUsername(userName);
+        event.setUsername(loginLog.getUserName());
         event.setUserRole(userType);
-        event.setRiskLevel(locked ? AuditLogService.RISK_HIGH : (failure ? AuditLogService.RISK_MEDIUM : AuditLogService.RISK_LOW));
+        event.setRiskLevel(serviceFailure || locked ? AuditLogService.RISK_HIGH : (failure ? AuditLogService.RISK_MEDIUM : AuditLogService.RISK_LOW));
         event.setResult(failure ? "FAILURE" : "SUCCESS");
         event.setErrorCode(failure ? "AUTH_FAILED" : null);
         event.setIpAddress(IpUtils.getClientIp(request));
         event.setHttpMethod(request.getMethod());
         event.setRequestPath(request.getRequestURI());
         event.setDeviceType(loginLog.getDeviceType());
-        event.setDescription(locked ? "登录失败次数过多，账号已锁定"
+        event.setDescription(serviceFailure ? "登录服务异常，未能完成认证" : locked ? "登录被锁定状态拦截"
                 : (failure ? "登录失败" : "登录成功"));
-        auditLogService.recordSecurityEvent(event);
+        event.setDetailJson(loginLog.getDetailJson());
+        try {
+            auditLogService.recordSecurityEvent(event);
+        } catch (RuntimeException auditFailure) {
+            log.error("记录登录安全事件失败: type={}", auditFailure.getClass().getSimpleName());
+        }
+        if (failure) AuditFailureContext.markRecorded();
+    }
+
+    private String auditUsername(String username) {
+        if (username == null || username.isBlank()) return "UNKNOWN";
+        String value = username.replaceAll("[\\p{Cntrl}]", " ");
+        return value.substring(0, Math.min(value.length(), 50));
     }
 
     private String resolveDeviceType(HttpServletRequest request) {

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useSmartImportRefresh } from '@/components/import/useSmartImportRefresh'
 import { useAgentPageContext } from '@/agent/useAgentPageContext'
 import { useFormContext } from '@/agent/formContext'
 import logger from '@/utils/logger'
@@ -102,6 +103,10 @@ import { useSystemSettingsStore } from '../../store/systemSettings'
 import { useAuthStore } from '../../store/auth'
 import { companyQualificationMaterialByteUrl } from '@/utils/authorizedFileUrl'
 import { downloadAuthorizedFile } from '@/utils/authorizedFileDownload'
+import { useIsMobile } from '@/composables/useIsMobile'
+
+const isMobile = useIsMobile()
+const advancedFiltersOpen = ref(false)
 
 const router = useRouter()
 const systemSettingsStore = useSystemSettingsStore()
@@ -123,6 +128,8 @@ const formatDate = (_row: unknown, _column: unknown, cellValue: string): string 
 
 // 搜索表单对象（含多选标签数组形态）
 let searchForm = ref<CompanyRow>({ companyName: '', status: null, companyTag: [] })
+const activeFilterCount = computed(() => [searchForm.value.status, searchForm.value.companyTag]
+  .filter(value => Array.isArray(value) ? value.length > 0 : value !== '' && value !== null && value !== undefined).length)
 // 列表展示数据
 let tableData = ref<CompanyRow[]>([])
 // 加载状态
@@ -489,7 +496,8 @@ const handleExportToExcel = async (): Promise<void> => {
 
     const params = {
       companyName: searchForm.value.companyName,
-      status: null
+      status: searchForm.value.status,
+      companyTag: Array.isArray(searchForm.value.companyTag) ? searchForm.value.companyTag.join(',') : searchForm.value.companyTag
     }
 
     // 响应拦截器已返回 Blob（类型声明为 ApiResult，运行时为 Blob，用断言保持运行时一致）
@@ -829,14 +837,24 @@ const goToRecallAudit = (company: CompanyRow): void => {
 
 // 下载审核信息；附件没有按记录授权的下载接口，暂不从存储地址取文件。
 const downloadMaterials = async (company: CompanyRow): Promise<void> => {
+  try {
+    const response = await request.get(`/admin/companies/${company.id}`)
+    if (response?.code !== 200 || !response.data) throw new Error(response?.message || '无法读取企业详情')
+    company = response.data as CompanyRow
+  } catch (error) {
+    ElMessage.error('下载失败: ' + (error instanceof Error ? error.message : '无法读取企业详情'))
+    return
+  }
   const value = (input: unknown): string => escapePdfText(input == null || input === '' ? '未填写' : String(input))
   const alumni = Array.isArray(company.alumniMembers) && company.alumniMembers.length
     ? company.alumniMembers.map((m, i) => `校友${i + 1}：${m.name || '未填写'} / ${m.phone || '未填写'} / ${m.position || '未填写'}`).join('\n')
     : '未填写'
   const yesNo = (v: unknown) => v == null ? '未填写' : (v === 1 || v === '1' ? '是' : '否')
+  const industryNames: Record<string, string> = { it: 'IT企业', medical_equipment: '医疗设备企业', hospital: '医院', other: '其它' }
   const rows: Array<[string, string]> = [
     ['企业名称', value(company.companyName)], ['统一社会信用代码', value(company.creditCode)],
-    ['所属行业', value(company.industry)], ['企业规模', value(company.scale)],
+    ['所属行业', value(industryNames[company.industry || ''] || company.industry)],
+    ['企业规模', value(company.scale ? formatScale(company.scale) : null)],
     ['联系人', value(company.contactPerson)], ['联系电话', value(company.contactPhone)],
     ['企业地址', value([company.province, company.city, company.district, company.detailAddress].filter(Boolean).join(' ') || company.address)],
     ['联系邮箱', value(company.contactEmail)], ['个人邮箱', value(company.email)], ['企业网站', value(company.website)],
@@ -913,6 +931,7 @@ useAgentPageContext(() => ({
   selectedObjects: (selectedRows.value || []).slice(0, 20).map((row: CompanyRow) => ({ type: 'admin_company', id: String(row.id) })),
   filters: { keyword: searchForm.value.companyName || '', status: searchForm.value.status ?? '', visibleIds: tableData.value.slice(0, 20).map(row => String(row.id)) }
 }))
+useSmartImportRefresh('company', () => { queryPage() })
 </script>
 
 <template>
@@ -924,7 +943,7 @@ useAgentPageContext(() => ({
     <div class="page-header">
       <div class="header-content">
         <h1 class="page-title">企业管理</h1>
-        <p class="page-description">管理系统中的所有企业账户信息，可查看和下载企业注册审核材料（PDF格式）</p>
+        <p class="page-description">管理系统中的所有企业账户信息，可查看和下载企业注册审核材料（PDF格式）<span v-if="authStore.hasPermission('user:company:add')">。非标准表格可交给右上角「问问 AI」导入。</span></p>
       </div>
       <div class="header-illustration">
         <div class="illustration-circle circle-1"></div>
@@ -934,7 +953,7 @@ useAgentPageContext(() => ({
 
     <!-- 搜索区域卡片 -->
     <el-card class="search-card" shadow="never">
-      <el-form :inline="true" :model="searchForm" class="search-form" @keyup.enter="queryPage">
+      <el-form :inline="!isMobile" :label-position="isMobile ? 'top' : 'right'" :model="searchForm" class="search-form" @keyup.enter="queryPage">
         <div class="search-row">
           <el-form-item label="企业名称">
             <el-input
@@ -944,7 +963,12 @@ useAgentPageContext(() => ({
               @keyup.enter="queryPage"
             ></el-input>
           </el-form-item>
-          <el-form-item label="标签">
+          <el-form-item v-if="isMobile" class="mobile-filter-toggle">
+            <el-button :aria-expanded="advancedFiltersOpen" @click="advancedFiltersOpen = !advancedFiltersOpen">
+              {{ advancedFiltersOpen ? '收起筛选' : '更多筛选' }}{{ activeFilterCount ? `（${activeFilterCount}）` : '' }}
+            </el-button>
+          </el-form-item>
+          <el-form-item v-show="!isMobile || advancedFiltersOpen" label="标签">
             <el-select v-model="searchForm.companyTag" placeholder="请选择标签" clearable multiple style="width: 200px;">
               <el-option
                 v-for="tag in companyTagOptions"
@@ -954,7 +978,7 @@ useAgentPageContext(() => ({
               ></el-option>
             </el-select>
           </el-form-item>
-          <el-form-item label="状态">
+          <el-form-item v-show="!isMobile || advancedFiltersOpen" label="状态">
             <el-select v-model="searchForm.status" placeholder="请选择状态" clearable>
               <el-option label="待审核" value="0"></el-option>
               <el-option label="审核通过" value="1"></el-option>
@@ -990,7 +1014,7 @@ useAgentPageContext(() => ({
           <el-button v-if="authStore.hasPermission('user:company:edit')" type="warning" @click="updateAllTags" class="action-btn info">
             <el-icon><Refresh /></el-icon>&nbsp;批量更新标签
           </el-button>
-          <el-dropdown v-if="authStore.hasPermission('user:company:view')" trigger="click" class="import-dropdown">
+          <el-dropdown v-if="authStore.hasPermission('user:company:add')" trigger="click" class="import-dropdown">
             <el-button type="primary" class="action-btn success">
               <el-icon><Upload /></el-icon>&nbsp;导入 Excel<el-icon class="el-icon--right"><ArrowDown /></el-icon>
             </el-button>

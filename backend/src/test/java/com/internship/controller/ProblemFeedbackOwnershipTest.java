@@ -21,6 +21,7 @@ class ProblemFeedbackOwnershipTest {
 
     ProblemFeedbackOwnershipTest() {
         ReflectionTestUtils.setField(controller, "problemFeedbackMapper", mapper);
+        ReflectionTestUtils.setField(controller, "eventPublisher", mock(org.springframework.context.ApplicationEventPublisher.class));
         ReflectionTestUtils.setField(controller, "webSocketHandler", mock(AnnouncementWebSocketHandler.class));
     }
 

@@ -58,6 +58,10 @@ public class AdminUser {
     private String department; // 所属部门
     private String phone; // 手机号
 
+    @Email(message = "邮箱格式不正确")
+    @Size(max = 254, message = "邮箱长度不能超过254个字符")
+    private String email; // 问题反馈提醒收件邮箱
+
     public String getPhone() {
         return phone;
     }

@@ -4,7 +4,7 @@
     <div class="page-header">
       <div class="header-content">
         <h1 class="page-title">公告管理</h1>
-        <p class="page-description">管理系统中的所有公告信息</p>
+        <p class="page-description">管理系统中的所有公告信息<span v-if="authStore.hasPermission('announcement:add')">。非标准表格可交给右上角「问问 AI」导入。</span></p>
       </div>
       <div class="header-illustration">
         <div class="illustration-circle circle-1"></div>
@@ -42,6 +42,17 @@
         <el-button v-if="authStore.hasPermission('announcement:add')" type="primary" data-agent-open @click="handleAdd" class="action-btn primary">
           <el-icon><Plus /></el-icon>&nbsp;发布公告
         </el-button>
+        <el-dropdown v-if="authStore.hasPermission('announcement:add')" trigger="click" class="import-dropdown">
+          <el-button type="primary" class="action-btn primary">
+            <el-icon><Upload /></el-icon>&nbsp;导入 Excel<el-icon class="el-icon--right"><ArrowDown /></el-icon>
+          </el-button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item @click="showImportDialog">选择文件导入</el-dropdown-item>
+              <el-dropdown-item @click="downloadTemplate">下载导入模板</el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
         <el-button v-if="authStore.hasPermission('announcement:delete')" type="danger" @click="handleBatchDelete" class="action-btn danger">
           <el-icon><Delete /></el-icon>&nbsp;批量删除
         </el-button>
@@ -355,6 +366,7 @@
 </template>
 
 <script setup lang="ts">
+import { useSmartImportRefresh } from '@/components/import/useSmartImportRefresh'
 import { getUploadErrorMessage } from '@/utils/uploadErrorMessage'
 import logger from '@/utils/logger'
 import { ref, reactive, onMounted, onUnmounted, computed, nextTick, watch } from 'vue'
@@ -1480,6 +1492,7 @@ const downloadTemplate = async (): Promise<void> => {
   }
 }
 
+useSmartImportRefresh('announcement', () => { fetchData() })
 </script>
 
 <style scoped>

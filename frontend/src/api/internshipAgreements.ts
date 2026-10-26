@@ -33,6 +33,7 @@ export interface AgreementRecord {
   companyName: string
   positionName: string
   businessStatus: string
+  reviewTarget?: 'COMPANY' | 'COUNSELOR'
   submissionStatus: 'SUBMITTED' | 'NOT_SUBMITTED'
   version: number
   fileCount: number
@@ -75,9 +76,13 @@ export interface AgreementCollectionPage {
   classes: { id: number; name: string }[]
 }
 
+export const agreementBusinessStatusLabel = (record: AgreementRecord) => record.businessStatus === 'PENDING'
+  ? record.reviewTarget === 'COMPANY' ? '待企业确认' : '待辅导员审核'
+  : agreementBusinessStatusText[record.businessStatus] || record.businessStatus
+
 export const agreementBusinessStatusText: Record<string, string> = {
-  PENDING: '待审核', CONFIRMED: '已确认', IN_PROGRESS: '实习中', ENDED: '已结束',
-  REPLACED: '已更换单位', INTERRUPTED: '已中断', REJECTED: '已拒绝', WITHDRAWN: '已撤回'
+  PENDING: '待处理', CONFIRMED: '已定单位待实习', IN_PROGRESS: '实习进行中', ENDED: '实习已结束',
+  REPLACED: '已更换单位', INTERRUPTED: '实习已中断', REJECTED: '已拒绝', WITHDRAWN: '已撤回'
 }
 
 export const uploadAgreementFile = (file: File, signal: AbortSignal, progress: (percent: number) => void) => {
@@ -104,7 +109,7 @@ export const submitAgreement = (sourceType: AgreementSource, sourceId: number, f
 export const getAgreementCollection = (params: AgreementQuery) =>
   request.get('/teacher/internship-agreements', { params })
 
-const blobRequest = async (url: string, params?: AgreementQuery): Promise<Blob> => {
+export const blobRequest = async (url: string, params?: AgreementQuery): Promise<Blob> => {
   try {
     return await request.get(url, { params, responseType: 'blob', timeout: params ? 600000 : 120000,
       skipErrorMessage: true } as any) as unknown as Blob

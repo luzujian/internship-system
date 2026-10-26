@@ -23,13 +23,18 @@ public class AgentStore {
 
     public boolean available(){try{history.available();return true;}catch(Exception e){return false;}}
     public void save(Task task){
+        synchronized(task){
         try{
             task.setUpdatedAt(System.currentTimeMillis());
-            history.saveTask(task.getId(),task.getSessionId(),task.getOwnerKey(),task.getCreatedAt(),task.getUpdatedAt(),task.getStatus(),encode(task));
+            if("langgraph".equals(task.getHarness())){
+                if(history.saveTaskVersioned(task.getId(),task.getSessionId(),task.getOwnerKey(),task.getVersion(),task.getUpdatedAt(),task.getStatus(),encode(task))!=1)
+                    throw new AgentException("CANCELLED","本轮状态已更新，旧执行已停止，已完成操作以回执为准。",409);
+            }else history.saveTask(task.getId(),task.getSessionId(),task.getOwnerKey(),task.getCreatedAt(),task.getUpdatedAt(),task.getStatus(),encode(task));
             Map<String,Object> row=history.task(task.getId());
             if(row==null)throw missing();
             task.setVersion(number(row,"version"));
         }catch(AgentException e){throw e;}catch(Exception e){throw unavailable();}
+        }
     }
     public void save(Session session){
         session.setUpdatedAt(System.currentTimeMillis());
@@ -60,6 +65,13 @@ public class AgentStore {
         catch(AgentException e){throw e;}catch(Exception e){throw unavailable();}
     }
     public boolean running(String session){try{return history.running(session)>0;}catch(Exception e){throw unavailable();}}
+    @Transactional
+    public void attach(String owner,String id,String contextId) {
+        Map<String,Object> row=history.lockSession(id);if(row==null)throw missing();
+        Session session=sessionRow(row);if(!owner.equals(session.getOwnerKey()))throw AgentIdentityService.forbidden();
+        if(history.running(id)>0)throw new AgentException("TASK_RUNNING","请先等待或停止当前任务，再调整附件。",409);
+        session.setAttachmentContextId(contextId);save(session);
+    }
     public int taskCount(String session){try{return history.taskCount(session);}catch(Exception e){throw unavailable();}}
     public String request(String owner,String requestId){try{return history.request(owner,requestId);}catch(Exception e){throw unavailable();}}
     public boolean claimRequest(String owner,String requestId,String taskId){
@@ -71,6 +83,8 @@ public class AgentStore {
         Map<String,Object> row=history.lockSession(task.getSessionId());if(row==null)throw missing();
         Session session=sessionRow(row);if(!owner.equals(session.getOwnerKey()))throw AgentIdentityService.forbidden();
         if(history.request(owner,requestId)!=null)return false;
+        if(task.getParentTaskId()!=null && (session.getTaskIds().isEmpty() || !task.getParentTaskId().equals(session.getTaskIds().getLast())))
+            throw new AgentException("UI_CONTINUATION_STALE","会话已有新消息，已停止旧页面操作。",409);
         if(history.running(session.getId())>0)throw new AgentException("TASK_RUNNING","本会话已有任务在执行，请等待或停止后再提问。",409);
         try{history.claim(owner,requestId,task.getId(),System.currentTimeMillis());}
         catch(DuplicateKeyException e){return false;}
@@ -85,11 +99,41 @@ public class AgentStore {
     /** A cancelled/deleted worker cannot overwrite a later turn, even if Redis lost its lock. */
     @Transactional
     public boolean saveSessionForTask(Session session,Task task){
+        synchronized(task){
         Map<String,Object> currentSession=history.lockSession(session.getId());if(currentSession==null)return false;
         Map<String,Object> currentTask=history.lockTask(task.getId());if(currentTask==null)return false;
         Task latest=taskRow(currentTask);
         if(latest.terminal()||!session.getId().equals(latest.getSessionId())||!session.getOwnerKey().equals(latest.getOwnerKey()))return false;
+        Session current=sessionRow(currentSession);
+        if(current.getRuntime()!=null && task.getRuntime()!=null){
+            long activeGeneration=((Number)current.getRuntime().getOrDefault("generation",0L)).longValue();
+            long workerGeneration=((Number)task.getRuntime().getOrDefault("generation",0L)).longValue();
+            if(Objects.equals(current.getRuntime().get("threadId"),task.getRuntime().get("threadId")) && activeGeneration>workerGeneration)return false;
+            var cancellation=json.valueToTree(current.getRuntime().get("pendingCancellation"));
+            if(cancellation.hasNonNull("runId")&&!cancellation.path("runId").asText().equals(task.getReconciledCancellationRunId())){
+                // A same-generation heartbeat must not erase a cancellation from another tab.
+                session.getRuntime().put("pendingCancellation",current.getRuntime().get("pendingCancellation"));
+                var pending=json.valueToTree(session.getRuntime().get("pendingQuestion"));
+                if(pending.path("id").asText().equals(cancellation.path("questionId").asText())&&pending.path("revision").asLong()==cancellation.path("revision").asLong())session.getRuntime().remove("pendingQuestion");
+                task.setRuntime(new LinkedHashMap<>(session.getRuntime()));
+            }
+        }
         save(task);save(session);return true;
+        }
+    }
+    @Transactional
+    public boolean cancelWaiting(Session session,Task task){
+        Map<String,Object> currentRow=history.lockSession(session.getId());if(currentRow==null)return false;
+        Session current=sessionRow(currentRow);if(!current.getOwnerKey().equals(task.getOwnerKey()))return false;
+        var currentQuestion=json.valueToTree(current.getRuntime()==null?null:current.getRuntime().get("pendingQuestion"));
+        var taskQuestion=json.valueToTree(task.getRuntime()==null?null:task.getRuntime().get("pendingQuestion"));
+        if(!currentQuestion.hasNonNull("id")||!currentQuestion.path("id").equals(taskQuestion.path("id"))||!currentQuestion.path("revision").equals(taskQuestion.path("revision")))return false;
+        if(history.cancelWaiting(task.getId(),task.getOwnerKey(),task.getVersion(),System.currentTimeMillis())!=1)return false;
+        Map<String,Object> cancellation=new LinkedHashMap<>();cancellation.put("runId",task.getId());cancellation.put("questionId",currentQuestion.path("id").asText());cancellation.put("revision",currentQuestion.path("revision").asLong());
+        if(currentQuestion.hasNonNull("workflowId"))cancellation.put("workflowId",currentQuestion.path("workflowId").asText());
+        else if(current.getRuntime().get("workflowId")!=null)cancellation.put("workflowId",current.getRuntime().get("workflowId"));
+        current.getRuntime().put("pendingCancellation",cancellation);
+        current.getRuntime().remove("pendingQuestion");save(current);return true;
     }
     public void releaseRequest(String owner,String requestId,String task){try{history.release(owner,requestId,task);}catch(Exception e){throw unavailable();}}
     public boolean lock(String session,String task){return Boolean.TRUE.equals(redis.opsForValue().setIfAbsent(PREFIX+"lock:"+session,task,Duration.ofMinutes(3)));}

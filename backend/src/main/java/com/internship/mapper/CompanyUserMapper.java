@@ -22,6 +22,9 @@ public interface CompanyUserMapper {
     
     int update(CompanyUser companyUser);
 
+    @Update("UPDATE company_users SET phone=#{phone}, email=#{email}, update_time=CURRENT_TIMESTAMP WHERE id=#{id}")
+    int updateAccountContact(CompanyUser companyUser);
+
     int updateImportedProfile(CompanyUser companyUser);
 
     @Update("update company_users set password = #{passwordHash}, update_time = CURRENT_TIMESTAMP")
@@ -46,6 +49,7 @@ public interface CompanyUserMapper {
 
     List<TeacherCompanyDTO> findTeacherCompanies(@Param("companyName") String companyName,
                                                  @Param("status") Integer status,
+                                                 @Param("auditStatus") Integer auditStatus,
                                                  @Param("recallStatus") Integer recallStatus,
                                                  @Param("companyTags") List<String> companyTags,
                                                  @Param("industry") String industry,

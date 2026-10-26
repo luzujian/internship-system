@@ -96,8 +96,9 @@ export default {
   },
 
   // 导出院系专业数据
-  exportMajorData: async () => {
+  exportMajorData: async (params: Record<string, unknown> = {}) => {
     return request.get('/admin/departments/majors/export', {
+      params,
       responseType: 'blob'
     })
   }

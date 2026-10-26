@@ -315,12 +315,12 @@ const handleCompanyLogoError = () => {
 const lifecycleText: Record<string, string> = {
   DRAFT: '草稿',
   PENDING_CONFIRMATION: '待企业确认',
-  CONFIRMED: '已确认',
-  IN_PROGRESS: '实习中',
-  COMPLETED: '已结束',
+  CONFIRMED: '已定单位待实习',
+  IN_PROGRESS: '实习进行中',
+  COMPLETED: '实习已结束',
   REPLACED: '已更换岗位',
-  ENDED: '已结束',
-  INTERRUPTED: '已中断',
+  ENDED: '实习已结束',
+  INTERRUPTED: '实习已中断',
   REJECTED: '企业已拒绝',
   RECALLED: '已撤回',
   WITHDRAWN: '学生已撤回',
@@ -355,7 +355,7 @@ const historyStatusText = (record: PlacementRecord) => {
 
 const historyStatusType = (record: PlacementRecord) => {
   const text = historyStatusText(record)
-  if (text.includes('当前') || text.includes('实习中') || text.includes('已确认')) return 'success'
+  if (text.includes('当前') || text.includes('实习进行中') || text.includes('已定单位待实习')) return 'success'
   if (text.includes('驳回') || text.includes('拒绝') || text.includes('中断')) return 'danger'
   if (text.includes('待') || text.includes('撤回')) return 'warning'
   return 'info'
@@ -363,7 +363,7 @@ const historyStatusType = (record: PlacementRecord) => {
 
 const timelineDotClass = (record: PlacementRecord) => {
   const text = historyStatusText(record)
-  if (text.includes('当前') || text.includes('实习中') || text.includes('已确认')) return 'dot-success'
+  if (text.includes('当前') || text.includes('实习进行中') || text.includes('已定单位待实习')) return 'dot-success'
   if (text.includes('驳回') || text.includes('拒绝')) return 'dot-danger'
   if (text.includes('撤回')) return 'dot-warning'
   return ''

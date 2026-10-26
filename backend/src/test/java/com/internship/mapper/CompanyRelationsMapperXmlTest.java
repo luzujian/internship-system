@@ -18,6 +18,7 @@ import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -57,6 +58,7 @@ class CompanyRelationsMapperXmlTest {
         Map<String, Object> listParameters = new HashMap<>();
         listParameters.put("companyName", null);
         listParameters.put("status", null);
+        listParameters.put("auditStatus", null);
         listParameters.put("recallStatus", null);
         listParameters.put("companyTags", null);
         listParameters.put("industry", null);
@@ -80,6 +82,9 @@ class CompanyRelationsMapperXmlTest {
         assertAll(
                 () -> assertTrue(listSql.contains("c.company_name")),
                 () -> assertTrue(detailSql.contains("c.company_name")),
+                () -> assertTrue(listSql.contains("c.audit_status")),
+                () -> assertTrue(detailSql.contains("c.audit_status")),
+                () -> assertTrue(dtoFields.contains("auditStatus")),
                 () -> assertFalse(listSql.contains("c.*")),
                 () -> assertFalse(detailSql.contains("c.*")),
                 () -> assertSensitiveColumnsExcluded(listSql),
@@ -89,6 +94,55 @@ class CompanyRelationsMapperXmlTest {
                 () -> assertFalse(dtoFields.contains("legalIdCard")),
                 () -> assertFalse(dtoFields.contains("plaquePhoto"))
         );
+    }
+
+    @Test
+    void auditAndAccountFiltersRemainIndependentIncludingPendingAuditZero() throws Exception {
+        Configuration configuration = new Configuration();
+        String resource = "com/internship/mapper/CompanyUserMapper.xml";
+        try (InputStream input = Resources.getResourceAsStream(resource)) {
+            new XMLMapperBuilder(input, configuration, resource, configuration.getSqlFragments()).parse();
+        }
+        var statement = configuration.getMappedStatement(
+                "com.internship.mapper.CompanyUserMapper.findTeacherCompanies");
+        for (int auditStatus = 0; auditStatus <= 3; auditStatus++) {
+            Map<String, Object> parameters = new HashMap<>();
+            parameters.put("auditStatus", auditStatus);
+            parameters.put("status", 1);
+            var bound = statement.getBoundSql(parameters);
+            String sql = normalizedSql(bound.getSql());
+            String conditions = sql.substring(sql.indexOf(" where "));
+            assertTrue(conditions.contains("c.status = ? and c.audit_status = ?"));
+            assertEquals(List.of("status", "auditStatus"), bound.getParameterMappings().stream()
+                    .map(mapping -> mapping.getProperty()).toList());
+
+            parameters.put("status", null);
+            sql = normalizedSql(statement.getBoundSql(parameters).getSql());
+            conditions = sql.substring(sql.indexOf(" where "), sql.indexOf(" order by "));
+            assertTrue(conditions.contains("c.audit_status = ?"));
+            assertFalse(conditions.contains("c.status"));
+        }
+        var mappings = configuration.getResultMap(
+                "com.internship.mapper.CompanyUserMapper.TeacherCompanyResultMap").getResultMappings();
+        assertTrue(mappings.stream().anyMatch(mapping -> "auditStatus".equals(mapping.getProperty())
+                && "audit_status".equals(mapping.getColumn())));
+    }
+
+    @Test
+    void inactiveAccountFilterIncludesBothLegacyInactiveStates() throws Exception {
+        Configuration configuration = new Configuration();
+        String resource = "com/internship/mapper/CompanyUserMapper.xml";
+        try (InputStream input = Resources.getResourceAsStream(resource)) {
+            new XMLMapperBuilder(input, configuration, resource, configuration.getSqlFragments()).parse();
+        }
+        var statement = configuration.getMappedStatement(
+                "com.internship.mapper.CompanyUserMapper.findTeacherCompanies");
+        String sql = normalizedSql(statement.getBoundSql(Map.of("status", 0)).getSql());
+        assertTrue(sql.contains("where c.status in (0, 3)"));
+        assertFalse(sql.contains("c.audit_status ="));
+        sql = normalizedSql(statement.getBoundSql(Map.of("status", 2)).getSql());
+        assertTrue(sql.contains("where c.status = ?"));
+        assertFalse(sql.contains("c.audit_status ="));
     }
 
     private String normalizedSql(String sql) {

@@ -431,6 +431,8 @@ onMounted(() => {
   font-size: 15px;
   line-height: 1.8;
   color: #606266;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .detail-content :deep(img) {

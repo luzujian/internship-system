@@ -17,6 +17,8 @@ public interface AdminUserMapper {
     
     // 查询所有管理员用户，配合PageHelper使用
     List<AdminUser> findAll();
+
+    List<AdminUser> findFeedbackEmailRecipients();
     
     // 根据ID列表查询管理员用户
     // 注意：该方法在XML文件中实现，因为需要使用动态SQL

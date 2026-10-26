@@ -5,6 +5,8 @@ export interface AdminUser {
   adminId: number
   username: string
   name: string
+  phone?: string
+  email?: string
   status?: number
   createTime?: string
   updateTime?: string
@@ -16,11 +18,16 @@ export interface PasswordChangeData {
 }
 
 const AdminUserService = {
+  getCurrentProfile: () => request.get<AdminUser>('/admin/admins/me'),
+
+  updateCurrentProfile: (profile: { username: string; phone: string; email: string }) =>
+    request.put('/admin/admins/me', profile),
+
   getAdmins: async (currentPage: number, pageSize: number, searchQuery = '') => {
     try {
       const response = await request.get('/admin/admins', {
         params: {
-          pageNum: currentPage,
+          page: currentPage,
           pageSize: pageSize,
           keyword: searchQuery
         }
@@ -31,6 +38,8 @@ const AdminUserService = {
       throw error
     }
   },
+
+  exportAdmins: (keyword = '') => request.get('/admin/admins/export', { params: { keyword }, responseType: 'blob' }),
 
   getAdminById: async (id: number) => {
     try {

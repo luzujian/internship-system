@@ -49,8 +49,8 @@ class DeepSeekAgentReviewTest {
         model.stream(messages,tools).blockLast(Duration.ofSeconds(10));
         assertEquals(3,requests.size());
         var review=requests.get(1);
-        assertEquals("enabled",review.path("thinking").path("type").asText());
-        assertEquals("low",review.path("reasoning_effort").asText());
+        assertEquals("disabled",review.path("thinking").path("type").asText());
+        assertFalse(review.hasNonNull("reasoning_effort"));
         assertEquals("json_object",review.path("response_format").path("type").asText());
         assertEquals(4096,review.path("max_tokens").asInt());
         assertTrue(review.path("tools").isMissingNode()||review.path("tools").isEmpty());

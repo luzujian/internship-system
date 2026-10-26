@@ -10,4 +10,7 @@ public class JobSearchStatusEvidenceDTO {
     private Boolean hasInterviewOpportunity;
     private Boolean hasPassedOffer;
     private Boolean hasPendingConfirmation;
+    private Boolean hasPendingSelfPractice;
+    private Boolean hasPendingCompanySelfPractice;
+    private Boolean hasPendingDelay;
 }

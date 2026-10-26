@@ -35,7 +35,7 @@ public class StudentJourneyService {
     private static String meaningOf(String key,String title) {
         return switch(key) {
             case "profile" -> "补齐联系和身份资料，便于实习办理与教师联系。";
-            case "placement" -> title.contains("自主")?"提交已经自行落实的实习单位，等待学校审核。":"申请系统岗位并参加企业面试，取得可确认的实习机会。";
+            case "placement" -> title.contains("自主")?"提交已经自行落实的实习单位，由合作企业确认或辅导员审核。":"申请系统岗位并参加企业面试，取得可确认的实习机会。";
             case "confirmation" -> "将通过面试或直接录取的岗位办理为正式实习。";
             case "internship" -> "按教师统一安排开展实习。";
             case "appraisal" -> "上传实习鉴定材料，完成页面要求后正式提交。";
@@ -47,7 +47,7 @@ public class StudentJourneyService {
     private static String criteriaOf(String key,String title) {
         return switch(key) {
             case "profile" -> "姓名、学号、电话和邮箱均已填写。";
-            case "placement" -> title.contains("自主")?"自主实习申请审核通过并落实实习经历。":"存在当前有效的面试通过或直接录取结果。仅投递或收到面试邀请不算完成。";
+            case "placement" -> title.contains("自主")?"自主实习申请通过并落实实习经历。":"存在当前有效的面试通过或直接录取结果。仅投递或收到面试邀请不算完成。";
             case "confirmation" -> "学生提交实习确认表，企业确认通过。";
             case "internship" -> "系统真实业务状态已进入实习结束，不能只凭日期推断完成。";
             case "appraisal" -> "实习鉴定表已正式提交。仅上传附件或保存草稿不算完成。";
@@ -141,7 +141,7 @@ public class StudentJourneyService {
         int formal = self ? 3 : 4, appraisal = total - 1;
         boolean ended = "FINISHED".equals(stage), complete = ended && b.appraisalSubmitted();
         int index = complete ? total : ended ? appraisal : b.established() || interrupted ? formal
-                : b.passed() || b.confirming() ? 3 : b.selfPending() ? 2 : !b.profileDone() ? 1 : 2;
+                : b.selfPending() ? 2 : b.passed() || b.confirming() ? 3 : !b.profileDone() ? 1 : 2;
         if ("UNKNOWN".equals(stage) && b.hasHistory())
             return new Journey(self ? "SELF" : "NORMAL", "进度待核实", 0, total, List.of(), false, false, false, false, version, System.currentTimeMillis());
         List<Step> steps = new ArrayList<>();
@@ -150,21 +150,23 @@ public class StudentJourneyService {
         if (!b.profileDone() && index > 1) steps.set(0, new Step("profile", "完善资料", "TODO", profileDetail, "OPEN_PROFILE"));
         String selfApplicationStatus = Objects.toString(b.selfApplicationStatus(), "").trim();
         String selfRejectReason = Objects.toString(b.selfRejectReason(), "").trim();
-        steps.add(step("placement", self ? "自主申请与审核" : "寻找岗位与面试", 2, index, complete,
-                index > 2 ? self ? "自主实习审核已通过。" : "已通过面试或直接录取。"
-                : self ? b.selfPending() ? "申请已提交，等待审核。" : "提交自主实习申请和所需材料。"
+        boolean companyReview = "COMPANY".equals(b.selfReviewTarget());
+        String selfHandler = companyReview ? "企业确认" : "辅导员审核";
+        steps.add(step("placement", self ? "自主实习申请" : "寻找岗位与面试", 2, index, complete,
+                index > 2 ? self ? "自主实习已落实。" : "已通过面试或直接录取。"
+                : self ? b.selfPending() ? "申请已提交，等待" + selfHandler + "。" : "提交自主实习申请和所需材料。"
                         : "申请岗位、参加面试；面试通过或直接录取后办理实习确认。",
                 self ? b.selfPending() ? "OPEN_APPLICATION" : "OPEN_SELF_PRACTICE" : "OPEN_JOBS"));
         if (self && index == 2 && (b.selfPending() || Set.of("pending", "rejected", "withdrawn").contains(selfApplicationStatus))) {
             String state = "rejected".equals(selfApplicationStatus) ? "REJECTED"
                     : "withdrawn".equals(selfApplicationStatus) ? "WITHDRAWN" : "WAITING";
             String detail = "rejected".equals(selfApplicationStatus)
-                    ? "自主实习申请已驳回。教师填写的理由：" + (selfRejectReason.isBlank() ? "未填写" : selfRejectReason) + "。可修改后重新提交。"
+                    ? "自主实习申请已驳回。" + (companyReview ? "企业" : "辅导员") + "填写的理由：" + (selfRejectReason.isBlank() ? "未填写" : selfRejectReason) + "。可修改后重新提交。"
                     : "withdrawn".equals(selfApplicationStatus)
                     ? "你已撤回自主实习申请，可重新填写并提交。"
-                    : "申请已提交，教师尚未通过或驳回；可撤回后重新提交。";
+                    : "申请已提交，等待" + selfHandler + "；可撤回后重新提交。";
             String action = b.selfPending() || "pending".equals(selfApplicationStatus) ? "OPEN_APPLICATION" : "OPEN_SELF_PRACTICE";
-            steps.set(1, new Step("placement", "自主申请与审核", state, detail, action));
+            steps.set(1, new Step("placement", "自主实习申请", state, detail, action));
         }
         if (!self) steps.add(step("confirmation", "确认实习", 3, index, complete,
                 index > 3 ? "实习已确认。" : b.confirming() ? "确认表已提交，等待企业确认。" : "面试通过或直接录取后，提交实习确认表。", "OPEN_CONFIRMATION"));
@@ -200,7 +202,7 @@ public class StudentJourneyService {
         String title = complete ? "实习流程已完成" : interrupted ? "实习已中断"
                 : self && index == 2 && "rejected".equals(selfApplicationStatus) ? "自主实习申请已驳回"
                 : self && index == 2 && "withdrawn".equals(selfApplicationStatus) ? "自主实习申请已撤回"
-                : self && index == 2 && (b.selfPending() || "pending".equals(selfApplicationStatus)) ? "自主实习审核中"
+                : self && index == 2 && (b.selfPending() || "pending".equals(selfApplicationStatus)) ? "等待" + selfHandler
                 : "ONBOARD".equals(stage) ? "正式实习 · 待开始" : steps.get(index - 1).title();
         return new Journey(self ? "SELF" : "NORMAL", title, index, total, List.copyOf(steps), canChoose, false, false, true, version, System.currentTimeMillis());
     }

@@ -59,13 +59,34 @@
         ), 0)
     </sql>
 
+    <sql id="hasPendingSelfPractice">
+        EXISTS (SELECT 1 FROM student_application pending_self
+                WHERE pending_self.student_id = su.id
+                  AND pending_self.application_type = 'selfPractice' AND pending_self.status = 'pending'
+                  AND pending_self.review_target = 'COUNSELOR')
+    </sql>
+    <sql id="hasPendingCompanySelfPractice">
+        EXISTS (SELECT 1 FROM student_application pending_company_self
+                WHERE pending_company_self.student_id = su.id
+                  AND pending_company_self.application_type = 'selfPractice'
+                  AND pending_company_self.status = 'pending' AND pending_company_self.review_target = 'COMPANY')
+    </sql>
+    <sql id="hasPendingDelay">
+        EXISTS (SELECT 1 FROM student_application pending_delay
+                WHERE pending_delay.student_id = su.id
+                  AND pending_delay.application_type = 'delay' AND pending_delay.status = 'pending')
+    </sql>
+
     <select id="findEvidenceByStudentIds" resultType="com.internship.entity.dto.JobSearchStatusEvidenceDTO">
         SELECT
             su.id AS studentId,
             <include refid="com.internship.mapper.JobSearchStatusMapper.persistentStatus"/> AS internshipStatus,
             <include refid="com.internship.mapper.JobSearchStatusMapper.hasInterviewOpportunity"/> AS hasInterviewOpportunity,
             <include refid="com.internship.mapper.JobSearchStatusMapper.hasPassedOffer"/> AS hasPassedOffer,
-            <include refid="com.internship.mapper.JobSearchStatusMapper.hasPendingConfirmation"/> AS hasPendingConfirmation
+            <include refid="com.internship.mapper.JobSearchStatusMapper.hasPendingConfirmation"/> AS hasPendingConfirmation,
+            <include refid="com.internship.mapper.JobSearchStatusMapper.hasPendingSelfPractice"/> AS hasPendingSelfPractice,
+            <include refid="com.internship.mapper.JobSearchStatusMapper.hasPendingCompanySelfPractice"/> AS hasPendingCompanySelfPractice,
+            <include refid="com.internship.mapper.JobSearchStatusMapper.hasPendingDelay"/> AS hasPendingDelay
         FROM student_users su
         WHERE su.id IN
         <foreach collection="studentIds" item="studentId" open="(" separator="," close=")">
@@ -80,9 +101,16 @@
     </sql>
     <sql id="effectiveStatusText">
         CASE <include refid="com.internship.mapper.JobSearchStatusMapper.effectiveNumericStatus"/>
-          WHEN 0 THEN CASE WHEN <include refid="com.internship.mapper.JobSearchStatusMapper.hasInterviewOpportunity"/> THEN '无 Offer' ELSE '未投递' END
-          WHEN 1 THEN '待确认' WHEN 2 THEN '已确定' WHEN 3 THEN '实习中'
-          WHEN 4 THEN '已结束' WHEN 5 THEN '已中断' WHEN 6 THEN '延期' ELSE '未知' END
+          WHEN 0 THEN CASE WHEN <include refid="com.internship.mapper.JobSearchStatusMapper.hasInterviewOpportunity"/> THEN '已投递未录用' ELSE '暂无有效投递' END
+          WHEN 1 THEN '已录用待确认' WHEN 2 THEN '已定单位待实习' WHEN 3 THEN '实习进行中'
+          WHEN 4 THEN '实习已结束' WHEN 5 THEN '实习已中断' WHEN 6 THEN '已延期实习' ELSE '状态待核实' END
+    </sql>
+
+    <sql id="pendingApplicationText">
+        CONCAT_WS('、',
+            CASE WHEN <include refid="com.internship.mapper.JobSearchStatusMapper.hasPendingSelfPractice"/> THEN '自主实习待审核' END,
+            CASE WHEN <include refid="com.internship.mapper.JobSearchStatusMapper.hasPendingCompanySelfPractice"/> THEN '自主实习待企业确认' END,
+            CASE WHEN <include refid="com.internship.mapper.JobSearchStatusMapper.hasPendingDelay"/> THEN '延期申请待审核' END)
     </sql>
 
     <select id="countByDisplayFilter" resultType="long">

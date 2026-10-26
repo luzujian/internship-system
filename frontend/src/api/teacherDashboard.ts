@@ -5,6 +5,7 @@ export interface DashboardStats {
   confirmed: number
   offer: number
   noOffer: number
+  interrupted?: number
   delay: number
   scopeName?: string
   gradeData: Array<{
@@ -13,6 +14,7 @@ export interface DashboardStats {
     confirmed: number
     offer: number
     noOffer: number
+    interrupted?: number
     delay: number
   }>
   majorData: Array<{
@@ -21,6 +23,7 @@ export interface DashboardStats {
     confirmed: number
     offer: number
     noOffer: number
+    interrupted?: number
     delay: number
   }>
   classData: Array<{
@@ -29,6 +32,7 @@ export interface DashboardStats {
     confirmed: number
     offer: number
     noOffer: number
+    interrupted?: number
     delay: number
   }>
   divisionData?: Array<{
@@ -37,6 +41,7 @@ export interface DashboardStats {
     confirmed: number
     offer: number
     noOffer: number
+    interrupted?: number
     delay: number
   }>
 }

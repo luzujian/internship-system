@@ -169,6 +169,44 @@
           </div>
         </div>
       </el-card>
+      <!-- 企业端统计 -->
+      <el-card class="chart-card company-chart-card" shadow="hover">
+        <div class="section-header">
+          <div class="section-title">
+            <el-icon size="20" color="#9B6DDF"><OfficeBuilding /></el-icon>
+            <h2>企业端日活跃统计</h2>
+          </div>
+          <div class="header-actions">
+            <span class="chart-subtitle">{{ dateRangeText }}</span>
+          </div>
+        </div>
+        <p class="statistics-note">按每天成功登录的企业账号去重统计，同一账号当天多次登录计 1 个。</p>
+        <div class="chart-container">
+          <div v-if="loading" class="chart-loading">
+            <el-skeleton :rows="5" animated />
+          </div>
+          <div v-else-if="companyChartData.length > 0" class="chart-wrapper">
+            <div ref="companyChartRef" class="chart"></div>
+          </div>
+          <div v-else class="chart-loading">
+            <el-empty description="暂无数据" />
+          </div>
+        </div>
+        <div class="chart-stats">
+          <div class="stat-item">
+            <div class="stat-value">{{ getAverageCount(companyChartData) }}</div>
+            <div class="stat-label">平均日活</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-value">{{ getMaxCount(companyChartData) }}</div>
+            <div class="stat-label">最高日活</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-value">{{ getChangeRate(companyChartData) }}</div>
+            <div class="stat-label">环比变化</div>
+          </div>
+        </div>
+      </el-card>
     </div>
   </div>
 </template>
@@ -176,7 +214,7 @@
 <script lang="ts" setup>
 import logger from '@/utils/logger'
 import { ref, computed, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
-import { UserFilled, Avatar, Operation, Refresh } from '@element-plus/icons-vue'
+import { UserFilled, Avatar, Operation, Refresh, OfficeBuilding } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import echarts from '../../utils/echarts'
 import request from '../../utils/request'
@@ -192,18 +230,22 @@ const dateRangeText = ref('最近7天数据')
 const studentChartData = ref([])
 const teacherChartData = ref([])
 const adminChartData = ref([])
+const companyChartData = ref([])
 
 const studentChartRef = ref(null)
 const teacherChartRef = ref(null)
 const adminChartRef = ref(null)
+const companyChartRef = ref(null)
 
 let studentChartInstance = null
 let teacherChartInstance = null
 let adminChartInstance = null
+let companyChartInstance = null
 
 let studentResizeObserver = null
 let teacherResizeObserver = null
 let adminResizeObserver = null
+let companyResizeObserver = null
 
 const isInitialLoad = ref(true)
 
@@ -211,7 +253,7 @@ const shouldUseLineChart = computed(() => {
   return days.value > 7 || (dateRange.value && dateRange.value.length === 2)
 })
 
-const getChartOption = (data: { date: string; count: number }[], color: string, title?: string) => {
+const getChartOption = (data: { date: string; count: number }[], color: string, label = '活跃用户', unit = '人') => {
   const dates = data.map(item => item.date)
   const values = data.map(item => item.count)
   
@@ -221,7 +263,7 @@ const getChartOption = (data: { date: string; count: number }[], color: string, 
     tooltip: {
       trigger: 'axis',
       formatter: (params) => {
-        return `${params[0].name}<br/>活跃用户: ${params[0].value}人`
+        return `${params[0].name}<br/>${label}: ${params[0].value}${unit}`
       }
     },
     grid: {
@@ -303,7 +345,7 @@ const getLabelInterval = (dataLength) => {
   }
 }
 
-const initChart = (chartRef, chartInstance, data, color, observerVar) => {
+const initChart = (chartRef, chartInstance, data, color, observerVar, label = '活跃用户', unit = '人') => {
   if (!chartRef) return
   
   if (chartInstance) {
@@ -315,7 +357,7 @@ const initChart = (chartRef, chartInstance, data, color, observerVar) => {
   }
   
   const newChartInstance = echarts.init(chartRef)
-  const option = getChartOption(data, color)
+  const option = getChartOption(data, color, label, unit)
   newChartInstance.setOption(option)
   
   const resizeObserver = new ResizeObserver(() => {
@@ -325,19 +367,26 @@ const initChart = (chartRef, chartInstance, data, color, observerVar) => {
   })
   resizeObserver.observe(chartRef)
   
-  return newChartInstance
+  return { instance: newChartInstance, observer: resizeObserver }
 }
 
 const renderCharts = () => {
   nextTick(() => {
     if (studentChartData.value.length > 0 && studentChartRef.value) {
-      studentChartInstance = initChart(studentChartRef.value, studentChartInstance, studentChartData.value, '#409EFF', studentResizeObserver)
+      const chart = initChart(studentChartRef.value, studentChartInstance, studentChartData.value, '#409EFF', studentResizeObserver)
+      studentChartInstance = chart.instance; studentResizeObserver = chart.observer
     }
     if (teacherChartData.value.length > 0 && teacherChartRef.value) {
-      teacherChartInstance = initChart(teacherChartRef.value, teacherChartInstance, teacherChartData.value, '#67C23A', teacherResizeObserver)
+      const chart = initChart(teacherChartRef.value, teacherChartInstance, teacherChartData.value, '#67C23A', teacherResizeObserver)
+      teacherChartInstance = chart.instance; teacherResizeObserver = chart.observer
     }
     if (adminChartData.value.length > 0 && adminChartRef.value) {
-      adminChartInstance = initChart(adminChartRef.value, adminChartInstance, adminChartData.value, '#E6A23C', adminResizeObserver)
+      const chart = initChart(adminChartRef.value, adminChartInstance, adminChartData.value, '#E6A23C', adminResizeObserver)
+      adminChartInstance = chart.instance; adminResizeObserver = chart.observer
+    }
+    if (companyChartData.value.length > 0 && companyChartRef.value) {
+      const chart = initChart(companyChartRef.value, companyChartInstance, companyChartData.value, '#9B6DDF', companyResizeObserver, '活跃企业账号', '个')
+      companyChartInstance = chart.instance; companyResizeObserver = chart.observer
     }
   })
 }
@@ -405,6 +454,8 @@ const refreshData = async () => {
       teacher_data?: unknown[]
       adminData?: unknown[]
       admin_data?: unknown[]
+      companyData?: unknown[]
+      company_data?: unknown[]
       dateRange?: string
       date_range?: string
     }>('/login-logs/active-users', { params })
@@ -414,6 +465,7 @@ const refreshData = async () => {
       studentChartData.value = Array.isArray(statsData.studentData) ? statsData.studentData : (Array.isArray(statsData.student_data) ? statsData.student_data : [])
       teacherChartData.value = Array.isArray(statsData.teacherData) ? statsData.teacherData : (Array.isArray(statsData.teacher_data) ? statsData.teacher_data : [])
       adminChartData.value = Array.isArray(statsData.adminData) ? statsData.adminData : (Array.isArray(statsData.admin_data) ? statsData.admin_data : [])
+      companyChartData.value = Array.isArray(statsData.companyData) ? statsData.companyData : (Array.isArray(statsData.company_data) ? statsData.company_data : [])
 
       const rangeText = statsData.dateRange ?? statsData.date_range
       if (rangeText) {
@@ -462,7 +514,7 @@ const getChangeRate = (data) => {
   return rate >= 0 ? `+${rate.toFixed(1)}%` : `${rate.toFixed(1)}%`
 }
 
-watch([studentChartData, teacherChartData, adminChartData], () => {
+watch([studentChartData, teacherChartData, adminChartData, companyChartData], () => {
   renderCharts()
 })
 
@@ -483,6 +535,10 @@ onBeforeUnmount(() => {
     adminResizeObserver.disconnect()
     adminResizeObserver = null
   }
+  if (companyResizeObserver) {
+    companyResizeObserver.disconnect()
+    companyResizeObserver = null
+  }
   if (studentChartInstance && !studentChartInstance.isDisposed()) {
     studentChartInstance.dispose()
     studentChartInstance = null
@@ -494,6 +550,10 @@ onBeforeUnmount(() => {
   if (adminChartInstance && !adminChartInstance.isDisposed()) {
     adminChartInstance.dispose()
     adminChartInstance = null
+  }
+  if (companyChartInstance && !companyChartInstance.isDisposed()) {
+    companyChartInstance.dispose()
+    companyChartInstance = null
   }
 })
 </script>
@@ -678,6 +738,17 @@ onBeforeUnmount(() => {
 .chart-subtitle {
   font-size: 14px;
   color: #909399;
+}
+
+.statistics-note {
+  margin: -5px 0 4px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #909399;
+}
+
+.company-chart-card .stat-value {
+  color: #9B6DDF;
 }
 
 .chart-container {

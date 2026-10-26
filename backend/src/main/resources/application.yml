@@ -192,10 +192,27 @@ logging:
     com.github.pagehelper: INFO
     com.github.pagehelper.page: INFO
 
-# Read-only Agent: system follows AI_ASSISTANT_ENABLED; local/test can override per process.
+# LangGraph owns the sidebar agent loop; application tools retain role and write authorization.
 agent:
   enabled: ${AGENT_ENABLED:system}
   model: ${AGENT_MODEL:deepseek-flash}
+  harness: ${AGENT_HARNESS:langgraph}
+  langgraph:
+    url: ${AGENT_LANGGRAPH_URL:http://127.0.0.1:8791}
+    service-key: ${AGENT_LANGGRAPH_SERVICE_KEY:}
+  bridge:
+    bind-address: ${AGENT_BRIDGE_BIND_ADDRESS:127.0.0.1}
+    tool-port: ${AGENT_TOOL_PORT:0}
+    model-port: ${AGENT_MODEL_PORT:0}
+    tool-url: ${AGENT_TOOL_URL:}
+    model-url: ${AGENT_MODEL_URL:}
+  opencode:
+    executable: ${AGENT_OPENCODE_EXECUTABLE:opencode}
+    node: ${AGENT_OPENCODE_NODE:node}
+    version: ${AGENT_OPENCODE_VERSION:1.18.35}
+    work-dir: ${AGENT_OPENCODE_WORK_DIR:uploads/agent-runtime}
+    max-sessions: ${AGENT_OPENCODE_MAX_SESSIONS:4}
+    idle-timeout-ms: ${AGENT_OPENCODE_IDLE_TIMEOUT_MS:1800000}
 
 teacher:
   auto-task:

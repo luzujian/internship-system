@@ -34,6 +34,7 @@ public interface StudentApplicationMapper {
     StudentApplication findByIdForUpdate(Long id);
 
     Long lockStudent(@Param("studentId") Long studentId);
+    Long lockStudentForApplication(@Param("id") Long id);
 
     StudentApplication findPendingByStudentAndTypeForUpdate(@Param("studentId") Long studentId,
                                                             @Param("applicationType") String applicationType);
@@ -53,6 +54,12 @@ public interface StudentApplicationMapper {
     int update(StudentApplication application);
 
     int resetForResubmit(StudentApplication application);
+
+    int linkConfirmation(@Param("id") Long id, @Param("confirmationRecordId") Long confirmationRecordId);
+
+    int resolveCompanyApplication(@Param("id") Long id, @Param("confirmationRecordId") Long confirmationRecordId,
+                                  @Param("status") String status, @Param("rejectReason") String rejectReason,
+                                  @Param("positionId") Long positionId);
     
     /**
      * 删除学生申请

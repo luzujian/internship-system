@@ -32,7 +32,7 @@ class JobSearchStatusServiceTest {
         JobSearchStatusDTO result = service.resolve(1L, 0);
 
         assertEquals("NOT_FOUND", result.jobSearchStatus());
-        assertEquals("未投递", result.jobSearchStatusText());
+        assertEquals("暂无有效投递", result.jobSearchStatusText());
     }
 
     @Test
@@ -43,7 +43,7 @@ class JobSearchStatusServiceTest {
         JobSearchStatusDTO result = service.resolve(2L, 0);
 
         assertEquals("NO_OFFER", result.jobSearchStatus());
-        assertEquals("无 Offer", result.jobSearchStatusText());
+        assertEquals("已投递未录用", result.jobSearchStatusText());
     }
 
     @Test
@@ -54,7 +54,7 @@ class JobSearchStatusServiceTest {
         JobSearchStatusDTO result = service.resolve(3L, 0);
 
         assertEquals("PENDING_CONFIRMATION", result.jobSearchStatus());
-        assertEquals("待确认", result.jobSearchStatusText());
+        assertEquals("已录用待确认", result.jobSearchStatusText());
     }
 
     @Test
@@ -65,7 +65,7 @@ class JobSearchStatusServiceTest {
         JobSearchStatusDTO result = service.resolve(4L, 5);
 
         assertEquals("INTERRUPTED", result.jobSearchStatus());
-        assertEquals("已中断", result.jobSearchStatusText());
+        assertEquals("实习已中断", result.jobSearchStatusText());
     }
 
     @Test
@@ -81,7 +81,34 @@ class JobSearchStatusServiceTest {
         assertEquals(0, status.getStatus());
         assertEquals(0, status.getInternshipStatus());
         assertEquals("NO_OFFER", status.getJobSearchStatus());
-        assertEquals("无 Offer", status.getJobSearchStatusText());
+        assertEquals("已投递未录用", status.getJobSearchStatusText());
+    }
+
+    @Test
+    void pendingBusinessApplicationsAreShownWithoutReplacingCurrentInternship() {
+        JobSearchStatusEvidenceDTO facts = evidence(6L, 3, true, true, false);
+        facts.setHasPendingSelfPractice(true);
+        facts.setHasPendingDelay(true);
+        when(mapper.findEvidenceByStudentIds(anyCollection())).thenReturn(List.of(facts));
+
+        JobSearchStatusDTO current = service.resolve(6L, 3);
+        assertEquals("IN_PROGRESS", current.jobSearchStatus());
+        assertEquals(List.of("自主实习待审核", "延期申请待审核"), current.pendingApplicationTexts());
+        StudentInternshipStatus row = new StudentInternshipStatus();
+        row.setStudentId(6L);
+        row.setStatus(3);
+        service.enrich(List.of(row));
+        assertEquals(current.pendingApplicationTexts(), row.getPendingApplicationTexts());
+    }
+
+    @Test
+    void allEstablishedStatesKeepPriorityOverAdditionalApplications() {
+        String[] expected = {"CONFIRMED", "IN_PROGRESS", "ENDED", "INTERRUPTED", "DELAYED"};
+        for (int code = 2; code <= 6; code++) {
+            when(mapper.findEvidenceByStudentIds(anyCollection()))
+                    .thenReturn(List.of(evidence(7L, code, true, true, true)));
+            assertEquals(expected[code - 2], service.resolve(7L, code).jobSearchStatus());
+        }
     }
 
     private JobSearchStatusEvidenceDTO evidence(Long studentId,

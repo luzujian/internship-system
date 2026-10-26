@@ -66,6 +66,7 @@ class ProductionStartupGuardTest {
     void productionGuardStopsContextBeforeOtherServicesStart() {
         ServiceThatMustNotStart.started = false;
         try (AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext()) {
+            context.setEnvironment(new MockEnvironment());
             context.getEnvironment().setActiveProfiles("prod");
             context.register(ProductionStartupGuard.class, ServiceThatMustNotStart.class);
             RuntimeException failure = assertThrows(RuntimeException.class, context::refresh);

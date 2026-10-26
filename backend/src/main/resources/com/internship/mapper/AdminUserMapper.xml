@@ -13,8 +13,8 @@
 
     <!-- 插入管理员用户 -->
     <insert id="insert" parameterType="com.internship.entity.AdminUser">
-        insert into admin_users (username, password, name, phone, role, admin_level, department, create_time, update_time, status)
-        values (#{username}, #{password}, #{name}, #{phone}, #{role}, #{adminLevel}, #{department}, #{createTime}, #{updateTime}, #{status})
+        insert into admin_users (username, password, name, phone, email, role, admin_level, department, create_time, update_time, status)
+        values (#{username}, #{password}, #{name}, #{phone}, #{email}, #{role}, #{adminLevel}, #{department}, #{createTime}, #{updateTime}, #{status})
     </insert>
 
     <!-- 根据ID查询管理员用户 -->
@@ -39,6 +39,9 @@
             </if>
             <if test="phone != null">
                 phone = #{phone},
+            </if>
+            <if test="email != null">
+                email = #{email},
             </if>
             <if test="department != null">
                 department = #{department},
@@ -70,5 +73,13 @@
         <foreach collection="list" item="id" open="(" separator="," close=")">
             #{id}
         </foreach>
+    </select>
+
+    <select id="findFeedbackEmailRecipients" resultType="com.internship.entity.AdminUser">
+        SELECT id, email, status, role
+        FROM admin_users
+        WHERE status = 1 AND role = 'ROLE_ADMIN'
+          AND email IS NOT NULL AND TRIM(email) != ''
+        ORDER BY id
     </select>
 </mapper>

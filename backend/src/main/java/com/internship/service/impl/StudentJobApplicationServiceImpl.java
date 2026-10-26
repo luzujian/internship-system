@@ -112,6 +112,10 @@ public class StudentJobApplicationServiceImpl implements StudentJobApplicationSe
             internshipApp.setStudentId(application.getStudentId());
             internshipApp.setStudentName(application.getStudentName());
             internshipApp.setStudentUserId(application.getStudentNo());
+            internshipApp.setPhone(application.getPhone());
+            internshipApp.setEmail(application.getEmail());
+            internshipApp.setMajor(application.getMajor());
+            internshipApp.setGrade(application.getGrade());
             internshipApp.setPositionId(application.getPositionId());
             internshipApp.setPositionName(application.getPositionName());
             internshipApp.setCompanyId(application.getCompanyId());

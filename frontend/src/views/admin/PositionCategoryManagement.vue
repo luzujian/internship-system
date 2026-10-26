@@ -3,7 +3,7 @@
   <div class="page-header">
     <div class="header-content">
       <h1 class="page-title">岗位类别管理</h1>
-      <p class="page-description">管理系统中的所有岗位类别与岗位信息</p>
+      <p class="page-description">管理系统中的所有岗位类别与岗位信息<span v-if="authStore.hasPermission('position-category:add')">。非标准表格可交给右上角「问问 AI」导入。</span></p>
     </div>
     <div class="header-illustration">
       <div class="illustration-circle circle-1"></div>
@@ -66,7 +66,7 @@
         </el-button>
       </div>
       <div class="secondary-actions">
-                <el-dropdown v-if="authStore.hasPermission('position-category:view')" trigger="click" class="import-dropdown">
+                <el-dropdown v-if="authStore.hasPermission('position-category:add')" trigger="click" class="import-dropdown">
           <el-button type="primary" class="action-btn success" :loading="importLoading">
             <el-icon><Upload /></el-icon>&nbsp;导入 Excel<el-icon class="el-icon--right"><ArrowDown /></el-icon>
           </el-button>
@@ -123,7 +123,6 @@
             <span :class="{ 'active-row-name': fixedCategoryId === scope.row.id }">{{ scope.row.name }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="description" label="类别描述" align="center" min-width="200" show-overflow-tooltip />
         <el-table-column prop="positionCount" label="岗位数量" align="center" width="100" />
         <el-table-column prop="createTime" label="创建时间" width="180" align="center" :formatter="formatDate" />
         <el-table-column label="操作" align="center" width="120" fixed="right">
@@ -226,28 +225,12 @@
         <el-form-item label="类别名称" prop="name">
           <el-input v-model="categoryForm.name" placeholder="请输入类别名称" />
         </el-form-item>
-        <el-form-item label="类别描述" prop="description">
-          <el-input
-            v-model="categoryForm.description"
-            type="textarea"
-            :rows="4"
-            placeholder="请输入类别描述"
-          />
-        </el-form-item>
       </el-form>
     </template>
     <template v-else-if="formTitle === '编辑岗位类别'">
       <el-form :model="categoryForm" :rules="categoryRules" ref="categoryFormRef" label-width="100px">
         <el-form-item label="类别名称" prop="name">
           <el-input v-model="categoryForm.name" placeholder="请输入类别名称" />
-        </el-form-item>
-        <el-form-item label="类别描述" prop="description">
-          <el-input
-            v-model="categoryForm.description"
-            type="textarea"
-            :rows="4"
-            placeholder="请输入类别描述"
-          />
         </el-form-item>
       </el-form>
     </template>
@@ -351,6 +334,7 @@
 </template>
 
 <script setup lang="ts">
+import { useSmartImportRefresh } from '@/components/import/useSmartImportRefresh'
 import logger from '@/utils/logger'
 import { onMounted, onUnmounted, ref, computed, nextTick, watch } from 'vue'
 import { useFormContext } from '@/agent/formContext'
@@ -433,8 +417,7 @@ let categoryFormRef = ref()
 let positionFormRef = ref()
 let categoryForm = ref({
   id: '',
-  name: '',
-  description: ''
+  name: ''
 })
 let positionForm = ref({
   id: '',
@@ -468,8 +451,7 @@ watch([dialogFormVisible, formTitle], ([open, title]) => {
     title: String(title) || '岗位类别维护',
     fields: isCategory
       ? [
-        { prop: 'name', label: '类别名称', type: 'input', required: true },
-        { prop: 'description', label: '类别描述', type: 'textarea' }
+        { prop: 'name', label: '类别名称', type: 'input', required: true }
       ]
       : [
         { prop: 'positionName', label: '岗位名称', type: 'input', required: true },
@@ -708,8 +690,7 @@ const displayedPositions = computed(() => {
 const clearAddCategoryForm = () => {
   categoryForm.value = {
     id: '',
-    name: '',
-    description: ''
+    name: ''
   }
   if (categoryFormRef.value) {
     categoryFormRef.value.resetFields()
@@ -745,8 +726,7 @@ const handleUpdateCategory = async (id): Promise<void> => {
       const categoryData = response.data as unknown as CategoryRow
       categoryForm.value = {
         id: categoryData.id === undefined || categoryData.id === null ? '' : String(categoryData.id),
-        name: categoryData.name ?? '',
-        description: categoryData.description ?? ''
+        name: categoryData.name ?? ''
       }
       formTitle.value = '编辑岗位类别'
       dialogFormVisible.value = true
@@ -827,8 +807,7 @@ const handleAddCategorySubmit = async (): Promise<void> => {
         submitting.value = true
         const operation = formContext.beginFormOperation('admin:position-category')
     const response = await PositionCategoryService.addCategory({
-          name: categoryForm.value.name,
-          description: categoryForm.value.description
+          name: categoryForm.value.name
         })
         // 同上：data 为新建实体恒无 numeric code，恒假分支删去后等价
         if (response && response.code === 200) {
@@ -859,8 +838,7 @@ const handleEditCategorySubmit = async (): Promise<void> => {
         submitting.value = true
         const operation = formContext.beginFormOperation('admin:position-category')
     const response = await PositionCategoryService.updateCategory(Number(categoryForm.value.id), {
-          name: categoryForm.value.name,
-          description: categoryForm.value.description
+          name: categoryForm.value.name
         })
         // 同上：恒假分支删去后等价；id 转 Number 后 URL 与运行时一致（后端 Long 接受数字）
         if (response && response.code === 200) {
@@ -1321,7 +1299,7 @@ const processImportData = async (data: Record<string, unknown>[]): Promise<Impor
         let categoryId = categoryMap.get(categoryName)
 
         if (!categoryId) {
-          const catResult = await PositionCategoryService.addCategory({ name: categoryName, description: '' })
+          const catResult = await PositionCategoryService.addCategory({ name: categoryName })
           // data 为新建实体恒无 numeric code，恒假分支删去后等价
           const catRes = catResult as unknown as { code?: unknown; data?: unknown; msg?: unknown }
           if (catResult && catRes.code === 200) {
@@ -1405,7 +1383,8 @@ const handleExportToExcel = async (): Promise<void> => {
     ElMessage({ message: '正在准备导出数据...', type: 'info' })
     exportLoading.value = true
 
-    const blob = await PositionCategoryService.exportCategoryData()
+    const blob = await PositionCategoryService.exportCategoryData({ categoryName: searchCategory.value.name,
+      positionName: searchPositionName.value, categoryId: fixedCategoryId.value })
     const url = window.URL.createObjectURL(blob as unknown as Blob)
     const link = document.createElement('a')
     link.href = url
@@ -1423,6 +1402,7 @@ const handleExportToExcel = async (): Promise<void> => {
     exportLoading.value = false
   }
 }
+useSmartImportRefresh('position_category', () => { getPositionList(); queryCategories() })
 </script>
 
 <style scoped>

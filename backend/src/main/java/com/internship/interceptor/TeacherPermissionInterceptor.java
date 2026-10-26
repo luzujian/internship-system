@@ -67,7 +67,8 @@ public class TeacherPermissionInterceptor implements HandlerInterceptor {
             return false;
         }
         
-        if (teacherUser.getRole() == null || !teacherUser.getRole().equals("ROLE_TEACHER")) {
+        if (!"ROLE_TEACHER".equals(teacherUser.getRole())
+                && !("ROLE_TEACHER_" + teacherUser.getTeacherType()).equals(teacherUser.getRole())) {
             log.warn("用户不是教师角色: {}", username);
             response.setStatus(HttpServletResponse.SC_FORBIDDEN);
             response.setContentType("application/json;charset=UTF-8");

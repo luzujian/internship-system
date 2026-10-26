@@ -1,5 +1,7 @@
 package com.internship.controller;
 
+import com.internship.utils.ExcelExports;
+
 import com.internship.entity.Result;
 import com.internship.entity.StudentInternshipStatus;
 import com.internship.entity.PageResult;
@@ -220,63 +222,7 @@ public class StudentInternshipStatusController {
 
         List<StudentInternshipStatus> statusList = studentInternshipStatusService.list(studentId, name, gender, status, companyId, companyName, null, null, null, null);
 
-        try (Workbook workbook = new XSSFWorkbook(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
-            Sheet sheet = workbook.createSheet("学生实习状态");
-
-            CellStyle headerStyle = workbook.createCellStyle();
-            headerStyle.setFillForegroundColor(IndexedColors.GREEN.getIndex());
-            headerStyle.setFillPattern(FillPatternType.SOLID_FOREGROUND);
-            Font headerFont = workbook.createFont();
-            headerFont.setBold(true);
-            headerFont.setColor(IndexedColors.WHITE.getIndex());
-            headerStyle.setFont(headerFont);
-            headerStyle.setAlignment(HorizontalAlignment.CENTER);
-
-            String[] headers = {"学号", "姓名", "性别", "年级", "专业", "班级", "实习状态", "企业名称", "岗位名称", "实习开始时间", "实习结束时间", "更新时间"};
-
-            Row headerRow = sheet.createRow(0);
-            for (int i = 0; i < headers.length; i++) {
-                Cell cell = headerRow.createCell(i);
-                cell.setCellValue(headers[i]);
-                cell.setCellStyle(headerStyle);
-                sheet.setColumnWidth(i, 4000);
-            }
-
-            SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
-            int rowNum = 1;
-            for (StudentInternshipStatus item : statusList) {
-                Row row = sheet.createRow(rowNum++);
-                row.createCell(0).setCellValue(item.getStudent() != null ? item.getStudent().getStudentUserId() : "");
-                row.createCell(1).setCellValue(item.getStudent() != null ? item.getStudent().getName() : "");
-                row.createCell(2).setCellValue(item.getStudent() != null ? getGenderText(item.getStudent().getGender()) : "");
-                row.createCell(3).setCellValue(item.getStudent() != null ? (item.getStudent().getGrade() != null ? item.getStudent().getGrade() + "级" : "") : "");
-                row.createCell(4).setCellValue(item.getMajor() != null ? item.getMajor().getName() : "");
-                row.createCell(5).setCellValue(item.getCls() != null ? item.getCls().getName() : "");
-                row.createCell(6).setCellValue(getStatusText(item.getStatus()));
-                row.createCell(7).setCellValue(item.getCompany() != null ? item.getCompany().getCompanyName() : "");
-                row.createCell(8).setCellValue(item.getPosition() != null ? item.getPosition().getPositionName() : "");
-                row.createCell(9).setCellValue(item.getInternshipStartTime() != null ? dateFormat.format(item.getInternshipStartTime()) : "");
-                row.createCell(10).setCellValue(item.getInternshipEndTime() != null ? dateFormat.format(item.getInternshipEndTime()) : "");
-                row.createCell(11).setCellValue(item.getUpdateTime() != null ? dateFormat.format(item.getUpdateTime()) : "");
-            }
-
-            workbook.write(out);
-            byte[] excelData = out.toByteArray();
-
-            String fileName = "学生实习状态导出_" + new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date()) + ".xlsx";
-            String encodedFileName = URLEncoder.encode(fileName, StandardCharsets.UTF_8.toString());
-
-            response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-            response.setHeader("Content-Disposition", "attachment; filename=\"" + encodedFileName + "\"");
-            response.setContentLength(excelData.length);
-
-            try (OutputStream outputStream = response.getOutputStream()) {
-                outputStream.write(excelData);
-                outputStream.flush();
-            }
-        }
-
-        log.info("实习状态数据导出成功，共 {} 条记录", statusList.size());
+        ExcelExports.internships(response, "学生实习状态", statusList);
     }
 
     /**
@@ -296,69 +242,7 @@ public class StudentInternshipStatusController {
 
         List<StudentInternshipStatus> statusList = studentInternshipStatusService.list(null, null, null, status, null, null, grade, null, className, null);
 
-        try (Workbook workbook = new XSSFWorkbook(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
-            Sheet sheet = workbook.createSheet("学生实习状态汇总");
-
-            CellStyle headerStyle = workbook.createCellStyle();
-            headerStyle.setFillForegroundColor(IndexedColors.GREEN.getIndex());
-            headerStyle.setFillPattern(FillPatternType.SOLID_FOREGROUND);
-            Font headerFont = workbook.createFont();
-            headerFont.setBold(true);
-            headerFont.setColor(IndexedColors.WHITE.getIndex());
-            headerStyle.setFont(headerFont);
-            headerStyle.setAlignment(HorizontalAlignment.CENTER);
-
-            String[] headers = {"学号", "姓名", "性别", "年级", "专业", "班级", "实习状态", "企业名称", "岗位名称", "实习开始时间", "实习结束时间", "更新时间"};
-
-            Row headerRow = sheet.createRow(0);
-            for (int i = 0; i < headers.length; i++) {
-                Cell cell = headerRow.createCell(i);
-                cell.setCellValue(headers[i]);
-                cell.setCellStyle(headerStyle);
-                sheet.setColumnWidth(i, 4000);
-            }
-
-            SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
-            int rowNum = 1;
-            for (StudentInternshipStatus item : statusList) {
-                Row row = sheet.createRow(rowNum++);
-                row.createCell(0).setCellValue(item.getStudent() != null ? item.getStudent().getStudentUserId() : "");
-                row.createCell(1).setCellValue(item.getStudent() != null ? item.getStudent().getName() : "");
-                row.createCell(2).setCellValue(item.getStudent() != null ? getGenderText(item.getStudent().getGender()) : "");
-                row.createCell(3).setCellValue(item.getStudent() != null ? (item.getStudent().getGrade() != null ? item.getStudent().getGrade() + "级" : "") : "");
-                row.createCell(4).setCellValue(item.getMajor() != null ? item.getMajor().getName() : "");
-                row.createCell(5).setCellValue(item.getCls() != null ? item.getCls().getName() : "");
-                row.createCell(6).setCellValue(getStatusText(item.getStatus()));
-                row.createCell(7).setCellValue(item.getCompany() != null ? item.getCompany().getCompanyName() : "");
-                row.createCell(8).setCellValue(item.getPosition() != null ? item.getPosition().getPositionName() : "");
-                row.createCell(9).setCellValue(item.getInternshipStartTime() != null ? dateFormat.format(item.getInternshipStartTime()) : "");
-                row.createCell(10).setCellValue(item.getInternshipEndTime() != null ? dateFormat.format(item.getInternshipEndTime()) : "");
-                row.createCell(11).setCellValue(item.getUpdateTime() != null ? dateFormat.format(item.getUpdateTime()) : "");
-            }
-
-            workbook.write(out);
-            byte[] excelData = out.toByteArray();
-
-            String scopeText = "";
-            if ("class".equals(scope) && className != null) {
-                scopeText = className + "_";
-            } else if ("grade".equals(scope) && grade != null) {
-                scopeText = grade + "_";
-            }
-            String fileName = scopeText + "学生实习状态汇总_" + new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date()) + ".xlsx";
-            String encodedFileName = URLEncoder.encode(fileName, StandardCharsets.UTF_8.toString());
-
-            response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-            response.setHeader("Content-Disposition", "attachment; filename=\"" + encodedFileName + "\"");
-            response.setContentLength(excelData.length);
-
-            try (OutputStream outputStream = response.getOutputStream()) {
-                outputStream.write(excelData);
-                outputStream.flush();
-            }
-        }
-
-        log.info("批量实习状态数据导出成功，共 {} 条记录", statusList.size());
+        ExcelExports.internships(response, "学生实习状态", statusList);
     }
 
     private String getGenderText(Integer gender) {
@@ -401,10 +285,10 @@ public class StudentInternshipStatusController {
         // 填充表格数据
         setTableRow(table, 0, "学号", status.getStudent() != null ? status.getStudent().getStudentUserId() : "");
         setTableRow(table, 1, "姓名", status.getStudent() != null ? status.getStudent().getName() : "");
-        setTableRow(table, 2, "性别", status.getStudent() != null ? (status.getStudent().getGender() == 1 ? "男" : (status.getStudent().getGender() == 2 ? "女" : "未知")) : "");
-        setTableRow(table, 3, "企业名称", status.getCompany() != null ? status.getCompany().getCompanyName() : "");
-        setTableRow(table, 4, "岗位名称", status.getPosition() != null ? status.getPosition().getPositionName() : "");
-        setTableRow(table, 5, "实习状态", getStatusText(status.getStatus()));
+        setTableRow(table, 2, "性别", status.getStudent() != null ? ExcelExports.gender(status.getStudent().getGender()) : "");
+        setTableRow(table, 3, "企业名称", ExcelExports.company(status));
+        setTableRow(table, 4, "岗位名称", ExcelExports.position(status));
+        setTableRow(table, 5, "实习状态", exportStatusText(status));
         setTableRow(table, 6, "企业确认状态", getCompanyConfirmStatusText(status.getCompanyConfirmStatus()));
         setTableRow(table, 7, "实习开始时间", status.getInternshipStartTime() != null ? dateFormat.format(status.getInternshipStartTime()) : "");
         setTableRow(table, 8, "实习结束时间", status.getInternshipEndTime() != null ? dateFormat.format(status.getInternshipEndTime()) : "");
@@ -478,17 +362,26 @@ public class StudentInternshipStatusController {
     }
 
     private String getStatusText(Integer status) {
-        if (status == null) return "未知";
+        if (status == null) return "状态待核实";
         switch (status) {
-            case 0: return "待就业";
-            case 1: return "待确认";
-            case 2: return "已确定";
-            case 3: return "实习中";
-            case 4: return "已结束";
-            case 5: return "已中断";
-            case 6: return "延期";
-            default: return "未知";
+            case 0: return "尚未获录用";
+            case 1: return "已录用待确认";
+            case 2: return "已定单位待实习";
+            case 3: return "实习进行中";
+            case 4: return "实习已结束";
+            case 5: return "实习已中断";
+            case 6: return "已延期实习";
+            default: return "状态待核实";
         }
+    }
+
+    private String exportStatusText(StudentInternshipStatus status) {
+        String text = status.getJobSearchStatusText();
+        if (text == null || text.isBlank()) text = getStatusText(status.getStatus());
+        if (status.getPendingApplicationTexts() != null && !status.getPendingApplicationTexts().isEmpty()) {
+            text += " " + String.join(" ", status.getPendingApplicationTexts());
+        }
+        return text;
     }
 
     private String getCompanyConfirmStatusText(Integer status) {
@@ -675,81 +568,21 @@ public class StudentInternshipStatusController {
     @GetMapping("/recall/export")
     @PreAuthorize("hasRole('ADMIN')")
     public void exportRecallRecords(HttpServletResponse response,
-                                    @RequestParam(required = false) Long studentId,
-                                    @RequestParam(required = false) String name,
-                                    @RequestParam(required = false) Integer gender,
-                                    @RequestParam(required = false) Long companyId,
-                                    @RequestParam(required = false) String companyName) {
-        log.info("导出学生撤回申请记录，学生ID: {}, 姓名: {}, 性别: {}, 企业ID: {}, 企业名称: {}",
-                studentId, name, gender, companyId, companyName);
-        try {
-            response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-            response.setCharacterEncoding("UTF-8");
-            String fileName = URLEncoder.encode("学生撤回申请记录_" + System.currentTimeMillis(), StandardCharsets.UTF_8) + ".xlsx";
-            response.setHeader("Content-disposition", "attachment;filename=" + fileName);
-
-            // 查询待审核撤回申请列表（recall_status = 1）
-            List<StudentInternshipStatus> records = studentInternshipStatusService
-                    .findPendingRecallAuditList(studentId, name, gender, companyId, companyName);
-
-            Workbook workbook = new XSSFWorkbook();
-            Sheet sheet = workbook.createSheet("学生撤回申请记录");
-
-            // 表头样式
-            CellStyle headerStyle = workbook.createCellStyle();
-            headerStyle.setFillForegroundColor(IndexedColors.GREEN.getIndex());
-            headerStyle.setFillPattern(FillPatternType.SOLID_FOREGROUND);
-            headerStyle.setAlignment(HorizontalAlignment.CENTER);
-            headerStyle.setBorderTop(BorderStyle.THIN);
-            headerStyle.setBorderBottom(BorderStyle.THIN);
-            headerStyle.setBorderLeft(BorderStyle.THIN);
-            headerStyle.setBorderRight(BorderStyle.THIN);
-            Font headerFont = workbook.createFont();
-            headerFont.setBold(true);
-            headerFont.setColor(IndexedColors.WHITE.getIndex());
-            headerStyle.setFont(headerFont);
-
-            String[] headers = {"学号", "姓名", "性别", "年级", "专业", "班级", "企业名称", "岗位名称", "联系电话", "邮箱", "实习开始时间", "实习结束时间", "撤回原因", "申请时间"};
-            Row headerRow = sheet.createRow(0);
-            for (int i = 0; i < headers.length; i++) {
-                Cell cell = headerRow.createCell(i);
-                cell.setCellValue(headers[i]);
-                cell.setCellStyle(headerStyle);
-                sheet.setColumnWidth(i, 4500);
-            }
-
-            SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
-            int rowNum = 1;
-            for (StudentInternshipStatus record : records) {
-                Row row = sheet.createRow(rowNum++);
-                row.createCell(0).setCellValue(record.getStudent() != null ? record.getStudent().getStudentUserId() : "");
-                row.createCell(1).setCellValue(record.getStudent() != null ? record.getStudent().getName() : "");
-                row.createCell(2).setCellValue(record.getStudent() != null ? getGenderText(record.getStudent().getGender()) : "");
-                row.createCell(3).setCellValue(record.getStudent() != null && record.getStudent().getGrade() != null ? record.getStudent().getGrade() + "级" : "");
-                row.createCell(4).setCellValue(record.getMajor() != null ? record.getMajor().getName() : "");
-                row.createCell(5).setCellValue(record.getCls() != null ? record.getCls().getName() : "");
-                row.createCell(6).setCellValue(record.getCompany() != null ? record.getCompany().getCompanyName() : "");
-                row.createCell(7).setCellValue(record.getPosition() != null ? record.getPosition().getPositionName() : "");
-                row.createCell(8).setCellValue(record.getContactPhone() != null ? record.getContactPhone() : "");
-                row.createCell(9).setCellValue(record.getEmail() != null ? record.getEmail() : "");
-                row.createCell(10).setCellValue(record.getInternshipStartTime() != null ? dateFormat.format(record.getInternshipStartTime()) : "");
-                row.createCell(11).setCellValue(record.getInternshipEndTime() != null ? dateFormat.format(record.getInternshipEndTime()) : "");
-                row.createCell(12).setCellValue(record.getRecallReason() != null ? record.getRecallReason() : "");
-                row.createCell(13).setCellValue(record.getRecallApplyTime() != null ? dateFormat.format(record.getRecallApplyTime()) : "");
-            }
-
-            workbook.write(response.getOutputStream());
-            workbook.close();
-            log.info("学生撤回申请记录导出成功，共 {} 条记录", records.size());
-        } catch (Exception e) {
-            log.error("导出学生撤回申请记录失败：{}", e.getMessage(), e);
-            try {
-                response.setContentType("application/json;charset=utf-8");
-                response.getWriter().write("{\"code\": 500, \"message\": \"导出失败：" + e.getMessage() + "\"}");
-            } catch (IOException ex) {
-                log.error("响应错误信息失败", ex);
-            }
-        }
+            @RequestParam(required = false) Long studentId,
+            @RequestParam(required = false) String name,
+            @RequestParam(required = false) Integer gender,
+            @RequestParam(required = false) Long companyId,
+            @RequestParam(required = false) String companyName) throws IOException {
+        List<Object[]> rows = studentInternshipStatusService.findPendingRecallAuditList(studentId,name,gender,companyId,companyName)
+                .stream().map(r -> new Object[]{r.getStudent()==null?"":r.getStudent().getStudentUserId(),
+                        ExcelExports.first(r.getStudent()==null?null:r.getStudent().getName(),r.getStudentName()),
+                        r.getStudent()==null?ExcelExports.genderText(r.getGender()):ExcelExports.gender(r.getStudent().getGender()),
+                        r.getStudent()==null?ExcelExports.text(r.getGrade()):(r.getStudent().getGrade()==null?"":r.getStudent().getGrade()+"级"),
+                        ExcelExports.first(r.getMajor()==null?null:r.getMajor().getName(),r.getMajorName()),
+                        ExcelExports.first(r.getCls()==null?null:r.getCls().getName(),r.getClassName()),ExcelExports.status(r),
+                        ExcelExports.company(r),ExcelExports.position(r),r.getContactPhone(),r.getEmail(),
+                        r.getInternshipStartTime(),r.getInternshipEndTime(),r.getRecallReason(),r.getRecallApplyTime()}).toList();
+        ExcelExports.write(response,"学生撤回申请记录",new String[]{"学号","姓名","性别","年级","专业","班级","实习状态","企业名称","岗位名称","联系电话","邮箱","实习开始时间","实习结束时间","撤回原因","申请时间"},rows);
     }
 
     private Long getCurrentUserId() {

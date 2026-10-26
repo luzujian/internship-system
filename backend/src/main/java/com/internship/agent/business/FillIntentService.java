@@ -108,6 +108,17 @@ public class FillIntentService {
         return result;
     }
 
+    /** Validate the unified agent's proposal with the same rules, without another model call. */
+    public Map<String,Object> validateProposal(Actor actor,FillRequest request,JsonNode proposal){
+        requireAllowed(actor);validate(request);
+        List<FieldDescriptor> fillable=new ArrayList<>();List<Map<String,Object>> manualOnly=new ArrayList<>();
+        for(FieldDescriptor field:request.fields()){
+            if(field!=null && FILLABLE_TYPES.contains(field.type()==null?"input":field.type()))fillable.add(field);
+            else manualOnly.add(Map.of("prop",field==null?"":String.valueOf(field.prop()),"reason","文件或该类型字段需手动操作，AI 不代填"));
+        }
+        if(fillable.isEmpty())throw new AgentException("NO_FILLABLE_FIELD","当前表单没有可由助手填写的字段。",400);
+        return assemble(request,fillable,manualOnly,proposal);
+    }
     private void requireAllowed(Actor actor) {
         if (!tasks.enabled()) throw new AgentException("AI_DISABLED", "系统当前未启用AI助手。", 503);
         if (actor.readOnly()) throw new AgentException("READ_ONLY_FORBIDDEN", "管理员只读身份不可使用智能填表。", 403);

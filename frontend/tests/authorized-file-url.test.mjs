@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs'
 import {
   announcementAttachmentByteUrl,
   authorizedFileByteUrl,
+  companyArchiveByteUrl,
   companyQualificationMaterialByteUrl,
   resourceDocumentByteUrl,
   studentApplicationMaterialByteUrl,
@@ -52,6 +53,17 @@ test('application and company material bytes use canonical record routes only', 
   assert.equal(companyQualificationMaterialByteUrl(15, 'businessLicense', 1), '')
   assert.equal(authorizedFileByteUrl('/api/student/applications/71/materials/%2e%2e%2fbackup'), '')
   assert.equal(authorizedFileByteUrl('/api/approval/company-qualifications/15/materials/legalIdCard/2'), '')
+})
+
+test('company applicant archives preview and download through record-scoped routes', () => {
+  for (const action of ['preview', 'download']) {
+    const url = companyArchiveByteUrl(195, action)
+    assert.equal(url, `/api/admin/archives/company/${action}/195`)
+    assert.equal(authorizedFileByteUrl(url), url)
+  }
+  for (const invalid of [0, '../195', '0195', null]) assert.equal(companyArchiveByteUrl(invalid), '')
+  assert.equal(authorizedFileByteUrl('/api/admin/archives/company/preview/195?url=https://oss.example/a.pdf'), '')
+  assert.equal(authorizedFileByteUrl('/api/admin/archives/company/preview/195#fragment'), '')
 })
 
 test('preview component never reconstructs a generic OSS-key proxy', () => {

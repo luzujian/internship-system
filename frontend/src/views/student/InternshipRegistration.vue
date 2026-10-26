@@ -11,7 +11,7 @@
           <el-radio-group v-model="form.status" class="status-radio-group">
             <el-radio-button label="found">已找到实习</el-radio-button>
             <el-radio-button label="searching">正在寻找实习</el-radio-button>
-            <el-radio-button label="not-found">未投递</el-radio-button>
+            <el-radio-button label="not-found">暂无有效投递</el-radio-button>
             <el-radio-button label="postgraduate">准备考研</el-radio-button>
             <el-radio-button label="not-intern">暂不实习</el-radio-button>
           </el-radio-group>
@@ -157,7 +157,7 @@ const registrationFields = [
   { prop: 'status', label: '当前状态', type: 'radio', required: true, options: [
     { value: 'found', label: '已找到实习' },
     { value: 'searching', label: '正在寻找实习' },
-    { value: 'not-found', label: '未投递' },
+    { value: 'not-found', label: '暂无有效投递' },
     { value: 'postgraduate', label: '准备考研' },
     { value: 'not-intern', label: '暂不实习' }
   ] },
@@ -255,7 +255,7 @@ const getStatusText = (status) => {
   const statusMap = {
     found: '已找到实习',
     searching: '正在寻找实习',
-    notFound: '未投递',
+    notFound: '暂无有效投递',
     postgraduate: '准备考研',
     notIntern: '暂不实习'
   }

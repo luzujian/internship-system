@@ -49,6 +49,7 @@ public class AdminUserServiceImpl implements AdminUserService {
         adminUser.setPassword(UserCredentialDefaults.PASSWORD);
         // 参数校验
         validateAdminRegistration(adminUser);
+        normalizeEmail(adminUser);
         
         // 检查用户名是否已存在
         if (adminUserMapper.findByUsername(adminUser.getUsername()) != null) {
@@ -92,6 +93,7 @@ public class AdminUserServiceImpl implements AdminUserService {
     @Override
     public int update(AdminUser adminUser) {
         log.debug("更新管理员用户信息，用户ID: {}", adminUser.getId());
+        normalizeEmail(adminUser);
         
         // 参数校验
         if (adminUser.getId() == null || adminUser.getId() <= 0) {
@@ -187,6 +189,16 @@ public class AdminUserServiceImpl implements AdminUserService {
         return adminUserMapper.findAll();
     }
     
+    private void normalizeEmail(AdminUser adminUser) {
+        if (adminUser.getEmail() == null) return;
+        String email = adminUser.getEmail().trim();
+        if (email.length() > 254 || (!email.isEmpty()
+                && !email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$"))) {
+            throw new BusinessException("邮箱格式不正确");
+        }
+        adminUser.setEmail(email);
+    }
+
     // 验证管理员用户注册信息
     private void validateAdminRegistration(AdminUser adminUser) {
         if (adminUser == null) {

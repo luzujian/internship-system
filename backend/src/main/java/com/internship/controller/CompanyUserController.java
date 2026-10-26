@@ -1,5 +1,7 @@
 package com.internship.controller;
 
+import com.internship.utils.ExcelExports;
+
 import com.internship.anno.Log;
 import com.internship.exception.BusinessException;
 import com.internship.entity.CompanyUser;
@@ -121,89 +123,30 @@ public class CompanyUserController {
     @GetMapping("/export")
     @PreAuthorize("hasAuthority('user:company:view')")
     public void exportCompanyData(HttpServletResponse response,
-                                  @RequestParam(required = false) String companyName,
-                                  @RequestParam(required = false) Integer status) {
-        log.info("导出企业 Excel 数据，筛选条件：企业名称={}, 状态={}", companyName, status);
+            @RequestParam(required = false) String companyName,
+            @RequestParam(required = false) Integer status,
+            @RequestParam(required = false) String companyTag) throws IOException {
+        List<CompanyUser> companies = companyUserService.findPage(1,Integer.MAX_VALUE,companyName,status,null,companyTag).getRows();
+        List<Object[]> rows = companies.stream().map(r -> new Object[]{r.getCompanyName(),
+                r.getAuditStatus()==null?"待审核":switch(r.getAuditStatus()){case 1->"审核通过";case 2->"审核拒绝";default->"待审核";},
+                ExcelExports.account(r.getStatus()),exportCompanyTags(r),r.getContactPerson(),r.getContactPhone(),
+                r.getContactEmail(),r.getEmail(),r.getAddress(),r.getCreateTime()}).toList();
+        ExcelExports.write(response,"企业数据",new String[]{"企业名称","审核状态","账号状态","标签","联系人","联系电话","联系邮箱","个人邮箱","企业地址","创建时间"},rows);
+    }
 
-        try {
-            List<CompanyUser> companies = companyUserService.list(companyName, status);
-
-            Workbook workbook = new XSSFWorkbook();
-            Sheet sheet = workbook.createSheet("企业数据");
-
-            Row headerRow = sheet.createRow(0);
-            String[] headers = {"企业名称", "联系人", "联系电话", "联系邮箱", "个人邮箱", "企业地址", "标签"};
-            CellStyle headerStyle = workbook.createCellStyle();
-            headerStyle.setFillForegroundColor(IndexedColors.GREEN.getIndex());
-            headerStyle.setFillPattern(FillPatternType.SOLID_FOREGROUND);
-            headerStyle.setAlignment(HorizontalAlignment.CENTER);
-            headerStyle.setBorderTop(BorderStyle.THIN);
-            headerStyle.setBorderBottom(BorderStyle.THIN);
-            headerStyle.setBorderLeft(BorderStyle.THIN);
-            headerStyle.setBorderRight(BorderStyle.THIN);
-
-            Font headerFont = workbook.createFont();
-            headerFont.setBold(true);
-            headerFont.setColor(IndexedColors.WHITE.getIndex());
-            headerStyle.setFont(headerFont);
-
-            for (int i = 0; i < headers.length; i++) {
-                Cell cell = headerRow.createCell(i);
-                cell.setCellValue(headers[i]);
-                cell.setCellStyle(headerStyle);
-            }
-
-            CellStyle dataStyle = workbook.createCellStyle();
-            dataStyle.setAlignment(HorizontalAlignment.CENTER);
-            dataStyle.setBorderTop(BorderStyle.THIN);
-            dataStyle.setBorderBottom(BorderStyle.THIN);
-            dataStyle.setBorderLeft(BorderStyle.THIN);
-            dataStyle.setBorderRight(BorderStyle.THIN);
-
-            for (int i = 0; i < companies.size(); i++) {
-                CompanyUser company = companies.get(i);
-                Row dataRow = sheet.createRow(i + 1);
-
-                dataRow.createCell(0).setCellValue(company.getCompanyName() != null ? company.getCompanyName() : "");
-                dataRow.createCell(1).setCellValue(company.getContactPerson() != null ? company.getContactPerson() : "");
-                dataRow.createCell(2).setCellValue(company.getContactPhone() != null ? company.getContactPhone() : "");
-                dataRow.createCell(3).setCellValue(company.getContactEmail() != null ? company.getContactEmail() : "");
-                dataRow.createCell(4).setCellValue(company.getEmail() != null ? company.getEmail() : "");
-                dataRow.createCell(5).setCellValue(company.getAddress() != null ? company.getAddress() : "");
-                dataRow.createCell(6).setCellValue(company.getCompanyTag() != null ? company.getCompanyTag() : "");
-
-                for (int j = 0; j < headers.length; j++) {
-                    dataRow.getCell(j).setCellStyle(dataStyle);
-                    sheet.autoSizeColumn(j);
-                }
-            }
-
-            String filename = "企业数据_" + new Date().getTime() + ".xlsx";
-            String encodedFilename = URLEncoder.encode(filename, StandardCharsets.UTF_8.toString());
-            response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-            response.setHeader("Content-Disposition", "attachment; filename=\"" + encodedFilename + "\"");
-
-            workbook.write(response.getOutputStream());
-            workbook.close();
-
-            log.info("企业数据 Excel 导出成功，共导出{}条记录", companies.size());
-        } catch (IOException e) {
-            log.error("Excel 数据导出失败", e);
-            try {
-                response.setContentType("application/json;charset=utf-8");
-                response.getWriter().write("{\"code\": 500, \"message\": \"导出失败：" + e.getMessage() + "\"}");
-            } catch (IOException ex) {
-                log.error("响应错误信息失败", ex);
-            }
-        } catch (Exception e) {
-            log.error("导出企业数据时发生异常", e);
-            try {
-                response.setContentType("application/json;charset=utf-8");
-                response.getWriter().write("{\"code\": 500, \"message\": \"导出失败：系统异常\"}");
-            } catch (IOException ex) {
-                log.error("响应错误信息失败", ex);
-            }
+    private String exportCompanyTags(CompanyUser company) {
+        java.util.Set<String> tags = new java.util.LinkedHashSet<>();
+        if (Integer.valueOf(1).equals(company.getAuditStatus())) tags.add("校企双向选择");
+        if (Integer.valueOf(1).equals(company.getIsInternshipBase())) tags.add("实习基地");
+        boolean legacyBackup = java.util.Arrays.stream(ExcelExports.text(company.getCooperationMode()).split(",")).anyMatch(v -> v.trim().equals("兜底"));
+        if (Integer.valueOf(1).equals(company.getAcceptBackup()) || legacyBackup) tags.add("接受兜底");
+        if (Integer.valueOf(1).equals(company.getHasTrainingBaseAgreement())) tags.add("已签协议");
+        if (Integer.valueOf(1).equals(company.getIsAlumniUnit())) tags.add("校友单位");
+        for (String tag : ExcelExports.text(company.getCompanyTag()).split("[,，]")) {
+            String value = tag.trim();
+            if (!value.isEmpty() && !value.equals("校企双向选择") && !value.equals("学生自主联系")) tags.add(value);
         }
+        return String.join("、",tags);
     }
 
     @GetMapping("/{id:\\d+}")
@@ -643,74 +586,21 @@ public class CompanyUserController {
     @GetMapping("/recall-records/export")
     @PreAuthorize("hasAuthority('application:withdrawal:view')")
     public void exportRecallRecords(HttpServletResponse response,
-                                    @RequestParam(required = false) String companyName,
-                                    @RequestParam(required = false) String contactPerson,
-                                    @RequestParam(required = false) String startTime,
-                                    @RequestParam(required = false) String endTime) {
-        log.info("导出企业撤回记录，企业名称：{}, 联系人：{}, 开始时间：{}, 结束时间：{}",
-                companyName, contactPerson, startTime, endTime);
-        try {
-            response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-            response.setCharacterEncoding("UTF-8");
-            String fileName = URLEncoder.encode("企业撤回申请记录_" + System.currentTimeMillis(), StandardCharsets.UTF_8) + ".xlsx";
-            response.setHeader("Content-disposition", "attachment;filename=" + fileName);
+            @RequestParam(required = false) String companyName,
+            @RequestParam(required = false) String contactPerson,
+            @RequestParam(required = false) String startTime,
+            @RequestParam(required = false) String endTime) throws IOException {
+        List<Object[]> rows = companyUserService.findRecallRecords(companyName,contactPerson,startTime,endTime).stream()
+                .map(r -> new Object[]{ExcelExports.text(r.getId()),r.getCompanyName(),r.getContactPerson(),r.getContactPhone(),
+                        r.getContactEmail(),r.getRecallReason(),r.getRecallApplyTime(),
+                        r.getRecallStatus()!=null && r.getRecallStatus()>=0 && r.getRecallStatus()<=3?"已自动允许修改":"未知",
+                        r.getRecallAuditTime(),r.getRecallAuditRemark(),registrationAuditText(r.getAuditStatus()),r.getAuditTime(),r.getAuditRemark()}).toList();
+        ExcelExports.write(response,"企业撤回申请记录",new String[]{"记录ID","企业名称","联系人","联系电话","邮箱","撤回原因","申请时间","撤回处理状态","允许修改时间","处理备注","注册审核状态","注册审核时间","注册审核备注"},rows);
+    }
 
-            List<CompanyUser> records = companyUserService.findRecallRecords(companyName, contactPerson, startTime, endTime);
-
-            Workbook workbook = new XSSFWorkbook();
-            Sheet sheet = workbook.createSheet("企业撤回申请记录");
-
-            // 表头样式
-            CellStyle headerStyle = workbook.createCellStyle();
-            headerStyle.setFillForegroundColor(IndexedColors.GREEN.getIndex());
-            headerStyle.setFillPattern(FillPatternType.SOLID_FOREGROUND);
-            headerStyle.setAlignment(HorizontalAlignment.CENTER);
-            headerStyle.setBorderTop(BorderStyle.THIN);
-            headerStyle.setBorderBottom(BorderStyle.THIN);
-            headerStyle.setBorderLeft(BorderStyle.THIN);
-            headerStyle.setBorderRight(BorderStyle.THIN);
-            Font headerFont = workbook.createFont();
-            headerFont.setBold(true);
-            headerFont.setColor(IndexedColors.WHITE.getIndex());
-            headerStyle.setFont(headerFont);
-
-            String[] headers = {"记录 ID", "企业名称", "联系人", "联系电话", "邮箱", "撤回原因", "申请时间", "审核状态", "审核时间", "审核备注"};
-            Row headerRow = sheet.createRow(0);
-            for (int i = 0; i < headers.length; i++) {
-                Cell cell = headerRow.createCell(i);
-                cell.setCellValue(headers[i]);
-                cell.setCellStyle(headerStyle);
-                sheet.setColumnWidth(i, 4500);
-            }
-
-            SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
-            int rowNum = 1;
-            for (CompanyUser record : records) {
-                Row row = sheet.createRow(rowNum++);
-                row.createCell(0).setCellValue(record.getId() != null ? record.getId().toString() : "");
-                row.createCell(1).setCellValue(record.getCompanyName() != null ? record.getCompanyName() : "");
-                row.createCell(2).setCellValue(record.getContactPerson() != null ? record.getContactPerson() : "");
-                row.createCell(3).setCellValue(record.getContactPhone() != null ? record.getContactPhone() : "");
-                row.createCell(4).setCellValue(record.getContactEmail() != null ? record.getContactEmail() : "");
-                row.createCell(5).setCellValue(record.getRecallReason() != null ? record.getRecallReason() : "");
-                row.createCell(6).setCellValue(record.getRecallApplyTime() != null ? dateFormat.format(record.getRecallApplyTime()) : "");
-                row.createCell(7).setCellValue(getAuditStatusText(record.getRecallStatus()));
-                row.createCell(8).setCellValue(record.getRecallAuditTime() != null ? dateFormat.format(record.getRecallAuditTime()) : "");
-                row.createCell(9).setCellValue(record.getRecallAuditRemark() != null ? record.getRecallAuditRemark() : "");
-            }
-
-            workbook.write(response.getOutputStream());
-            workbook.close();
-            log.info("企业撤回申请记录导出成功，共 {} 条记录", records.size());
-        } catch (Exception e) {
-            log.error("导出企业撤回申请记录失败：{}", e.getMessage(), e);
-            try {
-                response.setContentType("application/json;charset=utf-8");
-                response.getWriter().write("{\"code\": 500, \"message\": \"导出失败：" + e.getMessage() + "\"}");
-            } catch (IOException ex) {
-                log.error("响应错误信息失败", ex);
-            }
-        }
+    private String registrationAuditText(Integer status) {
+        if (status == null) return "未知";
+        return switch(status) { case 0 -> "待审核"; case 1 -> "已通过"; case 2 -> "已拒绝"; case 3 -> "已撤回"; default -> "未知"; };
     }
 
     private String getAuditStatusText(Integer recallStatus) {

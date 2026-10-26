@@ -44,6 +44,8 @@ public class AgentController {
     public Map<String,Object> create(@RequestHeader("Authorization")String auth,@RequestBody CreateTask input){return success(tasks.create(auth,input));}
     @PostMapping("/tasks/{id}/resend")
     public Map<String,Object> resend(@RequestHeader("Authorization")String auth,@PathVariable String id,@RequestBody ResendTask input){return success(tasks.resend(auth,id,input));}
+    @PostMapping("/tasks/{id}/ui-feedback")
+    public Map<String,Object> uiFeedback(@RequestHeader("Authorization")String auth,@PathVariable String id,@RequestBody UiFeedback input){return success(tasks.continueUi(auth,id,input));}
     /** 智能填表：模型只产出字段赋值意图，真实写入由前端完成；上行不含用户已填值。 */
     @PostMapping("/forms/fill-intent")
     public Map<String,Object> fillIntent(@RequestHeader("Authorization")String auth,@RequestBody FillIntentService.FillRequest input){

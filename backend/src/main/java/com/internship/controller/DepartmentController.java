@@ -1,5 +1,7 @@
 package com.internship.controller;
 
+import com.internship.utils.ExcelExports;
+
 import com.internship.anno.Log;
 import com.internship.entity.Major;
 import com.internship.entity.Result;
@@ -27,6 +29,9 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/admin/departments")
 public class DepartmentController {
+    @Autowired
+    private com.internship.service.DivisionService exportDivisions;
+
 
     @Autowired
     private DepartmentService departmentService;
@@ -115,101 +120,45 @@ public class DepartmentController {
     @Log(operationType = "EXPORT", module = "DEPARTMENT_MAJOR_MANAGEMENT", description = "导出院系专业数据", riskLevel = "MEDIUM", critical = true)
     @GetMapping("/majors/export")
     @PreAuthorize("hasAuthority('department:view')")
-    public void exportMajorData(HttpServletResponse response) {
-        log.info("导出院系专业 Excel 数据");
-        try {
-            response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-            response.setCharacterEncoding("UTF-8");
-            String fileName = URLEncoder.encode("院系专业数据" + System.currentTimeMillis(), StandardCharsets.UTF_8) + ".xlsx";
-            response.setHeader("Content-disposition", "attachment;filename=" + fileName);
-
-            List<Department> departments = departmentService.findAll();
-            List<Major> allMajors = majorService.findAll();
-
-            Workbook workbook = new XSSFWorkbook();
-            Sheet sheet = workbook.createSheet("院系专业数据");
-
-            Row headerRow = sheet.createRow(0);
-            String[] headers = {"院系名称", "专业名称"};
-            CellStyle headerStyle = workbook.createCellStyle();
-            headerStyle.setFillForegroundColor(IndexedColors.GREEN.getIndex());
-            headerStyle.setFillPattern(FillPatternType.SOLID_FOREGROUND);
-            headerStyle.setAlignment(HorizontalAlignment.CENTER);
-            headerStyle.setBorderTop(BorderStyle.THIN);
-            headerStyle.setBorderBottom(BorderStyle.THIN);
-            headerStyle.setBorderLeft(BorderStyle.THIN);
-            headerStyle.setBorderRight(BorderStyle.THIN);
-
-            Font headerFont = workbook.createFont();
-            headerFont.setBold(true);
-            headerFont.setColor(IndexedColors.WHITE.getIndex());
-            headerStyle.setFont(headerFont);
-
-            for (int i = 0; i < headers.length; i++) {
-                Cell cell = headerRow.createCell(i);
-                cell.setCellValue(headers[i]);
-                cell.setCellStyle(headerStyle);
-                sheet.autoSizeColumn(i);
-            }
-
-            CellStyle dataStyle = workbook.createCellStyle();
-            dataStyle.setAlignment(HorizontalAlignment.CENTER);
-            dataStyle.setBorderTop(BorderStyle.THIN);
-            dataStyle.setBorderBottom(BorderStyle.THIN);
-            dataStyle.setBorderLeft(BorderStyle.THIN);
-            dataStyle.setBorderRight(BorderStyle.THIN);
-
-            int rowIndex = 1;
-            for (Department department : departments) {
-                List<Major> departmentMajors = allMajors.stream()
-                        .filter(m -> m.getDepartmentId() != null && m.getDepartmentId().equals(department.getId()))
-                        .toList();
-
-                if (departmentMajors.isEmpty()) {
-                    Row dataRow = sheet.createRow(rowIndex++);
-                    Cell cell0 = dataRow.createCell(0);
-                    cell0.setCellValue(department.getName() != null ? department.getName() : "");
-                    cell0.setCellStyle(dataStyle);
-                    Cell cell1 = dataRow.createCell(1);
-                    cell1.setCellValue("");
-                    cell1.setCellStyle(dataStyle);
-                } else {
-                    for (Major major : departmentMajors) {
-                        Row dataRow = sheet.createRow(rowIndex++);
-                        Cell cell0 = dataRow.createCell(0);
-                        cell0.setCellValue(department.getName() != null ? department.getName() : "");
-                        cell0.setCellStyle(dataStyle);
-                        Cell cell1 = dataRow.createCell(1);
-                        cell1.setCellValue(major.getName() != null ? major.getName() : "");
-                        cell1.setCellStyle(dataStyle);
-                    }
+    public void exportMajorData(HttpServletResponse response,
+            @RequestParam(required = false) String departmentName,
+            @RequestParam(required = false) String majorName,
+            @RequestParam(required = false) Long departmentId,
+            @RequestParam(required = false) Long divisionId) throws IOException {
+        List<com.internship.entity.Division> divisions = exportDivisions.findAll();
+        List<Major> majors = majorService.findAll();
+        List<Object[]> rows = new java.util.ArrayList<>();
+        for (Department d : departmentService.findAll()) {
+            if (departmentId != null && !departmentId.equals(d.getId())) continue;
+            if (!ExcelExports.contains(d.getName(), departmentName)) continue;
+            Integer teachers = departmentService.getTeacherCountByDepartmentId(d.getId());
+            Integer students = departmentService.getStudentCountByDepartmentId(d.getId());
+            boolean added = false;
+            for (com.internship.entity.Division v : divisions) {
+                if (!java.util.Objects.equals(v.getDepartmentId(),d.getId())) continue;
+                if (divisionId != null && !divisionId.equals(v.getId())) continue;
+                Integer divisionStudents = exportDivisions.getStudentCountByDivisionId(v.getId());
+                boolean divisionAdded = false;
+                for (Major m : majors) {
+                    if (!java.util.Objects.equals(m.getDivisionId(),v.getId()) || !ExcelExports.contains(m.getName(),majorName)) continue;
+                    rows.add(new Object[]{d.getName(),v.getName(),m.getName(),teachers,students,divisionStudents,
+                            majorService.getStudentCountByMajorId(m.getId())});
+                    divisionAdded = true; added = true;
+                }
+                if (!divisionAdded && (majorName == null || majorName.isBlank())) {
+                    rows.add(new Object[]{d.getName(),v.getName(),"",teachers,students,divisionStudents,0}); added = true;
                 }
             }
-
-            // 确保至少有一行数据（即使只有表头）
-            if (rowIndex == 1) {
-                log.warn("导出的院系专业数据为空，departments数量={}, majors数量={}", departments.size(), allMajors.size());
+            // Legacy majors without a division are still part of the department.
+            if (divisionId == null) for (Major m : majors) {
+                if (!java.util.Objects.equals(m.getDepartmentId(),d.getId()) || m.getDivisionId()!=null
+                        || !ExcelExports.contains(m.getName(),majorName)) continue;
+                rows.add(new Object[]{d.getName(),"",m.getName(),teachers,students,0,majorService.getStudentCountByMajorId(m.getId())}); added=true;
             }
-
-            try (OutputStream outputStream = response.getOutputStream()) {
-                workbook.write(outputStream);
-                log.info("导出院系专业 Excel 数据成功");
-            } catch (IOException e) {
-                log.error("导出院系专业 Excel 数据失败（流操作异常）: {}", e.getMessage(), e);
-                throw new RuntimeException("导出院系专业 Excel 数据失败：" + e.getMessage());
-            } finally {
-                try {
-                    if (workbook != null) {
-                        workbook.close();
-                    }
-                } catch (IOException e) {
-                    log.error("关闭工作簿失败：{}", e.getMessage(), e);
-                }
-            }
-        } catch (Exception e) {
-            log.error("导出院系专业数据失败：{}", e.getMessage(), e);
-            throw new RuntimeException("导出院系专业数据失败：" + e.getMessage());
+            if (!added && divisionId == null && (majorName == null || majorName.isBlank()))
+                rows.add(new Object[]{d.getName(),"","",teachers,students,0,0});
         }
+        ExcelExports.write(response,"学院系专业数据",new String[]{"学院名称","系名称","专业名称","学院教师人数","学院学生人数","系学生人数","专业学生人数"},rows);
     }
 
     /**

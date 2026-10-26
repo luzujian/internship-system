@@ -24,6 +24,19 @@ public interface SystemConfigMapper {
 
     @Select("SELECT * FROM system_config WHERE config_key = #{configKey} AND deleted = 0 FOR UPDATE")
     SystemConfig lockByConfigKey(String configKey);
+
+    @Insert("INSERT INTO system_config (config_key, config_value, config_type, config_name, status) " +
+            "VALUES ('AI_STUDENT_ONBOARDING_GENERATION', #{generation}, 'string', '学生AI登录引导批次', 1) " +
+            "ON DUPLICATE KEY UPDATE config_value=VALUES(config_value), status=1, deleted=0, update_time=NOW()")
+    void saveStudentAiOnboardingGeneration(String generation);
+
+    @Insert("INSERT IGNORE INTO system_config (config_key, config_value, config_type, config_name, status) " +
+            "VALUES (#{key}, #{generation}, 'string', '学生AI登录引导记录', 1)")
+    int insertStudentAiOnboardingReceipt(@Param("key") String key, @Param("generation") String generation);
+
+    @Update("UPDATE system_config SET config_value=#{generation}, status=1, deleted=0, update_time=NOW() " +
+            "WHERE config_key=#{key} AND (config_value IS NULL OR config_value<>#{generation} OR deleted<>0)")
+    int updateStudentAiOnboardingReceipt(@Param("key") String key, @Param("generation") String generation);
     
     @Update("UPDATE system_config SET config_key = #{configKey}, config_value = #{configValue}, config_type = #{configType}, " +
             "config_name = #{configName}, description = #{description}, status = #{status}, update_time = NOW() " +

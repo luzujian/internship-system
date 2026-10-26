@@ -58,7 +58,7 @@ test('workspace shows pending bubble, back-to-latest, a shared stop/send button 
 
 test('student login auto-open is one-shot and gated by capabilities', () => {
   assert.match(storeSrc, /deepintern\.agent\.auto-open-student-login/)
-  assert.match(storeSrc, /caps\.actor\.role === 'ROLE_STUDENT'/)
+  assert.match(storeSrc, /caps\.actor\.role !== 'ROLE_STUDENT'/)
   assert.match(storeSrc, /caps\.enabled/)
   assert.match(storeSrc, /sessionStorage\.removeItem\(studentLoginAutoOpenKey\)/)
 })
@@ -68,15 +68,15 @@ test('docked AI leaves room for business dialogs', () => {
   assert.match(workspaceSrc, /right:var\(--agent-width\)/)
 })
 
-test('form-open messages are delegated to semantic fill intent without phrase matching', () => {
+test('form-open messages are delegated to the business Agent without another frontend intent model', () => {
   const messages = [
     '标题就弄成实习周报模板吧',
     '状态用草稿，目标群体弄成学生',
     '帮我处理一下这个文档，你看着填'
   ]
   for (const message of messages) {
-    assert.equal(shouldResolveFormFill(message, { hasForm: true }), true, message)
-    assert.equal(shouldResolveUiIntent(message), true, message)
+    assert.equal(shouldResolveFormFill(message, { hasForm: true }), false, message)
+    assert.equal(shouldResolveUiIntent(message), false, message)
   }
   assert.equal(shouldResolveFormFill('标题就弄成实习周报模板吧', { hasForm: false }), false)
 })
@@ -87,7 +87,7 @@ test('ordinary questions bypass UI and fill models even with a form open', () =>
     assert.equal(shouldResolveFormFill(message, { hasForm: true }), false, message)
   }
   for (const message of ['帮我打开岗位发布', '打开表单后告诉我这个字段是什么意思', '你能做什么？顺便打开企业资料', '标题改成为什么选择我们']) {
-    assert.equal(shouldResolveUiIntent(message), true, message)
+    assert.equal(shouldResolveUiIntent(message), false, message)
   }
 })
 

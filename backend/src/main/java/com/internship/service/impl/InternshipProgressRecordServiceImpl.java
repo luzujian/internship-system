@@ -327,7 +327,13 @@ public class InternshipProgressRecordServiceImpl implements InternshipProgressRe
             };
             case "confirmation_confirmed" -> "已确认";
             case "confirmation_rejected" -> "已拒绝";
-            case "self_practice_submitted", "delay_submitted", "unit_change_submitted",
+            case "self_practice_submitted" -> switch (status) {
+                case "success" -> "已通过";
+                case "failed" -> "已驳回";
+                case "cancelled" -> "已撤回";
+                default -> "待处理";
+            };
+            case "delay_submitted", "unit_change_submitted",
                  "unit_change_resubmitted" -> switch (status) {
                 case "success"   -> "已通过";
                 case "failed"    -> "已驳回";
@@ -339,9 +345,9 @@ public class InternshipProgressRecordServiceImpl implements InternshipProgressRe
             case "reflection_submitted", "reflection_resubmitted" -> "已提交";
             case "reflection_scored" -> "已评分";
             case "stage_continued", "stage_auto_continued", "stage_change_selected" -> "已选择";
-            case "internship_started" -> "进行中";
-            case "internship_ended" -> "已结束";
-            case "internship_interrupted" -> "已中断";
+            case "internship_started" -> "实习进行中";
+            case "internship_ended" -> "实习已结束";
+            case "internship_interrupted" -> "实习已中断";
             default -> switch (status) {
                 case "pending" -> "待处理";
                 case "success" -> "已完成";

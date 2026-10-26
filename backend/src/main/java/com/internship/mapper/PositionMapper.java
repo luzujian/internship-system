@@ -32,7 +32,17 @@ public interface PositionMapper {
      * @param id 岗位ID
      * @return 岗位信息
      */
-    Position findByIdForUpdate(Long id);
+    default Position findByIdForUpdate(Long id) {
+        Position position = lockPositionRow(id);
+        if (position == null) return null;
+        int recruited = countCurrentOccupancyForUpdate(id);
+        position.setRecruitedCount(recruited);
+        position.setRemainingQuota((position.getPlannedRecruit() == null ? 0 : position.getPlannedRecruit()) - recruited);
+        return position;
+    }
+
+    Position lockPositionRow(@Param("id") Long id);
+    int countCurrentOccupancyForUpdate(@Param("id") Long id);
 
     /**
      * 更新岗位信息

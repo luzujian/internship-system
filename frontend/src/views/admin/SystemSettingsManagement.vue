@@ -49,7 +49,7 @@
                 <el-switch v-model="emailForm.enabled" inline-prompt :active-text="'开'" :inactive-text="'关'" />
               </div>
               <p class="cfg-tip">
-                开启后，勾选的业务在审核通过或驳回时会向相关人员发送邮件提醒；关闭后不再发送任何业务提醒邮件，<b>不影响系统其他功能正常使用</b>。
+                开启后，勾选的业务发生审核结果或收到新问题反馈时会向相关人员发送邮件提醒；问题反馈提醒发送给已启用且设置了邮箱的管理员。关闭后不再发送业务提醒邮件，<b>不影响系统其他功能正常使用</b>。
               </p>
               <el-checkbox-group v-model="emailForm.scopes" class="scope-group" :class="{ 'scope-disabled': !emailForm.enabled }" :disabled="!emailForm.enabled">
                 <el-checkbox v-for="opt in emailScopeOptions" :key="opt.code" :value="opt.code" class="scope-item">
@@ -271,7 +271,7 @@ const basicForm = reactive({
 
 // ===== 系统邮件提醒（基础配置）=====
 // 与后端 EmailNotifyScope 枚举保持一致；接口返回 emailNotifyScopeOptions 时以接口为准
-const DEFAULT_EMAIL_SCOPES = ['COMPANY_AUDIT', 'STUDENT_APPLICATION', 'JOB_APPLICATION', 'INTERNSHIP_CONFIRMATION']
+const DEFAULT_EMAIL_SCOPES = ['COMPANY_AUDIT', 'STUDENT_APPLICATION', 'JOB_APPLICATION', 'INTERNSHIP_CONFIRMATION', 'PROBLEM_FEEDBACK']
 const emailForm = reactive({
   enabled: true,
   scopes: [...DEFAULT_EMAIL_SCOPES] as string[]
@@ -280,7 +280,8 @@ const emailScopeOptions = ref<{ code: string; label: string }[]>([
   { code: 'COMPANY_AUDIT', label: '企业注册审核结果' },
   { code: 'STUDENT_APPLICATION', label: '学生申请审核结果' },
   { code: 'JOB_APPLICATION', label: '岗位申请结果' },
-  { code: 'INTERNSHIP_CONFIRMATION', label: '实习确认结果' }
+  { code: 'INTERNSHIP_CONFIRMATION', label: '实习确认结果' },
+  { code: 'PROBLEM_FEEDBACK', label: '问题反馈提醒' }
 ])
 const savingEmail = ref(false)
 const testingEmail = ref(false)

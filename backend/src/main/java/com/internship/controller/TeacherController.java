@@ -1,5 +1,7 @@
 package com.internship.controller;
 
+import com.internship.utils.ExcelExports;
+
 import com.internship.anno.Log;
 import com.internship.dto.TeacherCompanyDTO;
 import com.internship.entity.*;
@@ -54,6 +56,9 @@ import java.util.stream.Collectors;
 @PreAuthorize("hasAnyRole('TEACHER_COLLEGE', 'TEACHER_DEPARTMENT', 'TEACHER_COUNSELOR')")
 @Validated
 public class TeacherController {
+
+    @Autowired
+    private com.internship.service.JobSearchStatusService jobSearchStatusService;
 
     @Autowired
     private UserService userService;
@@ -273,6 +278,7 @@ public class TeacherController {
                                @RequestParam(defaultValue = "1000") Integer pageSize,
                                @RequestParam(required = false) String companyName,
                                @RequestParam(required = false) Integer status,
+                               @RequestParam(required = false) Integer auditStatus,
                                @RequestParam(required = false) Integer recallStatus,
                                @RequestParam(required = false) String companyTag,
                                @RequestParam(required = false) String industry,
@@ -284,7 +290,7 @@ public class TeacherController {
         log.info("教师端获取企业列表（用于下拉框），页码：{}, 每页条数：{}, 企业名称：{}, 行业：{}", page, pageSize, companyName, industry);
         try {
             PageResult<TeacherCompanyDTO> pageResult = companyRelationsService.findTeacherCompanies(
-                    page, pageSize, companyName, status, recallStatus, companyTag, industry,
+                    page, pageSize, companyName, status, auditStatus, recallStatus, companyTag, industry,
                     keyword, visitedYear, visitState, visitTeacherId, liaisonTeacherId);
             return Result.success(pageResult);
         } catch (Exception e) {
@@ -553,12 +559,12 @@ public class TeacherController {
             boolean hasPendingConfirmation = assignments.stream().anyMatch(item ->
                     "PENDING_CONFIRMATION".equals(item.getStatus()));
 
-            Object displayStatus = currentAssignment != null
-                    ? deriveInternshipStatus(currentAssignment)
+            Object displayStatus = internshipStatus != null && internshipStatus.getStatus() != null
+                    && internshipStatus.getStatus() >= 2 && internshipStatus.getStatus() <= 6
+                    ? internshipStatus.getStatus()
+                    : currentAssignment != null ? deriveInternshipStatus(currentAssignment)
                     : internshipStatus != null && internshipStatus.getStatus() != null
-                        && !Integer.valueOf(7).equals(internshipStatus.getStatus())
-                        ? internshipStatus.getStatus()
-                        : 0;
+                    && internshipStatus.getStatus() <= 6 ? internshipStatus.getStatus() : 0;
 
             String companyName = null;
             String positionName = null;
@@ -611,6 +617,11 @@ public class TeacherController {
             detail.put("phone", student.getPhone());
             detail.put("email", student.getEmail());
             detail.put("internshipStatus", displayStatus);
+            if (internshipStatus != null) {
+                detail.put("jobSearchStatus", internshipStatus.getJobSearchStatus());
+                detail.put("jobSearchStatusText", internshipStatus.getJobSearchStatusText());
+                detail.put("pendingApplicationTexts", internshipStatus.getPendingApplicationTexts());
+            }
             detail.put("company", companyName);
             detail.put("positionName", positionName);
             detail.put("hasPendingConfirmation", hasPendingConfirmation);
@@ -781,91 +792,19 @@ public class TeacherController {
             @RequestParam(required = false) String companyName,
             @RequestParam(required = false) String studentIds,
             HttpServletResponse response) throws IOException {
-        log.info("教师端导出实习状态数据，学生 ID: {}, 学生姓名：{}, 性别：{}, 状态：{}, 企业 ID: {}, 企业名称：{}, 选中学生IDs: {}",
-                studentId, name, gender, status, companyId, companyName, studentIds);
-
-        List<StudentInternshipStatus> statusList;
+        List<StudentInternshipStatus> rows;
         if (StringUtils.hasText(studentIds)) {
             Set<Long> ids = new HashSet<>();
-            for (String idStr : studentIds.split(",")) {
-                try {
-                    ids.add(Long.parseLong(idStr.trim()));
-                } catch (NumberFormatException e) {
-                    log.warn("无效的ID格式: {}", idStr);
-                }
+            for (String value : studentIds.split(",")) {
+                try { ids.add(Long.valueOf(value.trim())); }
+                catch (NumberFormatException ignored) { /* Invalid IDs cannot widen the export. */ }
             }
-            List<StudentInternshipStatus> scoped = getScopedStudentList(null, null, null,
-                    null, null, null, null, null, null);
-            Set<Long> scopedIds = scoped.stream().map(StudentInternshipStatus::getStudentId)
-                    .filter(Objects::nonNull).collect(Collectors.toSet());
-            if (ids.isEmpty() || !scopedIds.containsAll(ids)) {
-                throw new AccessDeniedException("导出包含管辖范围外的实习状态");
-            }
-            statusList = scoped.stream().filter(item -> ids.contains(item.getStudentId())).toList();
-            log.info("根据选中ID导出，ID数量: {}", ids.size());
-        } else {
-            statusList = getScopedStudentList(studentId, name, gender, status, companyId,
-                    companyName, null, null, null);
-            log.info("根据条件导出，记录数: {}", statusList.size());
-        }
-
-        try (Workbook workbook = new XSSFWorkbook(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
-            Sheet sheet = workbook.createSheet("学生实习状态");
-
-            CellStyle headerStyle = workbook.createCellStyle();
-            headerStyle.setFillForegroundColor(IndexedColors.GREEN.getIndex());
-            headerStyle.setFillPattern(FillPatternType.SOLID_FOREGROUND);
-            Font headerFont = workbook.createFont();
-            headerFont.setBold(true);
-            headerFont.setColor(IndexedColors.WHITE.getIndex());
-            headerStyle.setFont(headerFont);
-            headerStyle.setAlignment(HorizontalAlignment.CENTER);
-
-            String[] headers = {"学号", "姓名", "性别", "年级", "专业", "班级", "实习状态", "企业名称", "岗位名称", "实习开始时间", "实习结束时间", "更新时间"};
-
-            Row headerRow = sheet.createRow(0);
-            for (int i = 0; i < headers.length; i++) {
-                Cell cell = headerRow.createCell(i);
-                cell.setCellValue(headers[i]);
-                cell.setCellStyle(headerStyle);
-                sheet.setColumnWidth(i, 4000);
-            }
-
-            SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
-            int rowNum = 1;
-            for (StudentInternshipStatus item : statusList) {
-                Row row = sheet.createRow(rowNum++);
-                row.createCell(0).setCellValue(item.getStudent() != null ? item.getStudent().getStudentUserId() : "");
-                row.createCell(1).setCellValue(item.getStudent() != null ? item.getStudent().getName() : "");
-                row.createCell(2).setCellValue(item.getStudent() != null ? getGenderText(item.getStudent().getGender()) : "");
-                row.createCell(3).setCellValue(item.getStudent() != null ? (item.getStudent().getGrade() != null ? item.getStudent().getGrade() + "级" : "") : "");
-                row.createCell(4).setCellValue(item.getMajor() != null ? item.getMajor().getName() : "");
-                row.createCell(5).setCellValue(item.getCls() != null ? item.getCls().getName() : "");
-                row.createCell(6).setCellValue(getStatusText(item.getStatus()));
-                row.createCell(7).setCellValue(item.getCompany() != null ? item.getCompany().getCompanyName() : "");
-                row.createCell(8).setCellValue(item.getPosition() != null ? item.getPosition().getPositionName() : "");
-                row.createCell(9).setCellValue(item.getInternshipStartTime() != null ? dateFormat.format(item.getInternshipStartTime()) : "");
-                row.createCell(10).setCellValue(item.getInternshipEndTime() != null ? dateFormat.format(item.getInternshipEndTime()) : "");
-                row.createCell(11).setCellValue(item.getUpdateTime() != null ? dateFormat.format(item.getUpdateTime()) : "");
-            }
-
-            workbook.write(out);
-            byte[] excelData = out.toByteArray();
-
-            String fileName = "学生实习状态导出_" + new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date()) + ".xlsx";
-            String encodedFileName = URLEncoder.encode(fileName, StandardCharsets.UTF_8.toString());
-
-            response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-            response.setHeader("Content-Disposition", "attachment; filename=\"" + encodedFileName + "\"");
-            response.setContentLength(excelData.length);
-
-            try (OutputStream outputStream = response.getOutputStream()) {
-                outputStream.write(excelData);
-                outputStream.flush();
-            }
-        }
-
-        log.info("教师端实习状态数据导出成功，共 {} 条记录", statusList.size());
+            List<StudentInternshipStatus> scoped = getScopedStudentList(null,null,null,null,null,null,null,null,null);
+            Set<Long> allowed = scoped.stream().map(StudentInternshipStatus::getStudentId).collect(Collectors.toSet());
+            if (ids.isEmpty() || !allowed.containsAll(ids)) throw new AccessDeniedException("导出包含管辖范围外的学生");
+            rows = scoped.stream().filter(r -> ids.contains(r.getStudentId())).toList();
+        } else rows = getScopedStudentList(studentId,name,gender,status,companyId,companyName,null,null,null);
+        ExcelExports.internships(response, "学生实习状态", rows);
     }
 
     @Log(operationType = "EXPORT", module = "TEACHER_MANAGEMENT", description = "批量导出教师实习状态数据", riskLevel = "MEDIUM", critical = true)
@@ -875,77 +814,18 @@ public class TeacherController {
             @RequestParam(required = false) String className,
             @RequestParam(required = false) String grade,
             @RequestParam(required = false) Integer status,
+            @RequestParam Map<String, String> filters,
             HttpServletResponse response) throws IOException {
-        log.info("教师端批量导出实习状态数据，导出范围: {}, 班级: {}, 年级: {}, 状态: {}",
-                scope, className, grade, status);
+        List<StudentInternshipStatus> rows = getScopedStudentList(null,filters.get("name"),null,status,null,
+                filters.get("companyName"),grade,filters.get("major"),className);
+        String path = filters.get("internshipPath");
+        if (StringUtils.hasText(path)) rows = rows.stream().filter(r -> path.equals(ExcelExports.pathCode(r))).toList();
+        ExcelExports.internships(response, "学生实习状态汇总", rows);
+    }
 
-        // 按教师实际管辖范围获取数据
-        List<StudentInternshipStatus> statusList = getScopedStudentList(null, null, null,
-                status, null, null, grade, null, className);
-
-        try (Workbook workbook = new XSSFWorkbook(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
-            Sheet sheet = workbook.createSheet("学生实习状态汇总");
-
-            CellStyle headerStyle = workbook.createCellStyle();
-            headerStyle.setFillForegroundColor(IndexedColors.GREEN.getIndex());
-            headerStyle.setFillPattern(FillPatternType.SOLID_FOREGROUND);
-            Font headerFont = workbook.createFont();
-            headerFont.setBold(true);
-            headerFont.setColor(IndexedColors.WHITE.getIndex());
-            headerStyle.setFont(headerFont);
-            headerStyle.setAlignment(HorizontalAlignment.CENTER);
-
-            String[] headers = {"学号", "姓名", "性别", "年级", "专业", "班级", "实习状态", "企业名称", "岗位名称", "实习开始时间", "实习结束时间", "更新时间"};
-
-            Row headerRow = sheet.createRow(0);
-            for (int i = 0; i < headers.length; i++) {
-                Cell cell = headerRow.createCell(i);
-                cell.setCellValue(headers[i]);
-                cell.setCellStyle(headerStyle);
-                sheet.setColumnWidth(i, 4000);
-            }
-
-            SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
-            int rowNum = 1;
-            for (StudentInternshipStatus item : statusList) {
-                Row row = sheet.createRow(rowNum++);
-                row.createCell(0).setCellValue(item.getStudent() != null ? item.getStudent().getStudentUserId() : "");
-                row.createCell(1).setCellValue(item.getStudent() != null ? item.getStudent().getName() : "");
-                row.createCell(2).setCellValue(item.getStudent() != null ? getGenderText(item.getStudent().getGender()) : "");
-                row.createCell(3).setCellValue(item.getStudent() != null ? (item.getStudent().getGrade() != null ? item.getStudent().getGrade() + "级" : "") : "");
-                row.createCell(4).setCellValue(item.getMajor() != null ? item.getMajor().getName() : "");
-                row.createCell(5).setCellValue(item.getCls() != null ? item.getCls().getName() : "");
-                row.createCell(6).setCellValue(getStatusText(item.getStatus()));
-                row.createCell(7).setCellValue(item.getCompany() != null ? item.getCompany().getCompanyName() : "");
-                row.createCell(8).setCellValue(item.getPosition() != null ? item.getPosition().getPositionName() : "");
-                row.createCell(9).setCellValue(item.getInternshipStartTime() != null ? dateFormat.format(item.getInternshipStartTime()) : "");
-                row.createCell(10).setCellValue(item.getInternshipEndTime() != null ? dateFormat.format(item.getInternshipEndTime()) : "");
-                row.createCell(11).setCellValue(item.getUpdateTime() != null ? dateFormat.format(item.getUpdateTime()) : "");
-            }
-
-            workbook.write(out);
-            byte[] excelData = out.toByteArray();
-
-            String scopeText = "";
-            if ("class".equals(scope) && className != null) {
-                scopeText = className + "_";
-            } else if ("grade".equals(scope) && grade != null) {
-                scopeText = grade + "级_";
-            }
-            String fileName = scopeText + "学生实习状态汇总_" + new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date()) + ".xlsx";
-            String encodedFileName = URLEncoder.encode(fileName, StandardCharsets.UTF_8.toString());
-
-            response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-            response.setHeader("Content-Disposition", "attachment; filename=\"" + encodedFileName + "\"");
-            response.setContentLength(excelData.length);
-
-            try (OutputStream outputStream = response.getOutputStream()) {
-                outputStream.write(excelData);
-                outputStream.flush();
-            }
-        }
-
-        log.info("教师端批量实习状态数据导出成功，共 {} 条记录", statusList.size());
+    public void exportBatchInternshipStatus(String scope, String className, String grade, Integer status,
+                                             HttpServletResponse response) throws IOException {
+        exportBatchInternshipStatus(scope,className,grade,status,Map.of(),response);
     }
 
     private String getGenderText(Integer gender) {
@@ -954,14 +834,24 @@ public class TeacherController {
     }
 
     private String getStatusText(Integer status) {
-        if (status == null) return "未知";
+        if (status == null) return "状态待核实";
         return switch (status) {
-            case 0 -> "未找到实习";
-            case 1 -> "有Offer未确定";
-            case 2 -> "已确定实习";
-            case 3 -> "实习结束";
-            default -> "未知";
+            case 0 -> "尚未获录用";
+            case 1 -> "已录用待确认";
+            case 2 -> "已定单位待实习";
+            case 3 -> "实习进行中";
+            case 4 -> "实习已结束";
+            case 5 -> "实习已中断";
+            case 6 -> "已延期实习";
+            default -> "状态待核实";
         };
+    }
+
+    private String exportStatusText(StudentInternshipStatus item) {
+        String text = StringUtils.hasText(item.getJobSearchStatusText())
+                ? item.getJobSearchStatusText() : getStatusText(item.getStatus());
+        return item.getPendingApplicationTexts() == null || item.getPendingApplicationTexts().isEmpty()
+                ? text : text + " " + String.join(" ", item.getPendingApplicationTexts());
     }
 
     /**
@@ -971,9 +861,11 @@ public class TeacherController {
             Long studentId, String name, Integer gender, Integer status,
             Long companyId, String companyName, String grade, String major, String className) {
         ScopeInfo scope = resolveTeacherScope();
-        return studentInternshipStatusMapper.listByScope(studentId, name, gender, status,
+        List<StudentInternshipStatus> statuses = studentInternshipStatusMapper.listByScope(studentId, name, gender, status,
                 companyId, companyName, grade, major, className, null,
                 scope.departmentIds, scope.divisionIds, scope.classIds);
+        jobSearchStatusService.enrich(statuses);
+        return statuses;
     }
 
     private Long getCurrentUserId() {

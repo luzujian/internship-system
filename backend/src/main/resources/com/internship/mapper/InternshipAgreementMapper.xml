@@ -9,7 +9,8 @@
                CONVERT(CASE WHEN cr.recall_status = 2 THEN 'WITHDRAWN'
                     WHEN cr.status = 2 THEN 'REJECTED'
                     WHEN cr.status = 0 THEN 'PENDING'
-                    ELSE COALESCE(p.status, 'CONFIRMED') END USING utf8mb4) COLLATE utf8mb4_unicode_ci AS business_status
+                    ELSE COALESCE(p.status, 'CONFIRMED') END USING utf8mb4) COLLATE utf8mb4_unicode_ci AS business_status,
+               CONVERT('COMPANY' USING utf8mb4) COLLATE utf8mb4_unicode_ci AS review_target
         FROM internship_confirmation_record cr
         LEFT JOIN internship_stage_assignment p ON p.id = (
             SELECT MAX(p2.id) FROM internship_stage_assignment p2 WHERE p2.confirmation_record_id = cr.id
@@ -27,7 +28,8 @@
                CONVERT(CASE WHEN a.status = 'withdrawn' THEN 'WITHDRAWN'
                     WHEN a.status = 'rejected' THEN 'REJECTED'
                     WHEN a.status = 'pending' THEN 'PENDING'
-                    ELSE COALESCE(p.status, 'CONFIRMED') END USING utf8mb4) COLLATE utf8mb4_unicode_ci
+                    ELSE COALESCE(p.status, 'CONFIRMED') END USING utf8mb4) COLLATE utf8mb4_unicode_ci,
+               CONVERT(a.review_target USING utf8mb4) COLLATE utf8mb4_unicode_ci
         FROM student_application a
         LEFT JOIN internship_stage_assignment p ON p.id = (
             SELECT MAX(p2.id) FROM internship_stage_assignment p2

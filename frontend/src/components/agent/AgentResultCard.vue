@@ -14,14 +14,14 @@ const date = computed(() => {
 })
 const labels: Record<string, string> = {
   company: '单位', city: '城市', location: '地点', salaryNote: '薪资说明', major: '专业', grade: '年级', className: '班级', remainingQuota: '剩余确认名额',
-  dueAt: '截止时间', deadline: '截止时间', interviewTime: '面试时间', status: '状态', updatedAt: '更新时间',
+  dueAt: '截止时间', deadline: '截止时间', interviewTime: '面试时间', pendingApplicationTexts: '在办申请', status: '状态', updatedAt: '更新时间',
   requiredMajors: '专业要求', method: '面试方式', interviewMethod: '面试方式', interviewLocation: '面试地点', internshipStartDate: '实习开始', internshipEndDate: '实习结束', internshipEnvironment: '实习环境', positionType: '岗位类型', plannedRecruit: '计划招聘', providesAccommodation: '是否提供住宿', companyIndustry: '所属行业', companyScale: '企业规模', reason: '原因', description: '说明', requirements: '岗位要求',
   periodNumber: '期数', submittedAt: '提交时间', handling: '处理方式', studentNo: '学号', division: '系', position: '岗位', count: '人数', ratio: '比例',
 }
 const statusLabels: Record<string, string> = { pending: '待处理', approved: '已同意', rejected: '已拒绝',
   pending_interview: '等待面试', interview_passed: '面试通过 / 已录用', interview_failed: '面试未通过',
   accepted: '已接受', cancelled: '已取消', active: '在招', hired: '已录用', inactive: '已暂停招聘', SUBMITTED: '已提交', NOT_SUBMITTED: '尚未提交',
-  CONFIRMED: '已确认', IN_PROGRESS: '实习中', ENDED: '已结束', withdrawn: '已撤回', NOT_FOUND: '未投递', NO_OFFER: '无 Offer', PENDING_CONFIRMATION: '待确认', INTERRUPTED: '已中断', DELAYED: '延期', UNKNOWN: '未知' }
+  CONFIRMED: '已定单位待实习', IN_PROGRESS: '实习进行中', ENDED: '实习已结束', withdrawn: '已撤回', NOT_FOUND: '暂无有效投递', NO_OFFER: '已投递未录用', PENDING_CONFIRMATION: '已录用待确认', INTERRUPTED: '实习已中断', DELAYED: '已延期实习', UNKNOWN: '未知' }
 function display(key: string, value: unknown, row: Record<string, unknown>) {
   if (value === '' || value == null) return '未提供'
   if (key === 'providesAccommodation') return value === 1 || value === '1' ? '提供' : (value === 0 || value === '0' ? '不提供' : '未提供')
@@ -46,7 +46,7 @@ function links(row: Record<string, unknown>) { return props.card.links.filter(li
 function salary(row: Record<string, unknown>) {
   return ['jobs_details', 'jobs_search'].includes(props.card.tool) ? jobSalary(row) : ''
 }
-const summaryLabels: Record<string, string> = { actionableCount: '本人可处理', waitingCount: '等待他人', responsible: '负责学生', submitted: '已提交', notSubmitted: '尚未提交', period: '当前期数', deadline: '本期截止', today: '查询日期', total: '学生总数', withoutOffer: '尚无Offer', withoutOfferRate: '尚无Offer比例', focusCount: '重点关注', focusRate: '关注比例', placed: '已落实', placedRate: '落实比例' }
+const summaryLabels: Record<string, string> = { actionableCount: '本人可处理', waitingCount: '等待他人', responsible: '负责学生', submitted: '已提交', notSubmitted: '尚未提交', period: '当前期数', deadline: '本期截止', today: '查询日期', total: '学生总数', withoutOffer: '尚未获录用', withoutOfferRate: '尚未获录用比例', focusCount: '重点关注', focusRate: '关注比例', placed: '已落实', placedRate: '落实比例' }
 const summary = computed(() => Object.entries(props.card.facts).filter(([key]) => summaryLabels[key]))
 </script>
 <template>

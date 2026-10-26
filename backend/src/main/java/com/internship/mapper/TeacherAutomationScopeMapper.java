@@ -18,6 +18,14 @@ public interface TeacherAutomationScopeMapper {
             + SCOPE + " ORDER BY su.id</script>")
     List<Long> studentIds(@Param("teacher") TeacherUser teacher);
 
+    @Select("<script>SELECT su.id FROM student_users su LEFT JOIN major m ON m.id=su.major_id WHERE su.status=1 "
+            + SCOPE
+            + "<if test='majorId != null'> AND su.major_id=#{majorId}</if>"
+            + "<if test='classId != null'> AND su.class_id=#{classId}</if>"
+            + " ORDER BY su.id</script>")
+    List<Long> filteredStudentIds(@Param("teacher") TeacherUser teacher,
+                                 @Param("majorId") Long majorId, @Param("classId") Long classId);
+
     @Select("<script>SELECT COUNT(*) FROM student_users su LEFT JOIN major m ON m.id=su.major_id WHERE su.status=1 AND su.id=#{studentId} "
             + SCOPE + "</script>")
     int contains(@Param("teacher") TeacherUser teacher, @Param("studentId") Long studentId);

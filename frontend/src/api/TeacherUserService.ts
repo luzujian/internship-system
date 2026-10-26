@@ -187,9 +187,11 @@ const TeacherUserService = {
     try {
       const response = await request.get('/admin/teachers/export', {
         params: {
-          teacherId: params.teacherId,
+          teacherUserId: params.teacherUserId,
           name: params.name,
-          department: params.department || undefined
+          departmentId: params.departmentId,
+          status: params.status,
+          teacherType: params.teacherType
         },
         responseType: 'blob'
       })

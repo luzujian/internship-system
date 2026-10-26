@@ -1,6 +1,16 @@
 package com.internship.exception;
 
 import com.internship.entity.Result;
+import com.internship.entity.SecurityEventLog;
+import com.internship.entity.User;
+import com.internship.service.AuditLogService;
+import com.internship.utils.AuditFailureContext;
+import com.internship.utils.CurrentHolder;
+import com.internship.utils.IpUtils;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.DuplicateKeyException;
@@ -26,14 +36,19 @@ import java.util.stream.Collectors;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+    @Autowired
+    private AuditLogService auditLogService;
+
     @ExceptionHandler(com.internship.agent.business.AgentException.class)
     public ResponseEntity<java.util.Map<String,Object>> handleAgentException(com.internship.agent.business.AgentException e) {
+        recordRequestFailure(e, e.getHttpStatus(), "AI 请求处理未完成");
         return ResponseEntity.status(e.getHttpStatus()).body(java.util.Map.of(
                 "code",e.getHttpStatus(),"errorCode",e.getCode(),"message",e.getMessage()));
     }
 
     @ExceptionHandler(UsernameNotFoundException.class)
     public ResponseEntity<Result> handleUsernameNotFoundException(UsernameNotFoundException e) {
+        recordRequestFailure(e, 401, "账号认证失败");
         log.error("用户名不存在: {}", e.getMessage());
         Result result = Result.error("用户名或密码错误");
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(result);
@@ -41,6 +56,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(BadCredentialsException.class)
     public ResponseEntity<Result> handleBadCredentialsException(BadCredentialsException e) {
+        recordRequestFailure(e, 401, "账号认证失败");
         log.error("密码错误: {}", e.getMessage());
         Result result = Result.error("用户名或密码错误");
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(result);
@@ -48,6 +64,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(DisabledException.class)
     public ResponseEntity<Result> handleDisabledException(DisabledException e) {
+        recordRequestFailure(e, 401, "账号已被禁用");
         log.error("账号已禁用: {}", e.getMessage());
         Result result = Result.error("账号已被禁用，请联系管理员");
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(result);
@@ -55,6 +72,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(LockedException.class)
     public ResponseEntity<Result> handleLockedException(LockedException e) {
+        recordRequestFailure(e, 401, "账号已被锁定");
         log.error("账号已锁定: {}", e.getMessage());
         Result result = Result.error("账号已被锁定，请联系管理员");
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(result);
@@ -62,6 +80,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(BackupException.class)
     public ResponseEntity<Result> handleBackupException(BackupException e) {
+        recordRequestFailure(e, 500, "备份操作异常，请根据请求 ID 排查");
         log.error("备份操作异常: {}", e.getMessage(), e);
         Result result = Result.error(e.getMessage());
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(result);
@@ -69,6 +88,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<Result> handleValidationException(MethodArgumentNotValidException e) {
+        recordRequestFailure(e, 400, "请求参数校验未通过");
         String errorMsg = e.getBindingResult().getFieldErrors().stream()
                 .map(FieldError::getDefaultMessage)
                 .collect(Collectors.joining(", "));
@@ -79,6 +99,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(BindException.class)
     public ResponseEntity<Result> handleBindException(BindException e) {
+        recordRequestFailure(e, 400, "请求参数绑定失败");
         String errorMsg = e.getFieldErrors().stream()
                 .map(FieldError::getDefaultMessage)
                 .collect(Collectors.joining(", "));
@@ -89,6 +110,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<Result> handleIllegalArgumentException(IllegalArgumentException e) {
+        recordRequestFailure(e, 400, "请求参数不合法");
         log.error("非法参数异常: {}", e.getMessage());
         Result result = Result.error("非法参数: " + e.getMessage());
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(result);
@@ -96,6 +118,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(MaxUploadSizeExceededException.class)
     public ResponseEntity<Result> handleMaxUploadSizeExceededException(MaxUploadSizeExceededException e) {
+        recordRequestFailure(e, 413, "上传大小超过服务端限制，请检查文件及请求总大小");
         log.warn("上传文件超过系统允许的大小: {}", e.getMessage());
         return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE)
                 .body(Result.error("单个文件不能超过20MB"));
@@ -103,6 +126,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<Result> handleHttpMessageNotReadableException(HttpMessageNotReadableException e) {
+        recordRequestFailure(e, 400, "请求体格式错误或无法解析");
         log.warn("请求体不可读: {}", e.getMessage());
         Result result = Result.error("请求参数格式错误，请检查后重试");
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(result);
@@ -112,6 +136,7 @@ public class GlobalExceptionHandler {
     // 不得落入兜底 500。Long/Integer 等数字类型统一提示“应为数字”。
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
     public ResponseEntity<Result> handleMethodArgumentTypeMismatchException(MethodArgumentTypeMismatchException e) {
+        recordRequestFailure(e, 400, "请求参数类型不匹配");
         String name = e.getName() == null ? "请求参数" : e.getName();
         Class<?> requiredType = e.getRequiredType();
         String expected = (requiredType != null && Number.class.isAssignableFrom(requiredType)) ? "数字" : "合法值";
@@ -122,6 +147,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(BusinessException.class)
     public ResponseEntity<Result> handleBusinessException(BusinessException e) {
+        recordRequestFailure(e, 400, AuditFailureContext.sanitizeReason(e.getMessage()));
         log.error("业务异常: {}", e.getMessage());
         Result result = Result.error(e.getMessage());
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(result);
@@ -129,6 +155,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(AccessDeniedException.class)
     public ResponseEntity<Result> handleAccessDeniedException(AccessDeniedException e) {
+        recordRequestFailure(e, 403, "您没有访问权限");
         log.warn("拒绝无权限操作: {}", e.getMessage());
         return ResponseEntity.status(HttpStatus.FORBIDDEN)
                 .body(new Result(403, "您没有访问权限", null));
@@ -136,6 +163,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(DuplicateKeyException.class)
     public ResponseEntity<Result> handleDuplicateKeyException(DuplicateKeyException e) {
+        recordRequestFailure(e, 409, "数据唯一约束冲突，请检查重复提交");
         log.error("数据库唯一约束冲突: {}", e.getMessage());
         String msg = extractDuplicateMessage(e.getMessage());
         Result result = Result.error(msg != null ? msg : "数据已存在，请勿重复提交");
@@ -144,6 +172,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<Result> handleDataIntegrityViolationException(DataIntegrityViolationException e) {
+        recordRequestFailure(e, 400, "数据完整性校验未通过");
         log.error("数据完整性异常: {}", e.getMessage());
         // 优先识别重复键场景
         String msg = e.getMessage() == null ? null : extractDuplicateMessage(e.getMessage());
@@ -156,16 +185,52 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(RuntimeException.class)
     public ResponseEntity<Result> handleRuntimeException(RuntimeException e) {
+        recordRequestFailure(e, 500, "请求处理异常，请根据请求 ID 排查");
         log.error("运行时异常: {}", e.getMessage(), e);
-        Result result = Result.error("操作失败: " + e.getMessage());
+        Result result = Result.error("操作失败，请稍后重试或联系管理员");
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(result);
     }
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Result> handleException(Exception e) {
+        recordRequestFailure(e, 500, "系统异常，请根据请求 ID 排查");
         log.error("系统异常: {}", e.getMessage(), e);
         Result result = Result.error("系统错误，请联系管理员");
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(result);
+    }
+
+    private void recordRequestFailure(Throwable cause, int status, String reason) {
+        if (AuditFailureContext.isRecorded()
+                || !(RequestContextHolder.getRequestAttributes() instanceof ServletRequestAttributes attributes)) return;
+        jakarta.servlet.http.HttpServletRequest request = attributes.getRequest();
+        if (!request.getRequestURI().startsWith("/api/")) return;
+        try {
+            User user = CurrentHolder.getUser();
+            SecurityEventLog event = new SecurityEventLog();
+            event.setEventType("REQUEST_FAILURE");
+            event.setUserId(user != null && user.getId() != null ? String.valueOf(user.getId()) : null);
+            event.setUsername(user != null ? user.getUsername() : null);
+            event.setUserRole(user != null ? user.getRole() : "UNKNOWN");
+            event.setRiskLevel(status >= 500 ? AuditLogService.RISK_HIGH : AuditLogService.RISK_MEDIUM);
+            event.setResult("FAILURE");
+            event.setErrorCode(String.valueOf(status));
+            event.setIpAddress(IpUtils.getClientIp(request));
+            event.setHttpMethod(request.getMethod());
+            event.setRequestPath(request.getRequestURI().substring(0, Math.min(request.getRequestURI().length(), 250)));
+            event.setDescription("请求处理失败（HTTP " + status + "）");
+            java.util.Map<String, Object> failure = new java.util.LinkedHashMap<>();
+            failure.put("reason", AuditFailureContext.sanitizeReason(reason));
+            failure.put("exceptionType", AuditFailureContext.exceptionType(cause));
+            failure.put("validationStage", cause instanceof MaxUploadSizeExceededException ? "MULTIPART_PARSE" : "REQUEST_HANDLING");
+            if (cause instanceof MaxUploadSizeExceededException && request.getContentLengthLong() >= 0) {
+                failure.put("requestSize", request.getContentLengthLong());
+            }
+            event.setDetailJson(new ObjectMapper().writeValueAsString(java.util.Map.of("failure", failure)));
+            auditLogService.recordSecurityEvent(event);
+            AuditFailureContext.markRecorded();
+        } catch (RuntimeException | com.fasterxml.jackson.core.JsonProcessingException auditFailure) {
+            log.error("补记请求失败日志异常: type={}", auditFailure.getClass().getSimpleName());
+        }
     }
 
     /**

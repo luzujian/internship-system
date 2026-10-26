@@ -155,13 +155,10 @@ body {
     min-height: 44px;
   }
 
-  .el-button--small {
-    min-height: 32px;
-  }
-
+  .el-button--small,
   .el-button.is-link,
   .el-button.is-text {
-    min-height: 32px;
+    min-height: 44px;
   }
 
   .el-menu-item,
@@ -169,15 +166,13 @@ body {
     min-height: 44px;
   }
 
-  /* ===== 分页：隐藏总数、页容量和跳页器，仅保留紧凑页码与前后翻页 ===== */
+  /* ===== 分页：保留总数与每页数量，紧凑页码允许换行 ===== */
   .el-pagination {
     justify-content: center;
     flex-wrap: wrap;
     row-gap: 8px;
   }
 
-  .el-pagination__total,
-  .el-pagination__sizes,
   .el-pagination__jump,
   .el-pagination__goto {
     display: none !important;
@@ -298,4 +293,147 @@ body {
 
 .mobile-card-actions .el-button + .el-button {
   margin-left: 0;
+}
+
+
+/* Shared phone layout rules are deliberately scoped to role shells and Element overlays. */
+@media (max-width: 768px) {
+  body { display: block; min-width: 0; min-height: 0; }
+  #app { height: var(--app-height, 100dvh) !important; }
+  #app .agent-host { height: var(--app-height, 100dvh); width: 100%; min-width: 0; min-height: 0; }
+  #app .agent-host > .el-container,
+  #app .agent-host .main-content,
+  #app .agent-host .main-wrapper,
+  #app .agent-host .main-content > .el-scrollbar { min-width: 0; min-height: 0; }
+  #app .agent-host .header {
+    width: 100%; min-width: 0; flex-shrink: 0; gap: 8px;
+    height: calc(64px + var(--safe-top));
+    padding: var(--safe-top) max(8px, var(--safe-right)) 0 max(8px, var(--safe-left));
+  }
+  #app .agent-host .header-left { min-width: 0; flex: 1 1 auto; gap: 4px; }
+  #app .agent-host .logo { min-width: 0; overflow: hidden; }
+  #app .agent-host .logo-text { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 18px; letter-spacing: .5px; }
+  #app .agent-host .logo-subtitle,
+  #app .agent-host .header-metrics,
+  #app .agent-host .teacher-type-badge,
+  #app .agent-host .header-status,
+  #app .agent-host .header .user-name,
+  #app .agent-host .header .user-info > span,
+  #app .agent-host .header .dropdown-arrow { display: none; }
+  #app .agent-host .user-actions,
+  #app .agent-host .header-right { display: flex; flex: 0 0 auto; gap: 4px; min-width: 0; }
+  #app .agent-host .header .sidebar-toggle-btn,
+  #app .agent-host .header .agent-entry,
+  #app .agent-host .header .user-btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    flex: 0 0 44px; width: 44px; min-width: 44px; height: 44px; min-height: 44px;
+    margin: 0; padding: 0 !important; gap: 0;
+  }
+  #app .agent-host .header .agent-entry > span:not([aria-hidden]) { display: none; }
+  #app .agent-host .header .user-info { gap: 0; }
+  #app .agent-host .header button.user-info { border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer; }
+  #app .agent-host aside.sidebar,
+  #app .agent-host aside.aside { padding-top: var(--safe-top); padding-bottom: var(--safe-bottom); overflow-y: auto; overscroll-behavior: contain; }
+  #app .agent-host .mobile-navigation-close { display: block; flex-shrink: 0; width: 100%; min-height: 44px; padding: 8px 16px; border: 0; border-bottom: 1px solid #e2e8f0; border-radius: 0; background: #fff; color: #334155; text-align: right; font: inherit; cursor: pointer; }
+  #app .agent-host .el-main { min-width: 0; padding-bottom: max(12px, var(--safe-bottom)) !important; }
+  body.mobile-navigation-open [data-navigation-content] .el-scrollbar__wrap { overflow: hidden !important; touch-action: none; }
+  body.mobile-navigation-open,
+  body.agent-mobile-open { overflow: hidden; overscroll-behavior: none; }
+  [inert] { pointer-events: none; }
+
+  /* Inline widths from desktop search forms must not constrain phone controls. */
+  .el-form .el-form-item { min-width: 0; max-width: 100%; }
+  .el-form--inline .el-form-item { width: 100%; margin-right: 0; }
+  .el-form .el-form-item__content { min-width: 0; }
+  .el-form .el-form-item__content > :is(.el-input,.el-select,.el-cascader,.el-date-editor,.el-textarea) { width: 100% !important; min-width: 0; }
+  .el-input__inner, .el-textarea__inner, .el-select__placeholder, .el-select__input, .el-cascader__search-input, .el-range-input { font-size: 16px !important; }
+  .el-select__wrapper, .el-input__wrapper, .el-date-editor, .el-cascader { min-height: 44px; }
+  .el-dropdown-menu__item { min-height: 44px; white-space: normal; overflow-wrap: anywhere; }
+  .el-select-dropdown, .el-cascader__dropdown { max-width: calc(100vw - 24px); }
+  .el-select-dropdown__item { white-space: normal; height: auto; min-height: 44px; line-height: 1.4; display: flex; align-items: center; }
+  .el-cascader-panel { max-width: calc(100vw - 24px); overflow-x: auto; }
+  .el-form .el-row > .el-col { flex-basis: 100%; max-width: 100%; }
+
+  .el-overlay-dialog { padding: 12px max(12px, var(--safe-right)) max(12px, var(--safe-bottom)) max(12px, var(--safe-left)); }
+  .el-overlay-dialog .el-dialog {
+    display: flex; flex-direction: column; width: 100% !important; max-width: 100%;
+    max-height: calc(var(--app-height, 100dvh) - var(--business-overlay-top, 0px) - 24px);
+    min-width: 0; margin: 0 auto; padding: 16px;
+  }
+  .el-overlay-dialog .el-dialog__header { flex-shrink: 0; padding-right: 40px; overflow-wrap: anywhere; }
+  .el-overlay-dialog .el-dialog__headerbtn { width: 44px; height: 44px; top: 0; right: 0; }
+  .el-overlay-dialog .el-dialog__body { min-height: 0; flex: 1 1 auto; max-height: none; overflow: auto; overscroll-behavior: contain; }
+  .el-overlay-dialog .el-dialog__footer { flex-shrink: 0; padding-top: 12px; }
+  .el-dialog__footer > div { max-width: 100%; flex-wrap: wrap; gap: 8px; }
+  .el-dialog__footer .el-button + .el-button { margin-left: 0; }
+  .el-message-box { width: calc(100vw - 24px); min-width: 0; }
+  .el-message-box__btns { flex-wrap: wrap; }
+
+  /* Element range pickers normally render two calendars plus a shortcut rail (~756px). */
+  .el-popper:has(.el-date-range-picker),
+  .el-popper:has(> .el-date-picker) {
+    position: fixed !important; transform: none !important;
+    top: calc(var(--business-overlay-top, 0px) + 12px) !important;
+    left: max(12px, var(--safe-left)) !important; right: auto !important;
+    width: min(360px, calc(100vw - 24px));
+    max-height: calc(var(--app-height, 100dvh) - var(--business-overlay-top, 0px) - 24px);
+  }
+  .el-popper:has(.el-date-range-picker) .el-popper__arrow,
+  .el-popper:has(> .el-date-picker) .el-popper__arrow { display: none; }
+  .el-picker-panel.el-date-range-picker,
+  .el-picker-panel.el-date-picker { display: flex; flex-direction: column; width: min(360px, calc(100vw - 24px)) !important; max-width: calc(100vw - 24px); max-height: inherit; }
+  .el-picker-panel__body-wrapper { min-height: 0; flex: 1 1 auto; max-height: calc(var(--app-height, 100dvh) - var(--business-overlay-top, 0px) - 100px); overflow-y: auto; overscroll-behavior: contain; }
+  .el-picker-panel .el-picker-panel__sidebar { position: static; width: 100%; display: flex; flex-wrap: wrap; border: 0; padding: 4px; }
+  .el-picker-panel .el-picker-panel__shortcut { width: auto; min-height: 44px; padding: 8px; }
+  .el-picker-panel .el-picker-panel__body { min-width: 0; margin-left: 0 !important; }
+  .el-date-range-picker .el-picker-panel__body { display: flex; flex-direction: column; }
+  .el-picker-panel .el-date-range-picker__content { width: 100%; flex: 0 0 auto; float: none; border: 0; padding: 8px; }
+  .el-picker-panel .el-date-range-picker__time-header { display: flex; flex-direction: column; gap: 8px; }
+  .el-picker-panel .el-date-range-picker__editors-wrap { width: 100%; }
+  .el-picker-panel .el-date-range-picker__time-header > .el-icon { display: none; }
+  .el-picker-panel .el-date-table td { height: 40px; }
+  .el-picker-panel__footer { display: flex; flex-shrink: 0; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+
+  .el-pagination { max-width: 100%; gap: 8px; white-space: normal; }
+  .el-pagination__total, .el-pagination__sizes { display: inline-flex !important; margin: 0 !important; }
+  .el-pagination .el-select { width: 112px; }
+  .el-pagination button, .el-pagination .el-pager li { min-width: 44px; height: 44px; }
+  .el-pagination .el-input__inner { min-height: 0; }
+  .el-pagination__sizes .el-select__placeholder { font-size: 14px !important; }
+  .el-table.is-scrolling-left::after,
+  .el-table.is-scrolling-middle::after { content: '左右滑动查看完整信息 →'; display: block; padding: 8px 12px; color: #64748b; font-size: 12px; background: #f8fafc; text-align: right; }
+  .el-table .el-button { min-width: 44px; }
+  .row-actions-dropdown .el-button { min-height: 44px !important; }
+
+  .agent-workspace .agent-header button,
+  .agent-workspace .agent-composer button { min-width: 44px; min-height: 44px; }
+  .agent-workspace .composer-field { grid-template-columns: minmax(0, 1fr) 44px 44px; }
+  .agent-workspace .agent-composer .send-button,
+  .agent-workspace .agent-composer .mic-button { width: 44px; min-width: 44px; max-width: 44px; height: 44px; }
+  .mobile-filter-toggle.el-button, .mobile-filter-toggle .el-button { width: 100%; }
+  .agent-workspace textarea { font-size: 16px !important; }
+  .agent-workspace .agent-header { flex-wrap: nowrap; gap: 6px; padding: 8px; }
+  .agent-workspace .agent-header h2 { min-width: 0; font-size: 20px; line-height: 1.2; white-space: nowrap; }
+  .agent-workspace .agent-symbol { display: none; }
+  .agent-workspace.is-compact { overflow-y: auto; }
+  .agent-workspace.is-compact .agent-header { padding: 4px 8px; }
+  .agent-workspace.is-compact :is(.agent-form-link,.agent-context,.student-journey) { display: none; }
+  .agent-workspace.is-compact .agent-conversation { flex-basis: 0; }
+  .agent-workspace.is-compact .agent-composer { position: sticky; bottom: 0; margin-top: auto; padding: 2px 6px max(2px, var(--safe-bottom)); }
+  .agent-workspace.is-compact .composer-field { padding: 4px; row-gap: 2px; }
+  .agent-workspace.is-compact .composer-field textarea { min-height: 44px; max-height: 56px; }
+  .agent-workspace .agent-conversation { min-width: 0; overscroll-behavior: contain; }
+  .agent-workspace :is(.tool-card,.message-attachment,.task-card,.agent-result-card) { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
+  .mobile-card { min-width: 0; }
+  .mobile-card-header > *, .mobile-card-value { min-width: 0; }
+  .mobile-card-actions > .el-button { min-height: 44px; white-space: normal; }
+  .agent-host .page-header { padding: 20px 16px !important; margin-bottom: 16px; min-height: 0; }
+  .agent-host .page-header h1, .agent-host .page-header h2 { font-size: 24px !important; line-height: 1.4; }
+  .agent-host .page-header p { font-size: 14px; margin-top: 6px; }
+  .agent-host .page-header .header-illustration { display: none; }
+  .agent-host .module-container { max-height: none !important; padding: 16px !important; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-overlay { animation: none; }
 }

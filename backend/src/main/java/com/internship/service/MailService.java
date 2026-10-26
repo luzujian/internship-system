@@ -1,5 +1,7 @@
 package com.internship.service;
 
+import com.internship.utils.AuditFailureContext;
+
 import jakarta.mail.MessagingException;
 import jakarta.mail.internet.MimeMessage;
 import java.io.UnsupportedEncodingException;
@@ -221,6 +223,7 @@ public class MailService {
             return true;
         } catch (Exception e) {
             log.error("发送忘记密码验证码失败: {}", e.getMessage(), e);
+            AuditFailureContext.authenticationFailure("MAIL_SEND_FAILED", "验证码邮件发送或缓存处理失败", e);
             // 失败补偿：清理可能已写入的验证码，避免残留
             try {
                 if (redisTemplate != null) {
@@ -255,6 +258,7 @@ public class MailService {
         }
         if (redisTemplate == null) {
             log.error("Redis 不可用，无法校验忘记密码验证码");
+            AuditFailureContext.authenticationFailure("AUTH_STATE_UNAVAILABLE", "验证码存储服务不可用");
             return PwdResetVerifyResult.EXPIRED;
         }
         try {
@@ -295,6 +299,7 @@ public class MailService {
             return PwdResetVerifyResult.CODE_ERROR;
         } catch (Exception e) {
             log.error("校验忘记密码验证码异常: {}", e.getMessage(), e);
+            AuditFailureContext.authenticationFailure("AUTH_STATE_UNAVAILABLE", "验证码存储服务异常，未能完成校验", e);
             return PwdResetVerifyResult.EXPIRED;
         }
     }
@@ -310,6 +315,7 @@ public class MailService {
         }
         if (redisTemplate == null) {
             log.error("Redis 不可用，无法预校验忘记密码验证码");
+            AuditFailureContext.authenticationFailure("AUTH_STATE_UNAVAILABLE", "验证码存储服务不可用");
             return PwdResetVerifyResult.EXPIRED;
         }
         try {
@@ -348,6 +354,7 @@ public class MailService {
             return PwdResetVerifyResult.CODE_ERROR;
         } catch (Exception e) {
             log.error("预校验忘记密码验证码异常: {}", e.getMessage(), e);
+            AuditFailureContext.authenticationFailure("AUTH_STATE_UNAVAILABLE", "验证码存储服务异常，未能完成预校验", e);
             return PwdResetVerifyResult.EXPIRED;
         }
     }
@@ -374,6 +381,7 @@ public class MailService {
                     && (c3 == null || c3 <= MAX_REQUESTS_PER_MINUTE);
         } catch (Exception e) {
             log.error("忘记密码限流检查失败: {}", e.getMessage(), e);
+            AuditFailureContext.authenticationFailure("AUTH_STATE_UNAVAILABLE", "验证码发送限流服务不可用", e);
             return false;
         }
     }
@@ -398,6 +406,7 @@ public class MailService {
                     && (c2 == null || c2 <= PWD_VERIFY_MAX_PER_MINUTE);
         } catch (Exception e) {
             log.error("忘记密码验码限流检查失败: {}", e.getMessage(), e);
+            AuditFailureContext.authenticationFailure("AUTH_STATE_UNAVAILABLE", "验证码校验限流服务不可用", e);
             return false;
         }
     }

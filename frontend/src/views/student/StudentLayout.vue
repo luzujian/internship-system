@@ -27,6 +27,7 @@ import {
 import emitter from '@/utils/event-bus'
 import AgentWorkspace from '@/components/agent/AgentWorkspace.vue'
 import AgentEntry from '@/components/agent/AgentEntry.vue'
+import StudentInternshipProgress from '@/components/StudentInternshipProgress.vue'
 import FeedbackSubmitDialog from '@/components/FeedbackSubmitDialog.vue'
 import { loadStudentMenus, type StudentMenuItem } from '@/utils/studentMenuConfig'
 import { useResponsiveSidebar } from '@/composables/useResponsiveSidebar'
@@ -115,6 +116,7 @@ const studentId = computed(() => {
 
 // 顶部栏实习状态
 const headerStatus = ref('')
+const pendingApplicationTexts = ref<string[]>([])
 const headerStatusClass = ref('')
 const fetchHeaderStatus = async () => {
   try {
@@ -122,6 +124,7 @@ const fetchHeaderStatus = async () => {
       jobSearchStatus?: string
       job_search_status?: string
       jobSearchStatusText?: string
+      pendingApplicationTexts?: string[]
       hasRecord?: boolean
       currentStatus?: number
       current_status?: number
@@ -130,6 +133,7 @@ const fetchHeaderStatus = async () => {
     const response = await request.get<HeaderStatusRow>('/student/home/internship-status')
     if (response?.code === 200 && response.data) {
       const data = response.data
+      pendingApplicationTexts.value = data.pendingApplicationTexts || []
       const searchStatus = data.jobSearchStatus ?? data.job_search_status
       if (searchStatus && data.jobSearchStatusText) {
         const clsMap: Record<string, string> = {
@@ -146,7 +150,7 @@ const fetchHeaderStatus = async () => {
         headerStatusClass.value = clsMap[searchStatus] ?? ''
       } else if (data.hasRecord && (data.currentStatus ?? data.current_status) !== undefined) {
         const currentStatus = data.currentStatus ?? data.current_status ?? 0
-        const map: Record<number, string> = { 0: '无offer', 1: '待确认', 2: '已确定', 3: '实习中', 4: '已结束', 5: '已中断', 6: '延期' }
+        const map: Record<number, string> = { 0: '尚未获录用', 1: '已录用待确认', 2: '已定单位待实习', 3: '实习进行中', 4: '实习已结束', 5: '实习已中断', 6: '已延期实习' }
         const clsMap: Record<number, string> = { 0: '', 1: 'offer', 2: 'confirmed', 3: 'in-progress', 4: 'ended', 5: 'interrupted', 6: 'delayed' }
         headerStatus.value = map[currentStatus] ?? ''
         headerStatusClass.value = clsMap[currentStatus] ?? ''
@@ -435,7 +439,7 @@ onUnmounted(() => {
 
     <header :class="['header', { 'has-read-only': isReadOnlyMode }]">
       <div class="header-left">
-        <el-button link @click="toggleSidebar" class="sidebar-toggle-btn">
+        <el-button link @click="toggleSidebar" class="sidebar-toggle-btn" :aria-expanded="!sidebarCollapsed" aria-controls="main-navigation" :aria-label="sidebarCollapsed ? '展开导航菜单' : '收起导航菜单'">
           <el-icon>
             <template v-if="sidebarCollapsed">
               <Menu />
@@ -453,10 +457,14 @@ onUnmounted(() => {
       <div class="user-actions">
         <AgentEntry />
         <div v-if="headerStatus" class="header-status">
-          <span :class="['header-status-badge', headerStatusClass]">{{ headerStatus }}</span>
+          <StudentInternshipProgress
+            :status="headerStatus"
+            :status-class="headerStatusClass"
+            :pending-application-texts="pendingApplicationTexts"
+          />
         </div>
         <el-dropdown :popper-style="{ zIndex: 2500 }" @command="handleCommand" class="user-dropdown">
-          <el-button link class="user-btn">
+          <el-button link class="user-btn" :aria-label="`账号菜单 ${userName}`">
             <div class="user-info">
               <el-icon class="user-avatar">
                 <User />
@@ -503,8 +511,9 @@ onUnmounted(() => {
         'sidebar-disabled': isDialogOpen,
         'has-read-only': isReadOnlyMode
       }]"
-      aria-label="主导航"
+      id="main-navigation" :tabindex="isMobile ? -1 : undefined" aria-label="主导航" :role="isMobile && !sidebarCollapsed ? 'dialog' : undefined" :aria-modal="isMobile && !sidebarCollapsed || undefined" :inert="isMobile && sidebarCollapsed"
     >
+      <button v-if="isMobile" type="button" class="mobile-navigation-close" aria-label="关闭导航菜单" @click="closeSidebar">关闭导航 ×</button>
       <el-menu
         v-if="studentMenusLoaded"
         :default-active="activeMenu" 
@@ -534,7 +543,7 @@ onUnmounted(() => {
     <div v-if="isMobile && !sidebarCollapsed" class="sidebar-overlay" @click="closeSidebar"></div>
 
     <!-- 主体区域 -->
-    <div :class="['main-wrapper', { 'has-read-only': isReadOnlyMode }]">
+    <div data-navigation-content :inert="isMobile && !sidebarCollapsed" :class="['main-wrapper', { 'has-read-only': isReadOnlyMode }]">
       <el-scrollbar style="flex: 1; height: 100%;">
         <el-main :class="{ 'main-content-disabled': isDialogOpen, 'sidebar-collapsed-main': sidebarCollapsed }">
           <router-view></router-view>
@@ -656,31 +665,6 @@ html, body {
 
 .user-actions :deep(.agent-entry) {
   margin-inline: 0;
-}
-
-.header-status-badge {
-  padding: 4px 14px;
-  border-radius: 12px;
-  font-size: 12px;
-  font-weight: 600;
-  background: rgba(255, 255, 255, 0.2);
-  color: white;
-  border: 1px solid rgba(255, 255, 255, 0.3);
-}
-
-.header-status-badge.in-progress,
-.header-status-badge.confirmed {
-  background: rgba(255, 255, 255, 0.25);
-}
-
-.header-status-badge.offer {
-  background: rgba(255, 255, 255, 0.2);
-}
-
-.header-status-badge.ended,
-.header-status-badge.interrupted {
-  background: rgba(255, 255, 255, 0.12);
-  color: rgba(255, 255, 255, 0.7);
 }
 
 .user-dropdown {
@@ -958,6 +942,26 @@ html, body {
     margin-left: 0;
     padding: 12px !important;
   }
+}
+
+@media screen and (max-width: 480px) {
+  .header { padding: 0 10px; }
+  .header-left { min-width: 0; gap: 6px; }
+  .sidebar-toggle-btn { padding: 4px; font-size: 18px; }
+  .logo-text { font-size: 18px; letter-spacing: 0.5px; }
+  .user-actions { gap: 6px; }
+  .user-actions :deep(.agent-entry) { width: 28px; height: 28px; padding: 0; gap: 0; font-size: 14px; }
+  .user-actions :deep(.agent-entry span:not([aria-hidden])) { display: none; }
+  .user-btn { padding: 6px; }
+  .user-info { gap: 0; }
+  .user-avatar { font-size: 18px; }
+  .dropdown-arrow { display: none; }
+}
+
+@media screen and (max-width: 360px) {
+  .header { padding: 0 8px; }
+  .header-left, .user-actions { gap: 4px; }
+  .logo-text { font-size: 16px; letter-spacing: 0.25px; }
 }
 
 .reminder-content {

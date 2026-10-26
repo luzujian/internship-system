@@ -23,7 +23,7 @@ export function sseParser(consume) {
 export function shouldDock(viewportWidth, _panelWidth) { return viewportWidth >= 1024 }
 
 export function panelSize(viewportWidth, preferred = 420) {
-  if (viewportWidth <= 700) return viewportWidth
+  if (viewportWidth <= 768) return viewportWidth
   if (viewportWidth < 1024) return 360
   return Math.max(360, Math.min(preferred, 560, viewportWidth - 640))
 }

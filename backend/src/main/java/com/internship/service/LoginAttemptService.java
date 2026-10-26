@@ -1,6 +1,7 @@
 package com.internship.service;
 
 import com.internship.config.SystemSettingsConfig;
+import com.internship.utils.AuditFailureContext;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -148,6 +149,7 @@ public class LoginAttemptService {
             return Boolean.TRUE.equals(exists);
         } catch (Exception e) {
             log.warn("Redis 检查锁定状态异常: {}", e.getMessage());
+            AuditFailureContext.authenticationFailure("AUTH_STATE_UNAVAILABLE", "登录锁定状态服务不可用", e);
             return true;
         }
     }
@@ -159,6 +161,7 @@ public class LoginAttemptService {
             return (ttl != null && ttl > 0) ? ttl : 0;
         } catch (Exception e) {
             log.warn("Redis 获取剩余锁定时间异常: {}", e.getMessage());
+            AuditFailureContext.authenticationFailure("AUTH_STATE_UNAVAILABLE", "登录锁定状态服务不可用", e);
             return 0;
         }
     }

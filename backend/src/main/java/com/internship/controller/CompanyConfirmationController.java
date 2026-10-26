@@ -36,6 +36,10 @@ import java.util.Set;
 @RequestMapping("/api/company/confirmation")
 @PreAuthorize("hasRole('COMPANY')")
 public class CompanyConfirmationController {
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.internship.service.CompanyConfirmationMaterialsService materials;
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.internship.mapper.CompanyUserMapper companyUserMapper;
     private final UserService userService;
     private final InternshipConfirmationRecordService confirmationRecordService;
     private final InternshipConfirmationWorkflowService workflowService;
@@ -71,15 +75,48 @@ public class CompanyConfirmationController {
         return Result.success(confirmationRecordService.findByCompanyId(user.getId()));
     }
 
+    @GetMapping("/{id}/details")
+    public Result details(@PathVariable Long id) throws Exception {
+        User user = currentUser();
+        if (user == null) return Result.error("未登录");
+        var record = materials.owned(user.getId(), id);
+        var position = record.getPositionId() == null ? null : positionMapper.findById(record.getPositionId());
+        var data = new java.util.LinkedHashMap<String, Object>();
+        data.put("internshipContact", com.internship.entity.dto.InternshipContact.resolve(user.getId(),
+                companyUserMapper.findById(user.getId()), position));
+        data.put("application", com.internship.utils.MaterialMetadataRedactor.studentApplication(materials.application(user.getId(), id)));
+        data.put("agreementVersions", materials.versions(user.getId(), id));
+        return Result.success(data);
+    }
+
+    @GetMapping("/{id}/agreements/{fileId}/{action:preview|download}")
+    public org.springframework.http.ResponseEntity<byte[]> agreementFile(@PathVariable Long id, @PathVariable Long fileId,
+            @PathVariable String action) throws Exception {
+        User user = currentUser();
+        if (user == null) throw new org.springframework.security.access.AccessDeniedException("未登录");
+        boolean preview = "preview".equals(action);
+        return StudentInternshipAgreementController.fileResponse(materials.agreementFile(user.getId(), id, fileId, preview), preview);
+    }
+
+    @GetMapping("/{id}/materials/{material}/{action:preview|download}")
+    public org.springframework.http.ResponseEntity<byte[]> applicationMaterial(@PathVariable Long id, @PathVariable String material,
+            @PathVariable String action) throws Exception {
+        User user = currentUser();
+        if (user == null) throw new org.springframework.security.access.AccessDeniedException("未登录");
+        boolean preview = "preview".equals(action);
+        return StudentInternshipAgreementController.fileResponse(materials.applicationMaterial(user.getId(), id, material, preview), preview);
+    }
+
     @PostMapping("/confirm/{id}")
     @Transactional(rollbackFor = Exception.class)
     @Log(operationType = "AUDIT", module = "INTERNSHIP_MANAGEMENT", description = "企业确认实习", riskLevel = "MEDIUM")
-    public Result confirm(@PathVariable Long id) {
+    public Result confirm(@PathVariable Long id, @org.springframework.web.bind.annotation.RequestBody(required = false) ConfirmRequest request) {
         try {
             User user = currentUser();
             if (user == null) return Result.error("未登录");
             InternshipConfirmationWorkflowService.ConfirmationOutcome outcome =
-                    workflowService.confirm(user.getId(), id, null);
+                    request == null ? workflowService.confirm(user.getId(), id, null)
+                            : workflowService.confirm(user.getId(), id, null, request.positionId(), request.textPosition());
             runAfterCommit(() -> notifyResolution(user.getId(), outcome, 1));
             return Result.success("确认成功");
         } catch (Exception e) {
@@ -88,6 +125,11 @@ public class CompanyConfirmationController {
             return Result.error(e.getMessage());
         }
     }
+
+    public record ConfirmRequest(Long positionId, boolean textPosition) { }
+
+    /** 保留现有直接调用契约。 */
+    public Result confirm(Long id) { return confirm(id, null); }
 
     @PostMapping("/reject/{id}")
     @Transactional(rollbackFor = Exception.class)

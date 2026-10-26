@@ -73,10 +73,17 @@ public class TokenFilter extends OncePerRequestFilter implements ApplicationCont
      */
     private void recordTokenSecurityEvent(HttpServletRequest request, String eventType, String username,
                                           String errorCode, String riskLevel, String description) {
+        recordTokenSecurityEvent(request, eventType, username, null, null, errorCode, riskLevel, description);
+    }
+
+    private void recordTokenSecurityEvent(HttpServletRequest request, String eventType, String username,
+                                          Long userId, String role, String errorCode, String riskLevel, String description) {
         try {
             SecurityEventLog event = new SecurityEventLog();
             event.setEventType(eventType);
             event.setUsername(username);
+            event.setUserId(userId != null ? userId.toString() : null);
+            event.setUserRole(role != null && role.startsWith("ROLE_") ? role.substring(5) : role);
             event.setRiskLevel(riskLevel);
             event.setResult("FAILURE");
             event.setErrorCode(errorCode);
@@ -87,6 +94,17 @@ public class TokenFilter extends OncePerRequestFilter implements ApplicationCont
             getAuditLogService().recordSecurityEvent(event);
         } catch (Exception e) {
             log.debug("记录 Token 安全事件失败：{}", e.getMessage());
+        }
+    }
+
+    private Long trustedUserId(Claims claims) {
+        Object value = claims.get("userId");
+        try {
+            Long id = value instanceof Number number ? number.longValue()
+                    : value instanceof String text ? Long.valueOf(text) : null;
+            return id != null && id > 0 ? id : null;
+        } catch (NumberFormatException ignored) {
+            return null;
         }
     }
 
@@ -350,7 +368,7 @@ public class TokenFilter extends OncePerRequestFilter implements ApplicationCont
                                     username, issuedAt, currentTime, sessionTimeoutMinutes);
                             // 对于登录请求，不拦截，让登录逻辑处理
                             if (!isLoginRequest) {
-                                recordTokenSecurityEvent(request, "SESSION_TIMEOUT", username, "SESSION_TIMEOUT",
+                                recordTokenSecurityEvent(request, "SESSION_TIMEOUT", username, trustedUserId(claims), role, "SESSION_TIMEOUT",
                                         AuditLogService.RISK_MEDIUM, "会话已超时，拒绝访问");
                                 response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
                                 response.setContentType("application/json;charset=UTF-8");
@@ -365,7 +383,7 @@ public class TokenFilter extends OncePerRequestFilter implements ApplicationCont
                         // 先检查用户状态，如果被禁用则返回 403
                         if (isUserDisabled(username, role)) {
                             log.warn("用户已被禁用，拒绝访问：{}", username);
-                            recordTokenSecurityEvent(request, "ACCOUNT_DISABLED", username, "ACCOUNT_DISABLED",
+                            recordTokenSecurityEvent(request, "ACCOUNT_DISABLED", username, trustedUserId(claims), role, "ACCOUNT_DISABLED",
                                     AuditLogService.RISK_HIGH, "用户已被禁用，拒绝访问");
                             response.setStatus(HttpServletResponse.SC_FORBIDDEN);
                             response.setContentType("application/json;charset=UTF-8");
@@ -380,7 +398,7 @@ public class TokenFilter extends OncePerRequestFilter implements ApplicationCont
                                 || "HEAD".equals(request.getMethod()) || "OPTIONS".equals(request.getMethod());
                         boolean logout = "POST".equals(request.getMethod()) && "/api/auth/logout".equals(requestPath);
                         if (readOnly && !safeMethod && !logout) {
-                            recordTokenSecurityEvent(request, "READ_ONLY_WRITE", username, "READ_ONLY_WRITE",
+                            recordTokenSecurityEvent(request, "READ_ONLY_WRITE", username, trustedUserId(claims), role, "READ_ONLY_WRITE",
                                     AuditLogService.RISK_HIGH, "只读角色切换身份禁止写请求");
                             response.setStatus(HttpServletResponse.SC_FORBIDDEN);
                             response.setContentType("application/json;charset=UTF-8");

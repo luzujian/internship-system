@@ -35,7 +35,7 @@ public class JobSearchStatusService {
         List<JobSearchStatusEvidenceDTO> evidence =
                 jobSearchStatusMapper.findEvidenceByStudentIds(List.of(studentId));
         JobSearchStatusEvidenceDTO item = evidence == null || evidence.isEmpty() ? null : evidence.get(0);
-        return toDTO(resolveStatus(internshipStatus, item));
+        return toDTO(resolveStatus(internshipStatus, item), item);
     }
 
     public Map<Long, JobSearchStatusDTO> resolveForStudentIds(Collection<Long> studentIds) {
@@ -59,7 +59,7 @@ public class JobSearchStatusService {
         for (Long studentId : normalizedIds) {
             JobSearchStatusEvidenceDTO item = evidenceByStudentId.get(studentId);
             Integer internshipStatus = item == null ? null : item.getInternshipStatus();
-            result.put(studentId, toDTO(resolveStatus(internshipStatus, item)));
+            result.put(studentId, toDTO(resolveStatus(internshipStatus, item), item));
         }
         return result;
     }
@@ -81,9 +81,12 @@ public class JobSearchStatusService {
                 .filter(Objects::nonNull)
                 .toList());
         for (StudentInternshipStatus status : statuses) {
-            JobSearchStatusDTO displayStatus = status.getStatus() != null && status.getStatus() >= 2
-                    ? toDTO(resolveStatus(status.getStatus(), null))
-                    : derived.get(status.getStudentId());
+            JobSearchStatusDTO displayStatus = derived.get(status.getStudentId());
+            if (status.getStatus() != null && status.getStatus() >= 2) {
+                JobSearchStatus established = resolveStatus(status.getStatus(), null);
+                displayStatus = new JobSearchStatusDTO(established.name(), established.getText(),
+                        displayStatus == null ? List.of() : displayStatus.pendingApplicationTexts());
+            }
             if (displayStatus != null) {
                 apply(status, displayStatus);
             }
@@ -104,6 +107,7 @@ public class JobSearchStatusService {
             if (displayStatus != null) {
                 student.put("jobSearchStatus", displayStatus.jobSearchStatus());
                 student.put("jobSearchStatusText", displayStatus.jobSearchStatusText());
+                student.put("pendingApplicationTexts", displayStatus.pendingApplicationTexts());
             }
         }
     }
@@ -141,10 +145,25 @@ public class JobSearchStatusService {
         return new JobSearchStatusDTO(status.name(), status.getText());
     }
 
+    private JobSearchStatusDTO toDTO(JobSearchStatus status, JobSearchStatusEvidenceDTO evidence) {
+        List<String> pending = new java.util.ArrayList<>();
+        if (evidence != null && Boolean.TRUE.equals(evidence.getHasPendingSelfPractice())) {
+            pending.add("自主实习待审核");
+        }
+        if (evidence != null && Boolean.TRUE.equals(evidence.getHasPendingCompanySelfPractice())) {
+            pending.add("自主实习待企业确认");
+        }
+        if (evidence != null && Boolean.TRUE.equals(evidence.getHasPendingDelay())) {
+            pending.add("延期申请待审核");
+        }
+        return new JobSearchStatusDTO(status.name(), status.getText(), List.copyOf(pending));
+    }
+
     private void apply(StudentInternshipStatus status, JobSearchStatusDTO displayStatus) {
         status.setInternshipStatus(status.getStatus());
         status.setJobSearchStatus(displayStatus.jobSearchStatus());
         status.setJobSearchStatusText(displayStatus.jobSearchStatusText());
+        status.setPendingApplicationTexts(displayStatus.pendingApplicationTexts());
     }
 
     private List<Long> normalizeIds(Collection<Long> studentIds) {

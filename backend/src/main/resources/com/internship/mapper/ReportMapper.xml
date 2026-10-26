@@ -37,36 +37,50 @@
         <result property="value" column="value" />
     </resultMap>
     
+    <!-- 历史企业缺少审核时间时，以账号创建时间作为入驻时间的展示兜底，不回写审核记录。 -->
+    <sql id="companyJoinTime">COALESCE(cu.audit_time, cu.create_time)</sql>
+
     <select id="getCompanyTrendByQuarter" resultMap="CompanyTrendDTOResultMap">
         SELECT
-            CASE QUARTER(audit_time)
+            CASE QUARTER(<include refid="companyJoinTime"/>)
                 WHEN 1 THEN '第一季度'
                 WHEN 2 THEN '第二季度'
                 WHEN 3 THEN '第三季度'
                 WHEN 4 THEN '第四季度'
             END as label,
             COUNT(*) as value
-        FROM company_users
-        WHERE YEAR(audit_time) = #{year}
-          AND audit_status = 1
+        FROM company_users cu
+        WHERE YEAR(<include refid="companyJoinTime"/>) = #{year}
+          AND cu.audit_status = 1
         GROUP BY 
-            CASE QUARTER(audit_time)
+            CASE QUARTER(<include refid="companyJoinTime"/>)
                 WHEN 1 THEN '第一季度'
                 WHEN 2 THEN '第二季度'
                 WHEN 3 THEN '第三季度'
                 WHEN 4 THEN '第四季度'
             END,
-            QUARTER(audit_time)
-        ORDER BY QUARTER(audit_time)
+            QUARTER(<include refid="companyJoinTime"/>)
+        ORDER BY QUARTER(<include refid="companyJoinTime"/>)
     </select>
     
+    <!-- 与招聘详情一致：只统计已发布岗位中仍占用招聘名额的学生。 -->
+    <sql id="currentCompanyAdmissions">
+        SELECT COUNT(DISTINCT sis.student_id)
+        FROM student_internship_status sis
+        JOIN position admitted_position ON admitted_position.id = sis.position_id
+        WHERE admitted_position.company_id = cu.id
+          AND admitted_position.status IN ('active', 'paused')
+          AND sis.status IN (1, 2, 3)
+          AND COALESCE(sis.recall_status, 0) != 2
+    </sql>
+
     <select id="getCompanyDetails" resultMap="CompanyDetailDTOResultMap">
         SELECT
             cu.id,
             cu.company_name,
-            cu.audit_time,
+            <include refid="companyJoinTime"/> AS audit_time,
             COALESCE(SUM(p.planned_recruit), 0) as position_count,
-            COALESCE(SUM(p.recruited_count), 0) as admitted_count,
+            (<include refid="currentCompanyAdmissions"/>) as admitted_count,
             CASE cu.status
                 WHEN 1 THEN '正常'
                 WHEN 0 THEN '已禁用'
@@ -74,33 +88,31 @@
             END as status,
             cu.company_tag
         FROM company_users cu
-        LEFT JOIN position p ON cu.id = p.company_id
+        LEFT JOIN position p ON cu.id = p.company_id AND p.status IN ('active', 'paused')
         WHERE cu.audit_status = 1
-        GROUP BY cu.id, cu.company_name, cu.audit_time, cu.status, cu.company_tag
-        ORDER BY cu.audit_time DESC
+        GROUP BY cu.id, cu.company_name, cu.audit_time, cu.create_time, cu.status, cu.company_tag
+        ORDER BY <include refid="companyJoinTime"/> DESC, cu.id DESC
         LIMIT #{offset}, #{pageSize}
     </select>
 
     <select id="getScopedCompanyDetails" resultMap="CompanyDetailDTOResultMap">
-        SELECT cu.id, cu.company_name, cu.audit_time,
+        SELECT cu.id, cu.company_name, <include refid="companyJoinTime"/> AS audit_time,
                COALESCE(SUM(p.planned_recruit), 0) AS position_count,
-               COALESCE((SELECT COUNT(DISTINCT a.student_id)
-                         FROM internship_stage_assignment a
-                         WHERE a.company_id = cu.id AND a.status = 'CONFIRMED' AND a.current_flag = 1
+               (<include refid="currentCompanyAdmissions"/>
                          <choose>
                              <when test="studentIds != null and studentIds.size() > 0">
-                                 AND a.student_id IN
+                                 AND sis.student_id IN
                                  <foreach collection="studentIds" item="sid" open="(" separator="," close=")">#{sid}</foreach>
                              </when>
                              <otherwise>AND 1 = 0</otherwise>
-                         </choose>), 0) AS admitted_count,
+                         </choose>) AS admitted_count,
                CASE cu.status WHEN 1 THEN '正常' WHEN 0 THEN '已禁用' ELSE '未知' END AS status,
                cu.company_tag
         FROM company_users cu
-        LEFT JOIN position p ON cu.id = p.company_id
+        LEFT JOIN position p ON cu.id = p.company_id AND p.status IN ('active', 'paused')
         WHERE cu.audit_status = 1
-        GROUP BY cu.id, cu.company_name, cu.audit_time, cu.status, cu.company_tag
-        ORDER BY cu.audit_time DESC
+        GROUP BY cu.id, cu.company_name, cu.audit_time, cu.create_time, cu.status, cu.company_tag
+        ORDER BY <include refid="companyJoinTime"/> DESC, cu.id DESC
         LIMIT #{offset}, #{pageSize}
     </select>
 
@@ -184,6 +196,21 @@
         </where>
     </select>
 
+    <select id="countScopedWithoutOfferStudents" resultType="java.lang.Long">
+        SELECT COUNT(*) FROM student_users su
+        WHERE su.status = 1
+          AND <include refid="com.internship.mapper.JobSearchStatusMapper.persistentStatus"/> IN (0,1)
+          AND NOT <include refid="com.internship.mapper.JobSearchStatusMapper.hasPassedOffer"/>
+          AND NOT <include refid="com.internship.mapper.JobSearchStatusMapper.hasPendingConfirmation"/>
+        <choose>
+            <when test="studentIds != null and studentIds.size() > 0">
+                AND su.id IN
+                <foreach collection="studentIds" item="sid" open="(" separator="," close=")">#{sid}</foreach>
+            </when>
+            <otherwise>AND 1 = 0</otherwise>
+        </choose>
+    </select>
+
     <select id="countScopedInternshipStudents" resultType="java.lang.Long">
         SELECT COUNT(DISTINCT sis.student_id) FROM student_internship_status sis
         WHERE sis.status IN (2, 3, 4)
@@ -215,21 +242,10 @@
                 SUM(CASE WHEN status = 'approved' THEN 1 ELSE 0 END) as approved_count,
                 SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END) as rejected_count
             FROM student_application
-            WHERE application_type IN ('selfPractice', '自主实习')
+            WHERE application_type IN ('selfPractice', '自主实习') AND review_target = 'COUNSELOR'
 
             UNION ALL
 
-            SELECT
-                2 as id,
-                '单位变更申请' as type,
-                COUNT(*) as total_count,
-                SUM(CASE WHEN status = 'approved' THEN 1 ELSE 0 END) as approved_count,
-                SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END) as rejected_count
-            FROM student_application
-            WHERE application_type IN ('unitChange', '岗位变更')
-            
-            UNION ALL
-            
             SELECT 
                 3 as id,
                 '考研延迟申请' as type,
@@ -283,16 +299,7 @@
                    SUM(CASE WHEN sa.status = 'approved' THEN 1 ELSE 0 END) AS approved_count,
                    SUM(CASE WHEN sa.status = 'rejected' THEN 1 ELSE 0 END) AS rejected_count
             FROM student_application sa
-            WHERE sa.application_type IN ('selfPractice', '自主实习')
-            <include refid="reportStudentScope"/>
-
-            UNION ALL
-
-            SELECT 2 AS id, '单位变更申请' AS type, COUNT(*) AS total_count,
-                   SUM(CASE WHEN sa.status = 'approved' THEN 1 ELSE 0 END) AS approved_count,
-                   SUM(CASE WHEN sa.status = 'rejected' THEN 1 ELSE 0 END) AS rejected_count
-            FROM student_application sa
-            WHERE sa.application_type IN ('unitChange', '岗位变更')
+            WHERE sa.application_type IN ('selfPractice', '自主实习') AND sa.review_target = 'COUNSELOR'
             <include refid="reportStudentScope"/>
 
             UNION ALL

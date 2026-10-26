@@ -1,6 +1,8 @@
 package com.internship.dto;
 
 import com.internship.entity.CompanyAlumniMember;
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
@@ -42,16 +44,28 @@ public class CompanyRegisterDTO {
     private String contactPerson;
 
     @NotBlank(message = "联系电话不能为空")
-    @Size(min = 11, max = 20, message = "联系电话长度必须在 11-20 个字符之间")
+    @Pattern(regexp = "^[+0-9()（）\\-\\s转]{7,20}$", message = "请输入有效的手机或固定电话号码")
     private String contactPhone;
 
     @Email(message = "联系邮箱格式不正确")
     @Pattern(regexp = "^$|^.{5,100}$", message = "联系邮箱长度必须在 5-100 个字符之间")
     private String contactEmail;
 
-    @NotBlank(message = "个人邮箱不能为空")
-    @Email(message = "个人邮箱格式不正确")
+    // 兼容旧客户端；新注册只填写 contactEmail，并以此绑定账号。
+    @Deprecated
+    @Email(message = "联系邮箱格式不正确")
     private String email;
+
+    public String registrationEmail() {
+        String value = contactEmail == null || contactEmail.isBlank() ? email : contactEmail;
+        return value == null ? "" : value.trim();
+    }
+
+    @JsonIgnore
+    @AssertTrue(message = "联系邮箱不能为空")
+    public boolean isRegistrationEmailPresent() {
+        return !registrationEmail().isBlank();
+    }
 
     @Pattern(regexp = "^$|^https?://.*", message = "企业网站必须以 http:// 或 https:// 开头")
     private String website;

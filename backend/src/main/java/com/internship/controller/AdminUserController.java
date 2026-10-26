@@ -1,5 +1,7 @@
 package com.internship.controller;
 
+import com.internship.utils.ExcelExports;
+
 import com.internship.anno.Log;
 import com.internship.exception.BusinessException;
 import com.internship.entity.PageResult;
@@ -9,10 +11,15 @@ import com.internship.service.AdminUserService;
 import com.internship.utils.JwtUtils;
 import com.internship.utils.PasswordValidator;
 import com.internship.utils.UserCredentialDefaults;
+import com.internship.utils.CurrentHolder;
+import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
@@ -41,14 +48,77 @@ public class AdminUserController {
     @Autowired(required = false)
     private com.internship.service.UserCacheService userCacheService;
 
+    public record ProfileUpdate(@NotBlank(message = "用户名不能为空") @Size(max = 50) String username,
+                                @Size(max = 20) String phone,
+                                @Email(message = "邮箱格式不正确") @Size(max = 254) String email) {
+        public ProfileUpdate {
+            username = StringUtils.trimToEmpty(username);
+            phone = StringUtils.trimToEmpty(phone);
+            email = StringUtils.trimToEmpty(email);
+        }
+    }
+
+    @GetMapping("/me")
+    @PreAuthorize("hasRole('ADMIN')")
+    public Result getCurrentProfile() {
+        AdminUser admin = adminUserService.findById(requireCurrentAdminId());
+        if (admin == null || !Integer.valueOf(1).equals(admin.getStatus())) return Result.error("当前管理员账号不可用");
+        admin.setPassword(null);
+        return Result.success(admin);
+    }
+
+    @PutMapping("/me")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Log(operationType = "UPDATE", module = "USER_MANAGEMENT", description = "更新管理员个人资料")
+    public Result updateCurrentProfile(@RequestBody @Validated ProfileUpdate profile) {
+        AdminUser admin = adminUserService.findById(requireCurrentAdminId());
+        if (admin == null || !Integer.valueOf(1).equals(admin.getStatus())) return Result.error("当前管理员账号不可用");
+        String oldUsername = admin.getUsername();
+        admin.setUsername(profile.username());
+        admin.setPhone(profile.phone());
+        admin.setEmail(profile.email());
+        admin.setPassword(null);
+        adminUserService.update(admin);
+        if (userCacheService != null) {
+            userCacheService.evictUserCache(oldUsername);
+            userCacheService.evictUserCache(admin.getUsername());
+        }
+        return Result.success("资料更新成功");
+    }
+
+    private Long requireCurrentAdminId() {
+        Long id = CurrentHolder.getUserId();
+        if (id == null || !"ROLE_ADMIN".equals(CurrentHolder.getUserRole())) {
+            throw new AccessDeniedException("当前身份不是管理员");
+        }
+        return id;
+    }
+
     // 获取所有管理员用户（分页）
     @GetMapping
     @PreAuthorize("hasAuthority('user:admin:view')")
     public Result getAllAdminUsers(@RequestParam(defaultValue = "1") Integer page,
-                                  @RequestParam(defaultValue = "10") Integer pageSize) {
-        log.info("分页获取管理员用户列表，页码: {}, 每页条数: {}", page, pageSize);
-        PageResult<AdminUser> pageResult = adminUserService.findPage(page, pageSize);
-        return Result.success(pageResult);
+                                  @RequestParam(defaultValue = "10") Integer pageSize,
+                                  @RequestParam(required = false) String keyword) {
+        if (StringUtils.isBlank(keyword)) return Result.success(adminUserService.findPage(page,pageSize));
+        List<AdminUser> all = filteredAdmins(keyword);
+        int size = Math.max(1,pageSize), start = (int)Math.min(all.size(),(long)Math.max(0,page-1)*size);
+        return Result.success(PageResult.build((long)all.size(),all.subList(start,(int)Math.min(all.size(),(long)start+size))));
+    }
+
+    private List<AdminUser> filteredAdmins(String keyword) {
+        return adminUserService.findAll().stream().filter(r -> StringUtils.isBlank(keyword)
+                || ExcelExports.text(r.getUsername()).contains(keyword) || ExcelExports.text(r.getPhone()).contains(keyword)).toList();
+    }
+
+    @Log(operationType = "EXPORT", module = "USER_MANAGEMENT", description = "导出管理员用户", riskLevel = "MEDIUM", critical = true)
+    @GetMapping("/export")
+    @PreAuthorize("hasAuthority('user:admin:view')")
+    public void exportAdmins(jakarta.servlet.http.HttpServletResponse response,
+                             @RequestParam(required = false) String keyword) throws java.io.IOException {
+        List<Object[]> rows = filteredAdmins(keyword).stream().map(r -> new Object[]{r.getId(),r.getUsername(),r.getPhone(),
+                "admin".equals(r.getUsername())?"超级管理员":"普通管理员",r.getCreateTime(),r.getUpdateTime()}).toList();
+        ExcelExports.write(response,"管理员数据",new String[]{"用户ID","用户名","手机号","角色","创建时间","更新时间"},rows);
     }
 
     // 根据ID获取管理员用户

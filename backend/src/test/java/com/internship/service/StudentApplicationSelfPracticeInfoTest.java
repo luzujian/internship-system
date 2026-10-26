@@ -1,5 +1,7 @@
 package com.internship.service;
 
+import com.internship.config.SystemSettingsConfig;
+import com.internship.entity.SystemSettings;
 import com.internship.entity.StudentApplication;
 import com.internship.entity.StudentUser;
 import com.internship.entity.CompanyUser;
@@ -9,6 +11,7 @@ import com.internship.mapper.StudentApplicationMapper;
 import com.internship.mapper.StudentInternshipStatusMapper;
 import com.internship.service.impl.StudentApplicationServiceImpl;
 import com.internship.util.StudentInternshipStatusCache;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -43,16 +46,31 @@ class StudentApplicationSelfPracticeInfoTest {
     @Mock private StudentUserService studentUserService;
     @Mock private EmailService emailService;
     @Mock private InternshipAgreementService agreementService;
+    @Mock private InternshipConfirmationWorkflowService confirmationWorkflowService;
+    @Mock private com.internship.mapper.PositionMapper positionMapper;
 
     private StudentApplicationServiceImpl service;
+    private SystemSettings previousSettings;
 
     @BeforeEach
     void setUp() {
+        previousSettings = SystemSettingsConfig.getCurrentSettings();
+        SystemSettings settings = new SystemSettings();
+        settings.setEmailNotifyEnabled(1);
+        org.springframework.test.util.ReflectionTestUtils.setField(SystemSettingsConfig.class, "currentSettings", settings);
         service = new StudentApplicationServiceImpl(
                 applicationMapper, companyUserMapper, timeSettingsService, statusMapper,
                 progressRecordService, confirmationRecordService, stageAssignmentService, statusCache,
                 internshipCalendarService, lifecycleService, studentUserService, emailService);
         org.springframework.test.util.ReflectionTestUtils.setField(service, "agreementService", agreementService);
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "confirmationWorkflowService", confirmationWorkflowService);
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "positionMapper", positionMapper);
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "objectMapper", new com.fasterxml.jackson.databind.ObjectMapper());
+    }
+
+    @AfterEach
+    void restoreSettings() {
+        org.springframework.test.util.ReflectionTestUtils.setField(SystemSettingsConfig.class, "currentSettings", previousSettings);
     }
 
     @Test
@@ -79,14 +97,25 @@ class StudentApplicationSelfPracticeInfoTest {
     @Test
     void approvedSystemCompanyCanBeSubmittedAsSelfPractice() {
         StudentApplication application = completeApplication();
+        application.setHrManagerPhone("1");
         CompanyUser company = new CompanyUser();
         company.setId(10L);
         company.setCompanyName(application.getCompany());
+        company.setContactPhone("18928693431");
+        company.setPhone("13333333333");
         when(companyUserMapper.findApprovedByCompanyName(application.getCompany())).thenReturn(company);
+        when(companyUserMapper.findById(10L)).thenReturn(company);
         when(applicationMapper.insert(application)).thenReturn(1);
 
         assertEquals(1, service.insert(application));
         verify(applicationMapper).insert(application);
+        assertEquals("COMPANY", application.getReviewTarget());
+        assertEquals(10L, application.getCompanyId());
+        var record = org.mockito.ArgumentCaptor.forClass(com.internship.entity.InternshipConfirmationRecord.class);
+        verify(confirmationWorkflowService).submitSelfPractice(record.capture(), eq(application.getId()));
+        assertEquals("18928693431", record.getValue().getCompanyPhone());
+        assertEquals("1", application.getHrManagerPhone());
+        org.junit.jupiter.api.Assertions.assertTrue(record.getValue().getApplicationSnapshot().contains("\"hrManagerPhone\":\"1\""));
     }
 
     @Test
@@ -119,6 +148,28 @@ class StudentApplicationSelfPracticeInfoTest {
 
         assertEquals(Boolean.TRUE, result.getCooperativeCompany());
         assertEquals(10L, result.getCooperativeCompanyId());
+    }
+
+    @Test
+    void selectedPositionContactIsSavedWithoutReplacingStudentSubmittedHrPhone() {
+        StudentApplication application = completeApplication();
+        application.setPositionId(20L); application.setHrManagerPhone("1");
+        CompanyUser company = new CompanyUser();
+        company.setId(10L); company.setCompanyName(application.getCompany()); company.setContactPhone("02088888888");
+        var position = new com.internship.entity.Position();
+        position.setId(20L); position.setCompanyId(10L); position.setPositionName("数据分析实习生");
+        position.setContactPerson("岗位负责人"); position.setContactPhone("13800000000");
+        when(companyUserMapper.findApprovedByCompanyName(application.getCompany())).thenReturn(company);
+        when(companyUserMapper.findById(10L)).thenReturn(company);
+        when(positionMapper.findById(20L)).thenReturn(position);
+        when(applicationMapper.insert(application)).thenReturn(1);
+
+        service.insert(application);
+
+        var record = org.mockito.ArgumentCaptor.forClass(com.internship.entity.InternshipConfirmationRecord.class);
+        verify(confirmationWorkflowService).submitSelfPractice(record.capture(), eq(application.getId()));
+        assertEquals("13800000000", record.getValue().getCompanyPhone());
+        org.junit.jupiter.api.Assertions.assertTrue(record.getValue().getApplicationSnapshot().contains("\"hrManagerPhone\":\"1\""));
     }
 
     @Test
@@ -192,6 +243,30 @@ class StudentApplicationSelfPracticeInfoTest {
 
         verify(emailService).sendEmail(eq("student@example.com"),
                 eq("自主实习申请已通过通知"), contains("你的自主实习申请已通过"));
+    }
+
+    @Test
+    void selfPracticeApprovedBeforeTheCalendarStartsWaitsForInternship() {
+        StudentApplication pending = completeApplication();
+        pending.setId(21L);
+        pending.setStatus("pending");
+        when(applicationMapper.findByIdForUpdate(21L)).thenReturn(pending);
+        when(applicationMapper.update(pending)).thenReturn(1);
+        when(statusMapper.insert(any())).thenReturn(1);
+        when(confirmationRecordService.insert(any())).thenReturn(1);
+        when(stageAssignmentService.createFromApplication(any()))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        com.internship.entity.dto.InternshipCalendar calendar = new com.internship.entity.dto.InternshipCalendar();
+        calendar.setStartDate(java.time.LocalDate.now(java.time.ZoneId.of("Asia/Shanghai")).plusDays(2).toString());
+        calendar.setEndDate(java.time.LocalDate.now(java.time.ZoneId.of("Asia/Shanghai")).plusDays(30).toString());
+        when(internshipCalendarService.getCalendar()).thenReturn(calendar);
+
+        service.approve(21L, 22L);
+
+        verify(statusMapper).insert(org.mockito.ArgumentMatchers.argThat(row -> row.getStatus() == 2
+                && row.getCreateTime() != null && row.getUpdateTime() != null));
+        verify(stageAssignmentService).update(org.mockito.ArgumentMatchers.argThat(row ->
+                "CONFIRMED".equals(row.getStatus()) && row.getCurrentFlag() == 1));
     }
 
     @Test

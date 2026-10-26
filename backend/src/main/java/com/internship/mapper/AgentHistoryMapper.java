@@ -21,6 +21,10 @@ public interface AgentHistoryMapper {
     void insertTask(@Param("id") String id,@Param("session") String session,@Param("owner") String owner,@Param("created") long created,@Param("now") long now,@Param("status") String status,@Param("snapshot") String snapshot);
     @Update("UPDATE agent_task SET updated_at=#{now},version=version+1,status=#{status},snapshot=#{snapshot} WHERE id=#{id} AND session_id=#{session} AND owner_key=#{owner} AND cancelled=FALSE AND status IN ('QUEUED','RUNNING','CANCELLING')")
     void saveTask(@Param("id") String id,@Param("session") String session,@Param("owner") String owner,@Param("created") long created,@Param("now") long now,@Param("status") String status,@Param("snapshot") String snapshot);
+    @Update("UPDATE agent_task SET updated_at=#{now},version=version+1,status=#{status},snapshot=#{snapshot} WHERE id=#{id} AND session_id=#{session} AND owner_key=#{owner} AND version=#{version} AND cancelled=FALSE AND status IN ('QUEUED','RUNNING','CANCELLING')")
+    int saveTaskVersioned(@Param("id") String id,@Param("session") String session,@Param("owner") String owner,@Param("version") long version,@Param("now") long now,@Param("status") String status,@Param("snapshot") String snapshot);
+    @Update("UPDATE agent_task SET cancelled=TRUE,status='CANCELLED',updated_at=#{now},version=version+1 WHERE id=#{id} AND owner_key=#{owner} AND version=#{version} AND status='WAITING_INPUT' AND cancelled=FALSE")
+    int cancelWaiting(@Param("id") String id,@Param("owner") String owner,@Param("version") long version,@Param("now") long now);
     @Select("SELECT snapshot,version,status,updated_at,cancelled FROM agent_task WHERE id=#{id}") Map<String,Object> task(String id);
     @Select("SELECT snapshot,version,status,updated_at,cancelled FROM agent_task WHERE id=#{id} FOR UPDATE") Map<String,Object> lockTask(String id);
     @Select("<script>SELECT snapshot,version,status,updated_at,cancelled FROM agent_task WHERE session_id=#{session}<if test='beforeTime != null'> AND (created_at &lt; #{beforeTime} OR (created_at=#{beforeTime} AND id &lt; #{beforeId}))</if> ORDER BY created_at DESC,id DESC LIMIT #{limit}</script>")

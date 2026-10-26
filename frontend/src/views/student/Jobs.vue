@@ -31,7 +31,7 @@
               <el-icon><Search /></el-icon>
               搜索
             </el-button>
-            <el-button @click="showFilter = !showFilter" class="filter-toggle-button" :class="{ active: showFilter }">
+            <el-button @click="showFilter = !showFilter" class="filter-toggle-button" :class="{ active: showFilter }" :aria-expanded="showFilter" aria-controls="jobs-filter-panel">
               <el-icon><Filter /></el-icon>
               筛选
               <el-badge v-if="hasActiveFilters" :value="activeFilterCount" :max="99" class="filter-badge" />
@@ -42,20 +42,22 @@
           </div>
           <div class="filter-center">
             <div class="quick-filters">
-              <span
+              <button
                 v-for="item in quickFilters"
                 :key="item.value"
+                type="button"
                 :class="['quick-filter-item', { active: activeQuickFilter === item.value }]"
+                :aria-pressed="activeQuickFilter === item.value"
                 @click="handleQuickFilter(item.value)"
               >
                 {{ item.label }}
-              </span>
+              </button>
             </div>
           </div>
         </div>
 
         <el-collapse-transition>
-          <div v-show="showFilter" class="filter-panel">
+          <div v-show="showFilter" id="jobs-filter-panel" class="filter-panel">
             <div class="filter-panel-content">
               <div class="filter-row">
                 <div class="filter-group">
@@ -171,8 +173,12 @@
         </el-collapse-transition>
       </div>
 
-      <div class="table-card">
+      <div v-loading="positionsLoading" class="table-card" :aria-busy="positionsLoading">
+      <el-alert v-if="positionsError" :title="positionsError" type="error" :closable="false" show-icon class="jobs-load-error">
+        <el-button link type="primary" :loading="positionsLoading" @click="handleQuickFilter(activeQuickFilter)">重新加载</el-button>
+      </el-alert>
       <el-table
+        v-if="!isMobile"
         :data="paginatedJobs"
         class="data-table"
         row-key="id"
@@ -245,13 +251,44 @@
         </template>
       </el-table>
 
+      <div v-else class="mobile-card-list" aria-label="职位列表">
+        <el-empty v-if="!positionsLoading && !positionsError && !paginatedJobs.length" description="暂无符合条件的职位" />
+        <article v-for="row in paginatedJobs" :key="row.id" class="mobile-card" :class="{ 'highlight-row': row.id === highlightedJobId }">
+          <div class="mobile-card-header">
+            <span class="mobile-card-title">{{ row.industryName ? row.industryName + ' - ' + row.title : row.title }}</span>
+            <el-tag v-if="row.id === confirmedPositionId" type="success">当前实习</el-tag>
+            <el-tag v-else-if="!row.isApplied" type="info">未申请</el-tag>
+            <el-tag v-else :type="jobApplicationStatus(row.applicationStatus).type">{{ jobApplicationStatus(row.applicationStatus).text }}</el-tag>
+          </div>
+          <div class="mobile-card-body">
+            <div class="mobile-card-row"><span class="mobile-card-label">企业</span><span class="mobile-card-value">{{ row.company }}</span></div>
+            <div class="mobile-card-row"><span class="mobile-card-label">工作地点</span><span class="mobile-card-value">{{ row.location || '未填写' }}</span></div>
+            <div class="mobile-card-row"><span class="mobile-card-label">薪资</span><span class="mobile-card-value">{{ row.salary || '面议' }}</span></div>
+            <div class="mobile-card-row"><span class="mobile-card-label">剩余名额</span><span class="mobile-card-value"><strong class="quota-num">{{ row.remainingQuota }}</strong> 个<span v-if="row.remainingQuota === 0">（仍可申请）</span></span></div>
+            <div class="mobile-card-row"><span class="mobile-card-label">企业评分</span><span class="mobile-card-value">{{ Number(row.companyRatingCount) > 0 && row.companyRatingAverage != null ? Number(row.companyRatingAverage).toFixed(1) + ' ★（' + row.companyRatingCount + '人）' : '暂无评分' }}</span></div>
+            <div class="tags-cell">
+              <el-tag v-if="row.internshipBase && row.internshipBase !== 'none'" size="small" type="success">实习基地</el-tag>
+              <el-tag v-if="row.isAlumniUnit === 1" size="small" type="warning">校友单位</el-tag>
+              <el-tag v-for="tag in filterJobTags(row.tags)" :key="tag" size="small" class="job-tag">{{ tag }}</el-tag>
+            </div>
+          </div>
+          <div class="mobile-card-actions">
+            <el-button :type="row.isFavorite ? 'warning' : 'default'" :aria-pressed="Boolean(row.isFavorite)" @click="toggleFavorite(row)"><el-icon><StarFilled v-if="row.isFavorite" /><Star v-else /></el-icon>{{ row.isFavorite ? '已收藏' : '收藏' }}</el-button>
+            <el-button v-if="agentWorkspace.capabilities?.enabled" plain :type="agentComparedJobs.includes(String(row.id)) ? 'success' : 'default'" :aria-pressed="agentComparedJobs.includes(String(row.id))" @click="toggleAgentCompare(row)">{{ agentComparedJobs.includes(String(row.id)) ? '已加入 AI 比较' : 'AI 比较' }}</el-button>
+            <el-button v-else plain :type="agentComparedJobs.includes(String(row.id)) ? 'success' : 'default'" :aria-pressed="agentComparedJobs.includes(String(row.id))" @click="toggleLocalCompare(row)">{{ agentComparedJobs.includes(String(row.id)) ? '已加入对比' : '加入对比' }}</el-button>
+            <el-button type="primary" plain @click="viewJobDetail(row)">查看详情</el-button>
+            <el-button v-if="row.id !== confirmedPositionId && !row.isApplied" type="primary" @click="applyJob(row)">立即投递</el-button>
+          </div>
+        </article>
+      </div>
+
       <div class="pagination-section">
         <el-pagination
           v-model:current-page="currentPage"
           v-model:page-size="pageSize"
           :total="totalJobs"
           :page-sizes="[10, 20, 50, 100]"
-          layout="total, sizes, prev, pager, next, jumper"
+          :layout="isMobile ? 'total, sizes, prev, next' : 'total, sizes, prev, pager, next, jumper'"
           class="pagination"
         />
       </div>
@@ -618,8 +655,23 @@ import { checkStudentProfileReadiness, profileIncompleteMessage } from '@/utils/
 import { getMonthlySalaryRangeK } from '@/utils/salaryRange.js'
 import { useFormContext } from '@/agent/formContext'
 import type { FormFieldDescriptor } from '@/agent/types'
+import { useIsMobile } from '@/composables/useIsMobile'
 
 const authStore = useAuthStore()
+const isMobile = useIsMobile()
+const jobApplicationStatus = (status: unknown) => {
+  const statuses: Record<string, { text: string; type: 'warning' | 'success' | 'danger' | 'info' }> = {
+    pending: { text: '待审核', type: 'warning' },
+    pending_interview: { text: '待面试', type: 'warning' },
+    interview: { text: '面试中', type: 'warning' },
+    interview_passed: { text: '面试通过', type: 'success' },
+    interview_failed: { text: '面试未通过', type: 'danger' },
+    approved: { text: '已通过', type: 'success' },
+    rejected: { text: '已拒绝', type: 'danger' },
+    withdrawn: { text: '已撤回', type: 'info' }
+  }
+  return statuses[String(status ?? '')] || { text: '未知状态', type: 'info' as const }
+}
 
 // WebSocket 监听器引用，用于组件卸载时移除
 const handlePositionUpdate = (data: PositionUpdateData) => {
@@ -683,6 +735,8 @@ const router = useRouter()
 const route = useRoute()
 
 const searchKeyword = ref('')
+const positionsLoading = ref(false)
+const positionsError = ref('')
 const showFilter = ref(false)
 const activeQuickFilter = ref('all')
 const selectedIndustry = ref([])
@@ -806,7 +860,7 @@ const highlightTableRow = (jobId: number) => {
   clearTimeout(highlightTimer)
   highlightTimer = window.setTimeout(() => { highlightedJobId.value = null }, 5000)
   nextTick(() => {
-    const row = document.querySelector('.el-table__row.highlight-row')
+    const row = document.querySelector('.jobs-container .highlight-row')
     if (row) row.scrollIntoView({ behavior: 'smooth', block: 'center' })
   })
 }
@@ -881,6 +935,9 @@ const filteredJobs = computed(() => {
 })
 
 const totalJobs = computed(() => filteredJobs.value.length)
+watch([searchKeyword, selectedIndustry, selectedCompany, selectedRegion, selectedSalary, selectedDuration, selectedInternshipBase, pageSize], () => {
+  currentPage.value = 1
+}, { deep: true })
 
 const paginatedJobs = computed(() => {
   const start = (currentPage.value - 1) * pageSize.value
@@ -974,6 +1031,9 @@ const handleSearch = () => {
 }
 
 const handleQuickFilter = async (value) => {
+  if (positionsLoading.value) return
+  positionsLoading.value = true
+  positionsError.value = ''
   console.log('点击快捷筛选:', value)
   console.log('当前activeQuickFilter:', activeQuickFilter.value)
   activeQuickFilter.value = value
@@ -998,11 +1058,15 @@ const handleQuickFilter = async (value) => {
       await markAppliedJobs()
       ElMessage.success('筛选成功')
     } else {
+      positionsError.value = response.message || '职位加载失败，请重试'
       ElMessage.error(response.data.msg || '筛选失败')
     }
   } catch (error) {
+    positionsError.value = '职位加载失败，请检查网络后重试'
     console.error('筛选失败:', error)
     ElMessage.error('网络错误，请稍后重试')
+  } finally {
+    positionsLoading.value = false
   }
 }
 
@@ -1371,6 +1435,8 @@ const loadRegionOptions = async () => {
 
 // 加载职位列表
 const loadPositions = async () => {
+  positionsLoading.value = true
+  positionsError.value = ''
   try {
     interface JobListRow {
       id?: number | string
@@ -1381,9 +1447,14 @@ const loadPositions = async () => {
       const positionRows = Array.isArray(response.data) ? response.data : []
       jobs.value = positionRows as typeof jobs.value
       originalJobs.value = [...jobs.value]
+    } else {
+      positionsError.value = response.message || '职位加载失败，请重试'
     }
   } catch (error) {
+    positionsError.value = '职位加载失败，请检查网络后重试'
     console.error('获取职位列表失败:', error)
+  } finally {
+    positionsLoading.value = false
   }
 }
 
@@ -2598,7 +2669,7 @@ useAgentPageContext(() => ({
   }
 }
 
-@media (min-width: 768px) and (max-width: 991px) {
+@media (min-width: 769px) and (max-width: 991px) {
   .search-filter-container {
     flex-wrap: wrap;
     gap: 10px;
@@ -2619,7 +2690,89 @@ useAgentPageContext(() => ({
   }
 }
 
-@media (max-width: 767px) {
+@media (max-width: 768px) {
+  .jobs-container .page-header {
+    padding: 18px 20px;
+    margin-bottom: 16px;
+  }
+
+  .jobs-container .page-header h2 {
+    font-size: 22px;
+  }
+
+  .jobs-container .search-section {
+    padding: 14px;
+  }
+
+  .jobs-container .search-filter-container {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .jobs-container .search-left {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    min-width: 0;
+  }
+
+  .jobs-container .search-input {
+    grid-column: 1 / -1;
+    max-width: none;
+  }
+
+  .jobs-container .search-left .el-button {
+    margin-left: 0;
+    min-height: 44px;
+    width: 100%;
+  }
+
+  .jobs-container .filter-center,
+  .jobs-container .filter-group {
+    min-width: 0;
+  }
+
+  .jobs-container .quick-filters {
+    flex-wrap: wrap;
+  }
+
+  .jobs-container .quick-filter-item,
+  .jobs-container .filter-option {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+  }
+
+  .jobs-container .filter-actions,
+  .jobs-container .filter-summary {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  .jobs-container .summary-text {
+    overflow-wrap: anywhere;
+  }
+
+  .jobs-container .mobile-card-list {
+    padding: 12px;
+  }
+
+  .jobs-container .mobile-card.highlight-row {
+    border-color: #409eff;
+    background: #ecf5ff;
+  }
+
+  .jobs-container .mobile-card-header .el-tag {
+    flex-shrink: 0;
+  }
+
+  .jobs-container .tags-cell {
+    margin-top: 6px;
+  }
+
   .job-detail-content .detail-section {
     padding: 0 12px;
   }
@@ -2664,8 +2817,9 @@ useAgentPageContext(() => ({
     gap: 8px;
   }
 
-  .filter-group {
-    min-width: 100%;
+  .jobs-container .filter-group {
+    min-width: 0;
+    width: 100%;
   }
 
   .filter-row.two-cols {
@@ -2706,8 +2860,8 @@ useAgentPageContext(() => ({
     width: 100%;
   }
   
-  .filter-group {
-    min-width: 100%;
+  .jobs-container .filter-group {
+    min-width: 0;
   }
   
   .filter-row {

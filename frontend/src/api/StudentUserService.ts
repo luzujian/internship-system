@@ -31,6 +31,7 @@ export interface StudentSearchParams {
   classId?: number | string
   status?: number
   gender?: number
+  department?: number | string
 }
 
 export interface StudentListResponse {
@@ -78,7 +79,8 @@ const StudentUserService = {
           majorId: searchParams.majorId,
           classId: searchParams.classId,
           status: searchParams.status,
-          gender: searchParams.gender
+          gender: searchParams.gender,
+          department: searchParams.department
         }
       }
 
@@ -259,6 +261,7 @@ export const queryPageApi = async (params: {
   classId?: number | string
   status?: number
   gender?: number
+  department?: number | string
 }): Promise<StudentListResponse> => {
   try {
     const {
@@ -270,7 +273,8 @@ export const queryPageApi = async (params: {
       majorId,
       classId,
       status,
-      gender
+      gender,
+      department
     } = params || {}
 
     const response = await StudentUserService.getStudents(
@@ -283,7 +287,8 @@ export const queryPageApi = async (params: {
         majorId,
         classId,
         status,
-        gender
+        gender,
+        department
       }
     )
 

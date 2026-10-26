@@ -98,6 +98,7 @@ public class TeacherDashboardServiceImpl implements TeacherDashboardService {
         result.setOffer(getIntValue(dashboardStats.get("offer")));
         result.setNoOffer(getIntValue(dashboardStats.get("noOffer")));
         result.setDelay(getIntValue(dashboardStats.get("delay")));
+        result.setInterrupted(getIntValue(dashboardStats.get("interrupted")));
 
         result.setScopeName("负责班级");
 
@@ -177,6 +178,7 @@ public class TeacherDashboardServiceImpl implements TeacherDashboardService {
         result.setOffer(getIntValue(dashboardStats.get("offer")));
         result.setNoOffer(getIntValue(dashboardStats.get("noOffer")));
         result.setDelay(getIntValue(dashboardStats.get("delay")));
+        result.setInterrupted(getIntValue(dashboardStats.get("interrupted")));
 
         result.setGradeData(convertGradeData(studentInternshipStatusMapper.getStatsByGradeByDivisionIds(divisionIds, startDate, endDate)));
         result.setMajorData(convertMajorData(studentInternshipStatusMapper.getStatsByMajorByDivisionIds(divisionIds, startDate, endDate)));
@@ -199,6 +201,7 @@ public class TeacherDashboardServiceImpl implements TeacherDashboardService {
         result.setOffer(getIntValue(dashboardStats.get("offer")));
         result.setNoOffer(getIntValue(dashboardStats.get("noOffer")));
         result.setDelay(getIntValue(dashboardStats.get("delay")));
+        result.setInterrupted(getIntValue(dashboardStats.get("interrupted")));
 
         result.setGradeData(convertGradeData(studentInternshipStatusMapper.getStatsByGrade(startDate, endDate)));
         result.setMajorData(convertMajorData(studentInternshipStatusMapper.getStatsByMajor(startDate, endDate)));
@@ -225,6 +228,7 @@ public class TeacherDashboardServiceImpl implements TeacherDashboardService {
         result.setOffer(0);
         result.setNoOffer(0);
         result.setDelay(0);
+                result.setInterrupted(0);
         result.setGradeData(new ArrayList<>());
         result.setMajorData(new ArrayList<>());
         result.setClassData(new ArrayList<>());
@@ -255,6 +259,7 @@ public class TeacherDashboardServiceImpl implements TeacherDashboardService {
             dto.setOffer(getIntValue(item.get("offer")));
             dto.setNoOffer(getIntValue(item.get("noOffer")));
             dto.setDelay(getIntValue(item.get("delay")));
+            dto.setInterrupted(getIntValue(item.get("interrupted")));
             result.add(dto);
         }
         return result;
@@ -274,6 +279,7 @@ public class TeacherDashboardServiceImpl implements TeacherDashboardService {
             dto.setOffer(getIntValue(item.get("offer")));
             dto.setNoOffer(getIntValue(item.get("noOffer")));
             dto.setDelay(getIntValue(item.get("delay")));
+            dto.setInterrupted(getIntValue(item.get("interrupted")));
             result.add(dto);
         }
         return result;
@@ -293,6 +299,7 @@ public class TeacherDashboardServiceImpl implements TeacherDashboardService {
             dto.setOffer(getIntValue(item.get("offer")));
             dto.setNoOffer(getIntValue(item.get("noOffer")));
             dto.setDelay(getIntValue(item.get("delay")));
+            dto.setInterrupted(getIntValue(item.get("interrupted")));
             result.add(dto);
         }
         return result;
@@ -312,6 +319,7 @@ public class TeacherDashboardServiceImpl implements TeacherDashboardService {
             dto.setOffer(getIntValue(item.get("offer")));
             dto.setNoOffer(getIntValue(item.get("noOffer")));
             dto.setDelay(getIntValue(item.get("delay")));
+            dto.setInterrupted(getIntValue(item.get("interrupted")));
             result.add(dto);
         }
         return result;
@@ -357,6 +365,7 @@ public class TeacherDashboardServiceImpl implements TeacherDashboardService {
                 result.setOffer(getIntValue(dashboardStats.get("offer")));
                 result.setNoOffer(getIntValue(dashboardStats.get("noOffer")));
                 result.setDelay(getIntValue(dashboardStats.get("delay")));
+        result.setInterrupted(getIntValue(dashboardStats.get("interrupted")));
                 
                 List<Map<String, Object>> gradeDataList = studentInternshipStatusMapper.getStatsByGradeByClassIds(classIds, startDate, endDate);
                 result.setGradeData(convertGradeData(gradeDataList));
@@ -373,6 +382,7 @@ public class TeacherDashboardServiceImpl implements TeacherDashboardService {
                 result.setOffer(0);
                 result.setNoOffer(0);
                 result.setDelay(0);
+                result.setInterrupted(0);
                 result.setGradeData(new ArrayList<>());
                 result.setMajorData(new ArrayList<>());
                 result.setClassData(new ArrayList<>());
@@ -387,6 +397,7 @@ public class TeacherDashboardServiceImpl implements TeacherDashboardService {
             errorResult.setOffer(0);
             errorResult.setNoOffer(0);
             errorResult.setDelay(0);
+                errorResult.setInterrupted(0);
             errorResult.setGradeData(new ArrayList<>());
             errorResult.setMajorData(new ArrayList<>());
             errorResult.setClassData(new ArrayList<>());

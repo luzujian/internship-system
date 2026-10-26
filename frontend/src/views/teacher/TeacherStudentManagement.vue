@@ -19,23 +19,23 @@
         </div>
         <div class="stat-item clickable" v-if="showInternshipFields" @click="filterByStatus('0')">
           <div class="stat-value accent-warning">{{ statistics.noOfferCount || 0 }}</div>
-          <div class="stat-label">尚无 Offer</div>
+          <div class="stat-label">尚未获录用</div>
         </div>
         <div class="stat-item clickable" v-if="showInternshipFields" @click="filterByStatus('3')">
           <div class="stat-value accent-primary">{{ statistics.interningCount || 0 }}</div>
-          <div class="stat-label">实习中</div>
+          <div class="stat-label">实习进行中</div>
         </div>
         <div class="stat-item clickable" v-if="showInternshipFields" @click="filterByStatus('4')">
           <div class="stat-value accent-success">{{ statistics.finishedCount || 0 }}</div>
-          <div class="stat-label">已完成</div>
+          <div class="stat-label">实习已结束</div>
         </div>
       </div>
     </el-card>
 
     <el-card class="search-card" shadow="never">
-      <el-form :inline="true" :model="filters" class="search-form" @keyup.enter="applyFilters">
+      <el-form :inline="!isMobile" :label-position="isMobile ? 'top' : 'right'" :model="filters" class="search-form" @keyup.enter="applyFilters">
         <div class="search-row">
-          <el-form-item label="班级">
+          <el-form-item v-show="!isMobile || advancedFiltersOpen" label="班级">
             <el-select v-model="filters.class" placeholder="全部班级" clearable class="select-input">
               <el-option label="全部班级" value=""></el-option>
               <!-- 辅导员专属学生管理页面：显示负责的班级 -->
@@ -44,7 +44,7 @@
               <el-option v-for="cls in classList" :key="cls.id" :label="cls.name" :value="cls.name || cls.id || ''" v-else></el-option>
             </el-select>
           </el-form-item>
-          <el-form-item label="实习单位" v-if="showInternshipFields">
+          <el-form-item v-show="!isMobile || advancedFiltersOpen" label="实习单位" v-if="showInternshipFields">
             <el-select v-model="filters.company" placeholder="全部单位" clearable filterable class="select-input">
               <el-option label="全部单位" value=""></el-option>
               <el-option-group v-if="companyList.length" label="校企合作">
@@ -65,27 +65,33 @@
               </el-option-group>
             </el-select>
           </el-form-item>
-          <el-form-item label="实习状态" v-if="showInternshipFields">
+          <el-form-item v-show="!isMobile || advancedFiltersOpen" label="实习状态" v-if="showInternshipFields">
             <el-select v-model="filters.status" placeholder="全部状态" clearable class="select-input">
               <el-option label="全部状态" value=""></el-option>
-              <el-option label="尚无 Offer（全部）" value="0"></el-option>
-              <el-option label="未投递" value="-1"></el-option>
-              <el-option label="无 Offer" value="-2"></el-option>
-              <el-option label="待确认" value="1"></el-option>
-              <el-option label="已确定" value="2"></el-option>
-              <el-option label="实习中" value="3"></el-option>
-              <el-option label="已结束" value="4"></el-option>
-              <el-option label="已中断" value="5"></el-option>
-              <el-option label="延期" value="6"></el-option>
+              <el-option label="尚未获录用（全部）" value="0"></el-option>
+              <el-option label="暂无有效投递" value="-1"></el-option>
+              <el-option label="已投递未录用" value="-2"></el-option>
+              <el-option label="已录用待确认" value="1"></el-option>
+              <el-option label="已定单位待实习" value="2"></el-option>
+              <el-option label="实习进行中" value="3"></el-option>
+              <el-option label="实习已结束" value="4"></el-option>
+              <el-option label="实习已中断" value="5"></el-option>
+              <el-option label="已延期实习" value="6"></el-option>
             </el-select>
           </el-form-item>
-          <el-form-item label="专业" v-if="showInternshipFields">
+          <el-form-item v-show="!isMobile || advancedFiltersOpen" label="实习途径" v-if="showInternshipFields">
+            <el-select v-model="filters.internshipPath" placeholder="全部途径" clearable class="select-input">
+              <el-option label="全部途径" value=""></el-option>
+              <el-option v-for="(label, value) in internshipPathLabels" :key="value" :label="label" :value="value"></el-option>
+            </el-select>
+          </el-form-item>
+          <el-form-item v-show="!isMobile || advancedFiltersOpen" label="专业" v-if="showInternshipFields">
             <el-select v-model="filters.major" placeholder="全部专业" clearable class="select-input">
               <el-option label="全部专业" value=""></el-option>
               <el-option v-for="major in majorList" :key="major.id" :label="major.name" :value="major.name || major.id || ''"></el-option>
             </el-select>
           </el-form-item>
-          <el-form-item label="年级" v-if="showInternshipFields">
+          <el-form-item v-show="!isMobile || advancedFiltersOpen" label="年级" v-if="showInternshipFields">
             <el-select v-model="filters.grade" placeholder="全部年级" clearable class="select-input">
               <el-option label="全部年级" value=""></el-option>
               <el-option v-for="grade in gradeList" :key="grade" :label="grade + '级'" :value="grade + '级'"></el-option>
@@ -103,6 +109,11 @@
                 <el-icon><Search /></el-icon>
               </template>
             </el-input>
+          </el-form-item>
+          <el-form-item v-if="isMobile" class="mobile-filter-toggle">
+            <el-button :aria-expanded="advancedFiltersOpen" @click="advancedFiltersOpen = !advancedFiltersOpen">
+              {{ advancedFiltersOpen ? '收起筛选' : '更多筛选' }}{{ activeFilterCount ? `（${activeFilterCount}）` : '' }}
+            </el-button>
           </el-form-item>
           <el-form-item class="search-actions">
             <el-button type="primary" @click="applyFilters" class="action-btn primary">
@@ -130,7 +141,52 @@
         <h3 class="table-title">学生列表</h3>
         <div class="table-actions"></div>
       </div>
+      <div v-if="isMobile" v-loading="loading" class="mobile-card-list student-mobile-list" aria-label="学生列表">
+        <div v-if="showInternshipFields && pagedStudents.length" class="mobile-selection-toolbar">
+          <el-checkbox :model-value="allPageStudentsSelected" :indeterminate="somePageStudentsSelected && !allPageStudentsSelected" @change="togglePageSelection">
+            全选本页
+          </el-checkbox>
+          <span>已选择 {{ selectedStudents.length }} 人</span>
+        </div>
+        <el-empty v-if="!loading && !pagedStudents.length" description="暂无符合条件的学生" />
+        <article v-for="row in pagedStudents" :key="row.id || row.studentId" class="mobile-card">
+          <div class="mobile-card-header">
+            <el-checkbox v-if="showInternshipFields" :model-value="isStudentSelected(row)" :aria-label="`选择学生 ${row.name || row.studentId}`" @change="checked => toggleStudentSelection(row, checked)">
+              <span class="mobile-card-title">{{ row.name }}</span>
+            </el-checkbox>
+            <span v-else class="mobile-card-title">{{ row.name }}</span>
+            <el-tag v-if="showInternshipFields" :type="getStatusTagType(row.jobSearchStatus || row.internshipStatus)" size="small">
+              {{ row.jobSearchStatusText || getStatusText(row.internshipStatus) }}
+            </el-tag>
+            <el-tag v-else :type="row.status === 1 ? 'success' : 'danger'" size="small">{{ row.status === 1 ? '正常' : '禁用' }}</el-tag>
+          </div>
+          <div class="mobile-card-body">
+            <div class="mobile-card-row"><span class="mobile-card-label">学号</span><span class="mobile-card-value">{{ row.studentId }}</span></div>
+            <div v-if="row.grade" class="mobile-card-row"><span class="mobile-card-label">年级</span><span class="mobile-card-value">{{ row.grade }}</span></div>
+            <div v-if="row.major" class="mobile-card-row"><span class="mobile-card-label">专业</span><span class="mobile-card-value">{{ row.major }}</span></div>
+            <div v-if="row.className" class="mobile-card-row"><span class="mobile-card-label">班级</span><span class="mobile-card-value">{{ row.className }}</span></div>
+            <template v-if="showInternshipFields">
+              <div class="mobile-card-row"><span class="mobile-card-label">实习途径</span><span class="mobile-card-value">{{ internshipPathLabels[row.internshipPath] }}</span></div>
+              <div class="mobile-card-row"><span class="mobile-card-label">实习单位</span><span class="mobile-card-value">{{ row.company || '未确定' }}</span></div>
+              <div v-for="text in row.pendingApplicationTexts" :key="text" class="pending-application-note">{{ text }}</div>
+            </template>
+          </div>
+          <div class="mobile-card-actions">
+            <template v-if="showInternshipFields">
+              <el-button type="primary" @click="viewStudentDetail(row)">查看详情</el-button>
+              <el-button type="success" @click="exportStudentProfile(row.id)">导出档案</el-button>
+              <el-button type="warning" @click="remindStudent(row.id)">邮件提醒</el-button>
+            </template>
+            <template v-else>
+              <el-button type="primary" @click="viewReports(row)">查看实习心得</el-button>
+              <el-button type="success" @click="checkAIStatus(row)">AI 分析状态</el-button>
+            </template>
+          </div>
+        </article>
+      </div>
       <el-table
+        ref="studentTableRef"
+        v-show="!isMobile"
         v-loading="loading"
         :data="pagedStudents"
         style="width: 100%"
@@ -142,11 +198,17 @@
         <el-table-column type="selection" width="55" align="center" v-if="showInternshipFields"></el-table-column>
         <el-table-column prop="studentId" label="学号" width="120" align="center"></el-table-column>
         <el-table-column prop="name" label="姓名" width="100" align="center"></el-table-column>
-        <el-table-column label="状态" width="100" align="center" v-if="showInternshipFields">
+        <el-table-column label="实习状态" min-width="170" align="center" v-if="showInternshipFields">
           <template #default="scope">
             <el-tag :type="getStatusTagType(scope.row.jobSearchStatus || scope.row.internshipStatus)" size="small" class="status-tag">
               {{ scope.row.jobSearchStatusText || getStatusText(scope.row.internshipStatus) }}
             </el-tag>
+            <div v-for="text in scope.row.pendingApplicationTexts" :key="text" class="pending-application-note">{{ text }}</div>
+          </template>
+        </el-table-column>
+        <el-table-column prop="internshipPath" label="实习途径" width="110" align="center" v-if="showInternshipFields">
+          <template #default="scope">
+            {{ internshipPathLabels[scope.row.internshipPath] }}
           </template>
         </el-table-column>
         <el-table-column prop="company" label="实习单位" min-width="180" show-overflow-tooltip v-if="showInternshipFields">
@@ -164,7 +226,7 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" :width="showInternshipFields ? 240 : 180" fixed="right" align="center">
+        <el-table-column label="操作" width="180" fixed="right" align="center">
           <template #default="scope">
             <MobileMoreActions>
               <el-tooltip content="查看实习心得" placement="top" v-if="!showInternshipFields">
@@ -180,11 +242,6 @@
               <el-tooltip content="查看详情" placement="top" v-if="showInternshipFields">
                 <el-button size="small" type="primary" @click="viewStudentDetail(scope.row)" class="table-btn view">
                   <el-icon><View /></el-icon>
-                </el-button>
-              </el-tooltip>
-              <el-tooltip content="下载申请表" placement="top" v-if="showInternshipFields">
-                <el-button size="small" type="primary" @click="downloadApplicationForm(scope.row)" class="table-btn download">
-                  <el-icon><Download /></el-icon>
                 </el-button>
               </el-tooltip>
               <el-tooltip content="导出档案" placement="top" v-if="showInternshipFields">
@@ -209,7 +266,8 @@
           :current-page="currentPage"
           :page-sizes="[10, 20, 50]"
           :page-size="pageSize"
-          layout="total, sizes, prev, pager, next, jumper"
+          :layout="isMobile ? 'total, sizes, prev, pager, next' : 'total, sizes, prev, pager, next, jumper'"
+          :pager-count="isMobile ? 5 : 7"
           :total="total"
           class="custom-pagination"
         />
@@ -319,7 +377,7 @@
       <div class="modal-content">
         <div class="modal-header">
           <h3>批量导出数据</h3>
-          <button class="close-btn" @click="showExportModal = false">×</button>
+          <button class="close-btn" aria-label="关闭批量导出" @click="showExportModal = false">×</button>
         </div>
         <div class="modal-body">
           <div class="form-group">
@@ -371,7 +429,7 @@
       <div class="modal-content student-detail-modal">
         <div class="modal-header">
           <h3>{{ currentStudent?.name }} 学生详情</h3>
-          <button class="close-btn" @click="showStudentDetailModal = false">×</button>
+          <button class="close-btn" aria-label="关闭学生详情" @click="showStudentDetailModal = false">×</button>
         </div>
         <div class="modal-body student-detail-body" v-loading="detailLoading">
           <div v-if="currentStudent" class="student-detail-content">
@@ -425,7 +483,7 @@
                   </div>
                   <div class="detail-item">
                     <label>实习状态：</label>
-                    <span class="status-badge" :class="getStatusClass(currentStudent.jobSearchStatus || currentStudent.internshipStatus)">{{ currentStudent.jobSearchStatusText || getStatusText(currentStudent.internshipStatus) }}</span>
+                    <span class="status-badge" :class="getStatusClass(currentStudent.jobSearchStatus || currentStudent.internshipStatus)">{{ currentStudent.jobSearchStatusText || getStatusText(currentStudent.internshipStatus) }}</span><span v-for="text in currentStudent.pendingApplicationTexts" :key="text" class="pending-application-note">{{ text }}</span>
                   </div>
                   <div class="detail-item">
                     <label>实习岗位：</label>
@@ -447,7 +505,7 @@
       <div class="modal-content feedback-modal">
         <div class="modal-header">
           <h3>{{ feedbackTitle }}</h3>
-          <button class="close-btn" @click="showFeedback = false">×</button>
+          <button class="close-btn" aria-label="关闭操作反馈" @click="showFeedback = false">×</button>
         </div>
         <div class="modal-body">
           <div class="feedback-content">
@@ -472,7 +530,7 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useFormContext } from '@/agent/formContext'
 import type { FormFieldDescriptor } from '@/agent/types'
 import { useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, type TableInstance } from 'element-plus'
 import { Search, Refresh, Bell, Download, FolderOpened, View, Document, MagicStick } from '@element-plus/icons-vue'
 import { studentApi, type StudentUser, type StudentFilters, type ClassItem, type MajorItem } from '@/api/teacherStudent'
 import {
@@ -484,6 +542,11 @@ import {
 import { checkAiScoringEnabled } from '@/api/counselorAIAnalysis'
 import MobileMoreActions from '../../components/MobileMoreActions.vue'
 import request from '@/utils/request'
+import { useIsMobile } from '@/composables/useIsMobile'
+
+const isMobile = useIsMobile()
+const advancedFiltersOpen = ref(false)
+const studentTableRef = ref<TableInstance>()
 
 const router = useRouter()
 
@@ -549,19 +612,26 @@ const filters = ref<StudentFilters>({
   class: '',
   company: '',
   status: '',
+  internshipPath: '',
   major: '',
   grade: '',
   search: ''
+})
+const activeFilterCount = computed(() => {
+  const activeKeys: (keyof StudentFilters)[] = showInternshipFields.value
+    ? ['class', 'company', 'status', 'internshipPath', 'major', 'grade']
+    : ['class']
+  return activeKeys.filter(key => !!filters.value[key]).length
 })
 
 const currentPage = ref(1)
 const pageSize = ref(10)
 const total = ref(0)
 
-// 辅导员分支后端返回全部学生,前端按 currentPage/pageSize 切片显示
-// 管理员分支后端已分页,students 即当前页,直接返回
+// 学生管理和途径筛选返回完整名单，其余状态监控查询由后端分页。
+const clientPagination = ref(false)
 const pagedStudents = computed(() => {
-  if (isCounselor.value) {
+  if (clientPagination.value) {
     const start = (currentPage.value - 1) * pageSize.value
     return students.value.slice(start, start + pageSize.value)
   }
@@ -653,6 +723,25 @@ const resolveInternshipCompanyName = (item: any): string => {
   return typeof item.company === 'string' ? item.company : ''
 }
 
+const internshipPathLabels = {
+  selfPractice: '自主实习',
+  mutualChoice: '双向选择',
+  delay: '延迟实习'
+}
+
+const getInternshipPath = (item: any): keyof typeof internshipPathLabels => {
+  if (Number(item.internshipStatus ?? item.status) === 6) return 'delay'
+  // 自主实习审批通过后保存单位名称，并清空平台企业 ID；延期优先于保留的单位信息。
+  if (!item.companyId && resolveInternshipCompanyName(item).trim()) return 'selfPractice'
+  return 'mutualChoice'
+}
+
+const loadInternshipPathsByStudent = async (): Promise<Map<number, any>> => {
+  const response: any = await studentApi.getStudentList({ page: 1, pageSize: 99999 })
+  const page = response.data ?? response
+  return new Map((page.list ?? page.rows ?? []).map((item: any) => [item.student?.id ?? item.studentId, item]))
+}
+
 const normalizeCompanyName = (companyName: string): string =>
   companyName.trim().replace(/[，,。；;、]+$/g, '').replace(/\s+/g, '').toLowerCase()
 
@@ -675,9 +764,10 @@ const loadMyClasses = async () => {
 const loadStudents = async () => {
   loading.value = true
   try {
+    const internshipPath = showInternshipFields.value ? filters.value.internshipPath : ''
     // 如果是辅导员访问，只显示该辅导员负责的学生
     if (isCounselor.value && counselorId.value > 0) {
-      const response = await getCounselorStudents(
+      const [response, pathStatuses] = await Promise.all([getCounselorStudents(
         counselorId.value,
         filters.value.search || undefined,
         filters.value.class ? myClasses.value.find(c => c.name === filters.value.class)?.id : undefined,
@@ -685,7 +775,7 @@ const loadStudents = async () => {
         filters.value.grade ? filters.value.grade.replace('级', '') : undefined,
         filters.value.status ? getStatusValue(filters.value.status) : undefined,
         filters.value.company || undefined
-      )
+      ), showInternshipFields.value ? loadInternshipPathsByStudent() : Promise.resolve(new Map())])
       if (response.data) {
         students.value = response.data.map((item: any) => ({
           id: item.id,
@@ -699,21 +789,24 @@ const loadStudents = async () => {
           phone: item.phone || '',
           email: item.email || '',
           status: item.status !== undefined ? item.status : 0,
-          companyId: item.companyId,
+          companyId: item.companyId ?? pathStatuses.get(item.id)?.companyId,
           company: resolveInternshipCompanyName(item),
           internshipStatus: item.internshipStatus,
           jobSearchStatus: item.jobSearchStatus,
           jobSearchStatusText: item.jobSearchStatusText,
+          pendingApplicationTexts: item.pendingApplicationTexts || [],
           positionId: item.positionId,
-          positionName: item.positionName
-        }))
-        total.value = response.data.length
+          positionName: item.positionName,
+          internshipPath: getInternshipPath(pathStatuses.get(item.id) ?? item)
+        })).filter(item => !internshipPath || item.internshipPath === internshipPath)
+        total.value = students.value.length
+        clientPagination.value = true
       }
     } else {
-      // 非辅导员访问（管理员等），显示全部学生
+      // 途径筛选先取得完整的教师管辖范围名单，再按途径筛选和分页。
       const response = await studentApi.getStudentList({
-        page: currentPage.value,
-        pageSize: pageSize.value,
+        page: internshipPath ? 1 : currentPage.value,
+        pageSize: internshipPath ? 99999 : pageSize.value,
         name: filters.value.search,
         grade: filters.value.grade,
         major: filters.value.major,
@@ -777,9 +870,12 @@ const loadStudents = async () => {
         // 实习状态：后端返回的是 status 字段（StudentInternshipStatus 对象）
         internshipStatus: item.status !== undefined ? item.status : (item.internshipStatus !== undefined ? item.internshipStatus : null),
         jobSearchStatus: item.jobSearchStatus,
-        jobSearchStatusText: item.jobSearchStatusText
-      }))
-      total.value = pageEnvelope.total || 0
+        jobSearchStatusText: item.jobSearchStatusText,
+        pendingApplicationTexts: item.pendingApplicationTexts || [],
+        internshipPath: getInternshipPath(item)
+      })).filter(item => !internshipPath || item.internshipPath === internshipPath)
+      clientPagination.value = !!internshipPath
+      total.value = internshipPath ? students.value.length : (pageEnvelope.total || 0)
     }
   } catch (error) {
     console.error('加载学生列表失败:', error)
@@ -955,6 +1051,7 @@ const resetFilters = () => {
     class: '',
     company: '',
     status: '',
+    internshipPath: '',
     major: '',
     grade: '',
     search: ''
@@ -973,17 +1070,26 @@ const handleSelectionChange = (selection: StudentUser[]) => {
   selectedStudents.value = selection
 }
 
+// 卡片和桌面表格共用 Element Plus 的选择状态，旋转屏幕时保留已选学生。
+const isStudentSelected = (student: StudentUser) => selectedStudents.value.includes(student)
+const allPageStudentsSelected = computed(() => pagedStudents.value.length > 0 && pagedStudents.value.every(isStudentSelected))
+const somePageStudentsSelected = computed(() => pagedStudents.value.some(isStudentSelected))
+const toggleStudentSelection = (student: StudentUser, checked: boolean | string | number) => {
+  studentTableRef.value?.toggleRowSelection(student, checked === true)
+}
+const togglePageSelection = (checked: boolean | string | number) => {
+  pagedStudents.value.forEach(student => toggleStudentSelection(student, checked))
+}
+
 const handleSizeChange = (size: number) => {
   pageSize.value = size
   currentPage.value = 1
-  // 辅导员分支前端切片,无需重新请求;管理员分支需后端分页
-  if (!isCounselor.value) loadStudents()
+  if (!clientPagination.value) loadStudents()
 }
 
 const handleCurrentChange = (page: number) => {
   currentPage.value = page
-  // 辅导员分支前端切片,无需重新请求;管理员分支需后端分页
-  if (!isCounselor.value) loadStudents()
+  if (!clientPagination.value) loadStudents()
 }
 
 const viewReports = async (student: any) => {
@@ -1070,6 +1176,7 @@ const viewStudentDetail = async (student: any) => {
       ...detail,
       jobSearchStatus: detail?.jobSearchStatus || student.jobSearchStatus,
       jobSearchStatusText: detail?.jobSearchStatusText || student.jobSearchStatusText,
+      pendingApplicationTexts: detail?.pendingApplicationTexts || student.pendingApplicationTexts || [],
       // 详情接口可能未返回邮箱，用列表数据兜底
       email: detail?.email ?? student.email ?? ''
     }
@@ -1103,28 +1210,28 @@ const getStatusValue = (status: string): number => {
 const getStatusText = (status: number | string): string => {
   if (typeof status === 'string') {
     const derivedText: Record<string, string> = {
-      NOT_FOUND: '未投递',
-      NO_OFFER: '无 Offer',
-      PENDING_CONFIRMATION: '待确认',
-      CONFIRMED: '已确定',
-      IN_PROGRESS: '实习中',
-      ENDED: '已结束',
-      INTERRUPTED: '已中断',
-      DELAYED: '延期'
+      NOT_FOUND: '暂无有效投递',
+      NO_OFFER: '已投递未录用',
+      PENDING_CONFIRMATION: '已录用待确认',
+      CONFIRMED: '已定单位待实习',
+      IN_PROGRESS: '实习进行中',
+      ENDED: '实习已结束',
+      INTERRUPTED: '实习已中断',
+      DELAYED: '已延期实习'
     }
     if (derivedText[status]) return derivedText[status]
   }
   const statusNum = typeof status === 'string' ? getStatusValue(status) : status
   switch (statusNum) {
-    case 2: return '已确定'
-    case 1: return '待确认'
-    case -1: return '未投递'
-    case -2: return '无 Offer'
-    case 0: return '尚无 Offer'
-    case 5: return '已中断'
-    case 3: return '实习中'
-    case 4: return '已结束'
-    case 6: return '延期'
+    case 2: return '已定单位待实习'
+    case 1: return '已录用待确认'
+    case -1: return '暂无有效投递'
+    case -2: return '已投递未录用'
+    case 0: return '尚未获录用'
+    case 5: return '实习已中断'
+    case 3: return '实习进行中'
+    case 4: return '实习已结束'
+    case 6: return '已延期实习'
     default: return '未知'
   }
 }
@@ -1169,42 +1276,6 @@ const getStatusClass = (status: number | string): string => {
     case 3: return 'status-in-progress'
     case 4: return 'status-completed'
     default: return 'status-unknown'
-  }
-}
-
-const downloadApplicationForm = async (row: any): Promise<void> => {
-  try {
-    ElMessage({ message: '正在生成实习确认申请表...', type: 'info' })
-
-    const accessToken = authStore.token
-
-    const url = `/api/admin/internship-status/download-application/${row.internshipStatusId || row.id}`
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${accessToken}`
-      }
-    })
-
-    if (!response.ok) {
-      throw new Error('下载失败')
-    }
-
-    const blob = await response.blob()
-    const downloadUrl = window.URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = downloadUrl
-    link.download = `${row.studentUserId || ''}_${row.name || ''}_实习确认申请表.docx`
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-    window.URL.revokeObjectURL(downloadUrl)
-
-    ElMessage.success('下载成功')
-  } catch (error: unknown) {
-    console.error('下载失败:', error)
-    const errorMessage = error instanceof Error ? error.message : '未知错误'
-    ElMessage.error('下载失败：' + errorMessage)
   }
 }
 
@@ -1280,6 +1351,10 @@ const sendBatchReminder = async () => {
       ) as unknown as { code?: number; data?: StudentUser[] }
       const counselorRows: unknown = response?.data
       allStudents = Array.isArray(counselorRows) ? counselorRows : []
+      if (filters.value.internshipPath) {
+        const pathStatuses = await loadInternshipPathsByStudent()
+        allStudents = allStudents.map(item => ({ ...item, internshipPath: getInternshipPath(pathStatuses.get(item.id) ?? item) }))
+      }
     } else {
       const response = await studentApi.getStudentList({
         page: 1,
@@ -1298,6 +1373,10 @@ const sendBatchReminder = async () => {
       }
       const batchPage = (response.data ?? response) as { list?: StudentUser[]; rows?: StudentUser[] }
       allStudents = batchPage.list ?? batchPage.rows ?? []
+    }
+
+    if (filters.value.internshipPath) {
+      allStudents = allStudents.filter(item => (item.internshipPath ?? getInternshipPath(item)) === filters.value.internshipPath)
     }
 
     if (allStudents.length === 0) {
@@ -1406,7 +1485,15 @@ const getAuthToken = () => authStore.token
 const exportAllData = async () => {
   const loadingMsg = ElMessage({ message: '正在导出学生数据...', type: 'info', duration: 0 })
   try {
-    const url = `/api/teacher/internship-status/export/batch?t=${Date.now()}`
+    const params = new URLSearchParams({ t: String(Date.now()) })
+    if (filters.value.search) params.set('name', filters.value.search)
+    if (filters.value.class) params.set('className', filters.value.class)
+    if (filters.value.major) params.set('major', filters.value.major)
+    if (filters.value.grade) params.set('grade', filters.value.grade)
+    if (filters.value.company) params.set('companyName', filters.value.company)
+    if (filters.value.status !== '' && filters.value.status != null) params.set('status', String(getStatusValue(filters.value.status)))
+    if (filters.value.internshipPath) params.set('internshipPath', filters.value.internshipPath)
+    const url = `/api/teacher/internship-status/export/batch?${params.toString()}`
     const response = await fetch(url, {
       headers: { 'Authorization': `Bearer ${getAuthToken()}` }
     })
@@ -1582,7 +1669,7 @@ useAgentPageContext(() => {
       ? { type: 'student', id: String(currentStudent.value.id) } : null,
     selectedObjects: selectedStudents.value.slice(0, 20).map(student => ({ type: 'student', id: String(student.id) })),
     filters: { keyword: filters.value.search, status: filters.value.status, company: filters.value.company,
-      major: filters.value.major, grade: filters.value.grade,
+      major: filters.value.major, grade: filters.value.grade, internshipPath: filters.value.internshipPath,
       ...(filters.value.class && selectedClass?.id ? { classId: String(selectedClass.id) } : {}) }
   }
 })
@@ -1595,6 +1682,7 @@ watch(() => router.currentRoute.value.query.agentStudentId, id => {
 </script>
 
 <style scoped>
+.pending-application-note { color: var(--el-color-warning); font-size: 12px; line-height: 1.6; white-space: normal; }
 .student-management-container {
   padding: 8px 20px 20px;
   background: #f5f7fa;
@@ -2183,7 +2271,7 @@ watch(() => router.currentRoute.value.query.agentStudentId, id => {
   margin-top: 16px;
 }
 
-@media (max-width: 720px) {
+@media (max-width: 768px) {
   .student-detail-content {
     flex-direction: column;
   }
@@ -2245,13 +2333,123 @@ watch(() => router.currentRoute.value.query.agentStudentId, id => {
   }
 
   .search-actions :deep(.el-form-item__content) {
-    flex-direction: column;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     align-items: stretch;
+    gap: 8px;
   }
 
   .search-actions :deep(.el-button) {
     width: 100%;
     margin-left: 0 !important;
+  }
+
+  .search-actions :deep(.el-button:nth-child(3)) {
+    grid-column: 1 / -1;
+  }
+
+  .search-row {
+    gap: 0;
+  }
+
+  .search-item {
+    order: -2;
+  }
+
+  .mobile-filter-toggle {
+    order: -1;
+  }
+
+  .mobile-filter-toggle :deep(.el-button) {
+    width: 100%;
+  }
+
+  .search-actions {
+    order: 1;
+  }
+
+  .student-mobile-list {
+    min-height: 96px;
+  }
+
+  .mobile-selection-toolbar {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 14px;
+    color: #606266;
+  }
+
+  .mobile-selection-toolbar :deep(.el-checkbox),
+  .mobile-card-header :deep(.el-checkbox) {
+    min-height: 44px;
+    height: auto;
+    max-width: 100%;
+    min-width: 0;
+    margin-right: 0;
+    white-space: normal;
+  }
+
+  .mobile-card-header :deep(.el-checkbox__label) {
+    min-width: 0;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .mobile-card-header :deep(.el-tag) {
+    flex-shrink: 0;
+  }
+
+  .stat-item.clickable {
+    min-height: 44px;
+  }
+
+  .modal-content,
+  .modal-content.student-detail-modal {
+    display: flex;
+    flex-direction: column;
+    box-sizing: border-box;
+    min-width: 0;
+    width: calc(100vw - 24px);
+    max-width: calc(100vw - 24px);
+    max-height: calc(100% - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+    padding: 16px;
+    overflow: hidden;
+  }
+
+  .modal-content.student-detail-modal {
+    height: calc(100% - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  }
+
+  .modal-header,
+  .modal-footer {
+    flex-shrink: 0;
+  }
+
+  .modal-header h3 {
+    overflow-wrap: anywhere;
+  }
+
+  .modal-body {
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .close-btn {
+    width: 44px;
+    height: 44px;
+    flex-shrink: 0;
+  }
+
+  .modal-footer > button {
+    min-height: 44px;
+  }
+
+  .form-group select {
+    font-size: 16px;
   }
 }
 

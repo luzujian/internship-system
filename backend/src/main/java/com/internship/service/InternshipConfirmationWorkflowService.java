@@ -53,6 +53,11 @@ public class InternshipConfirmationWorkflowService {
     @org.springframework.beans.factory.annotation.Autowired
     private InternshipAgreementService agreementService;
 
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.internship.mapper.StudentApplicationMapper studentApplicationMapper;
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.internship.mapper.CompanyUserMapper companyUserMapper;
+
     public InternshipConfirmationWorkflowService(InternshipConfirmationRecordMapper confirmationMapper,
                                                  InternshipStageAssignmentMapper assignmentMapper,
                                                  StudentInternshipStatusMapper statusMapper,
@@ -81,6 +86,9 @@ public class InternshipConfirmationWorkflowService {
         }
         InternshipAgreementService.requireFileIds(record.getAgreementFileIds());
         lockStudent(record.getStudentId());
+        if (studentApplicationMapper.findPendingByStudentAndTypeForUpdate(record.getStudentId(), "selfPractice") != null) {
+            throw new BusinessException("您已有待处理的自主实习申请，请先处理或撤回");
+        }
         if (confirmationMapper.findActiveByStudentForUpdate(record.getStudentId()) != null) {
             throw new BusinessException("您已有待企业确认的实习确认表");
         }
@@ -135,13 +143,64 @@ public class InternshipConfirmationWorkflowService {
         throw new BusinessException("旧确认提交入口已停用，请提交 offerId");
     }
 
+    /** 自主申请与协议已落库；这里只建立本轮待企业确认记录，不创建 Offer、不占名额。 */
+    @Transactional(rollbackFor = Exception.class)
+    public InternshipConfirmationRecord submitSelfPractice(InternshipConfirmationRecord record, Long applicationId) {
+        lockStudent(record.getStudentId());
+        if (confirmationMapper.findActiveByStudentForUpdate(record.getStudentId()) != null) {
+            throw new BusinessException("您已有待企业确认的实习申请");
+        }
+        ensureDifferentFromCurrent(record);
+        record.setSourceApplicationId(applicationId);
+        record.setStatus(0);
+        record.setRecallStatus(0);
+        if (confirmationMapper.insert(record) <= 0) throw new BusinessException("实习确认记录创建失败");
+        InternshipStageAssignment assignment = preparePendingAssignment(record, null, "SELF_PRACTICE", applicationId);
+        assignment.setApplicationId(applicationId);
+        assignment.setConfirmationRecordId(record.getId());
+        if (assignmentMapper.insert(assignment) <= 0) throw new BusinessException("待确认实习记录创建失败");
+        if (studentApplicationMapper.linkConfirmation(applicationId, record.getId()) <= 0) {
+            throw new BusinessException("自主实习申请关联失败");
+        }
+        return record;
+    }
+
     @Transactional(rollbackFor = Exception.class)
     public ConfirmationOutcome confirm(Long companyId, Long recordId, Date confirmedAt) {
+        return confirm(companyId, recordId, confirmedAt, null, false);
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public ConfirmationOutcome confirm(Long companyId, Long recordId, Date confirmedAt, Long selectedPositionId, boolean textPosition) {
         InternshipConfirmationRecord initial = confirmationMapper.findById(recordId);
         if (initial == null) throw new BusinessException("确认记录不存在");
         lockStudent(initial.getStudentId());
+        lockLinkedApplication(initial);
         InternshipConfirmationRecord record = confirmationMapper.findByIdForUpdate(recordId);
         requireCompanyAndPending(companyId, record);
+        if (record.getSourceApplicationId() != null) {
+            var company = companyUserMapper.findById(companyId);
+            if (company == null || !Integer.valueOf(1).equals(company.getStatus())
+                    || !Integer.valueOf(1).equals(company.getAuditStatus()) || Integer.valueOf(1).equals(company.getRecallStatus())) {
+                throw new BusinessException("企业当前不具备有效合作资格，无法确认");
+            }
+        }
+        if (record.getPositionId() != null && (textPosition || selectedPositionId != null
+                && !Objects.equals(record.getPositionId(), selectedPositionId))) {
+            throw new BusinessException("学生已选择具体岗位，不可改为其他岗位或文字确认，请退回学生核对");
+        }
+        if (textPosition && selectedPositionId != null) throw new BusinessException("请只选择一种岗位确认方式");
+        if (record.getSourceApplicationId() != null && record.getPositionId() == null && selectedPositionId == null) {
+            if (!textPosition) throw new BusinessException("请选择关联已有岗位或按文字岗位确认");
+            boolean existingName = positionMapper.findByCompanyId(companyId).stream()
+                    .anyMatch(p -> normalizedPositionName(p.getPositionName()).equals(normalizedPositionName(record.getPositionName())));
+            if (existingName) throw new BusinessException("该岗位已在系统中发布，请关联已有岗位后确认");
+        }
+        if (selectedPositionId != null) record.setPositionId(selectedPositionId);
+        if (record.getPositionId() == null && (record.getSourceApplicationId() == null
+                || record.getPositionName() == null || record.getPositionName().isBlank())) {
+            throw new BusinessException("实习岗位信息不完整");
+        }
 
         InternshipStageAssignment pendingAssignment = assignmentMapper
                 .findByConfirmationRecordIdForUpdate(recordId);
@@ -162,8 +221,7 @@ public class InternshipConfirmationWorkflowService {
         }
         StudentInternshipStatus currentStatus = statusMapper.findByStudentId(record.getStudentId());
         CurrentPlacement current = resolveCurrentPlacement(currentStatus, currentAssignments);
-        if (current != null && Objects.equals(current.companyId(), record.getCompanyId())
-                && Objects.equals(current.positionId(), record.getPositionId())) {
+        if (samePlacement(current, record)) {
             throw new BusinessException("当前已在该公司该岗位实习，无需重复确认");
         }
 
@@ -172,12 +230,15 @@ public class InternshipConfirmationWorkflowService {
         Map<Long, Position> lockedPositions = lockPositionsInOrder(
                 current == null ? null : current.positionId(), record.getPositionId());
         Position newPosition = lockedPositions.get(record.getPositionId());
-        if (newPosition == null || !record.getCompanyId().equals(newPosition.getCompanyId())) {
+        if (record.getPositionId() != null && (newPosition == null || !record.getCompanyId().equals(newPosition.getCompanyId()))) {
             throw new BusinessException("岗位不存在或与企业不匹配");
         }
-        if (newPosition.getRemainingQuota() == null || newPosition.getRemainingQuota() <= 0) {
+        if (newPosition != null && (newPosition.getRemainingQuota() == null || newPosition.getRemainingQuota() <= 0)) {
             throw new BusinessException("该岗位已无剩余名额");
         }
+        if (newPosition != null) record.setPositionName(newPosition.getPositionName());
+        record.setCompanyPhone(com.internship.entity.dto.InternshipContact.resolve(record.getCompanyId(),
+                newPosition == null ? companyUserMapper.findById(record.getCompanyId()) : null, newPosition).phone());
 
         boolean releaseOldQuota = closeCurrentAssignments(
                 currentAssignments, current, period.switchBoundary());
@@ -185,6 +246,8 @@ public class InternshipConfirmationWorkflowService {
         adjustPositionQuotas(lockedPositions, current, newPosition, releaseOldQuota);
 
         pendingAssignment.setStageNo(1);
+        pendingAssignment.setPositionId(record.getPositionId());
+        pendingAssignment.setPositionName(record.getPositionName());
         pendingAssignment.setStatus(resolveAssignmentStatus(period));
         pendingAssignment.setCurrentFlag(1);
         pendingAssignment.setInternshipStartTime(period.start());
@@ -204,6 +267,7 @@ public class InternshipConfirmationWorkflowService {
         }
 
         int statusCode = updateCurrentStatus(currentStatus, record, period);
+        resolveLinkedApplication(record, "approved", null);
         append(progressRecordService,
                 record.getStudentId(),
                 "confirmation_confirmed",
@@ -223,11 +287,17 @@ public class InternshipConfirmationWorkflowService {
                 record.getPositionId(), statusCode);
     }
 
+    private static String normalizedPositionName(String name) {
+        return java.text.Normalizer.normalize(Objects.toString(name, ""), java.text.Normalizer.Form.NFKC)
+                .replaceAll("[\\s\\p{Z}]+", "").toLowerCase(java.util.Locale.ROOT);
+    }
+
     @Transactional(rollbackFor = Exception.class)
     public ConfirmationOutcome reject(Long companyId, Long recordId, String reason) {
         InternshipConfirmationRecord initial = confirmationMapper.findById(recordId);
         if (initial == null) throw new BusinessException("确认记录不存在");
         lockStudent(initial.getStudentId());
+        lockLinkedApplication(initial);
         InternshipConfirmationRecord record = confirmationMapper.findByIdForUpdate(recordId);
         requireCompanyAndPending(companyId, record);
         if (confirmationMapper.resolvePending(recordId, 2, reason) <= 0) {
@@ -235,6 +305,7 @@ public class InternshipConfirmationWorkflowService {
         }
         record.setStatus(2);
         record.setRemark(reason);
+        resolveLinkedApplication(record, "rejected", reason);
         InternshipStageAssignment assignment = assignmentMapper
                 .findByConfirmationRecordIdForUpdate(recordId);
         if (assignment != null) {
@@ -266,6 +337,7 @@ public class InternshipConfirmationWorkflowService {
         InternshipConfirmationRecord initial = confirmationMapper.findById(recordId);
         if (initial == null) throw new BusinessException("确认记录不存在");
         lockStudent(studentId);
+        lockLinkedApplication(initial);
         InternshipConfirmationRecord record = confirmationMapper.findByIdForUpdate(recordId);
         if (record == null || !studentId.equals(record.getStudentId())) {
             throw new BusinessException("无权操作此确认记录");
@@ -276,6 +348,7 @@ public class InternshipConfirmationWorkflowService {
         }
         record.setRecallStatus(2);
         record.setRecallReason(reason);
+        resolveLinkedApplication(record, "withdrawn", null);
         InternshipStageAssignment assignment = assignmentMapper
                 .findByConfirmationRecordIdForUpdate(recordId);
         if (assignment != null) {
@@ -285,7 +358,7 @@ public class InternshipConfirmationWorkflowService {
                 throw new BusinessException("实习经历撤回状态更新失败");
             }
             // 清空确认记录关联，允许学生撤回后重新确认该岗位
-            assignmentMapper.clearConfirmationRecordId(assignment.getId());
+            if (record.getSourceApplicationId() == null) assignmentMapper.clearConfirmationRecordId(assignment.getId());
         }
         append(progressRecordService,
                 studentId,
@@ -326,18 +399,55 @@ public class InternshipConfirmationWorkflowService {
     }
 
     private void ensureDifferentFromCurrent(Long studentId, Long companyId, Long positionId) {
-        StudentInternshipStatus status = statusMapper.findByStudentId(studentId);
-        if (status != null && isCurrentStatus(status)
-                && Objects.equals(companyId, status.getCompanyId())
-                && Objects.equals(positionId, status.getPositionId())) {
+        InternshipConfirmationRecord record = new InternshipConfirmationRecord();
+        record.setStudentId(studentId); record.setCompanyId(companyId); record.setPositionId(positionId);
+        ensureDifferentFromCurrent(record);
+    }
+
+    private void ensureDifferentFromCurrent(InternshipConfirmationRecord record) {
+        StudentInternshipStatus status = statusMapper.findByStudentId(record.getStudentId());
+        if (status != null && isCurrentStatus(status) && samePlacement(
+                new CurrentPlacement(status.getCompanyId(), status.getPositionId(), status.getCompanyName(), status.getPositionName()), record)) {
             throw new BusinessException("当前已在该公司该岗位实习，无需重复提交");
         }
-        List<InternshipStageAssignment> assignments = assignmentMapper.findByStudentId(studentId);
-        if (assignments != null && assignments.stream().anyMatch(item ->
-                Integer.valueOf(1).equals(item.getCurrentFlag())
-                        && Objects.equals(companyId, item.getCompanyId())
-                        && Objects.equals(positionId, item.getPositionId()))) {
+        List<InternshipStageAssignment> assignments = assignmentMapper.findByStudentId(record.getStudentId());
+        if (assignments != null && assignments.stream().anyMatch(item -> Integer.valueOf(1).equals(item.getCurrentFlag())
+                && samePlacement(new CurrentPlacement(item.getCompanyId(), item.getPositionId(), item.getCompanyName(), item.getPositionName()), record))) {
             throw new BusinessException("当前已在该公司该岗位实习，无需重复提交");
+        }
+    }
+
+    private boolean samePlacement(CurrentPlacement current, InternshipConfirmationRecord record) {
+        if (current == null) return false;
+        boolean companyMatches = current.companyId() != null && record.getCompanyId() != null
+                ? Objects.equals(current.companyId(), record.getCompanyId())
+                : normalized(current.companyName()).equals(normalized(record.getCompanyName()));
+        boolean positionMatches = current.positionId() != null && record.getPositionId() != null
+                ? Objects.equals(current.positionId(), record.getPositionId())
+                : current.positionId() == null && record.getPositionId() == null
+                    && normalized(current.positionName()).equals(normalized(record.getPositionName()));
+        return companyMatches && positionMatches;
+    }
+
+    private String normalized(String value) {
+        return value == null ? "" : value.trim().toLowerCase(java.util.Locale.ROOT);
+    }
+
+    private void lockLinkedApplication(InternshipConfirmationRecord record) {
+        if (record.getSourceApplicationId() == null) return;
+        var application = studentApplicationMapper.findByIdForUpdate(record.getSourceApplicationId());
+        if (application == null || !application.isCompanyReview() || !"pending".equals(application.getStatus())
+                || !Objects.equals(application.getConfirmationRecordId(), record.getId())
+                || !Objects.equals(application.getStudentId(), record.getStudentId())
+                || !Objects.equals(application.getCompanyId(), record.getCompanyId())) {
+            throw new BusinessException("对应自主实习申请已处理、已重提或不属于该企业，请刷新");
+        }
+    }
+
+    private void resolveLinkedApplication(InternshipConfirmationRecord record, String status, String reason) {
+        if (record.getSourceApplicationId() != null && studentApplicationMapper.resolveCompanyApplication(
+                record.getSourceApplicationId(), record.getId(), status, reason, record.getPositionId()) <= 0) {
+            throw new BusinessException("对应自主实习申请状态已变化，请刷新");
         }
     }
 
@@ -358,26 +468,30 @@ public class InternshipConfirmationWorkflowService {
     private CurrentPlacement resolveCurrentPlacement(StudentInternshipStatus status,
                                                      List<InternshipStageAssignment> assignments) {
         CurrentPlacement fromStatus = status != null && isCurrentStatus(status)
-                && status.getCompanyId() != null && status.getPositionId() != null
-                ? new CurrentPlacement(status.getCompanyId(), status.getPositionId()) : null;
+                && (status.getCompanyId() != null || status.getCompanyName() != null)
+                ? new CurrentPlacement(status.getCompanyId(), status.getPositionId(), status.getCompanyName(), status.getPositionName()) : null;
         TreeSet<String> assignmentPairs = new TreeSet<>();
         CurrentPlacement fromAssignment = null;
         for (InternshipStageAssignment assignment : assignments) {
-            if (assignment.getCompanyId() == null || assignment.getPositionId() == null) continue;
+            if (assignment.getCompanyId() == null && assignment.getCompanyName() == null) continue;
             if (!"CONFIRMED".equals(assignment.getStatus())
                     && !"IN_PROGRESS".equals(assignment.getStatus())) continue;
-            assignmentPairs.add(assignment.getCompanyId() + ":" + assignment.getPositionId());
-            fromAssignment = new CurrentPlacement(assignment.getCompanyId(), assignment.getPositionId());
+            fromAssignment = new CurrentPlacement(assignment.getCompanyId(), assignment.getPositionId(), assignment.getCompanyName(), assignment.getPositionName());
+            assignmentPairs.add(placementKey(fromAssignment));
         }
         if (assignmentPairs.size() > 1) {
             throw new BusinessException("当前实习经历存在多个不同岗位，请先联系管理员处理");
         }
         if (fromStatus != null && fromAssignment != null
-                && (!Objects.equals(fromStatus.companyId(), fromAssignment.companyId())
-                || !Objects.equals(fromStatus.positionId(), fromAssignment.positionId()))) {
+                && !placementKey(fromStatus).equals(placementKey(fromAssignment))) {
             throw new BusinessException("当前实习状态与经历记录不一致，请先联系管理员处理");
         }
         return fromStatus != null ? fromStatus : fromAssignment;
+    }
+
+    private String placementKey(CurrentPlacement value) {
+        return (value.companyId() != null ? "id:" + value.companyId() : "name:" + normalized(value.companyName())) + "/"
+                + (value.positionId() != null ? "id:" + value.positionId() : "name:" + normalized(value.positionName()));
     }
 
     private boolean isCurrentStatus(StudentInternshipStatus status) {
@@ -400,7 +514,7 @@ public class InternshipConfirmationWorkflowService {
     private boolean closeCurrentAssignments(List<InternshipStageAssignment> assignments,
                                             CurrentPlacement current,
                                             Date switchBoundary) {
-        boolean releaseOldQuota = current != null && assignments.isEmpty();
+        boolean releaseOldQuota = current != null && current.positionId() != null && assignments.isEmpty();
         for (InternshipStageAssignment assignment : assignments) {
             Date boundary = switchBoundary;
             if (assignment.getInternshipStartTime() != null
@@ -413,7 +527,7 @@ public class InternshipConfirmationWorkflowService {
             if (assignmentMapper.update(assignment) <= 0) {
                 throw new BusinessException("旧实习经历关闭失败");
             }
-            if (current != null && Objects.equals(current.positionId(), assignment.getPositionId())
+            if (current != null && current.positionId() != null && Objects.equals(current.positionId(), assignment.getPositionId())
                     && assignmentMapper.markQuotaReleased(assignment.getId(), "POSITION_SWITCH") > 0) {
                 releaseOldQuota = true;
             }
@@ -457,13 +571,14 @@ public class InternshipConfirmationWorkflowService {
             oldPosition.setRecruitedCount(Math.max(0, (oldPosition.getRecruitedCount() == null
                     ? 0 : oldPosition.getRecruitedCount()) - 1));
         }
-        newPosition.setRemainingQuota(newPosition.getRemainingQuota() - 1);
-        newPosition.setRecruitedCount((newPosition.getRecruitedCount() == null
-                ? 0 : newPosition.getRecruitedCount()) + 1);
+        if (newPosition != null) {
+            newPosition.setRemainingQuota(newPosition.getRemainingQuota() - 1);
+            newPosition.setRecruitedCount((newPosition.getRecruitedCount() == null ? 0 : newPosition.getRecruitedCount()) + 1);
+        }
         for (Position position : positions.values()) {
             boolean changedOld = releaseOldQuota && current != null
                     && Objects.equals(position.getId(), current.positionId());
-            if ((changedOld || Objects.equals(position.getId(), newPosition.getId()))
+            if ((changedOld || newPosition != null && Objects.equals(position.getId(), newPosition.getId()))
                     && positionMapper.update(position) <= 0) {
                 throw new BusinessException("岗位名额更新失败");
             }
@@ -600,7 +715,7 @@ public class InternshipConfirmationWorkflowService {
         return Math.toIntExact(ChronoUnit.DAYS.between(start.toLocalDate(), end.toLocalDate()));
     }
 
-    private record CurrentPlacement(Long companyId, Long positionId) {
+    private record CurrentPlacement(Long companyId, Long positionId, String companyName, String positionName) {
     }
 
     private record InternshipPeriod(Date start, Date end, Date switchBoundary) {

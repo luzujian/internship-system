@@ -142,7 +142,7 @@ public class StudentArchiveController {
         requireCompanyApplicationForStudent(studentId);
         List<StudentArchive> archives = studentArchiveService.findByStudentId(studentId);
         return Result.success(archives == null ? List.of() : archives.stream()
-                .filter(archive -> isApprovedForCompany(archive)
+                .filter(archive -> isVisibleToCompany(archive)
                         && Objects.equals(studentId, archive.getStudentId()))
                 .collect(Collectors.toList()));
     }
@@ -265,14 +265,18 @@ public class StudentArchiveController {
     }
 
     private void requireCompanyAccessToArchive(StudentArchive archive) {
-        if (!isApprovedForCompany(archive)) {
+        if (!isVisibleToCompany(archive)) {
             throw new AccessDeniedException("无权访问该学生材料");
         }
         requireCompanyApplicationForStudent(archive.getStudentId());
     }
 
-    private boolean isApprovedForCompany(StudentArchive archive) {
-        return archive != null && Integer.valueOf(1).equals(archive.getStatus());
+    private boolean isVisibleToCompany(StudentArchive archive) {
+        if (archive == null) return false;
+        if (Integer.valueOf(1).equals(archive.getStatus())) return true;
+        // 简历、证书上传后统一进入待审核状态，投递企业仍需读取这些求职材料。
+        return Integer.valueOf(0).equals(archive.getStatus())
+                && ("resume".equals(archive.getFileType()) || "certificate".equals(archive.getFileType()));
     }
 
     private void requireCompanyApplicationForStudent(Long studentId) {

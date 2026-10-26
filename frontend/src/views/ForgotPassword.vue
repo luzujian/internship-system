@@ -27,7 +27,7 @@
         </el-form-item>
         <el-form-item label="绑定邮箱" prop="email">
           <el-input v-model="form.email" placeholder="请输入账号绑定的邮箱" clearable />
-          <div class="form-tip">审核通过的企业请填写注册申请时登记的个人邮箱；收不到验证码请检查垃圾箱</div>
+          <div class="form-tip">请填写账号设置中的账号邮箱；新注册企业默认绑定联系人邮箱</div>
         </el-form-item>
         <el-form-item label="验证码" prop="code">
           <el-input v-model="form.code" placeholder="请输入6位邮箱验证码" maxlength="6" clearable class="code-input" />

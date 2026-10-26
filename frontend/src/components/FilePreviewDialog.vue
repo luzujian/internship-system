@@ -11,6 +11,11 @@
   >
     <div class="file-preview-container" v-loading="loading" element-loading-text="加载中...">
       <div v-if="!byteUrl" class="unsupported-preview">文件读取地址不可用</div>
+      <div v-else-if="previewError" class="preview-error" role="alert">
+        <el-icon><Warning /></el-icon>
+        <span>{{ previewError }}</span>
+        <el-button type="primary" :loading="loading" @click="retryPreview">重新加载</el-button>
+      </div>
       <!-- 图片预览 -->
       <div v-else-if="fileType === 'image'" class="image-preview">
         <img v-if="mediaUrl" :src="mediaUrl" :alt="fileName" class="preview-image" @error="handleImageError" />
@@ -26,6 +31,7 @@
           <div v-if="pdfError" class="pdf-error">
             <el-icon><Warning /></el-icon>
             <span>PDF 加载失败</span>
+            <el-button type="primary" @click="retryPreview">重新加载</el-button>
             <el-button type="primary" size="small" @click="handleDownload">下载文件</el-button>
           </div>
           <canvas ref="pdfCanvas" class="pdf-canvas" style="display: none;"></canvas>
@@ -41,12 +47,14 @@
         <div v-if="docxError && !docxLoading" class="docx-error-overlay">
           <el-icon><Warning /></el-icon>
           <span>Word 文档加载失败</span>
+          <el-button type="primary" @click="retryPreview">重新加载</el-button>
           <el-button type="primary" size="small" @click="handleDownload">下载文件</el-button>
         </div>
         <iframe
           v-if="!docxLoading && !docxError && docxHtmlContent"
           :srcdoc="docxHtmlContent"
           class="docx-iframe"
+          :title="fileName || 'Word 文档预览'"
           sandbox="allow-same-origin"
         ></iframe>
       </div>
@@ -60,6 +68,7 @@
         <div v-else-if="docError" class="docx-error">
           <el-icon><Warning /></el-icon>
           <span>旧版 Word 文档预览失败</span>
+          <el-button type="primary" @click="retryPreview">重新加载</el-button>
           <el-button type="primary" size="small" @click="handleDownload">下载文件</el-button>
         </div>
         <template v-else-if="docHtmlContent">
@@ -77,6 +86,7 @@
         <div v-if="excelError && !excelLoading" class="excel-error-overlay">
           <el-icon><Warning /></el-icon>
           <span>Excel 文档加载失败</span>
+          <el-button type="primary" @click="retryPreview">重新加载</el-button>
           <el-button type="primary" size="small" @click="handleDownload">下载文件</el-button>
         </div>
         <div v-if="!excelLoading && !excelError && excelHtmlContent" class="excel-container" v-html="excelHtmlContent"></div>
@@ -106,12 +116,12 @@
 
       <!-- 视频预览 -->
       <div v-else-if="fileType === 'video'" class="video-preview">
-        <video v-if="mediaUrl" :src="mediaUrl" controls class="preview-video"></video>
+        <video v-if="mediaUrl" :src="mediaUrl" controls playsinline class="preview-video" @error="handleMediaError"></video>
       </div>
 
       <!-- 音频预览 -->
       <div v-else-if="fileType === 'audio'" class="audio-preview">
-        <audio v-if="mediaUrl" :src="mediaUrl" controls class="preview-audio"></audio>
+        <audio v-if="mediaUrl" :src="mediaUrl" controls class="preview-audio" @error="handleMediaError"></audio>
       </div>
 
       <!-- 不支持预览的文件类型 -->
@@ -137,7 +147,7 @@
 </template>
 
 <script lang="ts" setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onBeforeUnmount } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Document, Download, Loading, Warning } from '@element-plus/icons-vue'
 import type { PdfJsLib, PdfDocument } from '@/types'
@@ -160,6 +170,7 @@ const visible = computed({
 })
 
 const loading = ref(false)
+const previewError = ref('')
 const downloading = ref(false)
 const textContent = ref('')
 const mediaUrl = ref('')
@@ -167,6 +178,11 @@ let mediaObjectUrl = ''
 const byteUrl = computed(() => authorizedFileByteUrl(props.authorizedUrl))
 
 const loadMedia = async (sourceUrl: string) => {
+  loading.value = true
+  previewError.value = ''
+  if (mediaObjectUrl) URL.revokeObjectURL(mediaObjectUrl)
+  mediaObjectUrl = ''
+  mediaUrl.value = ''
   try {
     const response = await fetchAuthorizedFile(sourceUrl)
     const objectUrl = URL.createObjectURL(await response.blob())
@@ -178,8 +194,11 @@ const loadMedia = async (sourceUrl: string) => {
     mediaObjectUrl = objectUrl
     mediaUrl.value = objectUrl
   } catch (error) {
+    if (!visible.value || byteUrl.value !== sourceUrl) return
+    previewError.value = '文件预览加载失败，请检查网络后重试'
     console.error('加载预览文件失败:', error)
-    ElMessage.error('加载文件失败')
+  } finally {
+    if (byteUrl.value === sourceUrl) loading.value = false
   }
 }
 
@@ -266,16 +285,20 @@ const detectFileType = (url: string, name: string): string => {
 
 // 加载文本文件内容
 const loadTextContent = async () => {
+  const sourceUrl = byteUrl.value
   try {
     loading.value = true
+    previewError.value = ''
     const response = await fetchAuthorizedFile(byteUrl.value)
     const text = await response.text()
+    if (!visible.value || byteUrl.value !== sourceUrl) return
     textContent.value = text.substring(0, 50000) // 限制显示长度
   } catch (error) {
+    if (!visible.value || byteUrl.value !== sourceUrl) return
+    previewError.value = '文件内容加载失败，请检查网络后重试'
     console.error('加载文本文件失败:', error)
-    ElMessage.error('加载文件内容失败')
   } finally {
-    loading.value = false
+    if (byteUrl.value === sourceUrl) loading.value = false
   }
 }
 
@@ -308,6 +331,9 @@ const renderPdf = async () => {
   try {
     pdfLoading.value = true
     pdfError.value = false
+    pdfContainer.value?.querySelectorAll('.pdf-canvas').forEach(canvas => {
+      if (canvas !== pdfCanvas.value) canvas.remove()
+    })
 
     // 加载 PDF.js
     const pdfjsLib = await loadPdfJs()
@@ -519,7 +545,21 @@ const escapeHtml = (str: string): string => {
 
 // 图片加载错误处理
 const handleImageError = () => {
-  ElMessage.error('图片加载失败')
+  previewError.value = '图片加载失败，请重新加载或下载原文件'
+}
+const handleMediaError = () => {
+  previewError.value = '此文件暂时无法播放，可重新加载或下载后查看'
+}
+
+const retryPreview = () => {
+  if (!byteUrl.value || !visible.value || loading.value || pdfLoading.value || docxLoading.value || docLoading.value || excelLoading.value) return
+  previewError.value = ''
+  if (['image', 'video', 'audio'].includes(fileType.value)) void loadMedia(byteUrl.value)
+  else if (fileType.value === 'text') void loadTextContent()
+  else if (fileType.value === 'pdf') void renderPdf()
+  else if (fileType.value === 'docx') void renderDocx()
+  else if (fileType.value === 'doc') void renderLegacyDoc(byteUrl.value)
+  else if (fileType.value === 'excel') void renderExcel()
 }
 
 // 下载文件
@@ -528,6 +568,7 @@ const handleDownload = async (event: Event) => {
   if (event) {
     event.stopPropagation()
   }
+  if (downloading.value) return
 
   if (!byteUrl.value) {
     ElMessage.error('文件读取地址不可用')
@@ -548,6 +589,8 @@ const handleDownload = async (event: Event) => {
 
 // 对话框关闭后的清理
 const handleClosed = () => {
+  previewError.value = ''
+  loading.value = false
   docRenderId++
   docHtmlContent.value = ''
   docLoading.value = false
@@ -583,10 +626,12 @@ const handleClosed = () => {
   excelHtmlContent.value = ''
   excelError.value = false
 }
+onBeforeUnmount(handleClosed)
 
 // 监听对话框打开和文件变化
 watch(() => [visible.value, props.fileUrl, props.fileName, byteUrl.value] as const, ([newVisible, newUrl, newName, newByteUrl]) => {
   if (newVisible && newByteUrl) {
+    previewError.value = ''
     // 确保 newName 是字符串类型
     const nameStr = typeof newName === 'string' ? newName : ''
     fileType.value = detectFileType(newUrl, nameStr)
@@ -640,6 +685,20 @@ watch(() => [visible.value, props.fileUrl, props.fileName, byteUrl.value] as con
   font-size: 18px;
   font-weight: 600;
   color: #1e40af;
+  overflow-wrap: anywhere;
+}
+
+.preview-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-height: 180px;
+  padding: 16px;
+  text-align: center;
+  color: #f56c6c;
+  overflow-wrap: anywhere;
 }
 
 .file-preview-container {
@@ -1068,13 +1127,17 @@ watch(() => [visible.value, props.fileUrl, props.fileName, byteUrl.value] as con
   .image-preview,
   .video-preview,
   .pdf-preview,
-  .word-preview {
+  .word-preview,
+  .excel-preview,
+  .ppt-preview {
     min-height: 0;
   }
 
   .file-preview-container {
-    max-height: calc(100dvh - 240px);
+    max-height: max(120px, calc(100dvh - 220px));
     overflow-y: auto;
+    overflow-x: hidden;
+    overscroll-behavior: contain;
   }
 
   .preview-image,
@@ -1088,9 +1151,10 @@ watch(() => [visible.value, props.fileUrl, props.fileName, byteUrl.value] as con
     height: auto;
     max-height: 52dvh;
     padding: 8px;
+    box-sizing: border-box;
   }
 
-  .pdf-canvas {
+  .pdf-container :deep(.pdf-canvas) {
     max-width: 100%;
     height: auto !important;
   }
@@ -1105,6 +1169,7 @@ watch(() => [visible.value, props.fileUrl, props.fileName, byteUrl.value] as con
   }
 
   .excel-container {
+    min-height: 0;
     max-width: 100%;
     max-height: 52dvh;
     overflow: auto;
@@ -1129,7 +1194,31 @@ watch(() => [visible.value, props.fileUrl, props.fileName, byteUrl.value] as con
   }
 
   .unsupported-preview {
-    min-height: 200px;
+    min-height: 120px;
+  }
+
+  .ppt-info {
+    max-width: 100%;
+    padding: 16px;
+    box-sizing: border-box;
+  }
+
+  .ppt-title,
+  .ppt-tip {
+    overflow-wrap: anywhere;
+  }
+
+  .preview-footer {
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 0;
+  }
+
+  .preview-footer .el-button {
+    flex: 1;
+    min-height: 44px;
+    margin-left: 0;
+    padding: 10px 12px;
   }
 }
 </style>

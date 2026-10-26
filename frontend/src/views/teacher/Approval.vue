@@ -23,23 +23,53 @@
 
     <!-- 审核列表 -->
     <el-card class="table-card" shadow="never">
-      <el-form :inline="true" :model="searchForm" class="search-form" @keyup.enter="handleSearch">
+      <el-form :inline="!isMobile" :label-position="isMobile ? 'top' : 'right'" :model="searchForm" class="search-form" @keyup.enter="handleSearch">
         <div class="search-row">
-          <el-form-item label="关键词">
+          <el-form-item label="关键词" class="keyword-filter">
             <el-input
               v-model="searchForm.keyword"
-              placeholder="搜索学生姓名或学号"
+              :placeholder="activeTab === 'companyQualification' ? '搜索企业名称' : '搜索学生姓名或学号'"
               clearable
               style="width: 200px;"
               @keyup.enter="handleSearch"
             ></el-input>
           </el-form-item>
-          <el-form-item label="状态">
+          <el-form-item v-if="isMobile" class="mobile-filter-toggle">
+            <el-button :aria-expanded="advancedFiltersOpen" @click="advancedFiltersOpen = !advancedFiltersOpen">
+              {{ advancedFiltersOpen ? '收起筛选' : '更多筛选' }}{{ activeFilterCount ? `（${activeFilterCount}）` : '' }}
+            </el-button>
+          </el-form-item>
+          <el-form-item v-show="!isMobile || advancedFiltersOpen" label="状态">
             <el-select v-model="searchForm.status" placeholder="请选择状态" clearable style="width: 120px;">
               <el-option label="全部状态" value=""></el-option>
               <el-option label="待审核" value="pending"></el-option>
               <el-option label="已通过" value="approved"></el-option>
               <el-option label="已驳回" value="rejected"></el-option>
+            </el-select>
+          </el-form-item>
+          <el-form-item v-if="isCounselor" v-show="!isMobile || advancedFiltersOpen" label="专业">
+            <el-select
+              v-model="searchForm.majorId"
+              placeholder="全部专业"
+              clearable
+              filterable
+              :loading="classOptionsLoading"
+              style="width: 180px;"
+              @change="searchForm.classId = undefined"
+            >
+              <el-option v-for="major in majorOptions" :key="major.id" :label="major.name" :value="major.id" />
+            </el-select>
+          </el-form-item>
+          <el-form-item v-if="isCounselor" v-show="!isMobile || advancedFiltersOpen" label="班级">
+            <el-select
+              v-model="searchForm.classId"
+              placeholder="全部班级"
+              clearable
+              filterable
+              :loading="classOptionsLoading"
+              style="width: 160px;"
+            >
+              <el-option v-for="item in filteredClassOptions" :key="item.id" :label="item.name" :value="item.id" />
             </el-select>
           </el-form-item>
           <el-form-item class="search-actions">
@@ -53,7 +83,41 @@
         </div>
       </el-form>
 
-      <el-table 
+      <div v-if="isMobile" v-loading="loading" class="mobile-card-list approval-mobile-list" aria-label="审核申请列表">
+        <el-empty v-if="!loading && !applications.length" description="暂无审核申请" />
+        <article v-for="row in applications" :key="applicationReviewKey(row)" class="mobile-card">
+          <div class="mobile-card-header">
+            <span class="mobile-card-title">{{ activeTab === 'companyQualification' ? row.companyName : row.studentName }}</span>
+            <el-tag :type="getStatusTagType(getRowStatus(row))" size="small">
+              {{ row.reviewTarget === 'COMPANY' && row.status === 'pending' ? '待企业确认' : getStatusText(getRowStatus(row)) }}
+            </el-tag>
+          </div>
+          <div class="mobile-card-body">
+            <template v-if="activeTab !== 'companyQualification'">
+              <div class="mobile-card-row"><span class="mobile-card-label">学号</span><span class="mobile-card-value">{{ row.studentUserId || row.studentId }}</span></div>
+              <div v-if="row.grade || row.className" class="mobile-card-row"><span class="mobile-card-label">年级 / 班级</span><span class="mobile-card-value">{{ [row.grade, row.className].filter(Boolean).join(' / ') }}</span></div>
+              <template v-if="row.type === 'selfPractice'">
+                <div class="mobile-card-row"><span class="mobile-card-label">实习单位</span><span class="mobile-card-value">{{ row.company || '未填写' }}</span></div>
+                <div class="mobile-card-row"><span class="mobile-card-label">实习岗位</span><span class="mobile-card-value">{{ row.positionName || '未填写' }}</span></div>
+                <el-tag v-if="row.cooperativeCompany" type="warning" size="small">校企合作企业</el-tag>
+              </template>
+            </template>
+            <template v-else>
+              <div class="mobile-card-row"><span class="mobile-card-label">实习基地</span><span class="mobile-card-value">{{ row.isInternshipBase ? '实习基地' : '非实习基地' }}</span></div>
+              <div v-if="row.companyTag" class="mobile-card-row"><span class="mobile-card-label">合作模式</span><span class="mobile-card-value">{{ getCooperationModeText(row.companyTag) }}</span></div>
+            </template>
+            <div class="mobile-card-row"><span class="mobile-card-label">申请时间</span><span class="mobile-card-value">{{ row.applyTime || '未填写' }}</span></div>
+          </div>
+          <div class="mobile-card-actions">
+            <el-button v-if="canReviewApplication(row)" type="success" :loading="isApplicationReviewing(row)" :disabled="isApplicationReviewing(row)" @click="approveApplication(row)">通过</el-button>
+            <el-button v-if="canReviewApplication(row)" type="danger" :disabled="isApplicationReviewing(row)" @click="rejectApplication(row)">驳回</el-button>
+            <el-button type="primary" @click="activeTab === 'companyQualification' ? viewCompanyQualification(row) : viewApplication(row)">查看详情</el-button>
+          </div>
+        </article>
+      </div>
+
+      <el-table
+        v-else
         v-loading="loading" 
         :data="applications" 
         style="width: 100%" 
@@ -110,7 +174,7 @@
           <template #default="scope">
             <div class="status-wrapper">
               <el-tag :type="getStatusTagType(getRowStatus(scope.row))" size="small" class="status-tag">
-                {{ getStatusText(getRowStatus(scope.row)) }}
+                {{ scope.row.reviewTarget === 'COMPANY' && scope.row.status === 'pending' ? '待企业确认' : getStatusText(getRowStatus(scope.row)) }}
               </el-tag>
               <el-tag v-if="activeTab === 'companyQualification'" :type="scope.row.isInternshipBase ? 'success' : 'danger'" size="small" class="status-tag-base">
                 {{ scope.row.isInternshipBase ? '实习基地' : '非实习基地' }}
@@ -126,10 +190,10 @@
         <el-table-column label="操作" width="280" fixed="right" align="center">
           <template #default="scope">
             <MobileMoreActions>
-              <el-button v-if="activeTab === 'companyQualification' ? scope.row.auditStatus === 0 : scope.row.status === 'pending'" size="small" type="success" @click="approveApplication(scope.row)" class="table-btn success">
+              <el-button v-if="canReviewApplication(scope.row)" size="small" type="success" :loading="isApplicationReviewing(scope.row)" :disabled="isApplicationReviewing(scope.row)" @click="approveApplication(scope.row)" class="table-btn success">
                 通过
               </el-button>
-              <el-button v-if="activeTab === 'companyQualification' ? scope.row.auditStatus === 0 : scope.row.status === 'pending'" size="small" type="danger" @click="rejectApplication(scope.row)" class="table-btn danger">
+              <el-button v-if="canReviewApplication(scope.row)" size="small" type="danger" :disabled="isApplicationReviewing(scope.row)" @click="rejectApplication(scope.row)" class="table-btn danger">
                 驳回
               </el-button>
               <el-button size="small" type="primary" @click="activeTab === 'companyQualification' ? viewCompanyQualification(scope.row) : viewApplication(scope.row)" class="table-btn primary">
@@ -147,7 +211,8 @@
           :current-page="currentPage"
           :page-sizes="[5, 10, 20, 50]"
           :page-size="pageSize"
-          layout="total, sizes, prev, pager, next, jumper"
+          :layout="isMobile ? 'total, sizes, prev, pager, next' : 'total, sizes, prev, pager, next, jumper'"
+          :pager-count="isMobile ? 5 : 7"
           :total="total"
           class="custom-pagination"
         />
@@ -159,7 +224,7 @@
       <div class="modal-content card">
         <div class="modal-header">
           <h3>驳回申请</h3>
-          <button class="close-btn" @click="showRejectModal = false">×</button>
+          <button class="close-btn" aria-label="关闭驳回申请" @click="showRejectModal = false">×</button>
         </div>
         <div class="modal-body">
           <div v-if="currentApplication?.type === 'companyQualification'" class="form-group">
@@ -187,7 +252,7 @@
         </div>
         <div class="modal-footer">
           <button class="btn-default btn-sm" @click="showRejectModal = false">取消</button>
-          <button class="btn-danger btn-sm" @click="confirmReject">确认驳回</button>
+          <button class="btn-danger btn-sm" :disabled="isApplicationReviewing(currentApplication)" :aria-busy="isApplicationReviewing(currentApplication)" @click="confirmReject">{{ isApplicationReviewing(currentApplication) ? '处理中…' : '确认驳回' }}</button>
         </div>
       </div>
     </div>
@@ -197,7 +262,7 @@
       <div class="modal-content card company-qualification-modal">
         <div class="modal-header">
           <h3>企业注册申请审核</h3>
-          <button class="close-btn" @click="showCompanyQualificationModal = false">×</button>
+          <button class="close-btn" aria-label="关闭企业注册申请详情" @click="showCompanyQualificationModal = false">×</button>
         </div>
         <div class="modal-body">
           <div v-if="currentApplication" class="company-qualification-info">
@@ -287,10 +352,10 @@
         </div>
         <div class="modal-footer">
           <button class="btn-default btn-sm" @click="showCompanyQualificationModal = false">关闭</button>
-          <button v-if="currentApplication && currentApplication.auditStatus === 0" class="btn-success btn-sm" @click="approveApplication(currentApplication)">
+          <button v-if="currentApplication && currentApplication.auditStatus === 0" class="btn-success btn-sm" :disabled="isApplicationReviewing(currentApplication)" :aria-busy="isApplicationReviewing(currentApplication)" @click="approveApplication(currentApplication)">
             通过
           </button>
-          <button v-if="currentApplication && currentApplication.auditStatus === 0" class="btn-danger btn-sm" @click="rejectApplication(currentApplication)">
+          <button v-if="currentApplication && currentApplication.auditStatus === 0" class="btn-danger btn-sm" :disabled="isApplicationReviewing(currentApplication)" @click="rejectApplication(currentApplication)">
             驳回
           </button>
         </div>
@@ -302,7 +367,7 @@
       <div class="modal-content large card">
         <div class="modal-header">
           <h3>{{ currentApplication ? getApplicationTypeText(currentApplication.type) + '详情' : '申请详情' }}</h3>
-          <button class="close-btn" @click="showApplicationDetailModal = false">×</button>
+          <button class="close-btn" aria-label="关闭申请详情" @click="showApplicationDetailModal = false">×</button>
         </div>
         <div class="modal-body">
           <div v-if="currentApplication" class="application-detail-info">
@@ -369,7 +434,7 @@
             <div v-if="currentApplication.type === 'selfPractice' && currentApplication.materials" class="form-group">
               <label>上传资料：</label>
               <div class="document-grid horizontal">
-                <div class="document-item fade-in" v-for="label in materialItems.selfPractice" :key="label">
+                <div class="document-item fade-in" v-for="label in Object.keys(currentApplication.materials).filter(key => currentApplication.materials[key])" :key="label">
                   <label>{{ label }}：</label>
                   <div class="document-preview">
                     <button v-if="hasApplicationMaterial(label)" class="btn-default btn-sm"
@@ -398,10 +463,10 @@
         </div>
         <div class="modal-footer">
           <button class="btn-default btn-sm" @click="showApplicationDetailModal = false">关闭</button>
-          <button v-if="currentApplication && currentApplication.status === 'pending'" class="btn-success btn-sm" @click="approveApplication(currentApplication)">
+          <button v-if="currentApplication && currentApplication.status === 'pending' && currentApplication.reviewTarget !== 'COMPANY'" class="btn-success btn-sm" :disabled="isApplicationReviewing(currentApplication)" :aria-busy="isApplicationReviewing(currentApplication)" @click="approveApplication(currentApplication)">
             通过
           </button>
-          <button v-if="currentApplication && currentApplication.status === 'pending'" class="btn-danger btn-sm" @click="rejectApplication(currentApplication)">
+          <button v-if="currentApplication && currentApplication.status === 'pending' && currentApplication.reviewTarget !== 'COMPANY'" class="btn-danger btn-sm" :disabled="isApplicationReviewing(currentApplication)" @click="rejectApplication(currentApplication)">
             驳回
           </button>
         </div>
@@ -416,17 +481,24 @@ import { useAgentPageContext } from '@/agent/useAgentPageContext'
 import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useFormContext } from '@/agent/formContext'
 import { approvalApi } from '../../api/teacherApproval'
+import { getTeacherClasses, type TeacherClass } from '../../api/teacherClass'
 import companyService from '../../api/company'
 import { getCurrentUser } from '../../utils/teacherUser'
 import { getCurrentTeacherType } from '../../utils/teacherPermissions'
+import { useAuthStore } from '@/store/auth'
 import { ElMessage } from 'element-plus'
 import { Search, Refresh } from '@element-plus/icons-vue'
 import MobileMoreActions from '../../components/MobileMoreActions.vue'
 import { studentApplicationMaterialByteUrl } from '@/utils/authorizedFileUrl'
 import { downloadAuthorizedFile } from '@/utils/authorizedFileDownload'
+import { useIsMobile } from '@/composables/useIsMobile'
+
+const isMobile = useIsMobile()
+const advancedFiltersOpen = ref(false)
 
 // 自主实习申请由辅导员负责审核,考研延迟/企业注册由系室/学院教师负责
 const teacherType = getCurrentTeacherType()
+const authStore = useAuthStore()
 const isCounselor = teacherType === 'COUNSELOR'
 const activeTab = ref(isCounselor ? 'selfPractice' : 'delay')
 const approvalTabs = ref(
@@ -447,8 +519,46 @@ const documentTypes = ref([
 
 const searchForm = reactive({
   keyword: '',
-  status: ''
+  status: '',
+  majorId: undefined as number | undefined,
+  classId: undefined as number | undefined
 })
+const activeFilterCount = computed(() => [searchForm.status, searchForm.majorId, searchForm.classId]
+  .filter(value => value !== '' && value !== undefined && value !== null).length)
+const canReviewApplication = (row: any) => activeTab.value === 'companyQualification'
+  ? row.auditStatus === 0
+  : row.status === 'pending' && row.reviewTarget !== 'COMPANY'
+
+const classOptions = ref<TeacherClass[]>([])
+const classOptionsLoading = ref(false)
+const majorOptions = computed(() => {
+  const majors = new Map<number, string>()
+  classOptions.value.forEach(item => {
+    if (item.majorId && item.majorName) majors.set(item.majorId, item.majorName)
+  })
+  return Array.from(majors, ([id, name]) => ({ id, name }))
+})
+const filteredClassOptions = computed(() => classOptions.value.filter(item =>
+  !searchForm.majorId || item.majorId === searchForm.majorId
+))
+
+const fetchClassOptions = async () => {
+  if (!isCounselor) return
+  classOptionsLoading.value = true
+  try {
+    const teacherId = Number(authStore.user?.id)
+    if (!Number.isSafeInteger(teacherId) || teacherId <= 0) throw new Error('辅导员身份不可用')
+    const response = await getTeacherClasses(teacherId)
+    if (response.code !== 200) throw new Error(response.message || '获取班级列表失败')
+    classOptions.value = response.data || []
+  } catch (error) {
+    classOptions.value = []
+    console.error('[Approval] 获取已认领班级失败:', error)
+    ElMessage.error('获取专业、班级筛选项失败')
+  } finally {
+    classOptionsLoading.value = false
+  }
+}
 
 const currentPage = ref(1)
 const pageSize = ref(10)
@@ -460,9 +570,19 @@ const showCompanyQualificationModal = ref(false)
 const showApplicationDetailModal = ref(false)
 const currentApplication = ref<any>(null)
 const rejectReason = ref('')
+const reviewingApplications = ref(new Set<string>())
+const applicationReviewKey = (application: any) => `${application?.type === 'companyQualification' ? 'companyQualification' : 'studentApplication'}:${application?.id}`
+const isApplicationReviewing = (application: any) => reviewingApplications.value.has(applicationReviewKey(application))
+const markApplicationReviewed = (application: any, approved: boolean) => {
+  const key = applicationReviewKey(application)
+  const rows = [application, currentApplication.value, ...applications.value].filter(row => row && applicationReviewKey(row) === key)
+  rows.forEach(row => {
+    if (row.type === 'companyQualification') row.auditStatus = approved ? 1 : 2
+    else row.status = approved ? 'approved' : 'rejected'
+  })
+}
 
 const materialItems = ref({
-  selfPractice: ['个人申请书', '实习接收函'],
   delay: ['考研计划', '学习计划', '延迟申请书']
 })
 
@@ -494,7 +614,7 @@ const fetchApplications = async () => {
   const applicationType = activeTab.value
   loading.value = true
   applications.value = []
-  total.value = 0
+  // 保留总条数，避免加载时分页组件把当前页重置为第一页。
   try {
     let response
     if (applicationType === 'companyQualification') {
@@ -511,7 +631,9 @@ const fetchApplications = async () => {
         applicationType,
         status: searchForm.status || undefined,
         studentName: searchForm.keyword || undefined,
-        studentUserId: searchForm.keyword || undefined
+        studentUserId: searchForm.keyword || undefined,
+        majorId: searchForm.majorId || undefined,
+        classId: searchForm.classId || undefined
       })
     }
 
@@ -541,7 +663,7 @@ watch(() => searchForm.keyword, () => {
   fetchApplications()
 })
 
-watch(() => searchForm.status, () => {
+watch([() => searchForm.status, () => searchForm.majorId, () => searchForm.classId], () => {
   currentPage.value = 1
   fetchApplications()
 })
@@ -554,6 +676,8 @@ const handleSearch = () => {
 const resetForm = () => {
   searchForm.keyword = ''
   searchForm.status = ''
+  searchForm.majorId = undefined
+  searchForm.classId = undefined
   currentPage.value = 1
   fetchApplications()
 }
@@ -623,6 +747,8 @@ const getStatusText = (status: string | number) => {
       return '已通过'
     case 'rejected':
       return '已驳回'
+    case 'withdrawn':
+      return '已撤回'
     default:
       return '未知状态'
   }
@@ -673,6 +799,9 @@ const viewApplication = async (application: any) => {
 
 // 批准申请
 const approveApplication = async (application: any) => {
+  if (isApplicationReviewing(application)) return
+  const key = applicationReviewKey(application)
+  reviewingApplications.value.add(key)
   try {
     let response
     const currentUser = getCurrentUser()
@@ -690,13 +819,15 @@ const approveApplication = async (application: any) => {
     } else {
       ElMessage.success(serverMessage || '申请已成功通过')
     }
-    fetchApplications()
-    fetchStats()
+    markApplicationReviewed(application, true)
+    await Promise.all([fetchApplications(), fetchStats()])
     
     showApplicationDetailModal.value = false
     showCompanyQualificationModal.value = false
   } catch (error: any) {
     ElMessage.error(error.response?.data?.message || '批准申请失败')
+  } finally {
+    reviewingApplications.value.delete(key)
   }
 }
 
@@ -722,6 +853,7 @@ onUnmounted(() => formContext.unregister('teacher:approval-reject'))
 
 // 驳回申请
 const rejectApplication = (application: any) => {
+  if (isApplicationReviewing(application)) return
   currentApplication.value = application
   rejectReason.value = ''
   // 关闭所有可能的弹窗
@@ -753,6 +885,10 @@ const confirmReject = async () => {
     ElMessage.warning('请填写驳回理由')
     return
   }
+  const application = currentApplication.value
+  if (isApplicationReviewing(application)) return
+  const key = applicationReviewKey(application)
+  reviewingApplications.value.add(key)
   
   try {
     let response
@@ -760,15 +896,15 @@ const confirmReject = async () => {
     const reviewerId = currentUser.id || 1
     const operation = formContext.beginFormOperation('teacher:approval-reject')
     
-    if (currentApplication.value.type === 'companyQualification') {
+    if (application.type === 'companyQualification') {
       response = await approvalApi.rejectCompanyQualification(
-        currentApplication.value.id, 
+        application.id,
         reviewerId, 
         rejectReason.value
       )
     } else {
       response = await approvalApi.rejectStudentApplication(
-        currentApplication.value.id, 
+        application.id,
         reviewerId, 
         rejectReason.value
       )
@@ -777,15 +913,17 @@ const confirmReject = async () => {
     operation.complete({ status: 'submitted', label: '申请已驳回', url: '/teacher/approval' })
     showRejectModal.value = false
     const serverMessage = response?.message && response.message !== 'success' ? response.message : ''
-    if (currentApplication.value.type === 'companyQualification' && response?.data?.emailNotified === false) {
+    if (application.type === 'companyQualification' && response?.data?.emailNotified === false) {
       ElMessage.warning(serverMessage || '申请已驳回，但邮件通知未完成')
     } else {
       ElMessage.success(serverMessage || '申请已成功驳回')
     }
-    fetchApplications()
-    fetchStats()
+    markApplicationReviewed(application, false)
+    await Promise.all([fetchApplications(), fetchStats()])
   } catch (error: any) {
     ElMessage.error(error.response?.data?.message || '驳回申请失败')
+  } finally {
+    reviewingApplications.value.delete(key)
   }
 }
 
@@ -856,6 +994,7 @@ const getCooperationModeText = (mode: string) => {
 
 // 初始化
 onMounted(() => {
+  fetchClassOptions()
   fetchStats()
   fetchApplications()
   enableTableScrollBubbling()
@@ -892,7 +1031,10 @@ const enableTableScrollBubbling = () => {
 useAgentPageContext(() => ({
   title: '审核管理', view: showRejectModal.value ? 'rejection-form' : showApplicationDetailModal.value || showCompanyQualificationModal.value ? 'application-detail' : 'page',
   // Application IDs have no teacher-scoped read-tool contract yet; do not mislabel student numbers as IDs.
-  object: null, filters: { keyword: searchForm.keyword, status: searchForm.status, applicationType: activeTab.value }
+  object: null, filters: {
+    keyword: searchForm.keyword, status: searchForm.status, applicationType: activeTab.value,
+    majorId: searchForm.majorId, classId: searchForm.classId
+  }
 }))
 </script>
 
@@ -976,6 +1118,7 @@ useAgentPageContext(() => ({
 
 .search-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 16px;
 }
@@ -1357,6 +1500,114 @@ useAgentPageContext(() => ({
 }
 
 @media (max-width: 768px) {
+  .approval-container {
+    padding: 8px 12px 16px;
+  }
+
+  .approval-tabs {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .tab-btn {
+    min-height: 44px;
+    white-space: normal;
+    flex: 1 1 140px;
+  }
+
+  .search-form,
+  .search-row {
+    width: 100%;
+  }
+
+  .search-row {
+    gap: 0;
+  }
+
+  .search-form :deep(.el-form-item) {
+    width: 100%;
+    margin-right: 0;
+    margin-bottom: 12px;
+  }
+
+  .search-form :deep(.el-input),
+  .search-form :deep(.el-select),
+  .mobile-filter-toggle :deep(.el-button) {
+    width: 100% !important;
+  }
+
+  .search-actions :deep(.el-form-item__content) {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .search-actions :deep(.el-button) {
+    margin: 0;
+  }
+
+  .approval-mobile-list {
+    min-height: 96px;
+  }
+
+  .mobile-card-header :deep(.el-tag) {
+    flex-shrink: 0;
+  }
+
+  .mobile-card-body > .el-tag {
+    align-self: flex-start;
+  }
+
+  .modal-content,
+  .modal-content.large,
+  .modal-content.company-qualification-modal {
+    display: flex;
+    flex-direction: column;
+    width: calc(100vw - 24px);
+    max-width: calc(100vw - 24px);
+    max-height: calc(100% - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+    min-height: 0;
+    margin: 0;
+  }
+
+  .modal-content.large,
+  .modal-content.company-qualification-modal {
+    height: calc(100% - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  }
+
+  .modal-header,
+  .modal-footer {
+    flex-shrink: 0;
+    padding: 12px 16px;
+  }
+
+  .modal-header h3 {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .modal-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: none;
+    padding: 16px;
+    overscroll-behavior: contain;
+  }
+
+  .close-btn {
+    width: 44px;
+    height: 44px;
+    flex-shrink: 0;
+  }
+
+  .modal-footer > button {
+    min-height: 44px;
+  }
+
+  .form-group textarea {
+    font-size: 16px;
+  }
+
   .form-row {
     flex-wrap: wrap;
   }

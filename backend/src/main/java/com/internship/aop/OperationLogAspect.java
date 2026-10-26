@@ -15,6 +15,7 @@ import com.internship.service.CompanyUserService;
 import com.internship.utils.CurrentHolder;
 import com.internship.utils.IpUtils;
 import com.internship.utils.JwtUtils;
+import com.internship.utils.AuditFailureContext;
 import io.jsonwebtoken.Claims;
 import lombok.extern.slf4j.Slf4j;
 import org.aspectj.lang.ProceedingJoinPoint;
@@ -217,9 +218,15 @@ public class OperationLogAspect {
         olog.setRealOperatorName(originalAdminUsername);
         olog.setDurationMs((int) (System.currentTimeMillis() - startMillis));
         applyRequestContext(olog);
+        try {
+            AuditFailureContext.apply(olog, result, operationFailure, joinPoint.getArgs());
+        } catch (RuntimeException diagnosticFailure) {
+            log.warn("补充失败审计上下文失败：type={}", diagnosticFailure.getClass().getSimpleName());
+        }
 
         // 统一经由审计服务写入；写入失败由服务内部告警，不影响业务结果
         auditLogService.record(olog);
+        if ("FAILURE".equals(operationResult)) AuditFailureContext.markRecorded();
 
         if (operationFailure != null) {
             throw operationFailure;
@@ -288,7 +295,10 @@ public class OperationLogAspect {
      * 有登录态的请求不受影响（操作人已从登录态解析，不会走到这里）。
      */
     private String extractClaimedUsername(ProceedingJoinPoint joinPoint) {
-        return extractMapValue(joinPoint, "username");
+        String value = extractMapValue(joinPoint, "username");
+        if (value == null) return null;
+        value = value.replaceAll("[\\p{Cntrl}]", " ");
+        return truncate(value, 50);
     }
 
     /**

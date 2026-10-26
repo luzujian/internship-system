@@ -41,10 +41,10 @@ const REVIEWED = [
   ['company:promotion', 'videos', 'UPLOAD_FIELD'],
   ['home:delay', 'materialUrl', 'DECLARED_NOT_BOUND'],
   ['home:delay', 'materialUrl', 'UPLOAD_FIELD'],
-  ['home:self-practice', 'applicationLetterUrl', 'DECLARED_NOT_BOUND'],
-  ['home:self-practice', 'applicationLetterUrl', 'UPLOAD_FIELD'],
-  ['home:self-practice', 'acceptanceLetterUrl', 'DECLARED_NOT_BOUND'],
-  ['home:self-practice', 'acceptanceLetterUrl', 'UPLOAD_FIELD'],
+  ['home:self-practice', 'otherMaterials', 'DECLARED_NOT_BOUND'],
+  ['home:self-practice', 'otherMaterials', 'UPLOAD_FIELD'],
+  // 岗位 ID 由学生选择企业已有岗位生成，AI 仅填写岗位文字。
+  ['home:self-practice', 'positionId', 'BOUND_NOT_DECLARED'],
   // 实习协议由多文件上传组件生成 ID 清单；只声明必填提示，不允许 AI 写入文件 ID。
   ['home:self-practice', 'agreementFileIds', 'DECLARED_NOT_BOUND'],
   ['home:self-practice', 'agreementFileIds', 'UPLOAD_FIELD'],

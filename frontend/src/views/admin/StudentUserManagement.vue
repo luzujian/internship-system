@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useSmartImportRefresh } from '@/components/import/useSmartImportRefresh'
 import { useAgentPageContext } from '@/agent/useAgentPageContext'
 import { useFormContext } from '@/agent/formContext'
 import logger from '@/utils/logger'
@@ -102,6 +103,10 @@ interface StudentImportFailItem {
 
 import request from '../../utils/request'
 import MobileMoreActions from '../../components/MobileMoreActions.vue'
+import { useIsMobile } from '@/composables/useIsMobile'
+
+const isMobile = useIsMobile()
+const advancedFiltersOpen = ref(false)
 
 const systemSettingsStore = useSystemSettingsStore()
 const authStore = useAuthStore()
@@ -154,6 +159,10 @@ const formatDepartmentName = (_row: unknown, _column: unknown, cellValue: string
 
 // 搜索表单对象（含 department 别名，查询参数透传用）
 let searchForm = ref<StudentRow>({ studentId: '', name: '', gender: '', grade: '', majorId: '', classId: '', status: '', department: '' })
+const activeFilterCount = computed(() => [
+  searchForm.value.gender, searchForm.value.grade, searchForm.value.status,
+  searchForm.value.department, searchForm.value.majorId, searchForm.value.classId
+].filter(value => value !== '' && value !== null && value !== undefined).length)
 
 // 列表展示数据
 let tableData = ref<StudentRow[]>([])
@@ -190,7 +199,6 @@ let addStudent = ref<StudentRow>({
   id: '',
   studentId: '',
   name: '',
-  gender: 1,
   grade: '',
   majorId: null,
   classId: null,
@@ -204,7 +212,6 @@ let editStudent = ref<StudentRow>({
   id: '',
   studentId: '',
   name: '',
-  gender: 1,
   grade: '',
   majorId: null,
   classId: null,
@@ -290,6 +297,7 @@ const queryPage = async (): Promise<void> => {
     if (sf.classId) params.classId = sf.classId
     if (sf.status !== null && sf.status !== undefined && sf.status !== '') params.status = Number(sf.status)
     if (sf.gender !== null && sf.gender !== undefined && sf.gender !== '') params.gender = Number(sf.gender)
+    if (sf.department !== null && sf.department !== undefined && sf.department !== '') params.department = String(sf.department)
 
     logger.log('查询参数:', params)
     const response = await queryPageApi(params)
@@ -387,7 +395,6 @@ const clearAddStudentForm = () => {
     id: '',
     studentId: '',
     name: '',
-    gender: 1,
     grade: '',
     majorId: null,
     classId: null,
@@ -403,7 +410,6 @@ const clearEditStudentForm = () => {
     id: '',
     studentId: '',
     name: '',
-    gender: 1,
     grade: '',
     majorId: null,
     classId: null,
@@ -514,17 +520,22 @@ const handleUpdateStudent = async (id) => {
       // 注意：将majorId和classId转换为字符串，以匹配下拉选项的value类型（保持原语义）
       const majorRaw: unknown = studentData.majorId
       const classRaw: unknown = studentData.classId
-      const deptRaw: unknown = studentData.department
+      const deptRaw: unknown = studentData.departmentId ?? studentData.department
+      // 详情中的院系可能是名称；优先按当前专业确定院系，统一回填下拉选项的 ID。
+      const selectedMajor = majors.value.find(major => String(major.value) === String(majorRaw))
+      const selectedDepartment = departments.value.find(dept =>
+        String(dept.value) === String(deptRaw) || dept.name === String(deptRaw)
+      )
+      const departmentId = selectedMajor?.departmentId || selectedDepartment?.value || ''
       Object.assign(editStudent.value, {
         id: studentData.id ? studentData.id : '',
         studentId: studentData.studentId ? studentData.studentId : '',
         name: studentData.name ? studentData.name : '',
-        gender: studentData.gender !== undefined ? studentData.gender : 1,
         grade: studentData.grade ? studentData.grade : '',
-        majorId: majorRaw !== undefined ? String(majorRaw) : null,
-        classId: classRaw !== undefined ? String(classRaw) : null,
+        majorId: majorRaw != null ? String(majorRaw) : null,
+        classId: classRaw != null ? String(classRaw) : null,
         phone: studentData.phone ? studentData.phone : '',
-        department: deptRaw ? String(deptRaw) : '',
+        department: String(departmentId),
         email: studentData.email ? studentData.email : ''
       })
 
@@ -911,8 +922,6 @@ const studentFillFields = (): FormFieldDescriptor[] => {
   return [
     { prop: 'studentId', label: '学号', type: 'input', required: true },
     { prop: 'name', label: '姓名', type: 'input', required: true },
-    { prop: 'gender', label: '性别', type: 'radio', valueType: 'number',
-      options: [{ label: '男', value: 1 }, { label: '女', value: 2 }] },
     { prop: 'grade', label: '年级', type: 'input' },
     { prop: 'department', label: '院系', type: 'select', required: true, options: deptOptions },
     { prop: 'majorId', label: '专业', type: 'select', required: true, options: majorOptions },
@@ -1357,7 +1366,7 @@ const handleExportToExcel = async () => {
     ElMessage({ message: '正在准备导出数据...', type: 'info' })
 
     // 响应拦截器已返回 Blob（类型声明为 ApiResult，运行时即 Blob，用断言保持运行时一致）
-    const blob = await exportStudentDataApi() as unknown as Blob
+    const blob = await exportStudentDataApi({ ...searchForm.value }) as unknown as Blob
 
     const url = window.URL.createObjectURL(blob)
     const link = document.createElement('a')
@@ -1400,6 +1409,7 @@ useAgentPageContext(() => ({
     major: majors.value.find(item => item.value === String(searchForm.value.majorId))?.name || '', classId: String(searchForm.value.classId || ''),
     visibleIds: tableData.value.slice(0, 20).map(row => String(row.id)) }
 }))
+useSmartImportRefresh('student', () => { queryPage() })
 </script>
 
 <template>
@@ -1408,7 +1418,7 @@ useAgentPageContext(() => ({
     <div class="page-header">
       <div class="header-content">
         <h1 class="page-title">学生管理</h1>
-        <p class="page-description">管理系统中的所有学生账户信息</p>
+        <p class="page-description">管理系统中的所有学生账户信息<span v-if="authStore.hasPermission('user:student:add')">。非标准表格可交给右上角「问问 AI」导入。</span></p>
       </div>
       <div class="header-illustration">
         <div class="illustration-circle circle-1"></div>
@@ -1418,7 +1428,7 @@ useAgentPageContext(() => ({
 
     <!-- 搜索区域卡片 -->
     <el-card class="search-card" shadow="never">
-      <el-form ref="searchFormRef" :inline="true" :model="searchForm" class="search-form" @keyup.enter="queryPage">
+      <el-form ref="searchFormRef" :inline="!isMobile" :label-position="isMobile ? 'top' : 'right'" :model="searchForm" class="search-form" @keyup.enter="queryPage">
         <div class="search-row">
           <el-form-item label="学号">
             <el-input
@@ -1436,13 +1446,18 @@ useAgentPageContext(() => ({
               @keyup.enter="queryPage"
             ></el-input>
           </el-form-item>
-          <el-form-item label="性别">
+          <el-form-item v-if="isMobile" class="mobile-filter-toggle">
+            <el-button :aria-expanded="advancedFiltersOpen" @click="advancedFiltersOpen = !advancedFiltersOpen">
+              {{ advancedFiltersOpen ? '收起筛选' : '更多筛选' }}{{ activeFilterCount ? `（${activeFilterCount}）` : '' }}
+            </el-button>
+          </el-form-item>
+          <el-form-item v-show="!isMobile || advancedFiltersOpen" label="性别">
             <el-select v-model="searchForm.gender" placeholder="请选择性别" clearable>
               <el-option label="男" :value="1"></el-option>
               <el-option label="女" :value="2"></el-option>
             </el-select>
           </el-form-item>
-          <el-form-item label="年级">
+          <el-form-item v-show="!isMobile || advancedFiltersOpen" label="年级">
             <el-input
               v-model="searchForm.grade"
               placeholder="例如：2024"
@@ -1452,7 +1467,7 @@ useAgentPageContext(() => ({
               @keyup.enter="queryPage"
             ></el-input>
           </el-form-item>
-          <el-form-item label="状态">
+          <el-form-item v-show="!isMobile || advancedFiltersOpen" label="状态">
             <el-select v-model="searchForm.status" placeholder="请选择状态" clearable>
               <el-option label="已启用" :value="1"></el-option>
               <el-option label="已禁用" :value="0"></el-option>
@@ -1460,17 +1475,17 @@ useAgentPageContext(() => ({
           </el-form-item>
         </div>
         <div class="search-row">
-          <el-form-item label="院系">
+          <el-form-item v-show="!isMobile || advancedFiltersOpen" label="院系">
             <el-select v-model="searchForm.department" placeholder="请选择院系" clearable filterable @change="handleDepartmentChange">
               <el-option v-for="dept in departments" :key="dept.value" :label="dept.name" :value="dept.value"></el-option>
             </el-select>
           </el-form-item>
-          <el-form-item label="专业">
+          <el-form-item v-show="!isMobile || advancedFiltersOpen" label="专业">
             <el-select v-model="searchForm.majorId" placeholder="请选择专业" clearable filterable @change="handleMajorChange">
               <el-option v-for="major in filteredMajorsForSearch" :key="major.value" :label="major.name" :value="major.value"></el-option>
             </el-select>
           </el-form-item>
-          <el-form-item label="班级">
+          <el-form-item v-show="!isMobile || advancedFiltersOpen" label="班级">
             <el-select v-model="searchForm.classId" placeholder="请选择班级" clearable filterable>
               <el-option v-for="classItem in (searchForm.majorId ? classes.filter(c => c.majorId === searchForm.majorId) : classes)"
                          :key="classItem.id" :label="classItem.name" :value="classItem.id"></el-option>
@@ -1503,7 +1518,7 @@ useAgentPageContext(() => ({
           </el-button>
         </div>
         <div class="secondary-actions">
-          <el-dropdown v-if="authStore.hasPermission('user:student:view')" trigger="click" class="import-dropdown">
+          <el-dropdown v-if="authStore.hasPermission('user:student:add')" trigger="click" class="import-dropdown">
             <el-button type="primary" class="action-btn success">
               <el-icon><Upload /></el-icon>&nbsp;导入 Excel<el-icon class="el-icon--right"><ArrowDown /></el-icon>
             </el-button>
@@ -1619,12 +1634,6 @@ useAgentPageContext(() => ({
           <el-form-item label="姓名" prop="name">
             <el-input v-model="addStudent.name" placeholder="请输入姓名"></el-input>
           </el-form-item>
-          <el-form-item label="性别" prop="gender">
-            <el-radio-group v-model="addStudent.gender">
-              <el-radio :value="1">男</el-radio>
-              <el-radio :value="2">女</el-radio>
-            </el-radio-group>
-          </el-form-item>
           <el-form-item label="年级" prop="grade">
             <el-input v-model="addStudent.grade" placeholder="请输入年级" maxlength="4" show-word-limit></el-input>
           </el-form-item>
@@ -1670,12 +1679,6 @@ useAgentPageContext(() => ({
           </el-form-item>
           <el-form-item label="姓名" prop="name">
             <el-input v-model="editStudent.name" placeholder="请输入姓名"></el-input>
-          </el-form-item>
-          <el-form-item label="性别" prop="gender">
-            <el-radio-group v-model="editStudent.gender">
-              <el-radio :value="1">男</el-radio>
-              <el-radio :value="2">女</el-radio>
-            </el-radio-group>
           </el-form-item>
           <el-form-item label="年级" prop="grade">
             <el-input v-model="editStudent.grade" placeholder="请输入年级" maxlength="4" show-word-limit></el-input>

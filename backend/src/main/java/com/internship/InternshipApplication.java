@@ -5,13 +5,11 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.web.servlet.ServletComponentScan;
 import org.springframework.cache.annotation.EnableCaching;
-import org.springframework.context.annotation.ComponentScan;
 import org.springframework.scheduling.annotation.EnableAsync;
 
 @ServletComponentScan
 @MapperScan("com.internship.mapper")
 @SpringBootApplication
-@ComponentScan(basePackages = {"com.internship", "com.internship.auth.config"})
 @EnableAsync
 @EnableCaching
 public class InternshipApplication {

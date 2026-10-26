@@ -1,5 +1,7 @@
 package com.internship.service;
 
+import com.internship.config.SystemSettingsConfig;
+import com.internship.entity.SystemSettings;
 import com.internship.entity.StudentApplication;
 import com.internship.entity.StudentUser;
 import com.internship.entity.InternshipProgressRecord;
@@ -9,6 +11,7 @@ import com.internship.mapper.CompanyUserMapper;
 import com.internship.mapper.StudentInternshipStatusMapper;
 import com.internship.service.impl.StudentApplicationServiceImpl;
 import com.internship.util.StudentInternshipStatusCache;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -40,13 +43,23 @@ class StudentApplicationDelayRuleTest {
     @Mock private EmailService emailService;
 
     private StudentApplicationServiceImpl service;
+    private SystemSettings previousSettings;
 
     @BeforeEach
     void setUp() {
+        previousSettings = SystemSettingsConfig.getCurrentSettings();
+        SystemSettings settings = new SystemSettings();
+        settings.setEmailNotifyEnabled(1);
+        org.springframework.test.util.ReflectionTestUtils.setField(SystemSettingsConfig.class, "currentSettings", settings);
         service = new StudentApplicationServiceImpl(
                 applicationMapper, companyUserMapper, timeSettingsService, statusMapper,
                 progressRecordService, confirmationRecordService, stageAssignmentService, statusCache,
                 internshipCalendarService, lifecycleService, studentUserService, emailService);
+    }
+
+    @AfterEach
+    void restoreSettings() {
+        org.springframework.test.util.ReflectionTestUtils.setField(SystemSettingsConfig.class, "currentSettings", previousSettings);
     }
 
     @Test

@@ -23,7 +23,7 @@
     <el-container>
       <el-header class="header">
         <div class="header-left">
-          <el-button link @click="toggleSidebar" class="sidebar-toggle-btn">
+          <el-button link @click="toggleSidebar" class="sidebar-toggle-btn" :aria-expanded="!sidebarCollapsed" aria-controls="main-navigation" :aria-label="sidebarCollapsed ? '展开导航菜单' : '收起导航菜单'">
             <el-icon>
               <component :is="sidebarCollapsed ? Menu : Fold" />
             </el-icon>
@@ -36,9 +36,9 @@
         <div class="header-metrics" aria-label="教师宏观数据">
           <span class="header-metrics-title">宏观数据</span>
           <span class="header-metrics-divider"></span>
-          <div class="header-metric header-metric--students" title="本院未投递与无 Offer 学生总数，不含延期学生。">
+          <div class="header-metric header-metric--students" title="本院暂无有效投递与已投递未录用学生总数，不含已延期实习学生。">
             <span class="header-metric-dot"></span>
-            <span class="header-metric-label">本院尚无 Offer</span>
+            <span class="header-metric-label">本院尚未获录用</span>
             <strong>{{ withoutOfferStudentCount ?? '--' }}</strong>
             <small>人</small>
           </div>
@@ -54,11 +54,11 @@
           <AgentEntry />
           <div class="teacher-type-badge">{{ getTeacherTypeText() }}</div>
           <el-dropdown :popper-style="{ zIndex: 2500 }" @command="handleCommand">
-            <div class="user-info">
+            <button type="button" class="user-info user-btn" aria-label="账号菜单">
               <el-icon><User /></el-icon>
               <span>{{ getTeacherName() }}</span>
               <el-icon><CaretBottom /></el-icon>
-            </div>
+            </button>
             <template #dropdown>
               <el-dropdown-menu>
                 <el-dropdown-item command="password">修改密码</el-dropdown-item>
@@ -72,7 +72,8 @@
       </el-header>
 
       <el-container style="flex: 1; display: flex; overflow: hidden;">
-        <aside :class="['aside', { 'aside-collapsed': sidebarCollapsed }]" v-show="!sidebarCollapsed" aria-label="主导航">
+        <aside :class="['aside', { 'aside-collapsed': sidebarCollapsed }]" v-show="!sidebarCollapsed" id="main-navigation" :tabindex="isMobile ? -1 : undefined" aria-label="主导航" :role="isMobile && !sidebarCollapsed ? 'dialog' : undefined" :aria-modal="isMobile && !sidebarCollapsed || undefined" :inert="isMobile && sidebarCollapsed">
+      <button v-if="isMobile" type="button" class="mobile-navigation-close" aria-label="关闭导航菜单" @click="closeSidebar">关闭导航 ×</button>
           <el-scrollbar>
             <el-menu
               v-if="!menuLoading"
@@ -94,7 +95,7 @@
         </aside>
         <div v-if="isMobile && !sidebarCollapsed" class="sidebar-overlay" @click="closeSidebar"></div>
 
-        <el-main class="main">
+        <el-main class="main" data-navigation-content :inert="isMobile && !sidebarCollapsed">
           <el-scrollbar style="height: 100%;">
             <router-view />
           </el-scrollbar>
@@ -639,6 +640,12 @@ const logout = async () => {
 }
 
 .user-info {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  box-shadow: none;
+  transform: none;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -657,6 +664,8 @@ const logout = async () => {
 }
 
 .user-info:hover {
+  box-shadow: none;
+  transform: none;
   background: rgba(255, 255, 255, 0.15);
 }
 

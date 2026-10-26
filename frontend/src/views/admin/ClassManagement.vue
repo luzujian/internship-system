@@ -1,6 +1,7 @@
 <script setup lang="ts">
+import { useSmartImportRefresh } from '@/components/import/useSmartImportRefresh'
 import logger from '@/utils/logger'
-import { onMounted, onUnmounted, ref, nextTick, toRaw, watch } from 'vue'
+import { onMounted, onUnmounted, ref, nextTick, watch } from 'vue'
 import { queryPageApi, addApi, queryInfoApi, updateApi, deleteApi, batchDeleteApi, importExcelApi, downloadClassTemplateApi } from '../../api/class'
 import ClassService from '../../api/class'
 import MajorService from '../../api/major'
@@ -10,7 +11,6 @@ import TeacherUserService from '../../api/TeacherUserService'
 import request from '../../utils/request'
 import { ElMessage, ElMessageBox, ElCheckbox, type FormInstance, type FormRules } from 'element-plus'
 import { Search, Refresh, Plus, Upload, Download, Edit, Delete, ArrowDown } from '@element-plus/icons-vue'
-import { exportToExcel } from '../../utils/xlsx'
 import { readExcelFile as readExcelUtil } from '../../utils/xlsx'
 import { useAuthStore } from '../../store/auth'
 import { useFormContext } from '@/agent/formContext'
@@ -1044,44 +1044,22 @@ const processExcelData = (excelData: unknown[]): ExcelDataItem[] => {
 // 导出 Excel 功能
 const handleExportToExcel = async (): Promise<void> => {
   try {
-    ElMessage({ message: '正在准备导出数据...', type: 'info' })
-
-    // 使用表格中已经处理好的数据，包含 majorName 和 teacherName
-    // 使用 toRaw 处理响应式代理，确保获取原始数组
-    const rawTableData = toRaw(tableData.value)
-    const allClasses = Array.isArray(rawTableData) ? rawTableData : []
-
-    if (allClasses.length === 0) {
-      ElMessage.warning('没有数据可导出')
-      return
-    }
-
-    const exportData = allClasses.map((item: ClassPageRow) => {
-      return {
-        '班级名称': item.name,
-        '年级': item.grade,
-        '专业': item.majorName || item.majorId,
-        '负责教师': item.teacherName || '',
-        '创建时间': formatDate(null, null, item.createTime || item.createdTime),
-        '更新时间': formatDate(null, null, item.updateTime || item.updatedTime)
-      }
-    })
-
-    const currentDate = new Date()
-    const year = currentDate.getFullYear()
-    const month = String(currentDate.getMonth() + 1).padStart(2, '0')
-    const day = String(currentDate.getDate()).padStart(2, '0')
-    const hours = String(currentDate.getHours()).padStart(2, '0')
-    const minutes = String(currentDate.getMinutes()).padStart(2, '0')
-    const seconds = String(currentDate.getSeconds()).padStart(2, '0')
-    const fileName = `班级信息_${year}${month}${day}_${hours}${minutes}${seconds}`
-
-    await exportToExcel(exportData, fileName, '班级信息')
-
-    ElMessage({ message: '导出成功，请等待文件下载完成', type: 'success' })
+    const blob = await request.get('/classes/export', {
+      params: { name: searchClass.value.name, grade: searchClass.value.grade, majorId: searchClass.value.majorId || undefined },
+      responseType: 'blob'
+    }) as unknown as Blob
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = '班级信息.xlsx'
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+    ElMessage.success('导出成功')
   } catch (error) {
     logger.error('导出 Excel 失败:', error)
-    ElMessage.error('导出 Excel 失败：' + (error instanceof Error ? error.message : '未知错误'))
+    ElMessage.error('导出失败：' + (error instanceof Error ? error.message : '未知错误'))
   }
 }
 
@@ -1109,6 +1087,7 @@ const downloadTemplate = async (): Promise<void> => {
     ElMessage.error('下载模板失败：' + (error.message || '未知错误'))
   }
 }
+useSmartImportRefresh('class', () => { queryPage() })
 </script>
 
 <template>
@@ -1117,7 +1096,7 @@ const downloadTemplate = async (): Promise<void> => {
     <div class="page-header">
       <div class="header-content">
         <h1 class="page-title">班级管理</h1>
-        <p class="page-description">管理系统中的所有班级信息</p>
+        <p class="page-description">管理系统中的所有班级信息<span v-if="authStore.hasPermission('class:add')">。非标准表格可交给右上角「问问 AI」导入。</span></p>
       </div>
       <div class="header-illustration">
         <div class="illustration-circle circle-1"></div>
@@ -1189,7 +1168,7 @@ const downloadTemplate = async (): Promise<void> => {
           </span>
         </div>
         <div class="secondary-actions">
-          <el-dropdown v-if="authStore.hasPermission('class:view')" trigger="click" class="import-dropdown">
+          <el-dropdown v-if="authStore.hasPermission('class:add')" trigger="click" class="import-dropdown">
             <el-button type="primary" class="action-btn primary">
               <el-icon><Upload /></el-icon>&nbsp;导入 Excel<el-icon class="el-icon--right"><ArrowDown /></el-icon>
             </el-button>

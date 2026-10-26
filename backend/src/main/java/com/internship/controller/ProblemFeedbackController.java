@@ -1,8 +1,12 @@
 package com.internship.controller;
 
+import com.internship.utils.ExcelExports;
+
 import com.internship.anno.Log;
 import com.internship.entity.PageResult;
 import com.internship.entity.ProblemFeedback;
+import com.internship.service.ProblemFeedbackSubmittedEvent;
+import org.springframework.context.ApplicationEventPublisher;
 import com.internship.entity.Result;
 import com.internship.mapper.ProblemFeedbackMapper;
 import com.internship.utils.CurrentHolder;
@@ -36,6 +40,9 @@ import java.util.stream.Collectors;
 @RestController
 @RequestMapping("/api/problem-feedback")
 public class ProblemFeedbackController {
+
+    @Autowired
+    private ApplicationEventPublisher eventPublisher;
 
     @Autowired
     private ProblemFeedbackMapper problemFeedbackMapper;
@@ -152,6 +159,11 @@ public class ProblemFeedbackController {
             
             if (result > 0) {
                 pushFeedbackNotification(feedback);
+                try {
+                    eventPublisher.publishEvent(new ProblemFeedbackSubmittedEvent(feedback.getId()));
+                } catch (RuntimeException notificationFailure) {
+                    log.warn("问题反馈邮件任务启动失败: feedbackId={}", feedback.getId(), notificationFailure);
+                }
             }
             
             return Result.success("提交问题反馈成功", result);
@@ -348,115 +360,19 @@ public class ProblemFeedbackController {
     @Log(operationType = "EXPORT", module = "PROBLEM_FEEDBACK", description = "导出问题反馈", riskLevel = "MEDIUM", critical = true)
     @GetMapping("/export")
     @PreAuthorize("hasRole('ROLE_ADMIN')")
-    public void exportFeedbackData(HttpServletResponse response) {
-        log.info("导出问题反馈 Excel 数据");
-        try {
-            response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-            response.setCharacterEncoding("UTF-8");
-            String fileName = URLEncoder.encode("问题反馈" + System.currentTimeMillis(), StandardCharsets.UTF_8) + ".xlsx";
-            response.setHeader("Content-disposition", "attachment;filename=" + fileName);
-
-            List<ProblemFeedback> feedbackList = problemFeedbackMapper.findAll();
-
-            Workbook workbook = new XSSFWorkbook();
-            Sheet sheet = workbook.createSheet("问题反馈");
-
-            Row headerRow = sheet.createRow(0);
-            String[] headers = {"反馈标题", "反馈内容", "用户类型", "用户姓名", "用户账号", "问题类型", "优先级", "状态", "反馈时间", "回复内容"};
-            CellStyle headerStyle = workbook.createCellStyle();
-            headerStyle.setFillForegroundColor(IndexedColors.GREEN.getIndex());
-            headerStyle.setFillPattern(FillPatternType.SOLID_FOREGROUND);
-            headerStyle.setAlignment(HorizontalAlignment.CENTER);
-            headerStyle.setBorderTop(BorderStyle.THIN);
-            headerStyle.setBorderBottom(BorderStyle.THIN);
-            headerStyle.setBorderLeft(BorderStyle.THIN);
-            headerStyle.setBorderRight(BorderStyle.THIN);
-
-            Font headerFont = workbook.createFont();
-            headerFont.setBold(true);
-            headerFont.setColor(IndexedColors.WHITE.getIndex());
-            headerStyle.setFont(headerFont);
-
-            for (int i = 0; i < headers.length; i++) {
-                Cell cell = headerRow.createCell(i);
-                cell.setCellValue(headers[i]);
-                cell.setCellStyle(headerStyle);
-                sheet.autoSizeColumn(i);
-            }
-
-            CellStyle dataStyle = workbook.createCellStyle();
-            dataStyle.setAlignment(HorizontalAlignment.CENTER);
-            dataStyle.setBorderTop(BorderStyle.THIN);
-            dataStyle.setBorderBottom(BorderStyle.THIN);
-            dataStyle.setBorderLeft(BorderStyle.THIN);
-            dataStyle.setBorderRight(BorderStyle.THIN);
-
-            SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
-
-            for (int i = 0; i < feedbackList.size(); i++) {
-                ProblemFeedback feedback = feedbackList.get(i);
-                Row dataRow = sheet.createRow(i + 1);
-
-                Cell titleCell = dataRow.createCell(0);
-                titleCell.setCellValue(feedback.getTitle() != null ? feedback.getTitle() : "");
-                titleCell.setCellStyle(dataStyle);
-
-                Cell contentCell = dataRow.createCell(1);
-                contentCell.setCellValue(feedback.getContent() != null ? feedback.getContent() : "");
-                contentCell.setCellStyle(dataStyle);
-
-                Cell userTypeCell = dataRow.createCell(2);
-                userTypeCell.setCellValue(getUserTypeText(feedback.getUserType()));
-                userTypeCell.setCellStyle(dataStyle);
-
-                Cell userNameCell = dataRow.createCell(3);
-                userNameCell.setCellValue(feedback.getUserName() != null ? feedback.getUserName() : "");
-                userNameCell.setCellStyle(dataStyle);
-
-                Cell userAccountCell = dataRow.createCell(4);
-                userAccountCell.setCellValue(feedback.getUserAccount() != null ? feedback.getUserAccount() : "");
-                userAccountCell.setCellStyle(dataStyle);
-
-                Cell feedbackTypeCell = dataRow.createCell(5);
-                feedbackTypeCell.setCellValue(feedback.getFeedbackType() != null ? feedback.getFeedbackType() : "");
-                feedbackTypeCell.setCellStyle(dataStyle);
-
-                Cell priorityCell = dataRow.createCell(6);
-                priorityCell.setCellValue(getPriorityText(feedback.getPriority()));
-                priorityCell.setCellStyle(dataStyle);
-
-                Cell statusCell = dataRow.createCell(7);
-                statusCell.setCellValue(getStatusText(feedback.getStatus()));
-                statusCell.setCellStyle(dataStyle);
-
-                Cell createTimeCell = dataRow.createCell(8);
-                createTimeCell.setCellValue(feedback.getCreateTime() != null ? sdf.format(feedback.getCreateTime()) : "");
-                createTimeCell.setCellStyle(dataStyle);
-
-                Cell replyCell = dataRow.createCell(9);
-                replyCell.setCellValue(feedback.getAdminReply() != null ? feedback.getAdminReply() : "");
-                replyCell.setCellStyle(dataStyle);
-            }
-
-            try (OutputStream outputStream = response.getOutputStream()) {
-                workbook.write(outputStream);
-                log.info("导出问题反馈 Excel 数据成功，共导出 {} 条数据", feedbackList.size());
-            } catch (IOException e) {
-                log.error("导出问题反馈 Excel 数据失败（流操作异常）: {}", e.getMessage(), e);
-                throw new RuntimeException("导出问题反馈 Excel 数据失败：" + e.getMessage());
-            } finally {
-                try {
-                    if (workbook != null) {
-                        workbook.close();
-                    }
-                } catch (IOException e) {
-                    log.error("关闭工作簿失败：{}", e.getMessage(), e);
-                }
-            }
-        } catch (Exception e) {
-            log.error("导出问题反馈数据失败：{}", e.getMessage(), e);
-            throw new RuntimeException("导出问题反馈数据失败：" + e.getMessage());
-        }
+    public void exportFeedbackData(HttpServletResponse response,
+            @RequestParam(required = false) String userType,
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String priority,
+            @RequestParam(required = false) String feedbackType,
+            @RequestParam(required = false) String userName,
+            @RequestParam(required = false) String title) throws IOException {
+        Map<String,String> types = Map.of("system","系统问题","feature","功能建议","bug","程序错误","data","数据问题","other","其他");
+        List<Object[]> rows = problemFeedbackMapper.list(userType,status,priority,feedbackType,userName,title).stream()
+                .map(r -> new Object[]{r.getTitle(),getStatusText(r.getStatus()),r.getUserName(),r.getUserAccount(),
+                        getUserTypeText(r.getUserType()),types.getOrDefault(ExcelExports.text(r.getFeedbackType()),"未知类型"),
+                        getPriorityText(r.getPriority()),r.getCreateTime(),r.getContent(),r.getAdminReply()}).toList();
+        ExcelExports.write(response,"问题反馈",new String[]{"标题","状态","用户姓名","用户账号","用户类型","反馈类型","优先级","提交时间","反馈内容","回复内容"},rows);
     }
 
     private String getUserTypeText(String userType) {
@@ -473,7 +389,7 @@ public class ProblemFeedbackController {
         if (priority == null) return "";
         switch (priority) {
             case "low": return "低";
-            case "normal": return "普通";
+            case "normal": return "中";
             case "high": return "高";
             default: return priority;
         }
@@ -485,7 +401,7 @@ public class ProblemFeedbackController {
             case "pending": return "待处理";
             case "processing": return "处理中";
             case "resolved": return "已解决";
-            case "closed": return "已关闭";
+            case "closed": return "感谢您的反馈";
             default: return status;
         }
     }

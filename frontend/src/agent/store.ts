@@ -1,12 +1,23 @@
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, ref, shallowRef, watch } from 'vue'
 import { defineStore } from 'pinia'
 import request, { getAccessToken } from '@/utils/request'
 import type { AxiosRequestConfig } from 'axios'
 import { responseOperation, sseParser, terminal } from './protocol.mjs'
+import { boundedUiFilters } from './sendRouting.mjs'
 import { currentForm, captureValues, applyAssignments, undoLast, formBusinessReceipt, getFormFields, getFormValidation, validateForm, setFormSession } from './formContext'
-import type { AgentTask, Capabilities, FillEvent, PageContext } from './types'
+import type { AgentTask, AgentUiAction, Capabilities, FillEvent, MessageAttachment, MessageAttachmentPreview, PageContext } from './types'
 
 type SilentRequestConfig = AxiosRequestConfig & { skipErrorMessage: boolean }
+type UiRequestContext = { pageContext: PageContext; epoch: number; turn: number; form?: { formId: string; instanceId: number; baseline: Record<string, unknown> } }
+type UiDelivery = UiRequestContext & { task: AgentTask }
+type UiFeedback = { parentTaskId: string; actionId: string; clientRequestId: string; pageContext: PageContext; epoch: number; turn: number }
+
+function attachmentPreview(value: any): MessageAttachmentPreview | undefined {
+  if (typeof value?.contextId !== 'string' || !Array.isArray(value.files)) return
+  const files = value.files.filter((file: any) => typeof file?.name === 'string' && file.name.length > 0).slice(0, 5)
+    .map((file: any) => ({ name: file.name, ...(Number.isFinite(file.size) && file.size >= 0 ? { size: file.size } : {}) }))
+  return files.length ? { contextId: value.contextId, files } : undefined
+}
 
 /** 非安全上下文（如 http 移动端）无 crypto.randomUUID 时的等价回退 */
 function newRequestId(): string {
@@ -39,7 +50,7 @@ export const useAgentStore = defineStore('businessAgent', () => {
   let epoch = 0
   let stream: AbortController | null = null
   let pending: Record<string, unknown> | null = null
-  interface PendingBubble { clientRequestId: string; message: string; createdAt: number; state: string; error?: string }
+  interface PendingBubble { clientRequestId: string; message: string; createdAt: number; state: string; error?: string; attachments?: MessageAttachment[] }
   const pendingMessage = ref<PendingBubble | null>(null)
   const cancellingIds = ref<string[]>([])
   const draftConflict = ref<string | null>(null)
@@ -153,10 +164,6 @@ export const useAgentStore = defineStore('businessAgent', () => {
       const response: any = await request.get('/agent/student-plan/journey')
       if (mine !== epoch || owner !== capabilities.value?.actor.ownerKey || requestId !== planRequest) return
       currentPlan.value = response.data; planStale.value = false
-      if (response.data?.autoOpen && !capabilities.value?.actor.readOnly) {
-        visible.value = true
-        void savePlanPreference(null)
-      }
     } catch (e: any) {
       if (mine !== epoch || owner !== capabilities.value?.actor.ownerKey || requestId !== planRequest) return
       planStale.value = true
@@ -226,6 +233,25 @@ export const useAgentStore = defineStore('businessAgent', () => {
     const event = { id: newRequestId(), kind, message, title, detail, link, createdAt: Date.now(), messageAt: messageAt || Date.now() }
     activityEvents.value.push(event); void saveEvent(event, kind)
   }
+  function recordImportTurn(turn: any, contextId: string) {
+    if (activityEvents.value.some(event => event.id === turn.id)) return
+    const event = { id: turn.id, kind: 'IMPORT', message: turn.message, title: '', detail: turn.answer,
+      messageAt: turn.createdAt, createdAt: turn.createdAt, importContextId: contextId,
+      importSteps: turn.steps, importActionId: turn.actionId, importPhase: turn.phase }
+    activityEvents.value.push(event); void saveEvent(event, 'IMPORT')
+  }
+  function recordTaskAttachments(task: AgentTask, value: unknown) {
+    const preview = attachmentPreview(value)
+    if (!preview || task.ownerKey !== capabilities.value?.actor.ownerKey || task.sessionId !== sessionId.value
+      || task.attachmentContextId !== preview.contextId || activityEvents.value.some(event => event.attachmentTaskId === task.id)) return
+    const event = { id: task.id, kind: 'IMPORT', attachmentTaskId: task.id, attachmentContextId: preview.contextId,
+      attachments: preview.files, message: '', createdAt: task.createdAt || Date.now() }
+    activityEvents.value.push(event); void saveEvent(event, 'IMPORT')
+  }
+  function attachmentsForTask(id: string): MessageAttachment[] {
+    const event = activityEvents.value.find(item => item.attachmentTaskId === id)
+    return attachmentPreview({ contextId: event?.attachmentContextId, files: event?.attachments })?.files || []
+  }
   watch([() => capabilities.value?.actor.ownerKey, sessionId], ([owner, id]) => setFormSession(`${owner || ''}:${id || 'new'}`), { flush: 'sync', immediate: true })
   watch(formBusinessReceipt, receipt => {
     if (!receipt) return
@@ -238,6 +264,140 @@ export const useAgentStore = defineStore('businessAgent', () => {
     }
   })
   const formFillEnabled = computed(() => Boolean(capabilities.value?.capabilities?.form_fill))
+  const uiActionQueue = shallowRef<UiDelivery[]>([])
+  const uiRequestContexts = new Map<string, UiRequestContext>()
+  const uiTaskContexts = new Map<string, UiRequestContext>()
+  const deliveredUiTasks = new Set<string>()
+  let uiTurn = 0
+  const uiFeedbackRequests = new Map<string, UiFeedback>()
+  const pendingUiFeedback = shallowRef<UiFeedback | null>(null)
+  let uiFeedbackController: AbortController | null = null
+  function takeUiActions() { const item = uiActionQueue.value[0]; uiActionQueue.value = uiActionQueue.value.slice(1); return item }
+  function isUiActionCurrent(sent: UiDelivery) {
+    return sent.epoch === epoch && sent.turn === uiTurn && sent.task.ownerKey === capabilities.value?.actor.ownerKey && sent.task.sessionId === sessionId.value
+      && tasks.value.find(task => task.id === sent.task.id)?.status === 'SUCCEEDED'
+  }
+  function captureUiRequest(id: string, context: PageContext) {
+    const form = currentForm.value
+    uiRequestContexts.set(id, { pageContext: JSON.parse(JSON.stringify(context)), epoch, turn: uiTurn,
+      ...(form ? { form: { formId: form.formId, instanceId: form.instanceId, baseline: captureValues(form.formId) } } : {}) })
+  }
+  function bindUiRequest(task: AgentTask, requestId: string) {
+    const sent = uiRequestContexts.get(requestId)
+    if (sent && sent.epoch === epoch) { uiTaskContexts.set(task.id, sent); uiRequestContexts.delete(requestId) }
+  }
+  function advanceUiRevision(parentRevision: number) {
+    if (Number.isFinite(parentRevision)) revision.value = Math.max(revision.value, parentRevision) + 1
+  }
+  async function cancelUiFeedback(feedback: UiFeedback) {
+    if (feedback.epoch !== epoch) return
+    try {
+      const found: any = await request.get(`/agent/requests/${feedback.clientRequestId}`)
+      if (feedback.epoch !== epoch) return
+      const task: AgentTask = found.data?.task
+      if (found.data?.status === 'FOUND' && task?.parentTaskId === feedback.parentTaskId
+        && task.ownerKey === capabilities.value?.actor.ownerKey && task.sessionId === sessionId.value && !terminal(task.status)) {
+        const stopped: any = await request.post(`/agent/tasks/${task.id}/cancel`)
+        if (feedback.epoch === epoch) accept(stopped.data)
+      }
+    } catch { /* Cancellation does not retry or restart the continuation. */ }
+  }
+  async function continueUiTask(parentTaskId: string, actionId: string, context: PageContext, signal?: AbortSignal): Promise<boolean> {
+    const parent = tasks.value.find(task => task.id === parentTaskId), sent = uiTaskContexts.get(parentTaskId)
+    if (!parent || !sent || !isUiActionCurrent({ ...sent, task: parent }) || tasks.value[tasks.value.length - 1]?.id !== parentTaskId
+      || sending.value || !capabilities.value?.enabled || capabilities.value.actor.readOnly || signal?.aborted) return false
+    const action = parent.uiActions?.find(item => item.id === actionId)
+    if (action?.type !== 'NAVIGATE' || action.continue !== true) return false
+    if (context.revision <= parent.pageContext.revision) { error.value = '页面尚未完成挂载，请稍后重试。'; return false }
+    let cursor = parent, depth = 0
+    while (cursor.parentTaskId && depth < 3) { depth++; cursor = tasks.value.find(task => task.id === cursor.parentTaskId) || { ...cursor, parentTaskId: undefined } }
+    if (depth >= 3) { error.value = '页面操作已达到续接上限，请核对当前页面后重新发送。'; return false }
+    const key = `${parentTaskId}:${actionId}`, existing = uiFeedbackRequests.get(key)
+    const feedback: UiFeedback = existing || { parentTaskId, actionId, clientRequestId: newRequestId(), pageContext: JSON.parse(JSON.stringify(context)), epoch, turn: uiTurn }
+    if (feedback.epoch !== epoch || feedback.turn !== uiTurn || feedback.pageContext.route !== context.route || feedback.pageContext.revision !== context.revision
+      || JSON.stringify(feedback.pageContext.filters.uiForm) !== JSON.stringify(context.filters.uiForm)) {
+      pendingUiFeedback.value = null; error.value = '页面或表单已变化，请重新发送任务。'; return false
+    }
+    uiFeedbackRequests.set(key, feedback); pendingUiFeedback.value = feedback
+    if (!uiRequestContexts.has(feedback.clientRequestId)) captureUiRequest(feedback.clientRequestId, feedback.pageContext)
+    const controller = new AbortController(), abort = () => controller.abort()
+    uiFeedbackController = controller; signal?.addEventListener('abort', abort, { once: true })
+    sending.value = true; error.value = ''
+    try {
+      const response: any = await request.post(`/agent/tasks/${parentTaskId}/ui-feedback`, {
+        clientRequestId: feedback.clientRequestId, actionId, pageContext: feedback.pageContext
+      }, { signal: controller.signal })
+      if (controller.signal.aborted || feedback.epoch !== epoch || feedback.turn !== uiTurn || tasks.value[tasks.value.length - 1]?.id !== parentTaskId
+        || parent.ownerKey !== capabilities.value?.actor.ownerKey || parent.sessionId !== sessionId.value || !capabilities.value?.enabled || capabilities.value.actor.readOnly) {
+        void cancelUiFeedback(feedback); return false
+      }
+      const task: AgentTask = response.data
+      if (task.parentTaskId !== parentTaskId || task.responseKind !== 'UI_CONTINUATION' || task.ownerKey !== parent.ownerKey || task.sessionId !== parent.sessionId) throw new Error('页面续接回执无效，请核对后重试。')
+      bindUiRequest(task, feedback.clientRequestId); pendingUiFeedback.value = null
+      accept(task); void listen(task.id, epoch); return true
+    } catch (e: any) {
+      if (controller.signal.aborted) { pendingUiFeedback.value = null; void cancelUiFeedback(feedback); return false }
+      if (feedback.epoch !== epoch || feedback.turn !== uiTurn) return false
+      error.value = formatError(e); return false
+    } finally {
+      signal?.removeEventListener('abort', abort)
+      if (uiFeedbackController === controller) uiFeedbackController = null
+      if (feedback.epoch === epoch) sending.value = false
+    }
+  }
+  function acceptUnifiedPreview(task: AgentTask, action: AgentUiAction) {
+    if (task.status !== 'SUCCEEDED' || task.ownerKey !== capabilities.value?.actor.ownerKey || task.sessionId !== sessionId.value || !capabilities.value?.enabled || capabilities.value.actor.readOnly) return false
+    if (action.type !== 'AUTO_TASK_PREVIEW' && action.type !== 'CAPABILITIES_PREVIEW') return false
+    const data = action.preview
+    if (!data || typeof data !== 'object' || Array.isArray(data)) return false
+    if (action.type === 'AUTO_TASK_PREVIEW') {
+      if (!isTeacherRole.value || !autoTaskEnabled.value) return false
+      autoFlow.value = { ...autoFlow.value, sourceTaskId: task.id, message: task.message, working: false, created: null, error: '', startedAt: task.createdAt || Date.now() }
+      updateAutoPreview(data)
+    } else {
+      if (!isAdminRole.value) return false
+      const questions = Array.isArray(data.questions) ? data.questions.filter(item => typeof item === 'string') : []
+      capsFlow.value = { phase: questions.length ? 'need_input' : 'need_confirm', sourceTaskId: task.id, message: task.message, preview: data, questions, saved: null, error: '', working: false }
+    }
+    return true
+  }
+  function applyUiFormAction(task: AgentTask, action: AgentUiAction, sent: UiRequestContext) {
+    if (task.status !== 'SUCCEEDED' || action.type !== 'FORM_FILL' || sent.epoch !== epoch || task.ownerKey !== capabilities.value?.actor.ownerKey || task.sessionId !== sessionId.value
+      || !capabilities.value?.enabled || capabilities.value.actor.readOnly || !formFillEnabled.value) return false
+    const form = currentForm.value
+    if (!form || !sent.form || action.formId !== sent.form.formId || action.instanceId !== sent.form.instanceId
+      || form.formId !== action.formId || form.instanceId !== action.instanceId || !Array.isArray(action.assignments)) return false
+    const result = applyAssignments(form.formId, action.assignments, sent.form.baseline, form.instanceId, task.message)
+    if (!result) return false
+    const event: FillEvent = { id: action.id, kind: 'fill', sourceTaskId: task.id, sessionId: task.sessionId, formId: form.formId, formTitle: form.title,
+      message: task.message, intent: 'form_fill', assignments: result.applied, skippedFields: [...(action.skippedFields || []), ...result.skipped],
+      questions: action.questions || [], applied: result.applied.length > 0, createdAt: task.createdAt || Date.now(), completedAt: Date.now(),
+      expectedInstanceId: form.instanceId, activeInstanceId: form.instanceId, decision: 'APPLY', businessStatus: 'filled',
+      fillBatchId: result.fillBatchId, beforeValues: result.beforeValues, afterValues: result.afterValues,
+      ...getFormValidation() }
+    if (!event.applied) event.error = '本次未填写字段，已保留当前值，请核对提示。'
+    fillEvents.value.push(event); void saveEvent(event, 'FILL')
+    if (event.applied) void validateForm().then(summary => {
+      if (sent.epoch !== epoch || form.instanceId !== currentForm.value?.instanceId) return
+      Object.assign(event, summary); void saveEvent(event, 'FILL')
+    }).catch(() => {})
+    return true
+  }
+  const attachmentImportEnabled = computed(() => capabilities.value?.attachmentImport === true)
+  const pendingWorkflow = computed(() => {
+    const latest = tasks.value[tasks.value.length - 1]
+    if (capabilities.value?.resume !== true || !latest?.runtime?.workflowId
+      || latest.ownerKey !== capabilities.value.actor.ownerKey || latest.sessionId !== sessionId.value) return null
+    if (latest.status === 'WAITING_INPUT') return latest
+    if (latest.status !== 'SUCCEEDED') return null
+    const question: any = latest.runtime.pendingQuestion
+    if (!question?.id || !Number.isInteger(question.revision) || !question.workflowId) return null
+    return [...tasks.value].reverse().find(item => {
+      const previous: any = item.runtime?.pendingQuestion
+      return item.status === 'WAITING_INPUT' && item.ownerKey === latest.ownerKey && item.sessionId === latest.sessionId
+        && previous?.id === question.id && previous.revision === question.revision && previous.workflowId === question.workflowId
+    }) || null
+  })
   watch([formFillEnabled, () => capabilities.value?.enabled, () => capabilities.value?.actor.readOnly, () => capabilities.value?.actor.ownerKey, () => currentForm.value?.instanceId], (next, previous) => {
     if (filling.value && (!next[0] || !next[1] || next[2] || next[3] !== previous[3] || next[4] !== previous[4])) cancelFill()
   }, { flush: 'sync' })
@@ -354,6 +514,7 @@ export const useAgentStore = defineStore('businessAgent', () => {
   let restoreAutoInFlight = false
   const autoFlow = ref({
     phase: 'idle' as 'idle' | 'previewing' | 'need_input' | 'need_confirm' | 'creating' | 'created' | 'error',
+    sourceTaskId: null as string | null,
     message: '', questions: [] as string[], draft: null as any, created: null as any, runLog: null as any, error: '', working: false,
     taskId: undefined as number | undefined,
     startedAt: 0 as number
@@ -383,7 +544,7 @@ export const useAgentStore = defineStore('businessAgent', () => {
   const autoManageSignal = ref(0)
   function resetAutoFlow() {
     ++flowPreviewEpoch; flowPreviewController?.abort(); flowPreviewController = null
-    autoFlow.value = { phase: 'idle', message: '', questions: [], draft: null, created: null, runLog: null, error: '', working: false, taskId: undefined, startedAt: 0 }
+    autoFlow.value = { phase: 'idle', sourceTaskId: null, message: '', questions: [], draft: null, created: null, runLog: null, error: '', working: false, taskId: undefined, startedAt: 0 }
   }
   function prepareAutoEdit(task: any) {
     resetAutoFlow()
@@ -409,29 +570,9 @@ export const useAgentStore = defineStore('businessAgent', () => {
     ++autoManageSignal.value; resetAutoFlow()
   }
   async function previewAutoFlow(message: string): Promise<boolean> {
-    const text = message.trim(), previous = autoFlow.value
-    if (!text || previous.working) return false
-    if (!capabilities.value?.enabled || !isTeacherRole.value || !autoTaskEnabled.value) return false
-    const mine = epoch, generation = ++flowPreviewEpoch
-    autoFlow.value = { ...previous, phase:'previewing', message:text, error:'', working:true, created:null, startedAt:Date.now() }
-    const controller = new AbortController(); flowPreviewController = controller
-    try {
-      await ensureSession()
-      const response: any = await request.post('/teacher/auto-tasks/v2/drafts/preview', {
-        message:text, sessionId:sessionId.value, taskId:previous.taskId,
-        ...(!previous.created && previous.draft?.draftId ? {draftId:previous.draft.draftId,revision:previous.draft.revision} : {})
-      }, {signal:controller.signal})
-      if (mine !== epoch || generation !== flowPreviewEpoch || controller.signal.aborted) return false
-      updateAutoPreview(response.data || {})
-      return true
-    } catch (e: any) {
-      if (mine !== epoch || generation !== flowPreviewEpoch || controller.signal.aborted) return false
-      autoFlow.value.phase = 'error'; autoFlow.value.error = formatError(e)
-      if (e.response?.status === 403) void refreshCapabilities()
-      return false
-    } finally {
-      if (mine === epoch && generation === flowPreviewEpoch) { autoFlow.value.working = false; flowPreviewController = null }
-    }
+    if (!message.trim() || autoFlow.value.working || !capabilities.value?.enabled || !isTeacherRole.value || !autoTaskEnabled.value) return false
+    await ask(businessMessageContext(), message)
+    return !pendingMessage.value && !error.value
   }
   async function confirmCreateAutoFlow(): Promise<boolean> {
     const flow = autoFlow.value
@@ -468,39 +609,17 @@ export const useAgentStore = defineStore('businessAgent', () => {
    */
   const capsFlow = ref({
     phase: 'idle' as 'idle' | 'previewing' | 'need_input' | 'need_confirm' | 'saving' | 'done' | 'error',
+    sourceTaskId: null as string | null,
     message: '', questions: [] as string[],
     preview: null as any, saved: null as any, error: '', working: false
   })
   function resetCapsFlow() {
-    capsFlow.value = { phase: 'idle', message: '', questions: [], preview: null, saved: null, error: '', working: false }
+    capsFlow.value = { phase: 'idle', sourceTaskId: null, message: '', questions: [], preview: null, saved: null, error: '', working: false }
   }
   async function previewCapsFlow(message: string): Promise<boolean> {
-    const text = message.trim()
-    if (!text || capsFlow.value.working) return false
-    if (!capabilities.value?.enabled || !isAdminRole.value) {
-      capsFlow.value = { ...capsFlow.value, phase: 'error', error: '当前身份无权限执行能力变更，请联系管理员。' }
-      return false
-    }
-    const mine = epoch, generation = ++flowPreviewEpoch
-    const controller = new AbortController(); flowPreviewController = controller
-    capsFlow.value = { phase: 'previewing', message: text, questions: [], preview: null, saved: null, error: '', working: true }
-    try {
-      await ensureSession()
-      const response: any = await request.post('/admin/agent-capabilities/parse', { message: text }, { signal: controller.signal })
-      if (mine !== epoch || generation !== flowPreviewEpoch || controller.signal.aborted) return false
-      const data = response.data || {}
-      capsFlow.value.preview = data
-      capsFlow.value.questions = data.questions || []
-      capsFlow.value.phase = capsFlow.value.questions.length ? 'need_input' : 'need_confirm'
-      return true
-    } catch (e: any) {
-      if (mine !== epoch || generation !== flowPreviewEpoch || controller.signal.aborted) return false
-      capsFlow.value.phase = 'error'
-      capsFlow.value.error = formatError(e)
-      return false
-    } finally {
-      if (mine === epoch && generation === flowPreviewEpoch) { capsFlow.value.working = false; flowPreviewController = null }
-    }
+    if (!message.trim() || capsFlow.value.working || !capabilities.value?.enabled || !isAdminRole.value) return false
+    await ask(businessMessageContext(), message)
+    return !pendingMessage.value && !error.value
   }
   async function confirmCapsFlow(): Promise<boolean> {
     const flow = capsFlow.value
@@ -539,7 +658,27 @@ export const useAgentStore = defineStore('businessAgent', () => {
     pageOwner = owner; page.value = value
   }
   function releasePage(owner: symbol) { if (pageOwner === owner) { page.value = { route: '' }; revision.value++ } }
+  async function autoOpenStudentLogin(caps: Capabilities, mine: number) {
+    let loginStudentId: string | null = null
+    try {
+      loginStudentId = sessionStorage.getItem(studentLoginAutoOpenKey)
+      sessionStorage.removeItem(studentLoginAutoOpenKey)
+    } catch { return }
+    if (loginStudentId !== String(caps.actor.id) || !caps.enabled || caps.actor.role !== 'ROLE_STUDENT'
+      || caps.capabilities?.agent_chat === false || caps.actor.readOnly) return
+    try {
+      const response: any = await request.post('/agent/student-login-onboarding', {}, { skipErrorMessage: true } as SilentRequestConfig)
+      if (mine !== epoch || caps.actor.ownerKey !== capabilities.value?.actor.ownerKey
+        || !capabilities.value?.enabled || !chatEnabled.value || capabilities.value.actor.readOnly) return
+      if (response.data?.autoOpen === true) {
+        studentLoginAutoOpenJourney.value = true
+        visible.value = true
+      }
+    } catch { /* 引导不可用时保留手动入口，下一次登录重试。 */ }
+  }
   function reset() {
+    uiActionQueue.value = []; uiRequestContexts.clear(); uiTaskContexts.clear(); deliveredUiTasks.clear()
+    uiTurn++; uiFeedbackController?.abort(); uiFeedbackController = null; uiFeedbackRequests.clear(); pendingUiFeedback.value = null
     if (draftSaveTimer) window.clearTimeout(draftSaveTimer)
     draftSaveTimer = 0; restoringDraft = true
     fillEpoch++; fillController?.abort(); fillController = null
@@ -563,20 +702,11 @@ export const useAgentStore = defineStore('businessAgent', () => {
         sessions.value = []; sessionsLoading.value = false; showHistory.value = false; sessionsHasMore.value = false; historyHasMore.value = false; sessionsPage = 1
         tasks.value = []; sessionId.value = null; draft.value = ''; pending = null; pendingMessage.value = null; cancellingIds.value = []; sending.value = false
         restoringDraft = false; applyDialog.value.open = false; currentPlan.value = null; planError.value = ''; planSaving.value = false
+        visible.value = false; studentLoginAutoOpenJourney.value = false
       }
       capabilities.value = caps
-      // 管理员开启总开关后，学生下一次真实登录自动展开一次侧栏。
-      // 标记由认证成功流程写入 sessionStorage，消费后刷新页面不会重复展开。
-      let shouldAutoOpenForStudentLogin = false
-      try {
-        shouldAutoOpenForStudentLogin = sessionStorage.getItem(studentLoginAutoOpenKey) === 'true'
-        if (shouldAutoOpenForStudentLogin) sessionStorage.removeItem(studentLoginAutoOpenKey)
-      } catch { /* 浏览器禁用 sessionStorage 时保持默认关闭 */ }
-      if (shouldAutoOpenForStudentLogin && caps.enabled && caps.actor.role === 'ROLE_STUDENT'
-        && caps.capabilities?.agent_chat !== false && !caps.actor.readOnly) {
-        visible.value = true
-        studentLoginAutoOpenJourney.value = true
-      }
+      // 真实登录标记只消费一次；本轮总开关开启后的首次展示由服务端按学生账号领取。
+      void autoOpenStudentLogin(caps, mine)
       void refreshPlan()
       sessionId.value = sessionStorage.getItem(storageKey())
       cancellingIds.value = []
@@ -610,7 +740,18 @@ export const useAgentStore = defineStore('businessAgent', () => {
     if (isNew) tasks.value.push(task)
     else if (task.version > tasks.value[index].version) tasks.value[index] = task
     else return
+    const sent = uiTaskContexts.get(task.id)
+    if (sent?.epoch === epoch && sent.turn === uiTurn && task.status === 'SUCCEEDED' && Array.isArray(task.uiActions) && task.uiActions.length && !deliveredUiTasks.has(task.id)) {
+      deliveredUiTasks.add(task.id); uiActionQueue.value = [...uiActionQueue.value, { ...sent, task }]
+    }
     if (terminal(task.status)) cancellingIds.value = cancellingIds.value.filter(id => id !== task.id)
+    if (task.importReceipt?.actionId) {
+      const receiptKey = `deepintern.agent.import-receipt:${task.ownerKey}:${task.importReceipt.actionId}`
+      if (!sessionStorage.getItem(receiptKey)) {
+        sessionStorage.setItem(receiptKey, 'shown')
+        window.dispatchEvent(new CustomEvent('smart-import-completed', { detail: task.importReceipt }))
+      }
+    }
     if (task.status === 'SUCCEEDED' && !autoOpenedReminders.has(task.id) && !reminderDialog.value.open) {
       const draftCard = (task.cards || []).find((card: any) => card.tool === 'teacher_reminder_draft' && card.status === 'OK')
       const student = draftCard?.items?.find((item: any) => item.id)
@@ -664,7 +805,7 @@ export const useAgentStore = defineStore('businessAgent', () => {
     }
     if (mine === epoch) error.value = '连接已断开，任务可能仍在执行。点击“恢复连接”查询同一任务。'
   }
-  async function ask(context: PageContext, message?: string) {
+  async function ask(context: PageContext, message?: string, files?: MessageAttachmentPreview) {
     if (busy.value || !(message ?? draft.value).trim() || !capabilities.value?.enabled) return
     if (!chatEnabled.value) { error.value = '当前身份未开通对话问答能力，请联系管理员。'; return }
     const text = (message ?? draft.value).trim().slice(0, 4000)
@@ -673,8 +814,11 @@ export const useAgentStore = defineStore('businessAgent', () => {
     }
     const sameAsPending = pending != null && (pending as any)?.message === text && typeof (pending as any)?.clientRequestId === 'string'
     const clientRequestId = sameAsPending ? (pending as any).clientRequestId as string : newRequestId()
-    pending = { sessionId: sessionId.value, clientRequestId, message: text, pageContext: JSON.parse(JSON.stringify(context)) }
-    pendingMessage.value = { clientRequestId, message: text, createdAt: Date.now(), state: 'sending' }
+    if (!sameAsPending) { uiTurn++; pendingUiFeedback.value = null }
+    if (!uiRequestContexts.has(clientRequestId)) captureUiRequest(clientRequestId, context)
+    const preview = attachmentPreview(files || (sameAsPending ? pending?.attachmentPreview : undefined))
+    pending = { sessionId: sessionId.value, clientRequestId, message: text, pageContext: JSON.parse(JSON.stringify(context)), ...(preview ? { attachmentPreview: preview } : {}) }
+    pendingMessage.value = { clientRequestId, message: text, createdAt: Date.now(), state: 'sending', attachments: preview?.files }
     if (message === undefined || draft.value === text) draft.value = ''
     persistPending()
     await submitPending()
@@ -692,18 +836,21 @@ export const useAgentStore = defineStore('businessAgent', () => {
       const saved = JSON.parse(raw)
       if (saved.sessionId !== sessionId.value && saved.sessionId) return
       pending = saved
-      pendingMessage.value = { clientRequestId: saved.clientRequestId, message: saved.message, createdAt: Date.now(), state: 'failed', error: '上次发送结果待核验，请点击重试核对同一请求。' }
+      pendingMessage.value = { clientRequestId: saved.clientRequestId, message: saved.message, createdAt: Date.now(), state: 'failed', attachments: attachmentPreview(saved.attachmentPreview)?.files, error: '上次发送结果待核验，请点击重试核对同一请求。' }
     } catch { /* invalid local record */ }
   }
   async function submitPending() {
     if (!pending) return
     const mine = epoch; sending.value = true; error.value = ''
     try {
-      const response: any = await request.post('/agent/tasks', pending)
+      const { attachmentPreview: files, ...taskRequest } = pending
+      const response: any = await request.post('/agent/tasks', taskRequest)
       if (mine !== epoch) return
       const task: AgentTask = response.data
       const oldDraftKey = draftKey()
       sessionId.value = task.sessionId; sessionStorage.setItem(storageKey(), task.sessionId)
+      recordTaskAttachments(task, files)
+      bindUiRequest(task, String(taskRequest.clientRequestId))
       accept(task); persistDraft(); persistEvents(); pending = null; pendingMessage.value = null; persistPending()
       if (oldDraftKey !== draftKey()) { try { localStorage.removeItem(oldDraftKey) } catch {} }
       void listen(task.id, mine)
@@ -713,7 +860,7 @@ export const useAgentStore = defineStore('businessAgent', () => {
       if (mine !== epoch) return
       error.value = formatError(e)
       if (pending?.clientRequestId && (pending as any)?.message) {
-        pendingMessage.value = { clientRequestId: String((pending as any).clientRequestId), message: String((pending as any).message), createdAt: Date.now(), state: 'failed', error: formatError(e) }
+        pendingMessage.value = { clientRequestId: String((pending as any).clientRequestId), message: String((pending as any).message), createdAt: Date.now(), state: 'failed', attachments: attachmentPreview(pending.attachmentPreview)?.files, error: formatError(e) }
       }
       if (e.response?.status === 403) void refreshCapabilities()
     }
@@ -728,6 +875,8 @@ export const useAgentStore = defineStore('businessAgent', () => {
         if (response.data?.status === 'FOUND' && response.data.task) {
           const task = response.data.task
           sessionId.value = task.sessionId; sessionStorage.setItem(storageKey(), task.sessionId)
+          recordTaskAttachments(task, pending?.attachmentPreview)
+          bindUiRequest(task, String(pending.clientRequestId))
           accept(task); pending = null; pendingMessage.value = null; persistPending()
           if (!terminal(task.status)) void listen(task.id)
           return
@@ -757,7 +906,12 @@ export const useAgentStore = defineStore('businessAgent', () => {
     else if (pending) await submitPending()
     else await initialize()
   }
-  async function cancel() {
+  async function cancel(taskId?: string) {
+    if (pendingUiFeedback.value && (!taskId || taskId === pendingUiFeedback.value.parentTaskId)) {
+      const feedback = pendingUiFeedback.value
+      uiTurn++; uiFeedbackController?.abort(); pendingUiFeedback.value = null
+      void cancelUiFeedback(feedback); return
+    }
     if (flowPreviewController) {
       flowPreviewEpoch++; flowPreviewController.abort(); flowPreviewController = null
       for (const flow of [autoFlow.value, capsFlow.value]) {
@@ -767,16 +921,28 @@ export const useAgentStore = defineStore('businessAgent', () => {
     }
     if (filling.value) { cancelFill(); return }
     if (sending.value && !tasks.value.some(task => !terminal(task.status))) { cancelAfterSend = true; return }
-    const task = tasks.value.find(task => !terminal(task.status)); if (!task) return
+    const task = taskId ? tasks.value.find(item => item.id === taskId) : tasks.value.find(task => !terminal(task.status)) || pendingWorkflow.value
+    if (!task || (terminal(task.status) && task.id !== pendingWorkflow.value?.id)) return
+    uiTurn++; pendingUiFeedback.value = null
+    const mine = epoch
     if (!cancellingIds.value.includes(task.id)) cancellingIds.value.push(task.id)
     try {
       const response: any = await request.post(`/agent/tasks/${task.id}/cancel`)
+      if (mine !== epoch) return
       accept(response.data)
       const current = tasks.value.find(item => item.id === task.id)
       if (current && !terminal(current.status) && response.data?.status === 'CANCELLING') current.status = 'CANCELLING'
       if (current && terminal(current.status)) cancellingIds.value = cancellingIds.value.filter(id => id !== task.id)
+      if (current?.status === 'CANCELLED') {
+        const cancelled: any = task.runtime?.pendingQuestion
+        const latest = tasks.value[tasks.value.length - 1]
+        const pending: any = latest?.runtime?.pendingQuestion
+        if (cancelled?.id && pending?.id === cancelled.id && pending.revision === cancelled.revision
+          && pending.workflowId === cancelled.workflowId && latest.ownerKey === task.ownerKey && latest.sessionId === task.sessionId) delete latest.runtime!.pendingQuestion
+      }
     }
     catch (e: any) {
+      if (mine !== epoch) return
       cancellingIds.value = cancellingIds.value.filter(id => id !== task.id)
       error.value = formatError(e)
     }
@@ -822,10 +988,13 @@ export const useAgentStore = defineStore('businessAgent', () => {
       const operation = message === undefined ? responseOperation(orig) : 'EDIT'
       const retryKey = `${id}:${operation}:${text}`
       const clientRequestId = resendRequests.get(retryKey) || newRequestId()
+      if (!resendRequests.has(retryKey)) { uiTurn++; pendingUiFeedback.value = null }
       resendRequests.set(retryKey, clientRequestId)
+      if (!uiRequestContexts.has(clientRequestId)) captureUiRequest(clientRequestId, orig.pageContext)
       const response: any = await request.post(`/agent/tasks/${id}/resend`, { clientRequestId, message: text, operation })
       if (mine !== epoch) return false
       const task: AgentTask = response.data
+      bindUiRequest(task, clientRequestId)
       accept(task)
       resendRequests.delete(retryKey)
       void listen(task.id, mine)
@@ -838,7 +1007,7 @@ export const useAgentStore = defineStore('businessAgent', () => {
     } finally { if (mine === epoch) sending.value = false }
   }
   /** 会话历史：只列本人会话；归档只改展示，删除不级联业务记录或审计。 */
-  interface SessionSummary { id: string; title: string; updatedAt: number; archived: boolean; taskCount: number; hasRunningTask: boolean }
+  interface SessionSummary { id: string; title: string; updatedAt: number; archived: boolean; taskCount: number; hasRunningTask: boolean; attachmentContextId?: string | null }
   const sessions = ref<SessionSummary[]>([])
   const sessionsLoading = ref(false)
   const showHistory = ref(false)
@@ -954,81 +1123,17 @@ export const useAgentStore = defineStore('businessAgent', () => {
   function cancelFill() {
     fillEpoch++; fillController?.abort(); fillController = null; filling.value = false
   }
-  async function fillForm(message: string): Promise<boolean> {
+  function businessMessageContext(): PageContext {
     const form = currentForm.value
-    if (!form || !formFillEnabled.value || !capabilities.value?.enabled || capabilities.value.actor.readOnly) return false
-    if (filling.value) return true
-    const mine = epoch, generation = ++fillEpoch, owner = capabilities.value.actor.ownerKey
-    const controller = new AbortController(); fillController = controller
-    filling.value = true; error.value = ''
-    const event: FillEvent = {
-      id: newRequestId(), kind: 'fill', formId: form.formId, formTitle: form.title,
-      sessionId: sessionId.value || undefined, message, intent: 'form_fill', assignments: [], questions: [], skippedFields: [],
-      applied: false, createdAt: Date.now(), expectedInstanceId: form.instanceId
-    }
-    const valid = () => mine === epoch && generation === fillEpoch && !controller.signal.aborted && owner === capabilities.value?.actor.ownerKey && capabilities.value?.enabled && formFillEnabled.value && !capabilities.value.actor.readOnly && form.instanceId === currentForm.value?.instanceId
-    const retain = () => {
-      if (mine === epoch && owner === capabilities.value?.actor.ownerKey) {
-        const fields = getFormFields(form)
-        event.skippedFields = event.skippedFields.map(item => ({ ...item, label: fields.find(field => field.prop === item.prop)?.label || '该字段' }))
-        event.completedAt = Date.now()
-        fillEvents.value.push(event); void saveEvent(event, 'FILL')
-      }
-    }
-    try {
-      await ensureSession()
-      event.sessionId = sessionId.value || undefined
-      if (!valid()) { event.decision = 'CANCEL'; event.error = '本次解析已停止，未修改表单。'; retain(); return true }
-      const baseline = captureValues(form.formId), instanceId = form.instanceId
-      const response: any = await request.post('/agent/forms/fill-intent', {
-        formId: form.formId, formTitle: form.title, fields: getFormFields(form), message
-      }, { signal: controller.signal })
-      if (!valid()) {
-        event.decision = 'CANCEL'; event.error = '本次解析已停止，未修改表单。'; retain(); return true
-      }
-      const data = response.data || {}
-      event.intent = data.intent || 'chat'
-      if (event.intent === 'chat') return false
-      event.assignments = data.assignments || []; event.questions = data.questions || []; event.skippedFields = data.skippedFields || []
-      if (!event.assignments.length) {
-        const validation = getFormValidation()
-        Object.assign(event, validation)
-        retain(); return true
-      }
-      const result = applyAssignments(form.formId, event.assignments, baseline, instanceId, message)
-      if (result === null) {
-        event.assignments = []; event.activeInstanceId = currentForm.value?.instanceId ?? null
-        event.decision = 'REJECT'; event.error = '表单已关闭或切换，本次内容未填写。请打开目标表单后再试。'
-      } else {
-        event.skippedFields = [...event.skippedFields, ...result.skipped]; event.assignments = result.applied
-        event.activeInstanceId = currentForm.value?.instanceId ?? null; event.decision = 'APPLY'
-        Object.assign(event, { fillBatchId: result.fillBatchId, beforeValues: result.beforeValues, afterValues: result.afterValues,
-          missingFields: result.missingFields, validationErrors: result.validationErrors, businessStatus: 'filled' })
-        event.applied = result.applied.length > 0
-        if (!event.applied) event.error = '本次未填写字段，已保留当前值，请核对提示。'
-      }
-      retain()
-      if (event.applied) void validateForm().then(summary => {
-        if (!valid()) return
-        const retained = fillEvents.value.find(item => item.id === event.id)
-        if (retained) { Object.assign(retained, summary); void saveEvent(retained, 'FILL') }
-      }).catch(() => {
-        if (!valid()) return
-        const retained = fillEvents.value.find(item => item.id === event.id)
-        if (retained) { retained.validationErrors = [...(retained.validationErrors || []), '原表单校验暂未完成，请在原页面核对。']; void saveEvent(retained, 'FILL') }
-      })
-      return true
-    } catch (e: any) {
-      event.decision = controller.signal.aborted || generation !== fillEpoch ? 'CANCEL' : 'REJECT'
-      event.error = event.decision === 'CANCEL' ? '本次解析已停止，未修改表单。' : formatError(e)
-      retain()
-      if (e.response?.status === 403) void refreshCapabilities()
-      return true
-    } finally {
-      if (mine === epoch && generation === fillEpoch) { filling.value = false; fillController = null }
-    }
+    return { pageKey: page.value.pageKey || page.value.route, route: page.value.route, title: page.value.title || '当前业务页面', view: page.value.view || 'page',
+      object: page.value.object || null, selectedObjects: page.value.selectedObjects || [], revision: revision.value,
+      filters: boundedUiFilters(page.value.filters || {}, [], form && formFillEnabled.value ? { formId: form.formId, formTitle: form.title, instanceId: form.instanceId, fields: getFormFields(form) } : null) }
   }
-
+  async function fillForm(message: string): Promise<boolean> {
+    if (!currentForm.value || !formFillEnabled.value || !capabilities.value?.enabled || capabilities.value.actor.readOnly) return false
+    await ask(businessMessageContext(), message)
+    return !pendingMessage.value && !error.value
+  }
   function undoFill(fillBatchId?: string): boolean {
     const latest = fillBatchId ? fillEvents.value.find(item => item.fillBatchId === fillBatchId) : [...fillEvents.value].reverse().find(item => item.applied && !item.undone && item.expectedInstanceId === currentForm.value?.instanceId && !['saved', 'submitted', 'published'].includes(item.businessStatus || ''))
     if (!latest || latest.expectedInstanceId !== currentForm.value?.instanceId || latest.formId !== currentForm.value?.formId) {
@@ -1132,7 +1237,7 @@ export const useAgentStore = defineStore('businessAgent', () => {
     } catch { dialog.error = '暂时无法核验发送结果，请在学生管理页核对后再决定是否重试。' }
     finally { dialog.loading = false }
   }
-  return { recordActivity, ensureSession, visible, studentLoginAutoOpenJourney, capabilities, tasks, fillEvents, activityEvents, currentPlan, refreshPlan, planStale, planSaving, planError, savePlanPreference, sessions, sessionId, sessionsLoading, sessionsHasMore, historyHasMore, showHistory, draft, draftConflict, persistent, pendingMessage, cancellingIds, error, loading, sending, filling, busy, operationWorking, page, revision,
+  return { uiActionQueue, takeUiActions, isUiActionCurrent, advanceUiRevision, continueUiTask, pendingUiFeedback, acceptUnifiedPreview, applyUiFormAction, attachmentImportEnabled, pendingWorkflow, recordActivity, recordImportTurn, attachmentsForTask, ensureSession, visible, studentLoginAutoOpenJourney, capabilities, tasks, fillEvents, activityEvents, currentPlan, refreshPlan, planStale, planSaving, planError, savePlanPreference, sessions, sessionId, sessionsLoading, sessionsHasMore, historyHasMore, showHistory, draft, draftConflict, persistent, pendingMessage, cancellingIds, error, loading, sending, filling, busy, operationWorking, page, revision,
     formFillEnabled, voiceEnabled, chatEnabled, planEnabled, applyCapability, autoTaskEnabled, isTeacherRole, isAdminRole,
     autoFlow, autoTaskErrors, noteAutoTaskError, clearAutoTaskError, capsFlow, applyDialog, reminderDialog, currentForm,
     setPage, releasePage, initialize, refreshCapabilities, loadSessions, renameSession, archiveSession, deleteSession, switchSession, ask, retryPending, editPending, dismissPending, reconnect, cancel, isCancelling, stopAndSend, waitForIdle, resendTask, persistDraft, schedulePersistDraft, flushDraft, restoreDraft, resolveDraftConflict, clearDraftCache, loadOlderTasks, newSession, openWithPrompt, fillForm, cancelFill, undoFill,

@@ -1,5 +1,7 @@
 package com.internship.controller;
 
+import com.internship.utils.ExcelExports;
+
 import com.internship.anno.Log;
 import com.internship.entity.Result;
 import com.internship.entity.Class;
@@ -153,103 +155,15 @@ public class ClassController {
     @Log(operationType = "EXPORT", module = "CLASS_MANAGEMENT", description = "导出班级数据", riskLevel = "MEDIUM", critical = true)
     @GetMapping("/export")
     @PreAuthorize("hasAuthority('class:view')")
-    public void exportExcel(HttpServletResponse response) {
-        log.info("导出班级 Excel 数据");
-        try {
-            response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-            response.setCharacterEncoding("UTF-8");
-            String fileName = URLEncoder.encode("班级数据" + System.currentTimeMillis(), StandardCharsets.UTF_8) + ".xlsx";
-            response.setHeader("Content-disposition", "attachment;filename=" + fileName);
-
-            List<Class> classes = classService.getAllClassData();
-
-            Workbook workbook = new XSSFWorkbook();
-            Sheet sheet = workbook.createSheet("班级数据");
-
-            Row headerRow = sheet.createRow(0);
-            String[] headers = {"班级名称", "专业 ID", "年级", "学生数量", "负责教师"};
-            CellStyle headerStyle = workbook.createCellStyle();
-            headerStyle.setFillForegroundColor(IndexedColors.GREEN.getIndex());
-            headerStyle.setFillPattern(FillPatternType.SOLID_FOREGROUND);
-            headerStyle.setAlignment(HorizontalAlignment.CENTER);
-            headerStyle.setBorderTop(BorderStyle.THIN);
-            headerStyle.setBorderBottom(BorderStyle.THIN);
-            headerStyle.setBorderLeft(BorderStyle.THIN);
-            headerStyle.setBorderRight(BorderStyle.THIN);
-
-            Font headerFont = workbook.createFont();
-            headerFont.setBold(true);
-            headerFont.setColor(IndexedColors.WHITE.getIndex());
-            headerStyle.setFont(headerFont);
-
-            for (int i = 0; i < headers.length; i++) {
-                Cell cell = headerRow.createCell(i);
-                cell.setCellValue(headers[i]);
-                cell.setCellStyle(headerStyle);
-                sheet.autoSizeColumn(i);
-            }
-
-            CellStyle dataStyle = workbook.createCellStyle();
-            dataStyle.setAlignment(HorizontalAlignment.CENTER);
-            dataStyle.setBorderTop(BorderStyle.THIN);
-            dataStyle.setBorderBottom(BorderStyle.THIN);
-            dataStyle.setBorderLeft(BorderStyle.THIN);
-            dataStyle.setBorderRight(BorderStyle.THIN);
-
-            for (int i = 0; i < classes.size(); i++) {
-                Class classEntity = classes.get(i);
-                Row dataRow = sheet.createRow(i + 1);
-
-                Cell nameCell = dataRow.createCell(0);
-                nameCell.setCellValue(classEntity.getName());
-                nameCell.setCellStyle(dataStyle);
-
-                Cell majorIdCell = dataRow.createCell(1);
-                if (classEntity.getMajorId() != null) {
-                    majorIdCell.setCellValue(classEntity.getMajorId());
-                }
-                majorIdCell.setCellStyle(dataStyle);
-
-                Cell gradeCell = dataRow.createCell(2);
-                if (classEntity.getGrade() != null) {
-                    gradeCell.setCellValue(classEntity.getGrade());
-                }
-                gradeCell.setCellStyle(dataStyle);
-
-                Cell studentCountCell = dataRow.createCell(3);
-                if (classEntity.getStudentCount() != null) {
-                    studentCountCell.setCellValue(classEntity.getStudentCount());
-                }
-                studentCountCell.setCellStyle(dataStyle);
-
-                Cell teacherCell = dataRow.createCell(4);
-                if (classEntity.getTeacherName() != null) {
-                    teacherCell.setCellValue(classEntity.getTeacherName());
-                } else {
-                    teacherCell.setCellValue("");
-                }
-                teacherCell.setCellStyle(dataStyle);
-            }
-
-            try (OutputStream outputStream = response.getOutputStream()) {
-                workbook.write(outputStream);
-                log.info("导出班级 Excel 数据成功，共导出 {} 条数据", classes.size());
-            } catch (IOException e) {
-                log.error("导出班级 Excel 数据失败（流操作异常）: {}", e.getMessage(), e);
-                throw new RuntimeException("导出班级 Excel 数据失败：" + e.getMessage());
-            } finally {
-                try {
-                    if (workbook != null) {
-                        workbook.close();
-                    }
-                } catch (IOException e) {
-                    log.error("关闭工作簿失败：{}", e.getMessage(), e);
-                }
-            }
-        } catch (Exception e) {
-            log.error("导出班级数据失败：{}", e.getMessage(), e);
-            throw new RuntimeException("导出班级数据失败：" + e.getMessage());
-        }
+    public void exportExcel(HttpServletResponse response,
+            @RequestParam(required = false) String name,
+            @RequestParam(required = false) String grade,
+            @RequestParam(required = false) Long majorId) throws IOException {
+        List<Object[]> rows = classService.getAllClassData().stream()
+                .filter(c -> ExcelExports.contains(c.getName(),name) && ExcelExports.contains(ExcelExports.text(c.getGrade()),grade)
+                        && (majorId == null || majorId.equals(c.getMajorId())))
+                .map(c -> new Object[]{c.getName(),c.getGrade(),c.getMajorName(),c.getStudentCount(),c.getTeacherName(),c.getCreateTime(),c.getUpdateTime()}).toList();
+        ExcelExports.write(response,"班级信息",new String[]{"班级名称","年级","专业","学生人数","负责教师","创建时间","更新时间"},rows);
     }
 
     // 批量删除班级

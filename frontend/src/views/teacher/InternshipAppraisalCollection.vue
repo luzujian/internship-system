@@ -195,14 +195,14 @@ import {
 
 const route = useRoute()
 const router = useRouter()
-const activeTab = ref(route.query.materialType === 'agreement' ? 'agreement' : 'appraisal')
+const activeTab = ref(route.query.materialType === 'appraisal' ? 'appraisal' : 'agreement')
 const agreementCollection = ref<InstanceType<typeof InternshipAgreementCollection> | null>(null)
-watch(() => route.query.materialType, value => { activeTab.value = value === 'agreement' ? 'agreement' : 'appraisal' })
+watch(() => route.query.materialType, value => { activeTab.value = value === 'appraisal' ? 'appraisal' : 'agreement' })
 watch(activeTab, value => {
   detailVisible.value = false
   previewVisible.value = false
   cleanupPreview()
-  void router.replace({ query: { ...route.query, materialType: value === 'agreement' ? 'agreement' : undefined } })
+  void router.replace({ query: { ...route.query, materialType: value === 'appraisal' ? 'appraisal' : undefined } })
 })
 
 const loading = ref(false)

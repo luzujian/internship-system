@@ -6,6 +6,7 @@ import com.internship.service.AgentNotificationGuardService;
 import com.internship.service.TeacherAutoTaskRunService;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
+import org.springframework.boot.test.context.TestConfiguration;
 import org.mybatis.spring.SqlSessionFactoryBean;
 import org.mybatis.spring.SqlSessionTemplate;
 import org.springframework.context.annotation.*;
@@ -25,7 +26,7 @@ import static org.mockito.Mockito.mock;
 /** Opt-in, real local MySQL tests. No DDL, no business users, no mail, no remote host. */
 @EnabledIfEnvironmentVariable(named="AGENT_LOCAL_DB_TESTS", matches="true")
 class AgentLocalPersistenceTest {
-    @Configuration @EnableTransactionManagement(proxyTargetClass=true)
+    @TestConfiguration @EnableTransactionManagement(proxyTargetClass=true)
     static class Config {
         @Bean DataSource dataSource() {
             String password=System.getenv("LOCAL_DB_PASSWORD");
@@ -260,4 +261,31 @@ class AgentLocalPersistenceTest {
         assertEquals(0,jdbc.queryForObject("SELECT COUNT(*) FROM agent_draft WHERE owner_key=? AND draft_key=?",Integer.class,owner,s.getId()));
         assertEquals(0,jdbc.queryForObject("SELECT COUNT(*) FROM agent_session_event WHERE session_id=?",Integer.class,s.getId()));
     }
+    @Test void waitingCancellationPersistsTombstoneAndNeverCancelsNewerQuestion(){
+        Session s=session();Task t=newTask(s);store.registerRequestTask(owner,UUID.randomUUID().toString(),t);t.setHarness("langgraph");
+        String questionId=UUID.randomUUID().toString();Map<String,Object> runtime=new HashMap<>(Map.of("threadId",UUID.randomUUID().toString(),"generation",3,"pendingQuestion",Map.of("id",questionId,"revision",2,"workflowId","workflow-old")));
+        t.setRuntime(runtime);t.setStatus("WAITING_INPUT");store.save(t);s=store.session(s.getId());s.setRuntime(new HashMap<>(runtime));store.save(s);
+        assertTrue(store.cancelWaiting(s,t));Session restored=store.session(s.getId());assertNull(restored.getRuntime().get("pendingQuestion"));
+        var intent=jsonTree(restored.getRuntime().get("pendingCancellation"));assertEquals(t.getId(),intent.path("runId").asText());assertEquals(questionId,intent.path("questionId").asText());assertEquals("CANCELLED",store.task(t.getId()).getStatus());
+        restored.getRuntime().put("pendingQuestion",Map.of("id",UUID.randomUUID().toString(),"revision",3));store.save(restored);
+        assertFalse(store.cancelWaiting(s,t));assertNotNull(store.session(s.getId()).getRuntime().get("pendingQuestion"));
+    }
+    @Test void delayedUiFeedbackCannotBecomeATaskAfterNewUserMessage(){
+        Session s=session();Task parent=newTask(s);parent.setStatus("SUCCEEDED");store.registerRequestTask(owner,UUID.randomUUID().toString(),parent);
+        Task newer=newTask(s);newer.setStatus("SUCCEEDED");store.registerRequestTask(owner,UUID.randomUUID().toString(),newer);
+        Task late=newTask(s);late.setParentTaskId(parent.getId());String request=UUID.randomUUID().toString();
+        assertEquals("UI_CONTINUATION_STALE",assertThrows(AgentException.class,()->store.registerRequestTask(owner,request,late)).getCode());assertNull(store.request(owner,request));assertEquals(2,store.taskCount(s.getId()));
+    }
+    @Test void sameGenerationHeartbeatKeepsCancellationUntilRuntimeAcknowledgesIt(){
+        Session s=session();Task question=newTask(s);store.registerRequestTask(owner,UUID.randomUUID().toString(),question);
+        Map<String,Object> state=new HashMap<>(Map.of("threadId",UUID.randomUUID().toString(),"generation",1,"pendingQuestion",Map.of("id",UUID.randomUUID().toString(),"revision",1,"workflowId","workflow-cancel")));
+        question.setHarness("langgraph");question.setRuntime(new HashMap<>(state));question.setStatus("WAITING_INPUT");store.save(question);s=store.session(s.getId());s.setRuntime(new HashMap<>(state));store.save(s);
+        Task active=newTask(s);active.setRuntime(new HashMap<>(state));active.getRuntime().put("generation",2);store.registerRequestTask(owner,UUID.randomUUID().toString(),active);active.setHarness("langgraph");
+        Session worker=store.session(s.getId());worker.setRuntime(new HashMap<>(active.getRuntime()));assertTrue(store.saveSessionForTask(worker,active));
+        assertTrue(store.cancelWaiting(store.session(s.getId()),question));
+        assertTrue(store.saveSessionForTask(worker,active));assertNotNull(store.session(s.getId()).getRuntime().get("pendingCancellation"));assertNull(store.session(s.getId()).getRuntime().get("pendingQuestion"));
+        worker.getRuntime().remove("pendingCancellation");active.setRuntime(new HashMap<>(worker.getRuntime()));assertTrue(store.saveSessionForTask(worker,active));assertNotNull(store.session(s.getId()).getRuntime().get("pendingCancellation"));
+        active.setReconciledCancellationRunId(question.getId());worker.getRuntime().remove("pendingCancellation");active.setRuntime(new HashMap<>(worker.getRuntime()));assertTrue(store.saveSessionForTask(worker,active));assertNull(store.session(s.getId()).getRuntime().get("pendingCancellation"));
+    }
+    private com.fasterxml.jackson.databind.JsonNode jsonTree(Object value){return new ObjectMapper().valueToTree(value);}
 }

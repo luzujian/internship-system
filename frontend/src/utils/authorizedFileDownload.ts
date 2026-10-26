@@ -44,6 +44,8 @@ export const downloadAuthorizedFile = async (url: string, fileName: string): Pro
     link.click()
     link.remove()
   } finally {
-    setTimeout(() => URL.revokeObjectURL(objectUrl), 0)
+    // WebViews may start reading the object URL after the click task completes.
+    // Keep the bytes available while the download starts, then release them.
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000)
   }
 }

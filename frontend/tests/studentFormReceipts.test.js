@@ -33,7 +33,8 @@ const onboarding = () => {
     similarCooperativeCompanies,
     // 与 Home.vue 中 ensureSelfPracticeCompanyName 的门禁语义一致：仅相近命中且未精确匹配时阻止提交
     ensureSelfPracticeCompanyName: async () => !(similarCooperativeCompanies.value.length > 0 && !matchedCooperativeCompany.value),
-    selfPracticeForm: ref({ company: '实习单位', positionName: '实习岗位', companyCity: '北京', hrManagerName: '王老师', hrManagerPhone: '13812345678', reason: '申请自主实习' }),
+    selfPracticeForm: ref({ company: '实习单位', positionName: '实习岗位', companyCity: '北京', hrManagerName: '王老师', hrManagerPhone: '13812345678', reason: '申请自主实习', otherMaterials: {} }),
+    selfPracticeOtherFileList: ref([]),
     selfPracticeAgreementFiles: ref([{ uploadId: 701, status: 'success' }]),
     selfPracticeAgreementUploader: ref({ validate: () => true, markCommitted: noop, reset: noop }),
     delayForm: ref({ reason: '备考安排' }),
@@ -208,8 +209,10 @@ test('自主实习通过后可新建申请，取消不改旧记录，提交不�
     selfPracticeApplication: ref(previous),
     selfPracticeApplicationLoading: ref(false),
     selfPracticeApplicationError: ref(''),
-    selfPracticeFileList: ref([{ name: '原申请书' }]),
-    selfPracticeAcceptanceFileList: ref([{ name: '原接收函' }]),
+    selfPracticeOtherFileList: ref([{ name: '原申请书' }]),
+    selfPracticeOtherMaterialKeys: new Map(),
+    selfPracticeOriginalMaterials: ref(previous.materials),
+    selfPracticeOriginalCompany: ref(previous.company),
     selfPracticeFields: [],
     latestStudentApplication,
     selfPracticeApplicationView: { get value() { return studentApplicationDialogMode(scope.selfPracticeApplication.value?.status) } },
@@ -221,14 +224,17 @@ test('自主实习通过后可新建申请，取消不改旧记录，提交不�
     scope[name] = handler('Home', name, scope)
   }
   const startNew = handler('Home', 'startNewSelfPracticeApplication', scope)
+  scope.selfPracticeForm.value.positionId = 99
   assert.equal(scope.selfPracticeApplicationView.value, 'result')
   startNew()
   assert.equal(scope.selfPracticeApplicationView.value, 'form')
   assert.equal(scope.selfPracticeApplication.value, null)
-  assert.ok(Object.entries(scope.selfPracticeForm.value).filter(([key]) => key !== 'agreementFileIds').every(([, value]) => value === ''))
+  assert.ok(Object.entries(scope.selfPracticeForm.value).filter(([key]) => !['agreementFileIds', 'positionId', 'otherMaterials'].includes(key)).every(([, value]) => value === ''))
+  assert.equal(scope.selfPracticeForm.value.positionId, null)
   assert.equal(scope.selfPracticeForm.value.agreementFileIds.length, 0)
-  assert.equal(scope.selfPracticeFileList.value.length, 0)
-  assert.equal(scope.selfPracticeAcceptanceFileList.value.length, 0)
+  assert.equal(scope.selfPracticeOtherFileList.value.length, 0)
+  assert.equal(Object.keys(scope.selfPracticeForm.value.otherMaterials).length, 0)
+  assert.equal(Object.keys(scope.selfPracticeOriginalMaterials.value).length, 0)
   assert.equal(registered.at(-1).formId, 'home:self-practice')
   assert.equal(registered.at(-1).getModel(), scope.selfPracticeForm.value)
   assert.equal(ctx.calls.length, 0)

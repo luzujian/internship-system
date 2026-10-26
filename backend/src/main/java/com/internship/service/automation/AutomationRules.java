@@ -173,8 +173,8 @@ public final class AutomationRules {
         }
 
         String value = n.path("value").isArray() ? n.path("value").toString().replaceAll("[\\[\\]\"]","").replace(",","、") : n.path("value").asText();
-        value = value.replace("NOT_FOUND", "未投递").replace("NO_OFFER", "无 Offer").replace("PENDING_CONFIRMATION", "待确认")
-                .replace("IN_PROGRESS", "实习中").replace("CONFIRMED", "已确定").replace("ENDED", "已结束").replace("DELAYED", "延期").replace("INTERRUPTED", "已中断").replace("true", "是").replace("false", "否");
+        value = value.replace("NOT_FOUND", "暂无有效投递").replace("NO_OFFER", "已投递未录用").replace("PENDING_CONFIRMATION", "已录用待确认")
+                .replace("IN_PROGRESS", "实习进行中").replace("CONFIRMED", "已定单位待实习").replace("ENDED", "实习已结束").replace("DELAYED", "已延期实习").replace("INTERRUPTED", "实习已中断").replace("true", "是").replace("false", "否");
         String op = switch (opName) { case "EQ" -> "为"; case "NE", "NOT_IN" -> "不为"; case "IN" -> "属于"; case "LT" -> "早于或小于"; case "LTE" -> "不晚于或不超过"; case "GT" -> "晚于或大于"; case "GTE" -> "不早于或不少于"; case "EMPTY" -> "未填写"; case "NOT_EMPTY" -> "已填写"; default -> "待完善"; };
         return label + op + value;
     }

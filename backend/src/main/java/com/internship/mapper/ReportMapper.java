@@ -80,6 +80,8 @@ public interface ReportMapper {
 
     Long countScopedInternshipStudents(@Param("studentIds") List<Long> studentIds);
 
+    Long countScopedWithoutOfferStudents(@Param("studentIds") List<Long> studentIds);
+
     Long countScopedApplications(@Param("studentIds") List<Long> studentIds);
     
     /**

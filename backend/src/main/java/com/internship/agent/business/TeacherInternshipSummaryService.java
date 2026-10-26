@@ -86,6 +86,7 @@ public class TeacherInternshipSummaryService {
             String code = status == null ? JobSearchStatus.UNKNOWN.name() : status.jobSearchStatus();
             row.put("status", code);
             row.put("statusText", status == null ? JobSearchStatus.UNKNOWN.getText() : status.jobSearchStatusText());
+            row.put("pendingApplicationTexts", status == null ? List.of() : status.pendingApplicationTexts());
             row.remove("internshipStatus");
         }
 
@@ -181,7 +182,7 @@ public class TeacherInternshipSummaryService {
     private Map<String, Object> studentItem(Map<String, Object> row) {
         Map<String, Object> item = new LinkedHashMap<>();
         for (String key : List.of("id", "title", "studentNo", "className", "major", "division",
-                "status", "statusText", "company", "position")) {
+                "status", "statusText", "pendingApplicationTexts", "company", "position")) {
             if (row.containsKey(key)) item.put(key, row.get(key));
         }
         return item;

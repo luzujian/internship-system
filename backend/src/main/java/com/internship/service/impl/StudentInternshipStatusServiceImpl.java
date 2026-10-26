@@ -55,6 +55,9 @@ public class StudentInternshipStatusServiceImpl implements StudentInternshipStat
     private JobSearchStatusService jobSearchStatusService;
 
     @Autowired
+    private com.internship.service.InternshipLifecycleService lifecycleService;
+
+    @Autowired
     public StudentInternshipStatusServiceImpl(StudentInternshipStatusMapper studentInternshipStatusMapper,
                                            PositionService positionService,
                                            StateTransitionValidator stateTransitionValidator,
@@ -230,13 +233,23 @@ public class StudentInternshipStatusServiceImpl implements StudentInternshipStat
         // 【Redis 缓存】优先从缓存获取
         StudentInternshipStatus cached = (StudentInternshipStatus) statusCache.getCacheStatus(studentId);
         if (cached != null) {
+            if (lifecycleService != null && cached.getStatus() != null
+                    && (cached.getStatus() == 2 || cached.getStatus() == 3)) {
+                StudentInternshipStatus refreshed = lifecycleService.refreshStudentLifecycle(studentId);
+                if (refreshed != null) {
+                    cached = refreshed;
+                    statusCache.cacheStatus(studentId, cached);
+                }
+            }
             log.info("命中 Redis 缓存，学生 ID: {}", studentId);
             enrichJobSearchStatus(cached);
             return cached;
         }
 
         // 缓存未命中，查数据库
-        StudentInternshipStatus status = studentInternshipStatusMapper.findByStudentId(studentId);
+        StudentInternshipStatus status = lifecycleService == null
+                ? studentInternshipStatusMapper.findByStudentId(studentId)
+                : lifecycleService.refreshStudentLifecycle(studentId);
 
         // 写入缓存
         if (status != null) {

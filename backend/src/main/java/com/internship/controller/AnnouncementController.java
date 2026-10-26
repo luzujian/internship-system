@@ -1,5 +1,7 @@
 package com.internship.controller;
 
+import com.internship.utils.ExcelExports;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.internship.anno.Log;
 import com.internship.entity.Result;
@@ -42,6 +44,9 @@ import java.util.Objects;
 @RestController
 @RequestMapping("/api/announcements")
 public class AnnouncementController {
+    @Autowired
+    private com.internship.service.MajorService exportMajors;
+
     @Autowired
     private com.internship.service.AnnouncementAttachmentPolicy attachmentPolicy;
 
@@ -1011,108 +1016,17 @@ public class AnnouncementController {
     @GetMapping("/export")
     @PreAuthorize("hasRole('ROLE_ADMIN')")
     public void exportAnnouncementData(HttpServletResponse response,
-                                      @RequestParam(required = false) String title,
-                                      @RequestParam(required = false) String status) {
-        log.info("导出公告 Excel 数据，筛选条件：标题={}, 状态={}", title, status);
-
-        try {
-            List<Announcement> announcements = announcementService.findAll(title, status);
-
-            Workbook workbook = new XSSFWorkbook();
-            Sheet sheet = workbook.createSheet("公告数据");
-
-            Row headerRow = sheet.createRow(0);
-            String[] headers = {"标题", "内容", "发布人", "发布人身份", "状态", "目标群体", "发布日期", "阅读量", "创建时间", "更新时间"};
-            CellStyle headerStyle = workbook.createCellStyle();
-            headerStyle.setFillForegroundColor(IndexedColors.GREEN.getIndex());
-            headerStyle.setFillPattern(FillPatternType.SOLID_FOREGROUND);
-            headerStyle.setAlignment(HorizontalAlignment.CENTER);
-            headerStyle.setBorderTop(BorderStyle.THIN);
-            headerStyle.setBorderBottom(BorderStyle.THIN);
-            headerStyle.setBorderLeft(BorderStyle.THIN);
-            headerStyle.setBorderRight(BorderStyle.THIN);
-
-            Font headerFont = workbook.createFont();
-            headerFont.setBold(true);
-            headerFont.setColor(IndexedColors.WHITE.getIndex());
-            headerStyle.setFont(headerFont);
-
-            for (int i = 0; i < headers.length; i++) {
-                Cell cell = headerRow.createCell(i);
-                cell.setCellValue(headers[i]);
-                cell.setCellStyle(headerStyle);
-            }
-
-            CellStyle dataStyle = workbook.createCellStyle();
-            dataStyle.setAlignment(HorizontalAlignment.LEFT);
-            dataStyle.setBorderTop(BorderStyle.THIN);
-            dataStyle.setBorderBottom(BorderStyle.THIN);
-            dataStyle.setBorderLeft(BorderStyle.THIN);
-            dataStyle.setBorderRight(BorderStyle.THIN);
-
-            for (int i = 0; i < announcements.size(); i++) {
-                Announcement announcement = announcements.get(i);
-                Row dataRow = sheet.createRow(i + 1);
-
-                dataRow.createCell(0).setCellValue(announcement.getTitle() != null ? announcement.getTitle() : "");
-                dataRow.createCell(1).setCellValue(announcement.getContent() != null ? announcement.getContent() : "");
-                dataRow.createCell(2).setCellValue(announcement.getPublisher() != null ? announcement.getPublisher() : "");
-                dataRow.createCell(3).setCellValue(convertPublisherRoleToChinese(announcement.getPublisherRole()));
-                dataRow.createCell(4).setCellValue(convertStatusToChinese(announcement.getStatus()));
-                dataRow.createCell(5).setCellValue(convertTargetTypeToChinese(announcement.getTargetType()));
-
-                if (announcement.getPublishTime() != null) {
-                    dataRow.createCell(6).setCellValue(new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(announcement.getPublishTime()));
-                } else {
-                    dataRow.createCell(6).setCellValue("");
-                }
-
-                dataRow.createCell(7).setCellValue(announcement.getReadCount() != null ? announcement.getReadCount() : 0);
-
-                if (announcement.getCreateTime() != null) {
-                    dataRow.createCell(8).setCellValue(new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(announcement.getCreateTime()));
-                } else {
-                    dataRow.createCell(8).setCellValue("");
-                }
-
-                if (announcement.getUpdateTime() != null) {
-                    dataRow.createCell(9).setCellValue(new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(announcement.getUpdateTime()));
-                } else {
-                    dataRow.createCell(9).setCellValue("");
-                }
-
-                for (int j = 0; j < headers.length; j++) {
-                    dataRow.getCell(j).setCellStyle(dataStyle);
-                    sheet.autoSizeColumn(j);
-                }
-            }
-
-            String filename = "公告数据_" + new Date().getTime() + ".xlsx";
-            String encodedFilename = URLEncoder.encode(filename, StandardCharsets.UTF_8.toString());
-            response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-            response.setHeader("Content-Disposition", "attachment; filename=\"" + encodedFilename + "\"");
-
-            workbook.write(response.getOutputStream());
-            workbook.close();
-
-            log.info("公告数据 Excel 导出成功，共导出{}条记录", announcements.size());
-        } catch (IOException e) {
-            log.error("Excel 数据导出失败", e);
-            try {
-                response.setContentType("application/json;charset=utf-8");
-                response.getWriter().write("{\"code\": 500, \"message\": \"导出失败：" + e.getMessage() + "\"}");
-            } catch (IOException ex) {
-                log.error("响应错误信息失败", ex);
-            }
-        } catch (Exception e) {
-            log.error("导出公告数据时发生异常", e);
-            try {
-                response.setContentType("application/json;charset=utf-8");
-                response.getWriter().write("{\"code\": 500, \"message\": \"导出失败：系统异常\"}");
-            } catch (IOException ex) {
-                log.error("响应错误信息失败", ex);
-            }
-        }
+            @RequestParam(required = false) String title,
+            @RequestParam(required = false) String status) throws IOException {
+        User viewer = requireAnnouncementViewer();
+        List<Announcement> announcements = announcementService.findPage(1,Integer.MAX_VALUE,title,status,null,null,
+                String.valueOf(viewer.getId()),convertRoleToType(viewer.getRole())).getRows();
+        List<com.internship.entity.Major> majors = exportMajors.findAll();
+        List<Object[]> rows = announcements.stream().map(r -> new Object[]{r.getTitle(),convertStatusToChinese(r.getStatus()),
+                r.getPublisher(),convertPublisherRoleToChinese(r.getPublisherRole()),ExcelExports.announcementTargets(r,majors),
+                r.getPublishTime(),Boolean.TRUE.equals(r.getIsRead())?"已读":"未读",r.getReadCount(),r.getContent(),
+                r.getCreateTime(),r.getUpdateTime()}).toList();
+        ExcelExports.write(response,"公告数据",new String[]{"标题","状态","发布人","发布人身份","目标群体","发布日期","是否已读","阅读量","内容","创建时间","更新时间"},rows);
     }
 
     /**

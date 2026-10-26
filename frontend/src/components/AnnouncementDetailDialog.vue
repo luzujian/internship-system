@@ -168,6 +168,7 @@ watch(() => props.modelValue, visible => {
   border-radius: 8px;
   border: 1px solid #e4e7ed;
   min-height: 150px;
+  white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 

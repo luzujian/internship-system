@@ -23,6 +23,7 @@ public final class InternshipAgreementModels {
         private String companyName;
         private String positionName;
         private String businessStatus;
+        private String reviewTarget;
         private String submissionStatus;
         private Integer version;
         private Integer fileCount;

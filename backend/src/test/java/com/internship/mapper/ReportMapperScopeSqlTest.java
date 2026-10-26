@@ -18,11 +18,13 @@ class ReportMapperScopeSqlTest {
 
     @BeforeEach
     void readMapper() throws Exception {
-        String resource = "com/internship/mapper/ReportMapper.xml";
         configuration = new Configuration();
-        try (InputStream input = Resources.getResourceAsStream(resource)) {
-            new XMLMapperBuilder(input, configuration, resource,
-                    configuration.getSqlFragments()).parse();
+        for (String resource : List.of("com/internship/mapper/JobSearchStatusMapper.xml",
+                "com/internship/mapper/ReportMapper.xml")) {
+            try (InputStream input = Resources.getResourceAsStream(resource)) {
+                new XMLMapperBuilder(input, configuration, resource,
+                        configuration.getSqlFragments()).parse();
+            }
         }
     }
 
@@ -45,13 +47,32 @@ class ReportMapperScopeSqlTest {
     }
 
     @Test
-    void companyAdmissionMetricCountsOnlyScopedConfirmedCurrentAssignments() {
+    void companyAdmissionMetricUsesPublishedPositionQuotaAndLiveStudentStatus() {
         String sql = sql("getScopedCompanyDetails", Map.of("offset", 0, "pageSize", 10,
                 "studentIds", List.of(101L), "includeCompany", false));
-        assertTrue(sql.contains("a.status = 'confirmed'"));
-        assertTrue(sql.contains("a.current_flag = 1"));
-        assertTrue(sql.contains("a.student_id in"));
+        assertTrue(sql.contains("admitted_position.id = sis.position_id"));
+        assertTrue(sql.contains("admitted_position.company_id = cu.id"));
+        assertTrue(sql.contains("admitted_position.status in ('active', 'paused')"));
+        assertTrue(sql.contains("sis.status in (1, 2, 3)"));
+        assertTrue(sql.contains("coalesce(sis.recall_status, 0) != 2"));
+        assertTrue(sql.contains("sis.student_id in"));
         assertFalse(sql.contains("sum(p.recruited_count)"));
+        String global = sql("getCompanyDetails", Map.of("offset", 0, "pageSize", 10));
+        assertTrue(global.contains("admitted_position.id = sis.position_id"));
+        assertFalse(global.contains("sum(p.recruited_count)"));
+    }
+
+    @Test
+    void approvalRowsAndCountsOmitRetiredUnitChangeStatistics() {
+        for (String statement : List.of("getApprovalDetails", "getApprovalDetailsCount",
+                "getScopedApprovalDetails", "getScopedApprovalDetailsCount")) {
+            String query = sql(statement, Map.of("offset", 0, "pageSize", 10,
+                    "studentIds", List.of(101L), "includeCompany", true));
+            assertFalse(query.contains("unitchange"), statement);
+            assertFalse(query.contains("单位变更申请"), statement);
+            assertTrue(query.contains("selfpractice"), statement);
+            assertTrue(query.contains("delay"), statement);
+        }
     }
 
     @Test

@@ -20,7 +20,7 @@
           <el-option label="全部提交状态" value="ALL" /><el-option label="已提交" value="SUBMITTED" /><el-option label="未提交" value="NOT_SUBMITTED" />
         </el-select>
         <el-select v-model="filters.businessStatus" placeholder="业务状态" @change="search">
-          <el-option label="待审核及已生效" value="ACTIVE" /><el-option label="撤回及拒绝记录" value="HISTORY" /><el-option label="全部业务状态" value="ALL" />
+          <el-option label="排除撤回及拒绝" value="ACTIVE" /><el-option label="撤回及拒绝记录" value="HISTORY" /><el-option label="全部业务状态" value="ALL" />
           <el-option v-for="(label, value) in agreementBusinessStatusText" :key="value" :label="label" :value="value" />
         </el-select>
         <el-button type="primary" @click="search"><el-icon><Search /></el-icon>查询</el-button>
@@ -32,7 +32,7 @@
         <el-table-column label="班级" min-width="130"><template #default="{ row }">{{ row.className || '未分班' }}</template></el-table-column>
         <el-table-column prop="companyName" label="实习单位" min-width="190" show-overflow-tooltip />
         <el-table-column label="来源" width="100"><template #default="{ row }">{{ row.sourceType === 'SELF_PRACTICE' ? '自主实习' : '平台实习' }}</template></el-table-column>
-        <el-table-column label="业务状态" width="115"><template #default="{ row }">{{ agreementBusinessStatusText[row.businessStatus] || row.businessStatus }}</template></el-table-column>
+        <el-table-column label="业务状态" width="115"><template #default="{ row }">{{ agreementBusinessStatusLabel(row) }}</template></el-table-column>
         <el-table-column label="协议状态" width="105" align="center">
           <template #default="{ row }"><el-tag :type="row.submissionStatus === 'SUBMITTED' ? 'success' : 'info'">{{ row.submissionStatus === 'SUBMITTED' ? '已提交' : '未提交' }}</el-tag></template>
         </el-table-column>
@@ -85,7 +85,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Document, Search } from '@element-plus/icons-vue'
 import InternshipAgreementPreview from '@/components/student/InternshipAgreementPreview.vue'
-import { agreementBusinessStatusText, exportAgreementFiles, getAgreementCollection, getAgreementDetail,
+import { agreementBusinessStatusLabel, agreementBusinessStatusText, exportAgreementFiles, getAgreementCollection, getAgreementDetail,
   readAgreementFile, saveAgreementBlob, type AgreementCollectionPage, type AgreementDetail, type AgreementFile,
   type AgreementQuery, type AgreementRecord } from '@/api/internshipAgreements'
 

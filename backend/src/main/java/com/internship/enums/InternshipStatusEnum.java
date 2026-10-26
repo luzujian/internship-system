@@ -14,13 +14,13 @@ import java.util.stream.Collectors;
 @Getter
 public enum InternshipStatusEnum {
 
-    NOT_FOUND(0, "尚无 Offer", "尚无 Offer，包含未投递与无 Offer"),
-    HAS_OFFER(1, "待确认", "已获得实习 Offer 但未确认"),
-    CONFIRMED(2, "已确定", "实习已确认，待开始"),
-    IN_PROGRESS(3, "实习中", "实习进行中"),
-    ENDED(4, "已结束", "实习已结束"),
-    INTERRUPTED(5, "已中断", "实习中断"),
-    DELAYED(6, "延期", "实习延期（包含准备考研）");
+    NOT_FOUND(0, "尚未获录用", "包含暂无有效投递和已投递未录用，不含已延期实习"),
+    HAS_OFFER(1, "已录用待确认", "已获录用，尚未完成实习确认手续"),
+    CONFIRMED(2, "已定单位待实习", "实习单位已落实，等待开始实习"),
+    IN_PROGRESS(3, "实习进行中", "系统登记当前实习正在进行"),
+    ENDED(4, "实习已结束", "当前实习已结束，鉴定材料可能仍需办理"),
+    INTERRUPTED(5, "实习已中断", "当前实习已中断，需核对后续安排"),
+    DELAYED(6, "已延期实习", "已登记延期实习，包含考研延期");
 
     private final Integer code;
     private final String description;

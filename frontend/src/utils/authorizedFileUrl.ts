@@ -18,6 +18,12 @@ export const studentProfileByteUrl = (kind: 'resume' | 'certificate', id: unknow
     ? `/api/student/profile/download/${kind}/${recordId}` : ''
 }
 
+export const companyArchiveByteUrl = (id: unknown, action: 'preview' | 'download' = 'preview'): string => {
+  const recordId = positiveRecordId(id)
+  return recordId && (action === 'preview' || action === 'download')
+    ? `/api/admin/archives/company/${action}/${recordId}` : ''
+}
+
 export const studentApplicationMaterialByteUrl = (id: unknown, key: unknown, teacher = false): string => {
   const recordId = positiveRecordId(id)
   if (!recordId || typeof key !== 'string' || !key || key.length > 80 || /[\\/\x00-\x1f?#]/.test(key)) return ''
@@ -54,6 +60,9 @@ export const authorizedFileByteUrl = (value: unknown): string => {
   if (resourceId) return resourceDocumentByteUrl(resourceId)
   const studentFile = /^\/api\/student\/profile\/download\/(resume|certificate)\/([1-9]\d*)$/.exec(value)
   if (studentFile) return studentProfileByteUrl(studentFile[1] as 'resume' | 'certificate', studentFile[2])
+
+  const companyArchive = /^\/api\/admin\/archives\/company\/(preview|download)\/([1-9]\d*)$/.exec(value)
+  if (companyArchive) return companyArchiveByteUrl(companyArchive[2], companyArchive[1] as 'preview' | 'download')
 
   const application = /^\/api\/(student\/applications|approval\/student-applications)\/([1-9]\d*)\/materials\/([^/?#]+)$/.exec(value)
   if (application) {

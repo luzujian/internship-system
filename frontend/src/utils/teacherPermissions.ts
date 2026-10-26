@@ -33,6 +33,7 @@ const ROUTE_MENU_PERMISSIONS: Record<string, string> = {
   'teacherAiSettings': 'menu:settings',
   'teacherAiKeywordConfig': 'menu:settings',
   'teacherCompanyList': 'menu:company-list',
+  'teacherRecruitment': 'menu:recruitment',
   'teacherClasses': 'menu:classes',
   'teacherInternshipAppraisals': 'menu:appraisal-collection',
   'teacherAiScoringConfig': 'menu:teacherAiScoringConfig',

@@ -224,29 +224,36 @@ public class HomeServiceImpl implements HomeService {
             List<InternshipStatusDTO> statusData = new ArrayList<>();
 
             InternshipStatusDTO confirmedStatus = new InternshipStatusDTO();
-            confirmedStatus.setName("已确定实习");
+            confirmedStatus.setName("已落实实习");
             confirmedStatus.setValue(confirmedAndInterning);
             confirmedStatus.setColor("success");
             statusData.add(confirmedStatus);
             
             InternshipStatusDTO offerStatus = new InternshipStatusDTO();
-            offerStatus.setName("有offer但未确定");
+            offerStatus.setName("已录用待确认");
             offerStatus.setValue(offer);
             offerStatus.setColor("info");
             statusData.add(offerStatus);
             
             InternshipStatusDTO noOfferStatus = new InternshipStatusDTO();
-            noOfferStatus.setName("没offer");
+            noOfferStatus.setName("尚未获录用");
             noOfferStatus.setValue(noOffer);
             noOfferStatus.setColor("danger");
             statusData.add(noOfferStatus);
             
             InternshipStatusDTO delayStatus = new InternshipStatusDTO();
-            delayStatus.setName("考研");
+            delayStatus.setName("已延期实习");
             delayStatus.setValue(delay);
             delayStatus.setColor("warning");
             statusData.add(delayStatus);
             
+            InternshipStatusDTO interruptedStatus = new InternshipStatusDTO();
+            interruptedStatus.setName("实习已中断");
+            interruptedStatus.setValue(dashboardStats != null && dashboardStats.get("interrupted") != null
+                    ? ((Number) dashboardStats.get("interrupted")).intValue() : 0);
+            interruptedStatus.setColor("danger");
+            statusData.add(interruptedStatus);
+
             homeStats.setStatusData(statusData);
             
             int unreadCount = 0;

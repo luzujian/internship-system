@@ -30,6 +30,10 @@ class StudentJobApplicationServiceImplTest {
     @Test
     void mirroredSubmissionSharesThePersistedCreationTimestamp() {
         var app = application(31L, 12L);
+        app.setPhone("13800000031");
+        app.setEmail("student31@example.test");
+        app.setMajor("生物医学工程");
+        app.setGrade("2023");
         var position = position(12L, 2); position.setCompanyId(7L);
         when(positionMapper.findByIdForUpdate(12L)).thenReturn(position);
         when(mapper.insert(app)).thenReturn(1);
@@ -41,6 +45,10 @@ class StudentJobApplicationServiceImplTest {
         assertEquals(app.getCreateTime(), mirror.getValue().getApplyTime());
         assertEquals(app.getCreateTime(), mirror.getValue().getCreateTime());
         assertEquals(app.getUpdateTime(), mirror.getValue().getUpdateTime());
+        assertEquals(app.getPhone(), mirror.getValue().getPhone());
+        assertEquals(app.getEmail(), mirror.getValue().getEmail());
+        assertEquals(app.getMajor(), mirror.getValue().getMajor());
+        assertEquals(app.getGrade(), mirror.getValue().getGrade());
     }
 
     @Test

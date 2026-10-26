@@ -2,13 +2,14 @@ package com.internship.controller;
 import com.internship.entity.User;
 import com.internship.service.UserService;
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.*;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.core.context.SecurityContextHolder;
 import static org.mockito.Mockito.*;
 import static org.junit.jupiter.api.Assertions.*;
 class UserDetailPermissionTest {
-    @Configuration @EnableMethodSecurity static class Config {
+    @TestConfiguration @EnableMethodSecurity static class Config {
         @Bean UserService userService(){return mock(UserService.class);}
         @Bean UserController userController(){return new UserController();}
     }

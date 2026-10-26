@@ -199,7 +199,7 @@ const initWebSocket = () => {
 
     <header class="header">
       <div class="header-left">
-        <el-button link @click="toggleSidebar" class="sidebar-toggle-btn">
+        <el-button link @click="toggleSidebar" class="sidebar-toggle-btn" :aria-expanded="!sidebarCollapsed" aria-controls="main-navigation" :aria-label="sidebarCollapsed ? '展开导航菜单' : '收起导航菜单'">
           <el-icon>
             <template v-if="sidebarCollapsed">
               <Menu />
@@ -217,7 +217,7 @@ const initWebSocket = () => {
       <div class="user-actions">
         <AgentEntry />
         <el-dropdown :popper-style="{ zIndex: 2500 }" @command="handleCommand" class="user-dropdown">
-          <el-button link class="user-btn">
+          <el-button link class="user-btn" aria-label="账号菜单">
             <div class="user-info">
               <el-icon class="user-avatar">
                 <User />
@@ -265,7 +265,8 @@ const initWebSocket = () => {
     </header>
 
     <div class="main-content">
-      <aside :class="['sidebar', { 'sidebar-collapsed': sidebarCollapsed }]" v-show="!sidebarCollapsed" aria-label="主导航">
+      <aside :class="['sidebar', { 'sidebar-collapsed': sidebarCollapsed }]" v-show="!sidebarCollapsed" id="main-navigation" :tabindex="isMobile ? -1 : undefined" aria-label="主导航" :role="isMobile && !sidebarCollapsed ? 'dialog' : undefined" :aria-modal="isMobile && !sidebarCollapsed || undefined" :inert="isMobile && sidebarCollapsed">
+      <button v-if="isMobile" type="button" class="mobile-navigation-close" aria-label="关闭导航菜单" @click="closeSidebar">关闭导航 ×</button>
         <el-menu
           v-if="companyMenuReady"
           :router="true" 
@@ -328,7 +329,7 @@ const initWebSocket = () => {
       <div v-if="isMobile && !sidebarCollapsed" class="sidebar-overlay" @click="closeSidebar"></div>
 
       <el-scrollbar style="flex: 1;">
-        <el-main>
+        <el-main data-navigation-content :inert="isMobile && !sidebarCollapsed">
           <router-view></router-view>
         </el-main>
       </el-scrollbar>

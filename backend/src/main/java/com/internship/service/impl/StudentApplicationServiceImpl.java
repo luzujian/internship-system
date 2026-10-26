@@ -55,6 +55,19 @@ public class StudentApplicationServiceImpl implements StudentApplicationService 
 
     @org.springframework.beans.factory.annotation.Autowired
     private com.internship.service.InternshipAgreementService agreementService;
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.internship.service.InternshipConfirmationWorkflowService confirmationWorkflowService;
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.internship.mapper.PositionMapper positionMapper;
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.internship.mapper.InternshipStageAssignmentMapper stageAssignmentMapper;
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.fasterxml.jackson.databind.ObjectMapper objectMapper;
+    @org.springframework.beans.factory.annotation.Autowired
+    @org.springframework.context.annotation.Lazy
+    private com.internship.websocket.AnnouncementWebSocketHandler webSocketHandler;
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.internship.service.StudentJobApplicationService studentJobApplicationService;
 
     private final StudentApplicationMapper studentApplicationMapper;
     private final CompanyUserMapper companyUserMapper;
@@ -113,6 +126,7 @@ public class StudentApplicationServiceImpl implements StudentApplicationService 
 
         // 以学生主记录作为串行化源，避免重复点击在并发事务中插入两条 pending 申请和两条动态。
         studentApplicationMapper.lockStudent(application.getStudentId());
+        prepareReviewTarget(application);
         StudentApplication pending = studentApplicationMapper.findPendingByStudentAndTypeForUpdate(
                 application.getStudentId(), application.getApplicationType());
         if (pending != null) {
@@ -122,12 +136,93 @@ public class StudentApplicationServiceImpl implements StudentApplicationService 
         int result = studentApplicationMapper.insert(application);
         if (result > 0) {
             if ("selfPractice".equals(application.getApplicationType())) {
-                agreementService.bindSubmission(application.getStudentId(), "SELF_PRACTICE", application.getId(), application.getAgreementFileIds());
+                var version = agreementService.bindSubmission(application.getStudentId(), "SELF_PRACTICE", application.getId(), application.getAgreementFileIds());
+                submitCompanyConfirmation(application, version == null ? null : version.getId());
             }
             appendSubmittedEvent(application);
         }
         log.info("学生申请插入成功，学生: {}", application.getStudentName());
         return result;
+    }
+
+    private void prepareReviewTarget(StudentApplication application) {
+        application.setReviewTarget("COUNSELOR");
+        application.setConfirmationRecordId(null);
+        application.setReviewerId(null);
+        application.setReviewTime(null);
+        application.setRejectReason(null);
+        if (!"selfPractice".equals(application.getApplicationType())) {
+            application.setCompanyId(null); application.setPositionId(null);
+            return;
+        }
+        if (confirmationRecordService.findByStudentId(application.getStudentId()).stream()
+                .anyMatch(r -> Integer.valueOf(0).equals(r.getStatus()) && Integer.valueOf(0).equals(r.getRecallStatus()))) {
+            throw new BusinessException("您已有待企业确认的实习申请，请先处理或撤回");
+        }
+        CompanyUser company = companyUserMapper.findApprovedByCompanyName(application.getCompany());
+        if (company == null) {
+            if (application.getCompanyId() != null || application.getPositionId() != null) {
+                throw new BusinessException("企业或岗位信息与有效合作企业不匹配，请重新选择");
+            }
+            return;
+        }
+        if (application.getCompanyId() != null && !company.getId().equals(application.getCompanyId())) {
+            throw new BusinessException("企业信息不匹配，请重新选择");
+        }
+        application.setCompanyId(company.getId());
+        application.setCompany(company.getCompanyName());
+        application.setReviewTarget("COMPANY");
+        if (application.getPositionId() != null) {
+            var position = positionMapper.findById(application.getPositionId());
+            if (position == null || !company.getId().equals(position.getCompanyId())) {
+                throw new BusinessException("所选岗位不属于该企业");
+            }
+            application.setPositionName(position.getPositionName());
+        }
+    }
+
+    private void submitCompanyConfirmation(StudentApplication application, Long agreementVersionId) {
+        if (!application.isCompanyReview()) return;
+        InternshipConfirmationRecord record = new InternshipConfirmationRecord();
+        record.setStudentId(application.getStudentId());
+        record.setStudentName(application.getStudentName());
+        record.setStudentUserId(application.getStudentUserId());
+        record.setGrade(application.getGrade()); record.setClassName(application.getClassName());
+        StudentUser student = studentUserService.findById(application.getStudentId());
+        if (student != null) {
+            record.setGender(student.getGender() == null ? null : student.getGender().toString());
+            record.setMajor(student.getMajor()); record.setContactPhone(student.getPhone()); record.setEmail(student.getEmail());
+        }
+        CompanyUser company = companyUserMapper.findById(application.getCompanyId());
+        record.setCompanyId(application.getCompanyId()); record.setCompanyName(application.getCompany());
+        record.setCompanyAddress(company == null ? application.getCompanyCity() : company.getAddress());
+        var position = application.getPositionId() == null ? null : positionMapper.findById(application.getPositionId());
+        record.setCompanyPhone(com.internship.entity.dto.InternshipContact.resolve(application.getCompanyId(), company, position).phone());
+        record.setPositionId(application.getPositionId()); record.setPositionName(application.getPositionName());
+        record.setRemark(application.getReason()); record.setAgreementSubmissionId(agreementVersionId);
+        try { record.setApplicationSnapshot(objectMapper.writeValueAsString(application)); }
+        catch (com.fasterxml.jackson.core.JsonProcessingException e) { throw new BusinessException("申请信息保存失败"); }
+        confirmationWorkflowService.submitSelfPractice(record, application.getId());
+        application.setConfirmationRecordId(record.getId());
+        notifyCompanyAfterCommit(application.getCompanyId());
+    }
+
+    private void notifyCompanyAfterCommit(Long companyId) {
+        Runnable notify = () -> {
+            try {
+                if (webSocketHandler == null) return;
+                long pendingApplications = studentJobApplicationService.findByCompanyId(companyId).stream()
+                        .filter(item -> "pending".equals(item.getStatus())).count();
+                long pendingConfirmations = confirmationRecordService.findByCompanyIdAndStatus(companyId, 0).size();
+                webSocketHandler.sendCompanyTodoUpdate(companyId, pendingApplications, pendingConfirmations);
+            } catch (Exception e) { log.warn("推送企业确认待办失败：{}", e.getMessage()); }
+        };
+        if (org.springframework.transaction.support.TransactionSynchronizationManager.isSynchronizationActive()) {
+            org.springframework.transaction.support.TransactionSynchronizationManager.registerSynchronization(
+                    new org.springframework.transaction.support.TransactionSynchronization() {
+                        @Override public void afterCommit() { notify.run(); }
+                    });
+        } else { notify.run(); }
     }
     
     @Override
@@ -164,6 +259,7 @@ public class StudentApplicationServiceImpl implements StudentApplicationService 
         if (existingApplication == null) {
             throw new BusinessException("申请不存在");
         }
+        if (existingApplication.isCompanyReview()) throw new BusinessException("该申请由企业处理，请通过撤回或重新提交办理");
         
         validateApplicationInfo(application);
         
@@ -303,7 +399,8 @@ public class StudentApplicationServiceImpl implements StudentApplicationService 
             throw new BusinessException("申请ID无效");
         }
 
-        // SELECT ... FOR UPDATE 防止并发审批
+        // 与提交、撤回和企业确认保持一致：先锁学生，再锁申请。
+        studentApplicationMapper.lockStudentForApplication(id);
         StudentApplication application = studentApplicationMapper.findByIdForUpdate(id);
         if (application == null) {
             throw new BusinessException("申请不存在");
@@ -312,6 +409,7 @@ public class StudentApplicationServiceImpl implements StudentApplicationService 
         if (!"pending".equals(application.getStatus())) {
             throw new BusinessException("该申请已审核，无法重复操作");
         }
+        if (application.isCompanyReview()) throw new BusinessException("该申请应由对应企业确认");
         if ("unitChange".equals(application.getApplicationType())) {
             throw new BusinessException("该旧申请流程已停用；历史记录仅供查看或驳回归档");
         }
@@ -423,7 +521,7 @@ public class StudentApplicationServiceImpl implements StudentApplicationService 
     }
 
     /**
-     * 处理自主实习申请批准后的学生状态变更：直接进入实习中
+     * 自主实习批准后落实单位，并按统一开始日期确定待实习或进行中状态。
      * 学生自填的实习单位/岗位为纯文本，不收录进企业表/岗位表，companyId/positionId 留空
      */
     private void handleSelfPracticeApproval(StudentApplication application) {
@@ -447,6 +545,7 @@ public class StudentApplicationServiceImpl implements StudentApplicationService 
             log.warn("自主实习读取全局实习日历失败，回退到审批时间：{}", e.getMessage());
         }
         Date effectiveStart = calendarStart != null ? calendarStart : reviewTime;
+        int placementStatus = effectiveStart.after(reviewTime) ? 2 : 3;
         Date effectiveEnd = calendarEnd; // 日历缺失时保持 null，与原行为一致
         LocalDateTime startTime = LocalDateTime.ofInstant(effectiveStart.toInstant(), ZoneId.of("Asia/Shanghai"));
         LocalDateTime endTime = effectiveEnd == null ? null
@@ -458,8 +557,8 @@ public class StudentApplicationServiceImpl implements StudentApplicationService 
         }
 
         if (status != null) {
-            // 已有状态行：整体覆盖为实习中
-            status.setStatus(3); // IN_PROGRESS
+            // 已有状态行：更新为按统一日历判定的正式实习状态。
+            status.setStatus(placementStatus);
             status.setCompanyName(application.getCompany());
             status.setPositionName(application.getPositionName());
             status.setCompanyId(null);
@@ -478,7 +577,7 @@ public class StudentApplicationServiceImpl implements StudentApplicationService 
         } else {
             StudentInternshipStatus newStatus = new StudentInternshipStatus();
             newStatus.setStudentId(application.getStudentId());
-            newStatus.setStatus(3); // IN_PROGRESS
+            newStatus.setStatus(placementStatus);
             newStatus.setCompanyName(application.getCompany());
             newStatus.setPositionName(application.getPositionName());
             newStatus.setInternshipStartTime(effectiveStart);
@@ -486,13 +585,15 @@ public class StudentApplicationServiceImpl implements StudentApplicationService 
             newStatus.setCompanyConfirmStatus(1);
             newStatus.setIsDelayed(false);
             newStatus.setIsInterrupted(false);
+            newStatus.setCreateTime(reviewTime);
+            newStatus.setUpdateTime(reviewTime);
             internshipStatusMapper.insert(newStatus);
         }
         // 状态变更后清除 Redis 缓存,学生端立即可见新状态
         statusCache.evictCache(application.getStudentId());
 
         // 2. 生成自主实习的确认记录和实习经历，确认记录模块才能展示自主实习
-        createSelfPracticeConfirmationRecord(application, startTime, endTime, effectiveStart, effectiveEnd);
+        createSelfPracticeConfirmationRecord(application, startTime, endTime, effectiveStart, effectiveEnd, placementStatus);
 
         // 3. 事件驱动：日历结束时间已到则立即结束实习，不等定时任务
         if (effectiveEnd != null && !effectiveEnd.after(new Date())) {
@@ -502,7 +603,7 @@ public class StudentApplicationServiceImpl implements StudentApplicationService 
             }
         }
 
-        log.info("自主实习申请批准处理完成，学生ID: {}，状态已更新为实习中", application.getStudentId());
+        log.info("自主实习申请批准处理完成，学生ID: {}，实习状态: {}", application.getStudentId(), placementStatus);
     }
 
     /**
@@ -513,12 +614,18 @@ public class StudentApplicationServiceImpl implements StudentApplicationService 
                                           Date reviewTime) {
         InternshipStageAssignment originalAssignment = findAssignmentForStatus(status);
         if (originalAssignment == null) {
+            if (status.getPositionId() != null && (Integer.valueOf(2).equals(status.getStatus()) || Integer.valueOf(3).equals(status.getStatus()))) {
+                releaseCounselorPreviousPosition(status.getPositionId(), null);
+            }
             return; // 无当前实习经历（如首次实习），无需归档
         }
         originalAssignment.setStatus("INTERRUPTED");
         originalAssignment.setCurrentFlag(0);
         originalAssignment.setInternshipEndTime(reviewTime);
         stageAssignmentService.update(originalAssignment);
+        if (originalAssignment.getPositionId() != null) {
+            releaseCounselorPreviousPosition(originalAssignment.getPositionId(), originalAssignment.getId());
+        }
 
         append(progressRecordService,
                 application.getStudentId(),
@@ -530,15 +637,30 @@ public class StudentApplicationServiceImpl implements StudentApplicationService 
                 reviewTime);
     }
 
+    private void releaseCounselorPreviousPosition(Long positionId, Long assignmentId) {
+        var position = positionMapper.findByIdForUpdate(positionId);
+        if (position == null) throw new BusinessException("原实习岗位不存在，无法切换实习");
+        if (assignmentId != null && stageAssignmentMapper.markQuotaReleased(assignmentId, "POSITION_SWITCH") <= 0) return;
+        position.setRemainingQuota((position.getRemainingQuota() == null ? 0 : position.getRemainingQuota()) + 1);
+        position.setRecruitedCount(Math.max(0, (position.getRecruitedCount() == null ? 0 : position.getRecruitedCount()) - 1));
+        if (positionMapper.update(position) <= 0) throw new BusinessException("原实习岗位名额释放失败");
+        if (org.springframework.transaction.support.TransactionSynchronizationManager.isSynchronizationActive()) {
+            org.springframework.transaction.support.TransactionSynchronizationManager.registerSynchronization(new org.springframework.transaction.support.TransactionSynchronization() {
+                @Override public void afterCommit() { webSocketHandler.sendPositionUpdateToAll(position); }
+            });
+        }
+    }
+
     /**
-     * 创建自主实习的确认记录（已确认）和实习经历（当前实习中）
-     * 自主实习无企业确认环节，companyId/positionId 留空，单位/岗位以纯文本记录
+     * 创建自主实习已落实的确认记录和按日历判定状态的当前实习经历。
+     * 仅用于辅导员办理的申请；companyId/positionId 留空，单位/岗位以纯文本记录。
      */
     private void createSelfPracticeConfirmationRecord(StudentApplication application,
                                                       LocalDateTime startTime,
                                                       LocalDateTime endTime,
                                                       Date effectiveStart,
-                                                      Date effectiveEnd) {
+                                                      Date effectiveEnd,
+                                                      int placementStatus) {
         InternshipConfirmationRecord record = new InternshipConfirmationRecord();
         record.setStudentId(application.getStudentId());
         record.setStudentName(application.getStudentName());
@@ -566,12 +688,12 @@ public class StudentApplicationServiceImpl implements StudentApplicationService 
         assignment.setPositionName(application.getPositionName());
         assignment.setInternshipStartTime(effectiveStart);
         assignment.setInternshipEndTime(effectiveEnd);
-        assignment.setStatus("IN_PROGRESS");
+        assignment.setStatus(placementStatus == 2 ? "CONFIRMED" : "IN_PROGRESS");
         assignment.setCurrentFlag(1);
         InternshipStageAssignment created = stageAssignmentService.createFromApplication(assignment);
         // createFromApplication 默认 currentFlag=0，自主实习是当前实习，需置 1
         created.setCurrentFlag(1);
-        created.setStatus("IN_PROGRESS");
+        created.setStatus(placementStatus == 2 ? "CONFIRMED" : "IN_PROGRESS");
         created.setConfirmationRecordId(record.getId());
         stageAssignmentService.update(created);
     }
@@ -619,7 +741,7 @@ public class StudentApplicationServiceImpl implements StudentApplicationService 
             throw new BusinessException("驳回理由不能为空");
         }
         
-        // SELECT ... FOR UPDATE 防止并发审批
+        studentApplicationMapper.lockStudentForApplication(id);
         StudentApplication application = studentApplicationMapper.findByIdForUpdate(id);
         if (application == null) {
             throw new BusinessException("申请不存在");
@@ -628,6 +750,8 @@ public class StudentApplicationServiceImpl implements StudentApplicationService 
         if (!"pending".equals(application.getStatus())) {
             throw new BusinessException("该申请已审核，无法重复操作");
         }
+
+        if (application.isCompanyReview()) throw new BusinessException("该申请应由对应企业确认");
 
         // 校验审核时限
         validateApprovalTimeLimit(application);
@@ -672,6 +796,7 @@ public class StudentApplicationServiceImpl implements StudentApplicationService 
             throw new BusinessException("学生ID不能为空");
         }
 
+        studentApplicationMapper.lockStudent(studentId);
         StudentApplication application = studentApplicationMapper.findByIdForUpdate(id);
         if (application == null || !studentId.equals(application.getStudentId())) {
             throw new BusinessException("申请不存在或无权撤回");
@@ -684,6 +809,11 @@ public class StudentApplicationServiceImpl implements StudentApplicationService 
             throw new BusinessException("教师已处理该申请，无法撤回");
         }
 
+        if (application.isCompanyReview()) {
+            confirmationWorkflowService.withdraw(studentId, application.getConfirmationRecordId(), "学生撤回自主实习申请");
+            notifyCompanyAfterCommit(application.getCompanyId());
+            return 1;
+        }
         application.setStatus("withdrawn");
         int result = studentApplicationMapper.update(application);
         if (result == 0) {
@@ -744,9 +874,10 @@ public class StudentApplicationServiceImpl implements StudentApplicationService 
         application.setApplyTime(new Date());
         validateApplicationInfo(application);
         validateSelfPracticeInfo(application);
+        prepareReviewTarget(application);
 
         Map<String, String> materials = new java.util.LinkedHashMap<>();
-        if (existing.getMaterials() != null) materials.putAll(existing.getMaterials());
+        if (existing.getMaterials() != null && normalizeCompanyNameKey(existing.getCompany()).equals(normalizeCompanyNameKey(application.getCompany()))) materials.putAll(existing.getMaterials());
         if (application.getMaterials() != null) {
             application.getMaterials().forEach((key, value) -> {
                 if (StringUtils.isNotBlank(value)) materials.put(key, value);
@@ -762,7 +893,8 @@ public class StudentApplicationServiceImpl implements StudentApplicationService 
             throw new BusinessException("申请状态已变化，请刷新后重试");
         }
         if ("selfPractice".equals(type)) {
-            agreementService.bindSubmission(studentId, "SELF_PRACTICE", id, application.getAgreementFileIds());
+            var version = agreementService.bindSubmission(studentId, "SELF_PRACTICE", id, application.getAgreementFileIds());
+            submitCompanyConfirmation(application, version == null ? null : version.getId());
         }
         appendSubmittedEvent(application);
         log.info("学生重新提交申请成功，ID: {}, studentId: {}, type: {}", id, studentId, type);

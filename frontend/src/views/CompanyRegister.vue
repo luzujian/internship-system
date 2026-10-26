@@ -16,7 +16,7 @@
       >
         <template #default>
           <p>• 提交申请后，相关负责人会在 1-3 个工作日内完成审核</p>
-          <p>• 审核通过后，可用企业名称和初始密码登录；也可通过个人邮箱找回密码</p>
+          <p>• 审核通过后，可用企业名称和初始密码登录；联系邮箱同时用于找回密码</p>
           <p>• 审核未通过：系统将通知您未通过的原因，请补充材料后重新提交</p>
         </template>
       </el-alert>
@@ -90,7 +90,7 @@
         </el-form-item>
 
         <el-form-item label="联系电话" prop="contactPhone">
-          <el-input v-model="registerForm.contactPhone" placeholder="请输入企业联系电话（用于对外业务联系）" />
+          <el-input v-model="registerForm.contactPhone" placeholder="请输入联系人手机或固定电话" maxlength="20" inputmode="tel" />
         </el-form-item>
 
         <el-form-item label="企业地址" prop="province">
@@ -108,12 +108,8 @@
         </el-form-item>
 
         <el-form-item label="联系邮箱" prop="contactEmail">
-          <el-input v-model="registerForm.contactEmail" placeholder="请输入企业联系邮箱（用于对外业务联系）（选填）" />
-        </el-form-item>
-
-        <el-form-item label="个人邮箱" prop="email">
-          <el-input v-model="registerForm.email" placeholder="请输入个人邮箱（用于找回密码）" />
-          <div class="form-tip">请确保填写正确，审核通过后可通过此邮箱找回密码</div>
+          <el-input v-model="registerForm.contactEmail" placeholder="请输入联系人常用邮箱" maxlength="100" />
+          <div class="form-tip">同时绑定企业账号，用于接收通知和找回密码</div>
         </el-form-item>
 
         <el-form-item label="企业网站" prop="website">
@@ -260,7 +256,6 @@ const registerForm = reactive({
   contactPerson: '',
   contactPhone: '',
   contactEmail: '',
-  email: '',
   website: '',
   introduction: '',
   isInternshipBase: 0,
@@ -343,8 +338,7 @@ const loadExistingData = async () => {
       registerForm.creditCode = data.creditCode || ''
       registerForm.contactPerson = data.contactPerson || ''
       registerForm.contactPhone = data.contactPhone || ''
-      registerForm.contactEmail = data.contactEmail || ''
-      registerForm.email = data.email || ''
+      registerForm.contactEmail = data.email || data.contactEmail || ''
       registerForm.industry = data.industry || ''
       registerForm.scale = data.scale || ''
       registerForm.province = data.province || ''
@@ -405,13 +399,10 @@ const rules = {
   ],
   contactPhone: [
     { required: true, message: '请输入联系电话', trigger: 'blur' },
-    { min: 11, max: 20, message: '联系电话长度必须在 11-20 个字符之间', trigger: 'blur' }
+    { pattern: /^[+0-9()（）\-\s转]{7,20}$/, message: '请输入有效的手机或固定电话号码', trigger: 'blur' }
   ],
   contactEmail: [
-    { type: 'email', message: '请输入正确的邮箱格式', trigger: 'blur' }
-  ],
-  email: [
-    { required: true, message: '请输入个人邮箱', trigger: 'blur' },
+    { required: true, message: '请输入联系邮箱', trigger: 'blur' },
     { type: 'email', message: '请输入正确的邮箱格式', trigger: 'blur' }
   ],
   alumniMembers: [
@@ -468,6 +459,8 @@ const submitRegister = async () => {
   loading.value = true
 
   try {
+    registerForm.contactEmail = registerForm.contactEmail.trim()
+    registerForm.contactPhone = registerForm.contactPhone.replace(/\s+/g, '')
     let response
     if (isRecallMode.value) {
       response = await request.put(`/company/update/${existingCompanyId.value}`, registerForm)

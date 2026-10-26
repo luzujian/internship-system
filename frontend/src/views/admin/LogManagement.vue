@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import logger from '@/utils/logger'
 import { useRoute } from 'vue-router'
-import { getRoleName, getRiskName, getRiskTagType, getEventTypeName, getResultTagType, getRoleTagType, getResultName } from '@/utils/securityEventPresentation'
+import { getRoleName, getRiskName, getRiskTagType, getEventTypeName as getBaseEventTypeName, getResultTagType, getRoleTagType, getResultName } from '@/utils/securityEventPresentation'
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useFormContext } from '@/agent/formContext'
 import {
@@ -151,7 +151,7 @@ const appliedFilterLabels = computed(() => {
 })
 const activeDescription = computed(() => ({
   operations: '追溯实习、学生、企业、岗位和权限等业务操作，核对操作人、目标与处理结果。',
-  'login-events': '核查学生、教师、企业与管理员的登录结果，结合来源 IP 和错误码定位认证异常。',
+  'login-events': '核查登录结果和失败原因。认证失败且身份未确认时角色为未知；查找失败记录可选择全部角色，并扩大时间范围。',
   'security-events': '关注账号锁定、权限访问及审计管理事件；风险等级代表关注程度，不等同于已发生安全事故。'
 }[activeTab.value]))
 
@@ -271,6 +271,38 @@ const openDetail = async (id: number) => {
   }
 }
 
+const failureDetailFields = (detail: unknown): [string, unknown][] => {
+  try {
+    const parsed = typeof detail === 'string' ? JSON.parse(detail) : detail
+    const failure = parsed && typeof parsed === 'object' ? parsed.failure : null
+    if (!failure || typeof failure !== 'object') return []
+    const stageNames: Record<string, string> = {
+      LOGIN: '账号登录', RESET_SEND_CODE: '找回密码：发送验证码', RESET_VERIFY_CODE: '找回密码：确认身份',
+      RESET_PASSWORD: '找回密码：重置密码', REQUEST_HANDLING: '请求处理', MULTIPART_PARSE: '上传请求解析',
+      EMPTY_FILE: '文件非空校验', FILE_SIZE: '文件大小校验', MEDIA_TYPE: '文件类型校验',
+      FILE_SIGNATURE: '文件内容签名校验', STORAGE: '文件存储'
+    }
+    const fields: [string, unknown][] = [
+      ['失败原因', typeof failure.reason === 'string' ? failure.reason : null],
+      ['诊断代码', typeof failure.reasonCode === 'string' ? failure.reasonCode : null],
+      ['异常类型', typeof failure.exceptionType === 'string' ? failure.exceptionType : null],
+      ['失败阶段', typeof failure.validationStage === 'string' ? (stageNames[failure.validationStage] || failure.validationStage) : null],
+      ['请求大小', Number.isFinite(failure.requestSize) ? `${failure.requestSize} 字节` : null]
+    ]
+    if (Array.isArray(failure.files)) {
+      failure.files.slice(0, 10).forEach((file: Record<string, unknown>, index: number) => {
+        if (!file || typeof file !== 'object') return
+        fields.push([`文件 ${index + 1} 元信息`, [
+          Number.isFinite(file.size) ? `${file.size} 字节` : null,
+          typeof file.declaredMime === 'string' ? `声明类型：${file.declaredMime}` : null,
+          typeof file.extension === 'string' ? `扩展名：${file.extension}` : null
+        ].filter(Boolean).join('；')])
+      })
+    }
+    return fields
+  } catch { return [] }
+}
+
 const detailSections = computed<{ title: string; fields: [string, unknown][] }[]>(() => {
   if (!detailData.value) return []
   const data = detailData.value
@@ -284,7 +316,8 @@ const detailSections = computed<{ title: string; fields: [string, unknown][] }[]
         ['模块', getModuleName(data.module as string)], ['动作', getActionName(data.operationType as string)],
         ['结果', getResultName(data.operationResult as string)],
         ['风险等级', getRiskName(data.riskLevel as string)], ['耗时', data.durationMs != null ? `${data.durationMs}ms` : null],
-        ['描述', data.description], ['错误码', data.errorCode]
+        ['描述', data.description], ['错误码', data.errorCode],
+        ...failureDetailFields(data.detailJson)
       ] },
       { title: '目标对象', fields: [
         ['目标类型', data.targetType], ['目标ID', data.targetId],
@@ -309,7 +342,7 @@ const detailSections = computed<{ title: string; fields: [string, unknown][] }[]
       { title: '登录信息', fields: [
         ['状态', getResultName(data.loginStatus as string)], ['风险等级', getRiskName(data.riskLevel as string)],
         ['错误码', data.errorCode], ['耗时', data.durationMs != null ? `${data.durationMs}ms` : null],
-        ['登录时间', data.loginTime]
+        ['登录时间', data.loginTime], ...failureDetailFields(data.detailJson)
       ] },
       { title: '请求信息', fields: [
         ['IP地址', data.ipAddress], ['设备类别', data.deviceType], ['请求 ID', data.requestId], ['设备信息', data.deviceInfo]
@@ -329,7 +362,7 @@ const detailSections = computed<{ title: string; fields: [string, unknown][] }[]
       ['事件类型', getEventTypeName(data.eventType as string)], ['结果', getResultName(data.result as string)],
       ['风险等级', getRiskName(data.riskLevel as string)], ['错误码', data.errorCode],
       ['影响数量', data.affectedCount != null ? String(data.affectedCount) : null],
-      ['描述', data.description], ['事件时间', data.eventTime]
+      ['描述', data.description], ['事件时间', data.eventTime], ...failureDetailFields(data.detailJson)
     ] },
     { title: '目标对象', fields: [
       ['目标类型', data.targetType], ['目标ID', data.targetId]
@@ -648,6 +681,7 @@ const runIntegrityVerify = async (): Promise<void> => {
 
 // ===== 展示映射 =====
 const actionNameMap: Record<string, string> = {
+  SEND_CODE: '发送验证码',
   CREATE: '新增', UPDATE: '修改', DELETE: '删除', READ: '查询', IMPORT: '导入', EXPORT: '导出',
   UPLOAD: '上传', AUDIT: '审核', CLEAN: '清理', LOGIN: '登录', LOGOUT: '登出', SWITCH_ROLE: '切换角色',
   BACKUP: '备份', RESTORE: '恢复', RESET_PASSWORD: '重置密码', ASSIGN: '分配', DOWNLOAD: '下载', VERIFY: '验证',
@@ -656,6 +690,8 @@ const actionNameMap: Record<string, string> = {
 }
 
 const getActionName = (action?: string) => action ? (actionNameMap[action] || action) : ''
+const getEventTypeName = (type?: string) => type === 'REQUEST_FAILURE' ? '请求处理失败'
+  : type === 'AUTH_SERVICE_FAILURE' ? '登录服务异常' : getBaseEventTypeName(type)
 
 const moduleNameMap: Record<string, string> = {
   AUTH: '认证管理', USER_MANAGEMENT: '用户管理', STUDENT_MANAGEMENT: '学生管理', TEACHER_MANAGEMENT: '教师管理',

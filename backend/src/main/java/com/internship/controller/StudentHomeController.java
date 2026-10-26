@@ -289,6 +289,7 @@ public class StudentHomeController {
                 result.put("status", status.getStatus());
                 result.put("companyName", status.getCompanyName());
                 result.put("positionName", status.getPositionName());
+                result.put("positionId", status.getPositionId());
                 result.put("internshipStartTime", status.getInternshipStartTime());
                 result.put("internshipEndTime", status.getInternshipEndTime());
                 result.put("isDelayed", status.getIsDelayed());
@@ -303,9 +304,11 @@ public class StudentHomeController {
             }
             // 添加计算后的状态值
             result.put("currentStatus", currentStatus);
+            result.put("status", currentStatus);
             result.put("internshipStatus", currentStatus);
             result.put("jobSearchStatus", jobSearchStatus.jobSearchStatus());
             result.put("jobSearchStatusText", jobSearchStatus.jobSearchStatusText());
+            result.put("pendingApplicationTexts", jobSearchStatus.pendingApplicationTexts());
             result.put("hasPendingApplication", hasPendingApplication);
 
             return Result.success(result);
@@ -319,62 +322,8 @@ public class StudentHomeController {
      * 计算当前实习状态
      */
     private int calculateCurrentStatus(StudentInternshipStatus status, Long studentId, boolean hasPendingApplication) {
-        // 如果有实习确认记录且已确认(status >= 2)
-        if (status != null && status.getStatus() != null && status.getStatus() >= 2) {
-            Date now = new Date();
-            Date startTime = status.getInternshipStartTime();
-            Date endTime = status.getInternshipEndTime();
-
-            // 如果有中断标记
-            if (Boolean.TRUE.equals(status.getIsInterrupted())) {
-                return 5; // 已中断
-            }
-
-            // 如果有延期标记
-            if (Boolean.TRUE.equals(status.getIsDelayed())) {
-                return 6; // 延期
-            }
-
-            // 判断是否在实习期间内
-            if (startTime != null && endTime != null) {
-                if (now.before(startTime)) {
-                    // 尚未开始
-                    return 2; // 已确认（等待开始）
-                } else if (now.after(endTime)) {
-                    // 已结束
-                    return 4; // 已结束
-                } else {
-                    // 进行中
-                    return 3; // 实习中
-                }
-            } else if (startTime != null && now.after(startTime)) {
-                // 没有结束时间但有开始时间，且已过开始时间，视为进行中
-                return 3;
-            } else if (startTime == null && Integer.valueOf(3).equals(status.getStatus())) {
-                // 开始时间缺失但数据库状态已是"实习中"（如批量导入未同步时间），
-                // 不再降级为"已确认"，保持与实际状态一致
-                return 3;
-            } else if (startTime == null && Integer.valueOf(4).equals(status.getStatus())) {
-                // 同理，已结束状态不因时间缺失而降级
-                return 4;
-            } else {
-                // 其他情况（状态为 2 的"已确定"、或仅有开始时间但尚未开始）→ 按"已确认（等待开始）"显示
-                return 2;
-            }
-        }
-
-        // 如果有offer(status = 1)
-        if (status != null && status.getStatus() != null && status.getStatus() == 1) {
-            return 1; // 已有Offer
-        }
-
-        // 有pending的申请
-        if (hasPendingApplication) {
-            return 0; // 已申请
-        }
-
-        // 默认未找到
-        return 0;
+        // 与教师列表共用正式状态；生命周期服务负责写入到期流转。
+        return status == null || status.getStatus() == null ? 0 : status.getStatus();
     }
 
     /**

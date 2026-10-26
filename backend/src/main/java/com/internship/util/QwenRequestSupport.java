@@ -36,11 +36,11 @@ public final class QwenRequestSupport {
                 object.put("reasoning_effort", "none");
             }
             String modelName = model.substring(model.lastIndexOf('/') + 1).toLowerCase(Locale.ROOT);
-            // A separate low-effort budget keeps relevance/condition checks without exhausting the main answer budget.
+            // Extractive JSON review needs no private reasoning; retain its independent budget and strict verdict.
             // Unknown providers retain their existing options instead of receiving unsupported DeepSeek fields.
             if (answerReview && modelName.matches("deepseek-(?:v4-)?(?:flash|pro)")) {
-                object.putObject("thinking").put("type", "enabled");
-                object.put("reasoning_effort", "low");
+                object.putObject("thinking").put("type", "disabled");
+                object.remove("reasoning_effort");
                 object.putObject("response_format").put("type", "json_object");
                 object.put("max_tokens", 4096);
             }

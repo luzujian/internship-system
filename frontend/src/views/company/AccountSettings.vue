@@ -71,10 +71,8 @@ const maskedEmail = computed(() => {
 
 const maskedPhone = computed(() => {
   const phone = profileForm.value.phone
-  if (!phone || phone.length < 11) {
-    return '未绑定'
-  }
-  return phone.substring(0, 3) + '****' + phone.substring(7)
+  if (!phone) return '未绑定'
+  return phone.length >= 7 ? phone.substring(0, 3) + '****' + phone.slice(-4) : phone
 })
 
 onMounted(async () => {
@@ -143,14 +141,14 @@ const passwordTabKey = ref(0)
 const formContext = useFormContext()
 const profileFormRef = ref(null)
 const profileFillFields = [
-  { prop: 'phone', label: '手机号', type: 'input' },
-  { prop: 'email', label: '邮箱', type: 'input' }
+  { prop: 'phone', label: '联系电话', type: 'input' },
+  { prop: 'email', label: '账号邮箱', type: 'input', required: true }
 ]
 const registerProfileForm = () => formContext.register({
   formId: 'company:account', title: '企业资料', fields: profileFillFields,
   getModel: () => profileForm.value, getFormEl: () => profileFormRef.value,
   getObject: () => authStore.user?.id ? { type: 'company', id: String(authStore.user.id) } : null,
-  getValidationSummary: () => ({ missingFields: [], validationErrors: profileForm.value.email && !/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(profileForm.value.email.trim()) ? ['邮箱格式不正确'] : [] }),
+  getValidationSummary: () => ({ missingFields: profileForm.value.email.trim() ? [] : ['账号邮箱'], validationErrors: profileForm.value.email && !/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(profileForm.value.email.trim()) ? ['账号邮箱格式不正确'] : [] }),
 })
 onUnmounted(() => formContext.unregister('company:account'))
 
@@ -245,17 +243,26 @@ const handleSaveProfile = async () => {
   if (loading.value) return
   const fillInstance = formContext.currentForm.value?.instanceId
   const savedValues = formContext.captureValues('company:account')
-  // 邮箱格式校验（直接保存、无验证码；为空表示未绑定，允许保存）
+  // 绑定信息直接保存，邮箱用于找回密码。
   const email = (profileForm.value.email || '').trim()
-  if (email && !/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(email)) {
+  const phone = (profileForm.value.phone || '').replace(/\s+/g, '')
+  if (!email) {
+    ElMessage.error('请填写账号邮箱，用于找回密码')
+    return
+  }
+  if (!/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(email)) {
     ElMessage.error('请输入正确的邮箱格式')
+    return
+  }
+  if (phone && !/^[+0-9()（）\-转]{7,20}$/.test(phone)) {
+    ElMessage.error('请输入有效的手机或固定电话号码')
     return
   }
   loading.value = true
   try {
     const response = await CompanyService.updateProfile({
-      phone: profileForm.value.phone,
-      email: profileForm.value.email
+      phone,
+      email
     })
     if (response.code === 200) {
       ElMessage.success('个人信息保存成功')
@@ -369,12 +376,13 @@ const handleLogout = async () => {
               </div>
             </el-form-item>
 
-            <el-form-item label="手机号">
-              <el-input v-model="profileForm.phone" placeholder="请输入手机号" />
+            <el-form-item label="联系电话">
+              <el-input v-model="profileForm.phone" placeholder="请输入联系人手机或固定电话" maxlength="20" inputmode="tel" />
             </el-form-item>
 
-            <el-form-item label="邮箱">
-              <el-input v-model="profileForm.email" placeholder="请输入邮箱" />
+            <el-form-item label="账号邮箱" required>
+              <el-input v-model="profileForm.email" placeholder="请输入账号绑定邮箱" maxlength="100" />
+              <div class="login-account-hint">用于找回密码，请填写常用邮箱</div>
             </el-form-item>
 
             <el-form-item label="企业名称">
@@ -454,14 +462,14 @@ const handleLogout = async () => {
 
           <div class="security-item">
             <div class="security-info">
-              <h4>绑定手机</h4>
+              <h4>绑定电话</h4>
               <p>已绑定：{{ maskedPhone }}</p>
             </div>
           </div>
 
           <div class="security-item">
             <div class="security-info">
-              <h4>绑定邮箱</h4>
+              <h4>账号邮箱</h4>
               <p>已绑定：{{ maskedEmail }}</p>
             </div>
           </div>

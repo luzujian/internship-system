@@ -307,7 +307,30 @@ npm run dev
 
 ## 🤖 AI 功能概览
 
-系统通过 **Spring AI** 集成 **DeepSeek** 大模型，提供以下智能功能：
+侧边栏采用 **LangGraph 业务 Agent**：独立 Python 私有执行服务负责原生工具循环、检查点与追问恢复，Java 后端负责当前登录身份、四端权限、导入校验、操作确认和不可重复执行的业务回执。集成的是业务执行服务和框架库；不会把整个 OpenCode 开发工具嵌入业务系统。模型继续使用管理端设置的默认模型与参数，供应商密钥只保留在 Java 后端。
+
+Python 服务使用 Python 3.13、`backend/agent-runtime/requirements.lock.txt` 的固定依赖和 PostgreSQL 检查点存储。只运行一个 Uvicorn worker；多个 worker 尚无分布式执行权协调，不能直接扩容。管理员显式执行 `python -m deepintern_runtime.initialize` 初始化检查点表，初始化连接仅提供给该命令；正常执行账号只拥有已初始化表的 SELECT/INSERT/UPDATE/DELETE，启动时不执行 DDL，也不回退到内存或 SQLite。完整启动说明见 [执行服务说明](backend/agent-runtime/README.md)。
+
+| 配置 | 设置位置与要求 |
+|------|----------------|
+| `AGENT_HARNESS=langgraph` | Java；部署时显式指定，避免旧基线配置仍选择 OpenCode |
+| `AGENT_LANGGRAPH_URL` | Java；执行服务的私网固定地址，例如 `http://agent-runtime:8791` |
+| `AGENT_LANGGRAPH_SERVICE_KEY` / `AGENT_RUNTIME_SERVICE_KEY` | Java / Python；两端相同、随机且至少 32 字符，不写入源码、前端或对话状态 |
+| `AGENT_RUNTIME_POSTGRES_DSN` | Python；独立检查点库的 CRUD 账号连接，通过受保护的运行环境注入 |
+| `AGENT_BRIDGE_BIND_ADDRESS` | Java；跨容器时绑定内部网卡或容器内部 `0.0.0.0`，默认本机回环不能供另一容器访问 |
+| `AGENT_BRIDGE_TOOL_PORT` / `AGENT_BRIDGE_MODEL_PORT` | Java；私网固定端口，例如 `18971` / `18972`；使用完整属性对应的环境变量，兼容未替换配置资源的发布包 |
+| `AGENT_BRIDGE_TOOL_URL` / `AGENT_BRIDGE_MODEL_URL` | Java；Python 可达的完整地址，例如 `http://backend:18971/tools` / `http://backend:18972/model/v1` |
+| `AGENT_IMPORT_PRIVATE_DIR` | Java；独立私有持久卷，例如 `/app/agent-private/imports`，必须与公共上传目录分开 |
+
+Java、Python 和 PostgreSQL 通过明确的私有网络连接；执行服务和两个 Java 网关端口均不发布到公网或浏览器。每轮 Java 下发独立模型/工具租约，执行工具时重新核对身份、能力、任务状态和业务范围；取消与结束会撤销租约。私有服务认证、供应商密钥和租约均不存入客户端响应或检查点元数据。部署需要同时保留检查点数据库、Java 聊天/动作回执表和私有附件卷；普通 HTTP 健康检查不能代替完整对话与业务确认验收。
+
+运行时故障会明确返回错误；不会静默切换底座。需要回退时，由运维显式设置 `AGENT_HARNESS=opencode`，仍需在实际 Java 容器中保留 Node.js 22 及固定官方 OpenCode 1.18.35（`npm install -g opencode-ai@1.18.35`），并配置对应可执行文件与私有工作目录。旧 OpenCode 会话保留为历史；LangGraph 建立自己的检查点线程，不将旧框架的待答问题直接反序列化为新任务。`AGENT_HARNESS=legacy` 仍为显式旧问答模式。OpenCode 回归测试 `OpenCodeHarnessRuntimeTest` 需设置 `AGENT_OPENCODE_TEST_EXECUTABLE` / `AGENT_OPENCODE_TEST_NODE`，使用隔离模拟模型；未配置时跳过。
+
+管理员在侧边栏上传 Excel 后直接说明导入要求。Agent 分页读取源表、匹配真实班级专业并校验，缺失或冲突信息在聊天中追问；反问、新查询和修改要求由同一会话理解。校验后展示数量与问题位置，只有针对当前预览明确确认才导入，更正后必须重新确认；已有账号、密码与历史不覆盖。原始 Excel 私有保存并记录 SHA-256，来源、导入选项、当前预览和确认状态保存在 `agent_import_workspace`，不再仅依赖 Redis 24 小时上下文。管理员须显式执行 `backend/src/main/resources/db/migration/V20261012_01__agent_import_workspaces.sql`；MySQL 业务账号仍只有 CRUD。旧 Redis 工作区在归属校验后按需迁移；历史上传未保留原始文件的事实不会被补造。部署迁移时先停止旧 Redis 写入实例。新建账号初始凭据仍通过独立鉴权入口查看，不进入模型上下文。
+
+学生、教师、企业、班级、学院专业、岗位类别及公告管理页面的智能导入共享文件识别、校验与执行服务，可在页面预览中补充字段后确认导入。
+
+系统提供以下智能功能：
 
 | 功能模块 | 说明 |
 |----------|------|

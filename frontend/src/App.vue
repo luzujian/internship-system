@@ -7,6 +7,9 @@
 
 <script lang="ts" setup>
 import { forwardTableWheelToPage } from '@/utils/tableWheel'
+import { useMobileViewport } from '@/composables/useMobileViewport'
+
+useMobileViewport()
 </script>
 
 <style>

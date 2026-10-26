@@ -7,18 +7,19 @@ const store = readFileSync(new URL('../src/agent/store.ts', import.meta.url), 'u
 const workspace = readFileSync(new URL('../src/components/agent/AgentWorkspace.vue', import.meta.url), 'utf8')
 const { descriptor } = parse(workspace, { filename: 'AgentWorkspace.vue' })
 
-test('教师描述仅生成持久草稿，确认使用统一事务接口', () => {
+test('教师描述交给统一 Agent，确认使用统一事务接口', () => {
   const previewFn = store.slice(store.indexOf('async function previewAutoFlow'), store.indexOf('async function confirmCreateAutoFlow'))
-  assert.match(previewFn, /auto-tasks\/v2\/drafts\/preview/)
+  assert.match(previewFn, /await ask\(businessMessageContext\(\), message\)/)
   assert.doesNotMatch(previewFn, /\/confirm/)
   assert.match(store, /auto-tasks\/v2\/confirm/)
-  assert.match(previewFn, /sessionId:sessionId.value/)
+  assert.doesNotMatch(previewFn, /request\.post/)
 })
 
-test('管理员预览只调 parse，不保存；保存仅在确认函数内且复用 config 接口', () => {
+test('管理员描述交给统一 Agent，不保存；保存仅在确认函数内且复用 config 接口', () => {
   const previewFn = store.slice(store.indexOf('async function previewCapsFlow'))
   const previewBody = previewFn.slice(0, previewFn.indexOf('\n  async function confirmCapsFlow'))
-  assert.match(previewBody, /\/admin\/agent-capabilities\/parse/)
+  assert.match(previewBody, /await ask\(businessMessageContext\(\), message\)/)
+  assert.doesNotMatch(previewBody, /request\.post/)
   assert.doesNotMatch(previewBody, /\/admin\/agent-capabilities\/config/)
   assert.match(store, /async function confirmCapsFlow[\s\S]*request\.put\('\/admin\/agent-capabilities\/config'/)
 })

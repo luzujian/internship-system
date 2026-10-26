@@ -8,21 +8,26 @@ import eventBus from '@/utils/eventBus'
 import { onStudentRecentActivityChanged, offStudentRecentActivityChanged } from '@/utils/websocket'
 import { useAgentStore } from '@/agent/store'
 import StudentJourney from './StudentJourney.vue'
+import MessageAttachments from './MessageAttachments.vue'
+import { useImportConversation } from '@/components/import/useImportConversation'
+
 import AutomationManager from './AutomationManager.vue'
 import AutomationPreview from './AutomationPreview.vue'
-import { ElMessageBox } from 'element-plus'
-import { automationRequest, automationTemplate } from '@/agent/automationIntent.mjs'
-import { shouldResolveFormFill, shouldResolveUiIntent } from '@/agent/sendRouting.mjs'
+import { ElMessageBox, useZIndex } from 'element-plus'
+import { automationTemplate } from '@/agent/automationIntent.mjs'
+
 import { getAutoTaskCapability } from '@/api/teacherAutoTask'
 import { allowsWriteAction, answerParts, relevantAnswerCards, businessTarget, localReceiptTarget, panelSize, responseOperation, setActionRouteMap, taskVersions, shouldDock, terminal } from '@/agent/protocol.mjs'
-import { capabilityRequest } from '@/agent/capabilityIntent.mjs'
+
 import { asrSupported, createAsr } from '@/agent/asr'
 import { collectUiTargets, targetStillAvailable, waitForUiTargets } from '@/agent/uiTargets'
-import { getFormFields, getFormValidation, captureValues } from '@/agent/formContext'
+import { getFormFields, getFormValidation } from '@/agent/formContext'
+import { boundedUiFilters } from '@/agent/sendRouting.mjs'
 import type { AsrSession } from '@/agent/asr'
-import type { AgentLink, FillEvent, PageContext } from '@/agent/types'
+import type { AgentLink, FillEvent, MessageAttachment, PageContext } from '@/agent/types'
 
 const agent = useAgentStore(); const auth = useAuthStore(); const route = useRoute(); const router = useRouter()
+const importConversation = useImportConversation(agent, auth)
 const lastOf = <T>(items: readonly T[]): T | undefined => items[items.length - 1]
 const panel = ref<HTMLElement>(); const composer = ref<HTMLTextAreaElement>(); const conversation = ref<HTMLElement>()
 const viewportWidth = ref(window.innerWidth)
@@ -30,7 +35,34 @@ const savedWidth = Number(localStorage.getItem('deepintern.agent.width'))
 const width = ref(Number.isFinite(savedWidth) && savedWidth >= 360 ? Math.min(savedWidth, 560) : 420)
 const docked = computed(() => agent.visible && shouldDock(viewportWidth.value, width.value))
 const panelWidth = computed(() => panelSize(viewportWidth.value, width.value))
-const mobile = computed(() => viewportWidth.value <= 700)
+const mobile = computed(() => viewportWidth.value <= 768)
+const { nextZIndex } = useZIndex()
+const mobileLayer = ref(1999)
+const suspendedOverlays = new Map<HTMLElement, boolean>()
+function syncMobileOverlay() {
+  const active = agent.visible && mobile.value
+  document.body.classList.toggle('agent-mobile-open', active)
+  document.querySelector('.agent-host')?.toggleAttribute('inert', active)
+  if (active) {
+    let highestOverlay = 1998
+    for (const overlay of document.querySelectorAll<HTMLElement>('.el-overlay, .modal-overlay')) {
+      if (panel.value?.contains(overlay) || getComputedStyle(overlay).display === 'none' || !overlay.getClientRects().length) continue
+      highestOverlay = Math.max(highestOverlay, parseInt(getComputedStyle(overlay).zIndex) || 2000)
+      if (!suspendedOverlays.has(overlay)) {
+        suspendedOverlays.set(overlay, overlay.hasAttribute('inert'))
+        overlay.setAttribute('inert', '')
+      }
+    }
+    // Allocate through Element Plus so confirmations opened afterward are above us.
+    mobileLayer.value = nextZIndex()
+    while (mobileLayer.value <= highestOverlay) mobileLayer.value = nextZIndex()
+  } else {
+    for (const [overlay, wasInert] of suspendedOverlays) {
+      if (!wasInert) overlay.removeAttribute('inert')
+    }
+    suspendedOverlays.clear()
+  }
+}
 const dictLabels = ref<Record<string, Record<string, string>>>({ pageTitle: {}, objectType: {}, filterName: {}, featureLabel: {} })
 onMounted(async () => {
   try {
@@ -57,6 +89,7 @@ const context = computed<PageContext>(() => {
     // A saved fill receipt covers only AI-written fields, not every current form value.
     base.filters = { ...base.filters, formId: form.formId, formInstanceId: String(form.instanceId), formStatus: pendingFill ? 'filled' : 'unknown', formTitle: form.title, formFields: summary.slice(0, 1200) }
   }
+  base.filters = boundedUiFilters(base.filters, collectUiTargets(router), form && agent.formFillEnabled ? { formId: form.formId, formTitle: form.title, instanceId: form.instanceId, fields: getFormFields(form) } : null)
   return base
 })
 const topOffset = ref(64)
@@ -69,7 +102,7 @@ const readBannerHeight = () => {
   topOffset.value = Math.max(0, header?.getBoundingClientRect().bottom || 64, banner?.getBoundingClientRect().bottom || 0)
   document.body.style.setProperty('--business-overlay-top', `${topOffset.value}px`)
 }
-const filterText = computed(() => Object.entries(context.value.filters).filter(([key, value]) => !key.startsWith('form') && value !== '' && value != null && (!Array.isArray(value) || value.length > 0))
+const filterText = computed(() => Object.entries(context.value.filters).filter(([key, value]) => !key.startsWith('form') && !key.startsWith('ui') && value !== '' && value != null && (!Array.isArray(value) || value.length > 0))
   .map(([key, value]) => `${filterNames.value[key] || '筛选'}：${key === 'visibleIds' && Array.isArray(value) ? `${value.length} 项` : Array.isArray(value) ? value.join('、') : value}`).join(' · '))
 const contextLabel = computed(() => context.value.object ? `${typeNames.value[context.value.object.type] || '对象'} #${context.value.object.id}` : '当前页面')
 const role = computed(() => agent.capabilities?.actor.role || '')
@@ -86,9 +119,7 @@ const atBottom = ref(true)
 let lastFocus: HTMLElement | null = null
 let bannerObserver: MutationObserver | null = null
 
-// ===== 智能填表：send 路由 + 语音输入 =====
-// 有关联表单且开通填表能力时，输入先走 fill-intent（后端模型判定意图）；
-// 无赋值意图或表单已关闭时自动回落为普通顾问提问，语音与文字共用同一条链路。
+// 文字与语音共用业务 Agent；页面动作仅消费已校验的工具回执。
 const linkedForm = computed(() => agent.currentForm)
 const canVoice = computed(() => Boolean(agent.voiceEnabled && asrSupported() && agent.capabilities?.enabled))
 const asrState = ref<'idle' | 'listening' | 'error'>('idle')
@@ -163,7 +194,7 @@ function resizeComposer() {
   const input = composer.value
   if (!input) return
   input.style.height = 'auto'
-  input.style.height = `${Math.min(180, Math.max(48, input.scrollHeight))}px`
+    input.style.height = `${Math.min(mobile.value && panelHeight.value < 360 ? 56 : 180, Math.max(48, input.scrollHeight))}px`
 }
 watch([() => agent.draft, composer, width, panelHeight], () => { void nextTick(resizeComposer) }, { flush: 'post' })
 function updateKeyboardGap() {
@@ -189,197 +220,107 @@ watch(() => agent.sessionId, (value, previous) => {
   if (previous || !value) uiController?.abort()
 }, { flush: 'sync' })
 onBeforeUnmount(() => uiController?.abort())
-async function handleUiRequest(message: string): Promise<boolean | 'chat'> {
-  const owner = agent.capabilities?.actor.ownerKey, token = auth.token, session = agent.sessionId
-  let expectedPath = route.fullPath
-  uiExpectedPath = expectedPath
-  const controller = new AbortController()
-  controller.signal.addEventListener('abort', () => agent.cancelFill(), { once: true })
-  uiController = controller; uiWorking.value = true
-  const valid = () => !controller.signal.aborted && owner === agent.capabilities?.actor.ownerKey
-    && token === auth.token && (session === agent.sessionId || (!session && receiptSession === agent.sessionId))
-    && route.fullPath === expectedPath && agent.visible && agent.capabilities?.enabled && !readOnly.value
-  let receiptSession: string | null = null
-  const receipt = async (title: string, detail: string) => {
-    if (!valid()) return
-    await agent.ensureSession()
-    receiptSession = agent.sessionId
-    if (!valid()) return
-    agent.recordActivity('ACTION', message, title, detail)
-    if (agent.draft.trim() === message) agent.draft = ''
-  }
-  let opened = ''
-  let needsForm = false
-  const visited = new Set<string>()
-  try {
-    // Resolve again after mounting the destination: its current tabs, permissions and openers are authoritative.
-    for (let step = 0; step < 4; step++) {
-      const targets = collectUiTargets(router)
-      // 明确要求打开表单且入口唯一时直接点击，避免模型把打开表单误判为普通问答。
-      if (!linkedForm.value && /(?:打开|进入|切换到|弹出).{0,30}(?:表单|表格|弹窗|发布岗位|岗位发布)/.test(message)) {
-        const openers = targets.filter(item => item.kind === 'open')
-        const matched = openers.filter(item => {
-          const label = (item.label || '').replace(/(?:表单|表格|弹窗|按钮)$/u, '').trim()
-          return label.length >= 2 && message.includes(label)
-        })
-        if (matched.length === 1 && matched[0].element) {
-          const opener = matched[0]
-          opener.element.click()
-          opened = opener.label
-          await nextTick()
-          await waitForUiTargets(router, controller.signal)
-          if (!valid()) return true
-          // Keep the original request after opening: its field assignments still
-          // go through the registered schema and the normal confirmation boundary.
-          if (linkedForm.value && agent.formFillEnabled) {
-            if (agent.draft.trim() === message) agent.draft = ''
-            const handled = await agent.fillForm(message)
-            if (!valid() || handled) return true
+function mountedUiContext(): PageContext {
+  const page = context.value, form = agent.currentForm
+  return { ...page, route: route.path, revision: agent.revision,
+    filters: boundedUiFilters(page.filters, collectUiTargets(router), form && agent.formFillEnabled
+      ? { formId: form.formId, formTitle: form.title, instanceId: form.instanceId, fields: getFormFields(form) } : null) }
+}
+async function executeAgentUiActions() {
+  if (uiWorking.value) return
+  while (agent.uiActionQueue.length) {
+    const delivery = agent.takeUiActions()
+    if (!delivery) break
+    const { task, pageContext: sent } = delivery
+    const owner = agent.capabilities?.actor.ownerKey, token = auth.token
+    let expectedPath = sent.route
+    const valid = () => !controller.signal.aborted && agent.isUiActionCurrent(delivery) && owner === task.ownerKey && owner === agent.capabilities?.actor.ownerKey
+      && token === auth.token && task.sessionId === agent.sessionId && route.path === expectedPath
+      && agent.visible && agent.capabilities?.enabled && !readOnly.value && lastOf(agent.tasks)?.id === task.id
+    const controller = new AbortController()
+    uiController = controller; uiExpectedPath = route.fullPath; uiWorking.value = true
+    try {
+      if (!agent.isUiActionCurrent(delivery) || lastOf(agent.tasks)?.id !== task.id) continue
+      if (!valid() || sent.revision !== agent.revision) throw new Error('页面或会话已变化，本次页面操作未执行。')
+      const seen = new Set<string>()
+      for (const action of task.uiActions || []) {
+        if (!valid()) break
+        if (!action || typeof action.id !== 'string' || !action.id || action.id.length > 120 || seen.has(action.id)) throw new Error('页面操作回执无效，请重新发送。')
+        seen.add(action.id)
+        if (action.type === 'NAVIGATE') {
+          const original = Array.isArray(sent.filters.uiTargets) ? sent.filters.uiTargets.find((item: any) => item.id === action.targetId) : null
+          const target = collectUiTargets(router).find(item => item.id === action.targetId)
+          if (!original || !target || target.kind !== original.kind || target.label !== original.label || target.path !== original.path
+            || target.instanceId !== original.instanceId || !targetStillAvailable(target, router)) throw new Error('页面入口已变化，本次操作未执行。')
+          if (target.kind === 'page') {
+            uiNavigationPath = router.resolve(target.path!).fullPath
+            try { await router.push(target.path!) } finally { uiNavigationPath = null }
+            if (controller.signal.aborted) break
+            if (!lastOf(router.resolve(target.path!).matched)?.redirect && route.path !== router.resolve(target.path!).path) throw new Error('当前权限不允许打开该页面。')
+            expectedPath = route.path; uiExpectedPath = route.fullPath
+          } else if (target.kind === 'open') target.element!.click()
+          await nextTick(); await waitForUiTargets(router, controller.signal)
+          if (valid()) agent.recordActivity('ACTION', '', target.kind === 'page' ? '页面已打开' : '表单已打开', `已打开${target.label}。`)
+          if (action.continue === true) {
+            if (valid()) { agent.advanceUiRevision(sent.revision); await agent.continueUiTask(task.id, action.id, mountedUiContext(), controller.signal) }
+            break
           }
-          await receipt('表单已打开', `已打开${opener.label}。` + (agent.formFillEnabled ? '可以继续告诉我要填写的内容。' : '当前账号未开通智能填表，请手动填写。'))
-          return true
-        }
-      }      const formInstance = linkedForm.value?.instanceId
-      const formValues = linkedForm.value ? JSON.stringify(captureValues(linkedForm.value.formId)) : null
-      const response: any = await request.post('/agent/ui/intent', {
-        message, currentPage: `${context.value.title} ${linkedForm.value?.title || ''}`,
-        targets: targets.map(({ id, label, kind, path }) => ({ id, label: `${label}${kind === 'page' && path === route.path ? '（当前页面）' : ''}`.slice(0, 200), kind }))
-      }, { signal: controller.signal, timeout: 60000 })
-      if (!valid()) return true
-      if (formInstance !== linkedForm.value?.instanceId) throw new Error('表单已变化，本次操作已停止。')
-      const result = response.data
-      if (result.fill && linkedForm.value && formValues !== JSON.stringify(captureValues(linkedForm.value.formId)))
-        throw new Error('表单内容已变化，已保留当前填写，请重新发送填表要求。')
-      needsForm = result.form === true || result.fill === true
-      if (result.intent === 'chat') { if (opened) break; return 'chat' }
-      if (result.intent === 'clarify') {
-        await receipt('需要补充信息', result.question)
-        return true
+        } else if (action.type === 'FORM_FILL') {
+          if (!agent.applyUiFormAction(task, action, delivery)) throw new Error('表单或权限已变化，本次未填写，请打开目标表单后重试。')
+        } else if (action.type === 'AUTO_TASK_PREVIEW' || action.type === 'CAPABILITIES_PREVIEW') {
+          if (!agent.acceptUnifiedPreview(task, action)) throw new Error('当前身份不能打开此操作预览。')
+        } else throw new Error('助手返回了不支持的页面操作。')
       }
-      const target = targets.find(item => item.id === result.targetId)
-      if (!target || !targetStillAvailable(target, router)) throw new Error('页面入口已变化，请重新发送。')
-      if (target.kind === 'form') {
-        if (result.fill && agent.formFillEnabled) {
-          if (agent.draft.trim() === message) agent.draft = ''
-          await agent.fillForm(message)
-        } else {
-          await receipt('表单已打开', `已打开${target.label}。${agent.formFillEnabled ? '可继续告诉我要填写的内容。' : '当前账号未开通智能填表，请在页面手动填写。'}`)
-        }
-        return true
-      }
-      const destination = `${route.path}:${target.kind}:${target.path || target.label}`
-      if (visited.has(destination)) throw new Error('未能定位目标表单，本次操作已停止，请明确要打开的入口。')
-      visited.add(destination)
-      if (target.kind === 'page') {
-        if (router.resolve(target.path!).fullPath === route.fullPath) {
-          if (result.form || result.fill) throw new Error('已在该页面，但尚未定位目标表单，请明确表单名称。')
-          opened = target.label; break
-        }
-        uiNavigationPath = router.resolve(target.path!).fullPath
-        try { await router.push(target.path!) } finally { uiNavigationPath = null }
-        if (controller.signal.aborted) return true
-        expectedPath = route.fullPath
-        uiExpectedPath = expectedPath
-        if (!lastOf(router.resolve(target.path!).matched)?.redirect && route.path !== router.resolve(target.path!).path)
-          throw new Error('当前权限或页面状态不允许打开该入口。')
-      } else target.element!.click()
-      opened = target.label
-      await nextTick()
-      await waitForUiTargets(router, controller.signal)
-      if (!valid()) return true
-      if (target.kind === 'page' && !result.fill && !result.form) break
+    } catch (error: any) {
+      if (owner === agent.capabilities?.actor.ownerKey && token === auth.token && task.sessionId === agent.sessionId) agent.error = error?.message || '页面操作未完成，请核对后重试。'
+    } finally {
+      if (uiController === controller) { uiWorking.value = false; uiController = null; uiNavigationPath = null }
     }
-    if (needsForm) throw new Error('页面已打开，但未完成表单定位或填写，请明确目标表单后重试。')
-    if (opened) {
-      await receipt('页面已打开', `已打开${opened}。`)
-      return true
-    }
-    return false
-  } catch (error: any) {
-    if (valid()) agent.error = error?.response?.data?.message || error?.message || '页面操作失败，请重试。'
-    return true
-  } finally {
-    if (controller.signal.aborted && token === auth.token && owner === agent.capabilities?.actor.ownerKey
-      && (session === agent.sessionId || (!session && receiptSession === agent.sessionId)) && !agent.draft) agent.draft = message
-    if (uiController === controller) { uiWorking.value = false; uiController = null; uiNavigationPath = null }
   }
 }
-
-const routingMessage = shallowRef<{ message: string; createdAt: number; state: 'sending'; error?: string } | null>(null)
+watch(() => agent.uiActionQueue.length, () => { void executeAgentUiActions() }, { flush: 'post' })
+async function retryUiFeedback() {
+  const feedback = agent.pendingUiFeedback
+  if (!feedback || uiWorking.value || agent.busy || readOnly.value || !agent.visible) return
+  const controller = new AbortController()
+  uiController = controller; uiExpectedPath = route.fullPath; uiWorking.value = true
+  try { await agent.continueUiTask(feedback.parentTaskId, feedback.actionId, mountedUiContext(), controller.signal) }
+  finally { if (uiController === controller) { uiController = null; uiWorking.value = false } }
+}
+const routingMessage = shallowRef<{ message: string; createdAt: number; state: 'sending'; error?: string; attachments?: MessageAttachment[] } | null>(null)
 const visiblePending = computed(() => agent.pendingMessage || routingMessage.value)
 watch([() => auth.token, () => agent.capabilities?.actor.ownerKey, () => agent.visible], () => { routingMessage.value = null }, { flush: 'sync' })
 async function send(text?: string) {
   if (readOnly.value || !agent.visible || !agent.capabilities?.enabled || agent.loading || !auth.token) return
-  const token = auth.token
-  const owner = agent.capabilities.actor.ownerKey
-  const originalSession = agent.sessionId
-  const formInstance = linkedForm.value?.instanceId
+  const token = auth.token, owner = agent.capabilities.actor.ownerKey, originalSession = agent.sessionId
   if (text) agent.draft = text
   const message = agent.draft.trim()
-  if (!message || agent.busy || uiWorking.value || routingMessage.value || voiceFinishing.value) return
+  if (!message || agent.busy || uiWorking.value || importConversation.working || routingMessage.value || voiceFinishing.value) return
   atBottom.value = true
-
-  const pendingCaps = ['need_input', 'need_confirm', 'error'].includes(agent.capsFlow.phase) ? agent.capsFlow.message : ''
-  const capsMessage = canManageCapabilities.value ? capabilityRequest(message, pendingCaps) : null
-  if (capsMessage) {
-    if (agent.capsFlow.working) return
-    agent.draft = ''
-    const accepted = await agent.previewCapsFlow(capsMessage)
-    if (!accepted && !agent.draft) agent.draft = message
-    await nextTick(); scrollBottom()
-    return
-  }
-  const pendingAuto = !agent.autoFlow.created && ['need_input', 'need_confirm'].includes(agent.autoFlow.phase) ? agent.autoFlow.message : ''
-  const autoMessage = canAutomate.value ? automationRequest(message, pendingAuto) : null
-  if (autoMessage) {
-    if (agent.autoFlow.working) return
-    agent.draft = ''
-    const ok = await agent.previewAutoFlow(autoMessage)
-    if (!ok && !agent.draft) agent.draft = message
-    await nextTick(); scrollBottom()
-    return
-  }
-  const pending = { message, createdAt: Date.now(), state: 'sending' as const }
-  routingMessage.value = pending
-  agent.draft = ''
-  agent.error = ''
+  const pending = { message, createdAt: Date.now(), state: 'sending' as const,
+    attachments: importConversation.draftAttachments.map(file => ({ ...file })) }
+  routingMessage.value = pending; agent.draft = ''; agent.error = ''
   try {
     await nextTick(); scrollBottom()
-    if (token !== auth.token || owner !== agent.capabilities?.actor.ownerKey || !agent.visible) return
-    const hasFillForm = Boolean(linkedForm.value && agent.formFillEnabled)
-    if (shouldResolveFormFill(message, { hasForm: hasFillForm })) {
-      agent.draft = ''
-      const handled = await agent.fillForm(message)
-      if (handled) routingMessage.value = null
-      await nextTick(); scrollBottom()
-      if (handled || token !== auth.token || owner !== agent.capabilities?.actor.ownerKey || !agent.visible || readOnly.value || !agent.capabilities?.enabled || !agent.formFillEnabled || formInstance !== linkedForm.value?.instanceId) return
-    }
-    const uiResult = shouldResolveUiIntent(message)
-      ? await handleUiRequest(message)
-      : 'chat'
-    if (uiResult === true) return
-    if (uiResult !== 'chat' && linkedForm.value && agent.formFillEnabled) {
-      agent.draft = ''
-      const handled = await agent.fillForm(message)
-      if (handled) routingMessage.value = null
-      await nextTick(); scrollBottom()
-      if (handled || token !== auth.token || owner !== agent.capabilities?.actor.ownerKey || !agent.visible || readOnly.value || !agent.capabilities?.enabled || !agent.formFillEnabled || formInstance !== linkedForm.value?.instanceId) return
+    if (token !== auth.token || owner !== agent.capabilities?.actor.ownerKey || !agent.visible || readOnly.value || !agent.capabilities?.enabled) return
+    if (agent.capabilities.actor.role === 'ROLE_ADMIN' && importConversation.canHandle()) {
+      await agent.ensureSession()
+      if (token !== auth.token || owner !== agent.capabilities?.actor.ownerKey || !agent.visible || readOnly.value
+        || (originalSession && originalSession !== agent.sessionId)) return
+      await importConversation.send(message, context.value)
+    } else {
       routingMessage.value = null
       await agent.ask(context.value, message)
-      await nextTick(); scrollToLatest(); return
     }
-    routingMessage.value = null
-    await agent.ask(context.value, message)
     await nextTick(); scrollBottom()
   } catch (error: any) {
     if (token === auth.token && owner === agent.capabilities?.actor.ownerKey) agent.error = error?.message || '发送失败，请重试。'
   } finally {
     if (routingMessage.value === pending) routingMessage.value = null
-    if (token === auth.token && owner === agent.capabilities?.actor.ownerKey && originalSession === agent.sessionId
+    if (token === auth.token && owner === agent.capabilities?.actor.ownerKey && (!originalSession || originalSession === agent.sessionId)
       && (agent.error || !agent.visible) && !agent.pendingMessage && !agent.draft) agent.draft = message
   }
-}
-let voiceEpoch = 0
+}let voiceEpoch = 0
 function stopAsr(preserve = true) {
   const transcript = (asrFinal.value + asrInterim.value).trim()
   voiceEpoch++
@@ -436,25 +377,30 @@ const editText = ref<string>("")
 const copiedId = ref<string | null>(null)
 const highlightId = ref<string | null>(null)
 let highlightTimer = 0
-function chainOf(task: any): any[] { return taskVersions(agent.tasks, task) }
+function isUiContinuation(task: any): boolean { return task.responseKind === 'UI_CONTINUATION' && typeof task.parentTaskId === 'string' && Boolean(task.parentTaskId) }
+function chainOf(task: any): any[] { return isUiContinuation(task) ? [task] : taskVersions(agent.tasks.filter(item => !isUiContinuation(item)), task) }
 const selectedVersions = ref<Record<string, string>>({})
 const timeline = computed(() => {
   const groups = new Map<string, any[]>()
-  for (const task of agent.tasks) { const chain = chainOf(task); groups.set(chain[0].id, chain) }
+  for (const task of agent.tasks.filter(item => !isUiContinuation(item))) { const chain = chainOf(task); groups.set(chain[0].id, chain) }
   const items: any[] = [...groups].map(([root, chain]) => {
     const task = chain.find(item => item.id === selectedVersions.value[root]) || chain[chain.length - 1]
     return { id: root, kind: 'task', task, createdAt: chain[0].createdAt || chain[0].updatedAt }
   })
+  items.push(...agent.tasks.filter(isUiContinuation).map(task => ({ id: task.id, kind: 'task', task, createdAt: task.createdAt || task.updatedAt })))
   items.push(...agent.fillEvents.map(event => ({ id: event.id, kind: 'fill', event, createdAt: event.createdAt })))
-  items.push(...agent.activityEvents.map(event => ({ id: event.id, kind: 'activity', event, createdAt: event.createdAt })))
+  items.push(...agent.activityEvents.filter(event => !event.attachmentTaskId).map(event => ({ id: event.id, kind: 'activity', event, createdAt: event.createdAt })))
   if (agent.autoFlow.phase !== 'idle') items.push({ id: 'auto-preview', kind: 'auto', createdAt: autoStartedAt.value })
   if (agent.capsFlow.phase !== 'idle') items.push({ id: 'caps-preview', kind: 'caps', createdAt: capsStartedAt.value })
   return items.sort((a, b) => a.createdAt - b.createdAt)
 })
 function isLatestMessage(id: string) {
-  if (agent.pendingMessage || agent.busy || uiWorking.value) return false
+  if (agent.pendingMessage || agent.busy || uiWorking.value || importConversation.working) return false
   const latest = lastOf(timeline.value.filter(item => item.kind !== 'activity' || item.event.message))
-  return latest?.kind === 'task' ? latest.task.id === id && lastOf(chainOf(latest.task))?.id === id : latest?.id === id
+  if (latest?.kind !== 'task') return latest?.id === id
+  let task = lastOf(agent.tasks) || latest.task
+  for (let hop = 0; hop < 3 && isUiContinuation(task); hop++) task = agent.tasks.find(item => item.id === task.parentTaskId) || task
+  return task.id === id && lastOf(chainOf(task))?.id === id
 }
 const autoStartedAt = ref(Date.now()), capsStartedAt = ref(Date.now())
 watch(() => agent.autoFlow.message, () => { autoStartedAt.value = Date.now() })
@@ -615,6 +561,7 @@ watch([docked, panelWidth], () => {
   document.body.classList.toggle('agent-docked', docked.value)
   document.body.style.setProperty('--agent-width', `${panelWidth.value}px`)
 }, { immediate: true })
+watch(mobile, syncMobileOverlay)
 const scrollPositions = new Map<string, { top: number; bottom: boolean }>()
 function saveScroll() { if (conversation.value) scrollPositions.set(agent.sessionId || 'new', { top: conversation.value.scrollTop, bottom: atBottom.value }) }
 async function restoreScroll() {
@@ -626,9 +573,11 @@ async function restoreScroll() {
 let journeyTimer: number | undefined
 function refreshVisibleJourney() { if (agent.visible && !document.hidden) void agent.refreshPlan() }
 watch(() => agent.visible, async open => {
+  if (open) lastFocus = document.activeElement as HTMLElement
+  syncMobileOverlay()
   window.clearInterval(journeyTimer)
   if (open) { void agent.refreshPlan(); journeyTimer = window.setInterval(refreshVisibleJourney, 60000) }
-  if (open) { lastFocus = document.activeElement as HTMLElement; await restoreScroll(); if (!mobile.value) composer.value?.focus({ preventScroll: true }) }
+  if (open) { await restoreScroll(); if (!mobile.value) composer.value?.focus({ preventScroll: true }); else panel.value?.querySelector<HTMLElement>('[aria-label="关闭 AI 助手"]')?.focus({ preventScroll: true }) }
   else { agent.flushDraft(); await nextTick(); if (lastFocus?.isConnected) lastFocus.focus({ preventScroll: true }) }
 })
 watch(() => agent.sessionId, async () => { selectedVersions.value = {}; await restoreScroll() })
@@ -637,7 +586,7 @@ async function loadOlder() {
   await agent.loadOlderTasks(); await nextTick()
   if (conversation.value) conversation.value.scrollTop = top + conversation.value.scrollHeight - before
 }
-watch([() => agent.tasks.map(task => task.version).join(','), visiblePending], async () => { if (atBottom.value) { await nextTick(); scrollBottom() } })
+watch([() => agent.tasks.map(task => task.version).join(','), () => agent.activityEvents.length, visiblePending], async () => { if (atBottom.value) { await nextTick(); scrollBottom() } })
 watch(() => auth.token, () => { if (auth.token) void agent.initialize(); else agent.dispose() }, { immediate: true })
 onMounted(() => {
   window.addEventListener('focus', refreshVisibleJourney)
@@ -660,7 +609,10 @@ onBeforeUnmount(() => {
   if (composerFocusTimer) window.clearTimeout(composerFocusTimer)
   try { window.visualViewport?.removeEventListener('resize', updateKeyboardGap); window.visualViewport?.removeEventListener('scroll', updateKeyboardGap) } catch { /* 忽略 */ }
   stopAsr()
-  agent.dispose(); document.body.classList.remove('agent-docked')
+  agent.dispose(); document.body.classList.remove('agent-docked', 'agent-mobile-open')
+  document.querySelector('.agent-host')?.removeAttribute('inert')
+  for (const [overlay, wasInert] of suspendedOverlays) { if (!wasInert) overlay.removeAttribute('inert') }
+  suspendedOverlays.clear()
   document.body.style.removeProperty('--agent-width')
   document.body.classList.remove('business-overlay-below-header')
   document.body.style.removeProperty('--business-overlay-top')
@@ -670,14 +622,14 @@ onBeforeUnmount(() => {
 </script>
 <template>
   <Teleport to="body">
-    <aside v-show="agent.visible" id="agent-workspace" ref="panel" class="agent-workspace" :class="{ overlay: !docked }" :style="{ width: `${panelWidth}px`, top: `${panelTop}px`, height: `${panelHeight}px` }" :role="mobile ? 'dialog' : 'complementary'" :aria-modal="mobile || undefined" aria-labelledby="agent-title">
+    <aside v-show="agent.visible" id="agent-workspace" ref="panel" class="agent-workspace" :class="{ overlay: !docked, 'is-compact': mobile && panelHeight < 360 }" :style="{ width: `${panelWidth}px`, top: `${panelTop}px`, height: `${panelHeight}px`, zIndex: mobile ? mobileLayer : undefined }" :role="mobile ? 'dialog' : 'complementary'" :aria-modal="mobile || undefined" aria-labelledby="agent-title">
       <div v-if="docked" class="agent-resize" role="separator" tabindex="0" aria-label="调整 AI 工作区宽度" aria-orientation="vertical" :aria-valuenow="width" aria-valuemin="360" aria-valuemax="560" @pointerdown="startResize" @keydown="resizeKey" />
       <header class="agent-header" @keydown.esc.stop>
         <div class="agent-symbol" aria-hidden="true">✦</div>
         <h2 id="agent-title">Intern AI</h2>
         <div class="agent-header-actions">
           <button v-if="canAutomate" type="button" aria-label="自动化任务" title="自动化任务" :aria-expanded="showAutomation" @click="showAutomation = !showAutomation; agent.showHistory = false"><Timer /></button>
-          <button type="button" :disabled="agent.busy || agent.operationWorking || uiWorking" aria-label="新会话" title="新会话" @click="showAutomation = false; agent.newSession()"><Plus /></button>
+          <button type="button" :disabled="agent.busy || agent.operationWorking || uiWorking || importConversation.working" aria-label="新会话" title="新会话" @click="showAutomation = false; agent.newSession()"><Plus /></button>
           <button type="button" aria-label="历史会话" title="历史会话" :aria-expanded="agent.showHistory" @click="showAutomation = false; agent.showHistory = !agent.showHistory; if (agent.showHistory) void agent.loadSessions()"><Clock /></button>
           <button type="button" aria-label="关闭 AI 助手" title="关闭" @click="agent.visible = false"><Close /></button>
         </div>
@@ -690,7 +642,7 @@ onBeforeUnmount(() => {
         <p v-else-if="!agent.sessions.length" class="history-empty">还没有历史会话。</p>
         <ul v-else>
           <li v-for="item in agent.sessions" :key="item.id" :class="{ active: item.id === agent.sessionId }">
-            <button type="button" class="history-open" :aria-current="item.id === agent.sessionId ? 'true' : undefined" :disabled="agent.busy || agent.operationWorking || uiWorking" @click="agent.switchSession(item.id); agent.showHistory = false">
+            <button type="button" class="history-open" :aria-current="item.id === agent.sessionId ? 'true' : undefined" :disabled="agent.busy || agent.operationWorking || uiWorking || importConversation.working" @click="agent.switchSession(item.id); agent.showHistory = false">
               <span class="history-title">{{ item.title }}</span>
               <small>{{ sessionDate(item.updatedAt) }} · {{ item.taskCount }} 条{{ item.hasRunningTask ? ' · 执行中' : '' }}</small>
             </button>
@@ -706,10 +658,12 @@ onBeforeUnmount(() => {
         <div v-if="!timeline.length && !visiblePending" class="agent-welcome"><div class="welcome-star" aria-hidden="true">✦</div><h3>从你现在的任务开始</h3><button v-if="canAutomate && !showAutomation" type="button" class="automation-shortcut" @click="useAutomationExample(automationTemplate)"><Timer aria-hidden="true" />创建自动化任务</button></div>
         <template v-for="entry in timeline" :key="entry.id">
         <article v-for="task in (entry.kind === 'task' ? [entry.task] : [])" :key="task.id" class="agent-turn" :class="{ flash: highlightId === task.id }" :data-task-id="task.id" :data-task-status="task.status">
-          <div v-if="editingTaskId === task.id" class="msg-edit"><label class="sr-only" :for="`edit-${task.id}`">编辑消息</label><textarea :id="`edit-${task.id}`" v-model="editText" rows="3" maxlength="4000" @keydown.escape.stop="cancelEdit" @keydown.enter.exact.prevent="saveEdit" /><div class="msg-actions"><button type="button" :disabled="!editText.trim() || agent.sending" @click="saveEdit">发送</button><button type="button" @click="cancelEdit">取消</button></div></div><template v-else><div class="user-question">{{ task.message }}</div><div class="msg-actions user-actions"><time v-if="task.createdAt" class="message-time" :datetime="new Date(task.createdAt).toISOString()">{{ messageTime(task.createdAt) }}</time><button type="button" class="message-icon" :aria-label="copiedId === task.id ? '已复制' : '复制'" :title="copiedId === task.id ? '已复制' : '复制'" @click="copyText(task.message, task.id)"><Check v-if="copiedId === task.id" /><CopyDocument v-else /></button><button v-if="!readOnly && isLatestMessage(task.id)" type="button" class="message-icon" aria-label="编辑" title="编辑" @click="startEdit(task)"><EditPen /></button><span v-if="chainOf(task).length > 1" class="version-pager">第{{ versionLabel(task) }}<template v-for="v in chainOf(task)" :key="v.id"><button v-if="v.id !== task.id" type="button" :aria-label="`查看第${chainOf(task).findIndex(item => item.id === v.id) + 1}版`" @click="jumpToTask(v.id)">{{ chainOf(task).findIndex(item => item.id === v.id) + 1 }}</button><strong v-else>{{ chainOf(task).findIndex(item => item.id === v.id) + 1 }}</strong></template></span></div></template>
+          <div v-if="editingTaskId === task.id" class="msg-edit"><label class="sr-only" :for="`edit-${task.id}`">编辑消息</label><textarea :id="`edit-${task.id}`" v-model="editText" rows="3" maxlength="4000" @keydown.escape.stop="cancelEdit" @keydown.enter.exact.prevent="saveEdit" /><div class="msg-actions"><button type="button" :disabled="!editText.trim() || agent.sending" @click="saveEdit">发送</button><button type="button" @click="cancelEdit">取消</button></div></div><template v-else-if="!isUiContinuation(task)"><MessageAttachments :files="agent.attachmentsForTask(task.id)" class="sent-attachments" /><div class="user-question">{{ task.message }}</div><div class="msg-actions user-actions"><time v-if="task.createdAt" class="message-time" :datetime="new Date(task.createdAt).toISOString()">{{ messageTime(task.createdAt) }}</time><button type="button" class="message-icon" :aria-label="copiedId === task.id ? '已复制' : '复制'" :title="copiedId === task.id ? '已复制' : '复制'" @click="copyText(task.message, task.id)"><Check v-if="copiedId === task.id" /><CopyDocument v-else /></button><button v-if="!readOnly && isLatestMessage(task.id) && (!task.allowedOperations || task.allowedOperations.includes('edit'))" type="button" class="message-icon" aria-label="编辑" title="编辑" @click="startEdit(task)"><EditPen /></button><span v-if="chainOf(task).length > 1" class="version-pager">第{{ versionLabel(task) }}<template v-for="v in chainOf(task)" :key="v.id"><button v-if="v.id !== task.id" type="button" :aria-label="`查看第${chainOf(task).findIndex(item => item.id === v.id) + 1}版`" @click="jumpToTask(v.id)">{{ chainOf(task).findIndex(item => item.id === v.id) + 1 }}</button><strong v-else>{{ chainOf(task).findIndex(item => item.id === v.id) + 1 }}</strong></template></span></div></template>
           <div v-if="!terminal(task.status)" class="thinking-indicator" role="status"><span class="thinking-star" aria-hidden="true">✦</span>正在思考</div>
-          <p v-if="task.answer" class="agent-answer"><span v-if="terminal(task.status)" class="ai-message-mark" aria-hidden="true">✦</span><template v-for="(part, index) in answerParts(task.answer)" :key="index"><strong v-if="part.bold" class="answer-text">{{ part.text }}</strong><span v-else class="answer-text">{{ part.text }}</span></template></p><p v-if="task.errorMessage" class="agent-task-error" :class="{ 'agent-task-neutral': task.status === 'CANCELLED' }" :role="task.status === 'CANCELLED' ? 'status' : 'alert'">{{ task.errorMessage }}</p>
+          <p v-if="task.answer" class="agent-answer"><span v-if="terminal(task.status)" class="ai-message-mark" aria-hidden="true">✦</span><template v-for="(part, index) in answerParts(task.answer)" :key="index"><strong v-if="part.bold" class="answer-text">{{ part.text }}</strong><span v-else class="answer-text">{{ part.text }}</span></template></p>
+          <button v-if="task.importReceipt?.credentialCount && task.importReceipt.actionId && !readOnly" type="button" class="receipt-link" @click="importConversation.credentials(task.importReceipt.actionId)">查看新建账号初始凭据</button><p v-if="task.errorMessage" class="agent-task-error" :class="{ 'agent-task-neutral': task.status === 'CANCELLED' }" :role="task.status === 'CANCELLED' ? 'status' : 'alert'">{{ task.errorMessage }}</p>
           <div v-if="terminal(task.status)" class="answer-links">
+            <button v-if="!readOnly && task.id === agent.pendingWorkflow?.id" type="button" :disabled="agent.isCancelling(task.id)" @click="agent.cancel(task.id)">{{ agent.isCancelling(task.id) ? '正在停止' : '停止这个任务' }}</button>
             <template v-for="(card, index) in relevantAnswerCards(task, role)" :key="index">
               <button v-for="link in card.links" :key="link.action + (link.objectId || '')" type="button" @click="navigate(link)">{{ link.label }}</button>
               <template v-if="agent.applyCapability && !readOnly && allowsWriteAction(task, 'JOB_APPLY') && ['jobs_details', 'jobs_search'].includes(card.tool)">
@@ -727,7 +681,7 @@ onBeforeUnmount(() => {
           </div>
         </article>
         <article v-for="event in (entry.kind === 'fill' ? [entry.event] : [])" :key="event.id" class="agent-turn fill-event" :data-fill-status="event.undone ? 'undone' : event.applied ? 'applied' : 'blocked'">
-          <div class="user-question">{{ event.message }}</div>
+          <div v-if="!event.sourceTaskId" class="user-question">{{ event.message }}</div>
           <div class="msg-actions user-actions">
             <time v-if="event.createdAt" class="message-time" :datetime="new Date(event.createdAt).toISOString()">{{ messageTime(event.createdAt) }}</time>
             <button type="button" class="message-icon" :aria-label="copiedId === event.id ? '已复制' : '复制'" :title="copiedId === event.id ? '已复制' : '复制'" @click="copyText(event.message, event.id)"><Check v-if="copiedId === event.id" /><CopyDocument v-else /></button>
@@ -750,14 +704,14 @@ onBeforeUnmount(() => {
           <div v-if="event.completedAt" class="msg-actions"><time class="message-time" :datetime="new Date(event.completedAt).toISOString()">{{ messageTime(event.completedAt) }}</time></div>
         </article>
         <article v-if="entry.kind === 'auto' && agent.autoFlow.phase !== 'idle'" class="agent-turn auto-flow" :data-flow-phase="agent.autoFlow.phase">
-          <div class="user-question">{{ agent.autoFlow.message }}</div>
-          <div class="msg-actions user-actions"><time class="message-time" :datetime="new Date(autoStartedAt).toISOString()">{{ messageTime(autoStartedAt) }}</time><button type="button" class="message-icon" :aria-label="copiedId === entry.id + ':q' ? '已复制' : '复制'" :title="copiedId === entry.id + ':q' ? '已复制' : '复制'" @click="copyText(agent.autoFlow.message, entry.id + ':q')"><Check v-if="copiedId === entry.id + ':q'" /><CopyDocument v-else /></button></div>
+          <div v-if="!agent.autoFlow.sourceTaskId" class="user-question">{{ agent.autoFlow.message }}</div>
+          <div v-if="!agent.autoFlow.sourceTaskId" class="msg-actions user-actions"><time class="message-time" :datetime="new Date(autoStartedAt).toISOString()">{{ messageTime(autoStartedAt) }}</time><button type="button" class="message-icon" :aria-label="copiedId === entry.id + ':q' ? '已复制' : '复制'" :title="copiedId === entry.id + ':q' ? '已复制' : '复制'" @click="copyText(agent.autoFlow.message, entry.id + ':q')"><Check v-if="copiedId === entry.id + ':q'" /><CopyDocument v-else /></button></div>
           <p v-if="agent.autoFlow.working" class="task-status" role="status">正在核对任务…</p>
           <AutomationPreview v-if="agent.autoFlow.draft && !agent.autoFlow.created && !agent.autoFlow.working" :preview="agent.autoFlow.draft" :session-id="agent.sessionId" @updated="agent.updateAutoPreview" @confirmed="confirmAutoTask" @error="agent.noteAutoTaskError($event?.taskId, $event?.message, $event?.operation)" @cancel="agent.dismissAutoDraft()" />
           <p v-if="agent.autoFlow.error" class="agent-task-error" role="alert">{{ agent.autoFlow.error }}</p>
         </article>
         <article v-if="entry.kind === 'caps' && agent.capsFlow.phase !== 'idle'" class="agent-turn caps-flow" :data-flow-phase="agent.capsFlow.phase">
-          <div class="user-question">{{ agent.capsFlow.message }}</div>
+          <div v-if="!agent.capsFlow.sourceTaskId" class="user-question">{{ agent.capsFlow.message }}</div>
           <div class="task-object">权限变更预览</div>
           <div class="task-status" role="status"><span :class="{ 'busy-dot': ['previewing', 'saving'].includes(agent.capsFlow.phase) }">{{ agent.capsFlow.phase === 'done' ? '✓' : '◌' }}</span>{{ capsPhaseLabel[agent.capsFlow.phase] || agent.capsFlow.phase }}</div>
           <p v-if="agent.capsFlow.questions.length" class="agent-answer">需要确认：<strong>{{ agent.capsFlow.questions.join(' ') }}</strong>（有待确认项时不可保存）</p>
@@ -778,12 +732,13 @@ onBeforeUnmount(() => {
         <article v-if="entry.kind === 'activity'" class="agent-turn action-receipt">
           <div v-if="entry.event.message" class="user-question">{{ entry.event.message }}</div>
           <div v-if="entry.event.message" class="msg-actions user-actions"><time v-if="(entry.event.messageAt || entry.event.createdAt)" class="message-time" :datetime="new Date((entry.event.messageAt || entry.event.createdAt)).toISOString()">{{ messageTime((entry.event.messageAt || entry.event.createdAt)) }}</time><button type="button" class="message-icon" :aria-label="copiedId === entry.id + ':q' ? '已复制' : '复制'" :title="copiedId === entry.id + ':q' ? '已复制' : '复制'" @click="copyText(entry.event.message, entry.id + ':q')"><Check v-if="copiedId === entry.id + ':q'" /><CopyDocument v-else /></button></div>
-          <p class="agent-answer"><span class="ai-message-mark" aria-hidden="true">✦</span><strong>{{ entry.event.title }}</strong><br>{{ entry.event.detail }}</p>
+          <p class="agent-answer"><span class="ai-message-mark" aria-hidden="true">✦</span><template v-if="entry.event.title"><strong>{{ entry.event.title }}</strong><br></template><template v-for="(part, index) in answerParts(entry.event.detail || '')" :key="index"><strong v-if="part.bold">{{ part.text }}</strong><span v-else>{{ part.text }}</span></template></p>
+          <button v-if="entry.event.importPhase === 'COMPLETED' && entry.event.importActionId && entry.event.importSteps?.some((step: any) => step.tool === 'confirm_import_plan') && !readOnly" type="button" class="receipt-link" @click="importConversation.credentials(entry.event.importActionId)">查看新建账号初始凭据</button>
           <div class="msg-actions ai-actions"><time v-if="entry.event.createdAt" class="message-time" :datetime="new Date(entry.event.createdAt).toISOString()">{{ messageTime(entry.event.createdAt) }}</time><button type="button" class="message-icon" :aria-label="copiedId === entry.id + ':a' ? '已复制' : '复制回答'" :title="copiedId === entry.id + ':a' ? '已复制' : '复制'" @click="copyText(entry.event.title + '：' + entry.event.detail, entry.id + ':a')"><Check v-if="copiedId === entry.id + ':a'" /><CopyDocument v-else /></button></div>
           <button v-if="entry.event.link" type="button" class="receipt-link" @click="navigate(entry.event.link)">查看业务记录 ↗</button>
         </article>
         </template>
-      <div v-if="visiblePending" class="agent-turn pending-bubble" :data-pending-state="visiblePending.state"><div class="user-question">{{ visiblePending.message }}</div><div class="msg-actions user-actions"><time class="message-time">{{ messageTime(visiblePending.createdAt) }}</time></div><div v-if="visiblePending.state === 'sending'" class="thinking-indicator" role="status"><span class="thinking-star" aria-hidden="true">✦</span>正在思考</div><div v-if="visiblePending.state === 'failed'" class="task-status" role="status"><span class="busy-dot" aria-hidden="true">◌</span>发送失败，已保留草稿</div><p v-if="visiblePending.state === 'failed' && visiblePending.error" class="agent-task-error" role="alert">{{ visiblePending.error }}</p><div v-if="visiblePending.state === 'failed'" class="pending-actions"><button type="button" :disabled="agent.sending" @click="agent.retryPending">重试</button><button type="button" @click="agent.editPending(); composer?.focus()">编辑</button><button type="button" @click="agent.dismissPending">取消</button></div></div>
+      <div v-if="visiblePending" class="agent-turn pending-bubble" :data-pending-state="visiblePending.state"><MessageAttachments :files="visiblePending.attachments || []" :uploading="importConversation.working" class="sent-attachments" /><div class="user-question">{{ visiblePending.message }}</div><div class="msg-actions user-actions"><time class="message-time">{{ messageTime(visiblePending.createdAt) }}</time></div><div v-if="visiblePending.state === 'sending'" class="thinking-indicator" role="status"><span class="thinking-star" aria-hidden="true">✦</span>{{ importConversation.working ? '正在上传附件' : '正在思考' }}</div><div v-if="visiblePending.state === 'failed'" class="task-status" role="status"><span class="busy-dot" aria-hidden="true">◌</span>发送失败，已保留草稿</div><p v-if="visiblePending.state === 'failed' && visiblePending.error" class="agent-task-error" role="alert">{{ visiblePending.error }}</p><div v-if="visiblePending.state === 'failed'" class="pending-actions"><button type="button" :disabled="agent.sending" @click="agent.retryPending">重试</button><button type="button" @click="agent.editPending(); composer?.focus()">编辑</button><button type="button" @click="agent.dismissPending">取消</button></div></div>
       </div>
       <div v-if="agent.applyDialog.open" class="apply-dialog" role="dialog" aria-modal="true" aria-labelledby="apply-title">
         <div class="dialog-card">
@@ -839,7 +794,7 @@ onBeforeUnmount(() => {
         </template>
         </div>
       </div>
-      <div v-if="agent.error" class="agent-error" role="alert"><span>{{ agent.error }}</span><button type="button" :disabled="agent.sending" @click="agent.reconnect">恢复连接</button></div>
+      <div v-if="agent.error" class="agent-error" role="alert"><span>{{ agent.error }}</span><button v-if="agent.pendingUiFeedback" type="button" :disabled="agent.busy || uiWorking" @click="retryUiFeedback">重试页面任务</button><button v-else type="button" :disabled="agent.sending" @click="agent.reconnect">恢复连接</button></div>
       <div v-if="agent.capabilities && !agent.capabilities.enabled" class="agent-error">系统管理员暂未启用 AI 助手。</div>
       <div class="back-to-latest-wrap">
         <button v-if="!atBottom" type="button" class="back-to-latest" aria-label="回到最新" title="回到最新" @click="scrollToLatest"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14m-6-6 6 6 6-6"/></svg></button>
@@ -849,7 +804,11 @@ onBeforeUnmount(() => {
           <span class="asr-pulse" aria-hidden="true" />{{ voiceFinishing ? '正在转为文字…' : '正在录音…' }}<em v-if="asrFinal || asrInterim">{{ asrFinal }}{{ asrInterim }}</em>
         </div>
         <div v-if="asrState === 'error' && asrError" class="asr-status asr-error" role="alert">{{ asrError }}</div>
-        <div v-if="readOnly" class="agent-readonly-note"><i aria-hidden="true" />管理员只读身份：助手仅供查看，不可发起对话</div><label class="sr-only" for="agent-input">输入实习相关任务</label><div class="composer-field"><StudentJourney /><textarea id="agent-input" ref="composer" v-model="agent.draft" rows="2" maxlength="4000" enterkeyhint="send" :disabled="readOnly || !agent.capabilities?.enabled || agent.loading" :placeholder="readOnly ? '只读身份不可发起对话' : '问问我能够做什么...'" @keydown="onKey" @focus="onComposerFocus" /><button v-if="canVoice && !readOnly && agent.capabilities?.enabled" type="button" class="mic-button" :class="{ listening: asrState === 'listening' }" :aria-label="asrState === 'listening' ? '结束录音并核对' : '开始语音输入'" :title="asrState === 'listening' ? '结束录音并核对' : '语音输入'" @click="toggleMic"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><path d="M12 19v3"/></svg></button><button type="button" class="send-button" :class="{ 'stop-button': agent.busy || uiWorking }" :disabled="uiWorking ? false : agent.busy ? Boolean(activeTask && (activeTask.status === 'CANCELLING' || agent.isCancelling(activeTask.id))) : readOnly || voiceFinishing || !agent.draft.trim() || !agent.capabilities?.enabled" :aria-label="agent.busy || uiWorking ? '停止查询' : '发送任务'" :title="agent.busy ? '停止生成' : '发送'" @click="uiWorking ? uiController?.abort() : agent.busy ? agent.cancel() : send()"><svg v-if="agent.busy || uiWorking" aria-hidden="true" viewBox="0 0 24 24" width="18" height="18"><rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor" /></svg><svg v-else aria-hidden="true" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5m-6 6 6-6 6 6" /></svg></button></div><p v-if="agent.draft.length >= 4000" class="composer-hint" role="status">已达到 4000 字上限，请精简后发送。</p>
+        <div v-if="readOnly" class="agent-readonly-note"><i aria-hidden="true" />管理员只读身份：助手仅供查看，不可发起对话</div><label class="sr-only" for="agent-input">输入实习相关任务</label><div class="composer-field"><StudentJourney />
+          <div v-if="role === 'ROLE_ADMIN' && !readOnly && agent.capabilities?.enabled && importConversation.draftAttachments.length && !visiblePending?.attachments?.length" class="composer-attachments">
+            <MessageAttachments :files="importConversation.draftAttachments" />
+            <button type="button" class="remove-attachments" :disabled="agent.busy || importConversation.working" aria-label="移除导入附件" title="移除附件" @click="importConversation.remove"><Close aria-hidden="true" /></button>
+          </div><textarea id="agent-input" ref="composer" v-model="agent.draft" rows="2" maxlength="4000" enterkeyhint="send" :disabled="readOnly || !agent.capabilities?.enabled || agent.loading" :placeholder="readOnly ? '只读身份不可发起对话' : '问问我能够做什么...'" @keydown="onKey" @focus="onComposerFocus" /><template v-if="role === 'ROLE_ADMIN' && !readOnly && agent.capabilities?.enabled"><input :ref="importConversation.bindInput" type="file" accept=".xlsx,.xls" multiple hidden aria-label="上传导入文件" @change="importConversation.choose"><button v-if="agent.attachmentImportEnabled" type="button" class="upload-button" :disabled="agent.busy || uiWorking || importConversation.working" aria-label="上传文件" title="上传文件" @click="importConversation.pickFiles"><Plus aria-hidden="true" /></button></template><button v-if="canVoice && !readOnly && agent.capabilities?.enabled" type="button" class="mic-button" :class="{ listening: asrState === 'listening' }" :aria-label="asrState === 'listening' ? '结束录音并核对' : '开始语音输入'" :title="asrState === 'listening' ? '结束录音并核对' : '语音输入'" @click="toggleMic"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><path d="M12 19v3"/></svg></button><button type="button" class="send-button" :class="{ 'stop-button': agent.busy || uiWorking || importConversation.working }" :disabled="importConversation.working ? false : uiWorking ? false : agent.busy ? Boolean(activeTask && (activeTask.status === 'CANCELLING' || agent.isCancelling(activeTask.id))) : readOnly || voiceFinishing || !agent.draft.trim() || !agent.capabilities?.enabled" :aria-label="importConversation.working ? '停止处理导入' : agent.busy || uiWorking ? '停止查询' : '发送任务'" :title="agent.busy ? '停止生成' : '发送'" @click="importConversation.working ? importConversation.stop() : uiWorking ? uiController?.abort() : agent.busy ? agent.cancel() : send()"><svg v-if="agent.busy || uiWorking || importConversation.working" aria-hidden="true" viewBox="0 0 24 24" width="18" height="18"><rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor" /></svg><svg v-else aria-hidden="true" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5m-6 6 6-6 6 6" /></svg></button></div><p v-if="agent.draft.length >= 4000" class="composer-hint" role="status">已达到 4000 字上限，请精简后发送。</p>
       </footer>
     </aside>
   </Teleport>
@@ -998,6 +957,13 @@ body.agent-docked .agent-host.teacher-layout>.el-container{overflow:visible;min-
 .asr-pulse{width:8px;height:8px;border-radius:50%;background:#e0524d;animation:asr-blink 1.1s ease-in-out infinite;flex-shrink:0}
 @keyframes asr-blink{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.35;transform:scale(.7)}}
 /* ---- 底部输入区：一眼能用 ---- */
+.sent-attachments{margin:0 0 7px auto;max-width:90%}
+.composer-attachments{grid-column:1 / -1;display:flex;align-items:flex-start;gap:6px;min-width:0;margin:1px 0 7px}
+.composer-attachments .message-attachments{flex:1;justify-content:flex-start;min-width:0}
+.remove-attachments{display:grid;place-items:center;flex-shrink:0;width:24px;height:24px;padding:0;border:0;border-radius:50%;background:transparent;color:var(--ai-sub)}
+.remove-attachments svg{width:14px;height:14px}
+.composer-field:has(.composer-attachments) textarea{grid-row:2}
+.composer-field:has(.composer-attachments) .upload-button,.composer-field:has(.composer-attachments) .mic-button,.composer-field:has(.composer-attachments) .send-button{grid-row:3}
 .agent-composer{flex-shrink:0;width:100%;z-index:6;background:#fff;padding:10px 12px 12px}
 .agent-readonly-note{display:flex;align-items:center;gap:7px;margin:0 0 8px;padding:8px 11px;border:1px solid #e2e8f2;background:#f4f7fb;color:var(--ai-sub);border-radius:9px;font-size:11px;flex-shrink:0}
 .agent-readonly-note i{width:6px;height:6px;background:#8aa1bd;border-radius:50%;flex-shrink:0}
@@ -1013,7 +979,9 @@ body.agent-docked .agent-host.teacher-layout>.el-container{overflow:visible;min-
 .agent-workspace .send-button:hover:enabled{opacity:1}
 .stop-button{background:var(--ai-primary)}
 .mic-button{grid-column:2;grid-row:2;border:0;border-radius:9px;background:transparent;color:#5b6b82;width:32px;height:32px;padding:0;display:grid;place-items:center;flex-shrink:0}
-.mic-button:hover{background:#e7ebf1}
+.upload-button{grid-column:1;grid-row:2;justify-self:start;border:0;border-radius:9px;background:transparent;color:#5b6b82;width:32px;height:32px;padding:0;display:grid;place-items:center}
+.upload-button svg{display:block;width:20px;height:20px}
+.mic-button:hover,.upload-button:hover{background:#e7ebf1}
 .mic-button svg{display:block}.mic-button.listening{background:#e0524d;color:#fff;box-shadow:0 0 0 3px rgba(224,82,77,.15)}
 .composer-hint{display:flex;justify-content:space-between;align-items:center;gap:6px;margin:6px 2px 0;font-size:10px;color:var(--ai-faint);white-space:nowrap;line-height:1.5}
 .composer-hint>span:first-child{overflow:hidden;text-overflow:ellipsis;min-width:0}
@@ -1021,7 +989,7 @@ body.agent-docked .agent-host.teacher-layout>.el-container{overflow:visible;min-
 .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 @keyframes agent-spin{to{transform:rotate(360deg)}}
 @media(prefers-reduced-motion:reduce){.busy-dot,.thinking-star,.asr-pulse,.mic-button svg{display:block}.thinking-star{animation:none}.mic-button.listening{animation:none}}
-@media(max-width:700px){.agent-workspace{width:100vw!important;border-left:0}.agent-header{padding:12px 8px 8px 14px}.agent-conversation{padding:2px 14px 14px}.agent-composer{padding:10px 10px calc(10px + env(safe-area-inset-bottom))}.flow-switch,.agent-context,.agent-form-link{margin-left:12px;margin-right:12px}.user-question{max-width:92%}}
+@media(max-width:768px){.agent-workspace{width:100vw!important;border-left:0}.agent-header{padding:12px 8px 8px 14px}.agent-conversation{padding:2px 14px 14px}.agent-composer{padding:10px 10px calc(10px + env(safe-area-inset-bottom))}.flow-switch,.agent-context,.agent-form-link{margin-left:12px;margin-right:12px}.user-question{max-width:92%}}
 /* Business dialogs keep the shared header available, even while AI is closed.
    Message boxes and other global confirmation overlays retain their original scope. */
 body.business-overlay-below-header .el-overlay:has(> .el-overlay-dialog),body.business-overlay-below-header .el-overlay-dialog,body.business-overlay-below-header .agent-host .modal-overlay{top:var(--business-overlay-top,64px)}
@@ -1046,4 +1014,7 @@ body.agent-docked .agent-host .modal-overlay{right:var(--agent-width)}/* AI 标�
 .agent-header-actions button{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;padding:6px;border:0;border-radius:8px;background:transparent;color:var(--ai-sub)}
 .agent-header-actions button:hover:enabled{background:#f0f2f5;color:var(--ai-text)}
 .agent-header-actions button svg{width:20px;height:20px}
+</style>
+
+<style scoped>
 </style>

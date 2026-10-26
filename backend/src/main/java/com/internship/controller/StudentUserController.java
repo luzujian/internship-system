@@ -1,5 +1,7 @@
 package com.internship.controller;
 
+import com.internship.utils.ExcelExports;
+
 import com.internship.anno.Log;
 import com.internship.exception.BusinessException;
 import com.internship.entity.Class;
@@ -43,6 +45,9 @@ import java.util.HashMap;
 @RestController
 @RequestMapping({"/api/admin/student-users", "/api/admin/students"})
 public class StudentUserController {
+    @Autowired
+    private com.internship.service.DepartmentService exportDepartments;
+
 
     @Autowired
     private StudentUserService studentUserService;
@@ -93,143 +98,30 @@ public class StudentUserController {
     @GetMapping("/export")
     @PreAuthorize("hasAuthority('user:student:view')")
     public void exportStudentData(HttpServletResponse response,
-                                 @RequestParam(required = false) String studentId,
-                                 @RequestParam(required = false) String name,
-                                 @RequestParam(required = false) Integer grade,
-                                 @RequestParam(required = false) String majorId,
-                                 @RequestParam(required = false) String classId,
-                                 @RequestParam(required = false) Integer status) {
-        log.info("收到学生 Excel 数据导出请求");
-
-        try {
-            // 获取所有满足条件的学生数据（不使用分页）
-            List<StudentUser> students = studentUserService.findAll(studentId, name, grade, majorId, classId, status);
-
-            // 构建专业ID -> 专业名称 的映射
-            Map<Long, String> majorNameMap = new HashMap<>();
-            List<Major> majorList = majorMapper.findAll();
-            if (majorList != null) {
-                for (Major m : majorList) {
-                    if (m.getId() != null && m.getName() != null) {
-                        majorNameMap.put(m.getId(), m.getName());
-                    }
-                }
-            }
-
-            // 构建班级ID -> 班级名称 的映射
-            Map<Long, String> classNameMap = new HashMap<>();
-            List<Class> classList = classMapper.findAll();
-            if (classList != null) {
-                for (Class c : classList) {
-                    if (c.getId() != null && c.getName() != null) {
-                        classNameMap.put(c.getId(), c.getName());
-                    }
-                }
-            }
-            
-            // 创建Excel工作簿
-            Workbook workbook = new XSSFWorkbook();
-            Sheet sheet = workbook.createSheet("学生数据");
-            
-            // 创建表头行
-            Row headerRow = sheet.createRow(0);
-            String[] headers = {"学号", "姓名", "年级", "专业", "班级", "手机号", "邮箱"};
-            CellStyle headerStyle = workbook.createCellStyle();
-            headerStyle.setFillForegroundColor(IndexedColors.GREEN.getIndex());
-            headerStyle.setFillPattern(FillPatternType.SOLID_FOREGROUND);
-            headerStyle.setAlignment(HorizontalAlignment.CENTER);
-            headerStyle.setBorderTop(BorderStyle.THIN);
-            headerStyle.setBorderBottom(BorderStyle.THIN);
-            headerStyle.setBorderLeft(BorderStyle.THIN);
-            headerStyle.setBorderRight(BorderStyle.THIN);
-            
-            Font headerFont = workbook.createFont();
-            headerFont.setBold(true);
-            headerFont.setColor(IndexedColors.WHITE.getIndex());
-            headerStyle.setFont(headerFont);
-            
-            for (int i = 0; i < headers.length; i++) {
-                Cell cell = headerRow.createCell(i);
-                cell.setCellValue(headers[i]);
-                cell.setCellStyle(headerStyle);
-            }
-            
-            // 填充数据行
-            CellStyle dataStyle = workbook.createCellStyle();
-            dataStyle.setAlignment(HorizontalAlignment.CENTER);
-            dataStyle.setBorderTop(BorderStyle.THIN);
-            dataStyle.setBorderBottom(BorderStyle.THIN);
-            dataStyle.setBorderLeft(BorderStyle.THIN);
-            dataStyle.setBorderRight(BorderStyle.THIN);
-            
-            for (int i = 0; i < students.size(); i++) {
-                StudentUser student = students.get(i);
-                Row dataRow = sheet.createRow(i + 1);
-                
-                // 填充各个字段数据
-                dataRow.createCell(0).setCellValue(student.getStudentId() != null ? student.getStudentId() : "");
-                dataRow.createCell(1).setCellValue(student.getName() != null ? student.getName() : "");
-                dataRow.createCell(2).setCellValue(student.getGrade() != null ? student.getGrade() : 0);
-                if (student.getMajorId() != null) {
-                    String majorName = majorNameMap.get(student.getMajorId());
-                    dataRow.createCell(3).setCellValue(majorName != null ? majorName : "");
-                } else {
-                    dataRow.createCell(3).setCellValue("");
-                }
-                
-                if (student.getClassId() != null) {
-                    String clsName = classNameMap.get(student.getClassId());
-                    dataRow.createCell(4).setCellValue(clsName != null ? clsName : "");
-                } else {
-                    dataRow.createCell(4).setCellValue("");
-                }
-
-                dataRow.createCell(5).setCellValue(student.getPhone() != null ? student.getPhone() : "");
-                dataRow.createCell(6).setCellValue(student.getEmail() != null ? student.getEmail() : "");
-
-                // 设置数据行样式
-                for (int j = 0; j < headers.length; j++) {
-                    Cell cell = dataRow.getCell(j);
-                    if (cell == null) {
-                        cell = dataRow.createCell(j);
-                    }
-                    cell.setCellStyle(dataStyle);
-                }
-            }
-
-            // 自动调整列宽（所有数据填充后执行一次即可）
-            for (int j = 0; j < headers.length; j++) {
-                sheet.autoSizeColumn(j);
-            }
-            
-            // 设置响应头
-            String filename = "学生数据_" + new Date().getTime() + ".xlsx";
-            String encodedFilename = URLEncoder.encode(filename, StandardCharsets.UTF_8.toString());
-            response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-            response.setHeader("Content-Disposition", "attachment; filename=\"" + encodedFilename + "\"");
-            
-            // 写入响应输出流
-            workbook.write(response.getOutputStream());
-            workbook.close();
-            
-            log.info("学生数据Excel导出成功，共导出{}条记录", students.size());
-        } catch (IOException e) {
-            log.error("Excel数据导出失败", e);
-            try {
-                response.setContentType("application/json;charset=utf-8");
-                response.getWriter().write("{\"code\": 500, \"message\": \"导出失败: " + e.getMessage() + "\"}");
-            } catch (IOException ex) {
-                log.error("响应错误信息失败", ex);
-            }
-        } catch (Exception e) {
-            log.error("导出学生数据时发生异常", e);
-            try {
-                response.setContentType("application/json;charset=utf-8");
-                response.getWriter().write("{\"code\": 500, \"message\": \"导出失败: 系统异常\"}");
-            } catch (IOException ex) {
-                log.error("响应错误信息失败", ex);
-            }
-        }
+            @RequestParam(required = false) String studentId,
+            @RequestParam(required = false) String name,
+            @RequestParam(required = false) Integer grade,
+            @RequestParam(required = false) String majorId,
+            @RequestParam(required = false) String classId,
+            @RequestParam(required = false) Integer status,
+            @RequestParam(required = false) Integer gender,
+            @RequestParam(required = false) String department) throws IOException {
+        List<StudentUser> students = studentUserService.findPage(1,Integer.MAX_VALUE,studentId,name,grade,
+                majorId,classId,status,gender,department).getRows();
+        Map<Long, Major> majors = new HashMap<>();
+        for (Major major : majorMapper.findAll()) majors.put(major.getId(),major);
+        Map<Long, String> classes = new HashMap<>();
+        for (Class cls : classMapper.findAll()) classes.put(cls.getId(),cls.getName());
+        Map<Long, String> departments = new HashMap<>();
+        for (com.internship.entity.Department dept : exportDepartments.findAll()) departments.put(dept.getId(),dept.getName());
+        List<Object[]> rows = students.stream().map(r -> {
+            Major major = majors.get(r.getMajorId());
+            return new Object[]{r.getStudentUserId(),r.getName(),r.getGrade(),major==null?r.getMajor():major.getName(),
+                    major==null?ExcelExports.first(r.getSchool(),r.getDepartment()):departments.get(major.getDepartmentId()),
+                    classes.get(r.getClassId()),r.getPhone(),r.getEmail(),ExcelExports.account(r.getStatus()),
+                    r.getUpdateTime(),r.getCreateTime(),ExcelExports.gender(r.getGender())};
+        }).toList();
+        ExcelExports.write(response,"学生数据",new String[]{"学号","姓名","年级","专业","学院","班级","手机号","邮箱","状态","更新时间","创建时间","性别"},rows);
     }
 
     // 根据ID获取学生用户

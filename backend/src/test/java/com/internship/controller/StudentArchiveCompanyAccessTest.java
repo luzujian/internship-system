@@ -10,6 +10,8 @@ import com.internship.utils.CurrentHolder;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -81,6 +83,46 @@ class StudentArchiveCompanyAccessTest {
         assertThrows(AccessDeniedException.class, () -> controller.previewArchiveForCompany(2L));
         CurrentHolder.remove();
         assertThrows(AccessDeniedException.class, () -> controller.getCompanyStudentArchives(20L));
+        verifyNoInteractions(oss);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"resume", "certificate"})
+    void pendingRecruitmentMaterialsAreVisibleAndDownloadableToApplicantCompany(String fileType) throws Exception {
+        when(applicationMapper.findByStudentId(20L)).thenReturn(List.of(application(10L, "pending")));
+        StudentArchive pending = archive(5L, 20L, 0);
+        pending.setFileType(fileType);
+        StudentArchive rejected = archive(6L, 20L, 2);
+        rejected.setFileType(fileType);
+        StudentArchive unrelatedStudent = archive(7L, 21L, 0);
+        unrelatedStudent.setFileType(fileType);
+        when(archiveService.findByStudentId(20L)).thenReturn(List.of(
+                pending, rejected, unrelatedStudent, archive(8L, 20L, 0)));
+        assertEquals(List.of(pending), controller.getCompanyStudentArchives(20L).getData());
+
+        when(archiveService.findById(5L)).thenReturn(pending);
+        when(oss.downloadFile("oss-object")).thenReturn(new byte[]{1, 2});
+        assertArrayEquals(new byte[]{1, 2}, controller.downloadArchiveForCompany(5L).getBody());
+        assertArrayEquals(new byte[]{1, 2}, controller.previewArchiveForCompany(5L).getBody());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"resume", "certificate"})
+    void rejectedRecruitmentMaterialsAndWithdrawnApplicantsRemainInaccessible(String fileType) {
+        when(applicationMapper.findByStudentId(20L)).thenReturn(List.of(application(10L, "pending")));
+        StudentArchive rejected = archive(5L, 20L, 2);
+        rejected.setFileType(fileType);
+        when(archiveService.findById(5L)).thenReturn(rejected);
+        when(archiveService.findByStudentId(20L)).thenReturn(List.of(rejected));
+        assertEquals(List.of(), controller.getCompanyStudentArchives(20L).getData());
+        assertThrows(AccessDeniedException.class, () -> controller.downloadArchiveForCompany(5L));
+        assertThrows(AccessDeniedException.class, () -> controller.previewArchiveForCompany(5L));
+
+        rejected.setStatus(0);
+        when(applicationMapper.findByStudentId(20L)).thenReturn(List.of(application(10L, "withdrawn")));
+        assertThrows(AccessDeniedException.class, () -> controller.getCompanyStudentArchives(20L));
+        assertThrows(AccessDeniedException.class, () -> controller.downloadArchiveForCompany(5L));
+        assertThrows(AccessDeniedException.class, () -> controller.previewArchiveForCompany(5L));
         verifyNoInteractions(oss);
     }
 

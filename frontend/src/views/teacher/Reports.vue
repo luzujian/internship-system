@@ -3,7 +3,7 @@
     <div class="page-header fade-in">
       <div class="title-wrapper">
         <h2>统计报表<el-tag type="info" size="small" style="margin-left: 10px; vertical-align: middle;">全校</el-tag></h2>
-        <p class="page-subtitle">本学期实习数据总览</p>
+        <p class="page-subtitle">全校实习数据总览</p>
       </div>
     </div>
 
@@ -30,14 +30,14 @@
           <div class="metric-card">
             <div class="metric-icon info">💼</div>
             <div class="metric-content">
-              <h4>剩余岗位数量</h4>
+              <h4 title="只统计招聘中且未过期岗位的剩余名额，不含暂停岗位">当前可招名额</h4>
               <p class="metric-value">{{ metrics.remainingPositionCount }}</p>
             </div>
           </div>
           <div class="metric-card">
             <div class="metric-icon warning">🔍</div>
             <div class="metric-content">
-              <h4>尚无 Offer 学生数量</h4>
+              <h4>尚未获录用 学生数量</h4>
               <p class="metric-value">{{ metrics.unplacedStudentCount }}</p>
             </div>
           </div>
@@ -102,6 +102,7 @@
 
       <!-- 企业招聘详情 -->
       <div v-if="activeDetailTab === 'companies'" class="details-table-wrapper">
+        <p class="page-subtitle" style="margin-bottom: 12px; line-height: 1.7;">提供岗位数与已录取学生数包含已暂停岗位，分别统计已发布岗位的计划招聘名额和当前占用名额的全校学生数；实习结束、中断或撤回完成后释放名额。当前可招名额只统计招聘中且未过期的岗位。</p>
         <div class="details-table">
           <table>
             <thead>

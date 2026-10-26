@@ -116,6 +116,13 @@ public class StudentJobApplicationController {
             }
             // 强制使用JWT中的studentId，不信任前端传入值
             application.setStudentId(user.getId());
+            // 用已校验的最新资料生成申请快照，不能依赖浏览器中可能过期的用户缓存。
+            application.setStudentName(studentUser.getName());
+            application.setStudentNo(studentUser.getStudentId());
+            application.setPhone(studentUser.getPhone());
+            application.setEmail(studentUser.getEmail());
+            application.setMajor(studentUser.getMajor());
+            application.setGrade(studentUser.getGrade() == null ? null : String.valueOf(studentUser.getGrade()));
             Position position = positionService.findById(application.getPositionId());
             if (position == null) {
                 return Result.error("职位不存在");

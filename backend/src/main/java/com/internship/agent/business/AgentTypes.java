@@ -13,6 +13,7 @@ public final class AgentTypes {
                               BusinessObject object, List<BusinessObject> selectedObjects,
                               Map<String, Object> filters, long revision) {}
     public record CreateTask(String sessionId, String clientRequestId, String message, PageContext pageContext) {}
+    public record UiFeedback(String clientRequestId, String actionId, PageContext pageContext) {}
     public record ResendTask(String clientRequestId, String message, String operation) {
         public ResendTask(String clientRequestId,String message){this(clientRequestId,message,null);}
     }
@@ -35,6 +36,11 @@ public final class AgentTypes {
         private List<Turn> turns = new ArrayList<>();
         private List<String> taskIds = new ArrayList<>();
         private TeacherSummaryQuery lastTeacherSummaryQuery;
+        /** Server-owned attachment and harness continuation, stored in the existing session snapshot. */
+        private String attachmentContextId;
+        private com.internship.agent.harness.OpenCodeHarness.Dialogue harness;
+        /** Framework-independent continuation. Credentials and raw graph state never belong here. */
+        private Map<String,Object> runtime;
         /** 会话标题：默认取首条用户消息，可被用户重命名。 */
         private String title;
         /** 最近更新时间（毫秒），用于历史列表排序；不影响业务数据。 */
@@ -52,6 +58,12 @@ public final class AgentTypes {
         private String scopeFingerprint;
         private PageContext pageContext;
         private String message;
+        private String attachmentContextId;
+        private String harness;
+        private Map<String,Object> runtime;
+        /** Validated UI proposals only; the browser performs its own page/form-instance checks. */
+        private List<Map<String,Object>> uiActions = new ArrayList<>();
+        private Map<String,Object> importReceipt;
         private String status = "QUEUED";
         private String answer = "";
         private String errorCode;
@@ -75,6 +87,12 @@ public final class AgentTypes {
         private long updatedAt;
         private String runtimeId;
         private String clientRequestId;
+        /** Automatic UI continuation inherits the original request and can never execute business writes. */
+        private String parentTaskId;
+        private int uiContinuationDepth;
+        /** Invocation-local acknowledgement; never exposed or trusted as a browser input. */
+        @com.fasterxml.jackson.annotation.JsonIgnore
+        private String reconciledCancellationRunId;
         private String rootMessageId;
         private int revisionNumber = 1;
         private String responseKind = "ANSWER";

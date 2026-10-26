@@ -700,7 +700,7 @@ const saveProfile = async () => {
     <!-- 顶部栏 -->
     <header class="header">
       <div class="header-left">
-        <el-button link @click="toggleSidebar" class="sidebar-toggle-btn">
+        <el-button link @click="toggleSidebar" class="sidebar-toggle-btn" :aria-expanded="!sidebarCollapsed" aria-controls="main-navigation" :aria-label="sidebarCollapsed ? '展开导航菜单' : '收起导航菜单'">
           <el-icon>
             <component :is="sidebarCollapsed ? Menu : Fold" />
           </el-icon>
@@ -714,7 +714,7 @@ const saveProfile = async () => {
         <AgentEntry />
         <!-- 个人中心 -->
         <el-dropdown :popper-style="{ zIndex: 2500 }" @command="handleCommand" class="user-dropdown">
-          <el-button link class="user-btn">
+          <el-button link class="user-btn" aria-label="账号菜单">
             <div class="user-info">
               <el-icon class="user-avatar">
                 <User />
@@ -765,7 +765,8 @@ const saveProfile = async () => {
     <!-- 主要内容 -->
     <div class="main-content">
       <!-- 左侧菜单 -->
-      <aside :class="['sidebar', { 'sidebar-collapsed': sidebarCollapsed }]" v-show="!sidebarCollapsed" aria-label="主导航">
+      <aside :class="['sidebar', { 'sidebar-collapsed': sidebarCollapsed }]" v-show="!sidebarCollapsed" id="main-navigation" :tabindex="isMobile ? -1 : undefined" aria-label="主导航" :role="isMobile && !sidebarCollapsed ? 'dialog' : undefined" :aria-modal="isMobile && !sidebarCollapsed || undefined" :inert="isMobile && sidebarCollapsed">
+      <button v-if="isMobile" type="button" class="mobile-navigation-close" aria-label="关闭导航菜单" @click="closeSidebar">关闭导航 ×</button>
         <el-scrollbar>
           <el-menu
             v-if="adminPermissionsLoaded"
@@ -964,7 +965,7 @@ const saveProfile = async () => {
 
       <!-- 右侧内容区域 -->
       <el-scrollbar style="flex: 1;">
-        <el-main>
+        <el-main data-navigation-content :inert="isMobile && !sidebarCollapsed">
           <router-view></router-view>
         </el-main>
       </el-scrollbar>

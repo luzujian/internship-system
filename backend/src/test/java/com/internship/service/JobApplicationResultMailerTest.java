@@ -1,6 +1,9 @@
 package com.internship.service;
 
+import com.internship.config.SystemSettingsConfig;
+import com.internship.entity.SystemSettings;
 import com.internship.entity.StudentUser;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -28,13 +31,23 @@ class JobApplicationResultMailerTest {
     private AgentNotificationGuardService notificationGuard;
 
     private JobApplicationResultMailer mailer;
+    private SystemSettings previousSettings;
 
     @BeforeEach
     void setUp() {
+        previousSettings = SystemSettingsConfig.getCurrentSettings();
+        SystemSettings settings = new SystemSettings();
+        settings.setEmailNotifyEnabled(1);
+        org.springframework.test.util.ReflectionTestUtils.setField(SystemSettingsConfig.class, "currentSettings", settings);
         mailer = new JobApplicationResultMailer();
         org.springframework.test.util.ReflectionTestUtils.setField(mailer, "studentUserService", studentUserService);
         org.springframework.test.util.ReflectionTestUtils.setField(mailer, "emailService", emailService);
         org.springframework.test.util.ReflectionTestUtils.setField(mailer, "notificationGuard", notificationGuard);
+    }
+
+    @AfterEach
+    void restoreSettings() {
+        org.springframework.test.util.ReflectionTestUtils.setField(SystemSettingsConfig.class, "currentSettings", previousSettings);
     }
 
     @Test

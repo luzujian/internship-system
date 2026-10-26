@@ -281,16 +281,10 @@ public class CompanyUserServiceImpl implements CompanyUserService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public int updateProfile(CompanyUser companyUser) {
-        // 此方法仅更新企业资料，明确不碰密码
+        // 账号设置只修改绑定电话和邮箱，企业资料、密码及岗位联系人均保留。
         CompanyUser existing = companyUserMapper.findById(companyUser.getId());
         if (existing == null) throw new BusinessException("企业不存在");
-        companyUser.setPassword(null);
-        companyUser.setUsername(null);
-        companyUser.setRole(null);
-        companyUser.setCooperationMode("mutual_choice");
-        normalizeLegacyCompanyTag(companyUser);
-        companyUser.setUpdateTime(new Date());
-        return companyUserMapper.update(companyUser);
+        return companyUserMapper.updateAccountContact(companyUser);
     }
 
     @Override
@@ -591,6 +585,9 @@ public class CompanyUserServiceImpl implements CompanyUserService {
                 List<CompanyUser> matches = companyUserMapper.findImportMatches(name);
                 if (matches.size() > 1) throw new BusinessException("系统存在多个同名企业，请先核实账号后再导入");
                 isNew = matches.isEmpty();
+                if (!isNew && rows.stream().anyMatch(row -> Boolean.TRUE.equals(row.get("_createOnly")))) {
+                    throw new BusinessException("企业已存在，智能导入不会覆盖已有企业，请重新预览");
+                }
                 company = isNew ? convertToCompanyUser(rows.getFirst()) : matches.getFirst();
                 if (isNew && companyUserMapper.findByUsername(name) != null) {
                     throw new BusinessException("企业名称对应的账号已被其他企业使用，请先核实");

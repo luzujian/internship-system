@@ -3,7 +3,7 @@
     <div class="page-header fade-in">
       <div class="header-content">
         <h2 class="page-title">{{ scopeName ? scopeName + ' - 实习状态看板' : '实习状态看板' }}</h2>
-        <p class="page-description">实时监控学生的实习状态分布情况</p>
+        <p class="page-description">统计所选范围内尚未结束实习的学生，包含实习中断和延期学生</p>
       </div>
       <div class="time-range-selector">
         <label>时间范围：</label>
@@ -20,14 +20,14 @@
       <div class="stat-card fade-in" style="animation-delay: 0.1s">
         <div class="stat-icon primary">👥</div>
         <div class="stat-content">
-          <div class="stat-label">学生总数</div>
+          <div class="stat-label">未结束学生数</div>
           <div class="stat-value">{{ totalStudents }}</div>
         </div>
       </div>
       <div class="stat-card fade-in" style="animation-delay: 0.2s">
         <div class="stat-icon success">✅</div>
         <div class="stat-content">
-          <div class="stat-label">已确定实习</div>
+          <div class="stat-label">已落实实习</div>
           <div class="stat-value">{{ confirmedCount }}</div>
           <div class="stat-percentage">{{ calculatePercentage(confirmedCount, totalStudents) }}%</div>
         </div>
@@ -35,7 +35,7 @@
       <div class="stat-card fade-in" style="animation-delay: 0.3s">
         <div class="stat-icon info">📋</div>
         <div class="stat-content">
-          <div class="stat-label">有offer但未确定</div>
+          <div class="stat-label">已录用待确认</div>
           <div class="stat-value">{{ offerCount }}</div>
           <div class="stat-percentage">{{ calculatePercentage(offerCount, totalStudents) }}%</div>
         </div>
@@ -43,7 +43,7 @@
       <div class="stat-card fade-in" style="animation-delay: 0.4s">
         <div class="stat-icon danger">✕</div>
         <div class="stat-content">
-          <div class="stat-label">没offer</div>
+          <div class="stat-label">尚未获录用</div>
           <div class="stat-value">{{ noOfferCount }}</div>
           <div class="stat-percentage">{{ calculatePercentage(noOfferCount, totalStudents) }}%</div>
         </div>
@@ -51,10 +51,14 @@
       <div class="stat-card fade-in" style="animation-delay: 0.5s">
         <div class="stat-icon warning">📚</div>
         <div class="stat-content">
-          <div class="stat-label">延迟</div>
+          <div class="stat-label">已延期实习</div>
           <div class="stat-value">{{ delayCount }}</div>
           <div class="stat-percentage">{{ calculatePercentage(delayCount, totalStudents) }}%</div>
         </div>
+      </div>
+      <div class="stat-card fade-in">
+        <div class="stat-icon danger">⏸</div>
+        <div class="stat-content"><div class="stat-label">实习已中断</div><div class="stat-value">{{ interruptedCount }}</div></div>
       </div>
     </div>
 
@@ -73,24 +77,26 @@
           </div>
           <div class="status-item warning" :style="{ width: `${totalStudents > 0 ? (delayCount / totalStudents) * 100 : 0}%` }">
           </div>
+          <div class="status-item interrupted" :style="{ width: `${totalStudents > 0 ? (interruptedCount / totalStudents) * 100 : 0}%` }"></div>
         </div>
         <div class="status-legend">
           <div class="legend-item">
             <span class="legend-color success"></span>
-            <span>已确定实习: {{ confirmedCount }} ({{ calculatePercentage(confirmedCount, totalStudents) }}%)</span>
+            <span>已落实实习: {{ confirmedCount }} ({{ calculatePercentage(confirmedCount, totalStudents) }}%)</span>
           </div>
           <div class="legend-item">
             <span class="legend-color info"></span>
-            <span>有offer但未确定: {{ offerCount }} ({{ calculatePercentage(offerCount, totalStudents) }}%)</span>
+            <span>已录用待确认: {{ offerCount }} ({{ calculatePercentage(offerCount, totalStudents) }}%)</span>
           </div>
           <div class="legend-item">
             <span class="legend-color danger"></span>
-            <span>没offer: {{ noOfferCount }} ({{ calculatePercentage(noOfferCount, totalStudents) }}%)</span>
+            <span>尚未获录用: {{ noOfferCount }} ({{ calculatePercentage(noOfferCount, totalStudents) }}%)</span>
           </div>
           <div class="legend-item">
             <span class="legend-color warning"></span>
-            <span>延迟: {{ delayCount }} ({{ calculatePercentage(delayCount, totalStudents) }}%)</span>
+            <span>已延期实习: {{ delayCount }} ({{ calculatePercentage(delayCount, totalStudents) }}%)</span>
           </div>
+          <div class="legend-item"><span class="legend-color interrupted"></span><span>实习已中断: {{ interruptedCount }} ({{ calculatePercentage(interruptedCount, totalStudents) }}%)</span></div>
         </div>
       </div>
     </div>
@@ -113,24 +119,26 @@
               <div class="progress-item info" :style="{ width: `${division.total > 0 ? (division.offer / division.total) * 100 : 0}%` }"></div>
               <div class="progress-item danger" :style="{ width: `${division.total > 0 ? (division.noOffer / division.total) * 100 : 0}%` }"></div>
               <div class="progress-item warning" :style="{ width: `${division.total > 0 ? (division.delay / division.total) * 100 : 0}%` }"></div>
+              <div class="progress-item interrupted" :style="{ width: `${division.total > 0 ? ((division.interrupted || 0) / division.total) * 100 : 0}%` }"></div>
             </div>
             <div class="progress-stats">
               <div class="stat-item">
-                <span class="stat-label">已确定：</span>
+                <span class="stat-label">已落实实习：</span>
                 <span class="stat-value success">{{ division.confirmed }}</span>
               </div>
               <div class="stat-item">
-                <span class="stat-label">有offer：</span>
+                <span class="stat-label">已录用待确认：</span>
                 <span class="stat-value info">{{ division.offer }}</span>
               </div>
               <div class="stat-item">
-                <span class="stat-label">没offer：</span>
+                <span class="stat-label">尚未获录用：</span>
                 <span class="stat-value danger">{{ division.noOffer }}</span>
               </div>
               <div class="stat-item">
-                <span class="stat-label">延迟：</span>
+                <span class="stat-label">已延期实习：</span>
                 <span class="stat-value warning">{{ division.delay }}</span>
               </div>
+              <div class="stat-item"><span class="stat-label">实习已中断：</span><span class="stat-value">{{ division.interrupted || 0 }}</span></div>
             </div>
           </div>
         </div>
@@ -155,24 +163,26 @@
               <div class="progress-item info" :style="{ width: `${grade.total > 0 ? (grade.offer / grade.total) * 100 : 0}%` }"></div>
               <div class="progress-item danger" :style="{ width: `${grade.total > 0 ? (grade.noOffer / grade.total) * 100 : 0}%` }"></div>
               <div class="progress-item warning" :style="{ width: `${grade.total > 0 ? (grade.delay / grade.total) * 100 : 0}%` }"></div>
+              <div class="progress-item interrupted" :style="{ width: `${grade.total > 0 ? ((grade.interrupted || 0) / grade.total) * 100 : 0}%` }"></div>
             </div>
             <div class="progress-stats">
               <div class="stat-item">
-                <span class="stat-label">已确定：</span>
+                <span class="stat-label">已落实实习：</span>
                 <span class="stat-value success">{{ grade.confirmed }}</span>
               </div>
               <div class="stat-item">
-                <span class="stat-label">有offer：</span>
+                <span class="stat-label">已录用待确认：</span>
                 <span class="stat-value info">{{ grade.offer }}</span>
               </div>
               <div class="stat-item">
-                <span class="stat-label">没offer：</span>
+                <span class="stat-label">尚未获录用：</span>
                 <span class="stat-value danger">{{ grade.noOffer }}</span>
               </div>
               <div class="stat-item">
-                <span class="stat-label">延迟：</span>
+                <span class="stat-label">已延期实习：</span>
                 <span class="stat-value warning">{{ grade.delay }}</span>
               </div>
+              <div class="stat-item"><span class="stat-label">实习已中断：</span><span class="stat-value">{{ grade.interrupted || 0 }}</span></div>
             </div>
           </div>
         </div>
@@ -216,24 +226,26 @@
               <div class="progress-item info" :style="{ width: `${major.total > 0 ? (major.offer / major.total) * 100 : 0}%` }"></div>
               <div class="progress-item danger" :style="{ width: `${major.total > 0 ? (major.noOffer / major.total) * 100 : 0}%` }"></div>
               <div class="progress-item warning" :style="{ width: `${major.total > 0 ? (major.delay / major.total) * 100 : 0}%` }"></div>
+              <div class="progress-item interrupted" :style="{ width: `${major.total > 0 ? ((major.interrupted || 0) / major.total) * 100 : 0}%` }"></div>
             </div>
             <div class="progress-stats">
               <div class="stat-item">
-                <span class="stat-label">已确定：</span>
+                <span class="stat-label">已落实实习：</span>
                 <span class="stat-value success">{{ major.confirmed }}</span>
               </div>
               <div class="stat-item">
-                <span class="stat-label">有offer：</span>
+                <span class="stat-label">已录用待确认：</span>
                 <span class="stat-value info">{{ major.offer }}</span>
               </div>
               <div class="stat-item">
-                <span class="stat-label">没offer：</span>
+                <span class="stat-label">尚未获录用：</span>
                 <span class="stat-value danger">{{ major.noOffer }}</span>
               </div>
               <div class="stat-item">
-                <span class="stat-label">延迟：</span>
+                <span class="stat-label">已延期实习：</span>
                 <span class="stat-value warning">{{ major.delay }}</span>
               </div>
+              <div class="stat-item"><span class="stat-label">实习已中断：</span><span class="stat-value">{{ major.interrupted || 0 }}</span></div>
             </div>
           </div>
         </div>
@@ -277,24 +289,26 @@
               <div class="progress-item info" :style="{ width: `${cls.total > 0 ? (cls.offer / cls.total) * 100 : 0}%` }"></div>
               <div class="progress-item danger" :style="{ width: `${cls.total > 0 ? (cls.noOffer / cls.total) * 100 : 0}%` }"></div>
               <div class="progress-item warning" :style="{ width: `${cls.total > 0 ? (cls.delay / cls.total) * 100 : 0}%` }"></div>
+              <div class="progress-item interrupted" :style="{ width: `${cls.total > 0 ? ((cls.interrupted || 0) / cls.total) * 100 : 0}%` }"></div>
             </div>
             <div class="progress-stats">
               <div class="stat-item">
-                <span class="stat-label">已确定：</span>
+                <span class="stat-label">已落实实习：</span>
                 <span class="stat-value success">{{ cls.confirmed }}</span>
               </div>
               <div class="stat-item">
-                <span class="stat-label">有 offer：</span>
+                <span class="stat-label">已录用待确认：</span>
                 <span class="stat-value info">{{ cls.offer }}</span>
               </div>
               <div class="stat-item">
-                <span class="stat-label">没 offer：</span>
+                <span class="stat-label">尚未获录用：</span>
                 <span class="stat-value danger">{{ cls.noOffer }}</span>
               </div>
               <div class="stat-item">
-                <span class="stat-label">延迟：</span>
+                <span class="stat-label">已延期实习：</span>
                 <span class="stat-value warning">{{ cls.delay }}</span>
               </div>
+              <div class="stat-item"><span class="stat-label">实习已中断：</span><span class="stat-value">{{ cls.interrupted || 0 }}</span></div>
             </div>
           </div>
         </div>
@@ -347,11 +361,12 @@ const confirmedCount = ref(0)
 const offerCount = ref(0)
 const noOfferCount = ref(0)
 const delayCount = ref(0)
+const interruptedCount = ref(0)
 const scopeName = ref('')
-const divisionCollapsed = ref(true)
-const gradeCollapsed = ref(true)
-const majorCollapsed = ref(true)
-const classCollapsed = ref(true)
+const divisionCollapsed = ref(false)
+const gradeCollapsed = ref(false)
+const majorCollapsed = ref(false)
+const classCollapsed = ref(false)
 const selectedClasses = ref<string[]>(['__all__'])
 
 const filteredClassData = computed(() => {
@@ -382,6 +397,7 @@ const gradeData = ref<Array<{
   offer: number
   noOffer: number
   delay: number
+  interrupted?: number
 }>>([])
 
 // 专业数据
@@ -392,6 +408,7 @@ const majorData = ref<Array<{
   offer: number
   noOffer: number
   delay: number
+  interrupted?: number
 }>>([])
 
 // 班级数据
@@ -402,6 +419,7 @@ const classData = ref<Array<{
   offer: number
   noOffer: number
   delay: number
+  interrupted?: number
 }>>([])
 
 // 辅导员负责的班级数据
@@ -412,6 +430,7 @@ const myClassData = ref<Array<{
   offer: number
   noOffer: number
   delay: number
+  interrupted?: number
 }>>([])
 
 // 系室数据
@@ -422,6 +441,7 @@ const divisionData = ref<Array<{
   offer: number
   noOffer: number
   delay: number
+  interrupted?: number
 }>>([])
 
 // 加载看板数据
@@ -437,6 +457,7 @@ const loadDashboardData = async () => {
       offerCount.value = response.offer || 0
       noOfferCount.value = response.noOffer || 0
       delayCount.value = response.delay || 0
+      interruptedCount.value = response.interrupted || 0
       scopeName.value = response.scopeName || ''
       gradeData.value = response.gradeData || []
       majorData.value = response.majorData || []
@@ -453,6 +474,7 @@ const loadDashboardData = async () => {
       offerCount.value = response.offer || 0
       noOfferCount.value = response.noOffer || 0
       delayCount.value = response.delay || 0
+      interruptedCount.value = response.interrupted || 0
       scopeName.value = response.scopeName || ''
       gradeData.value = response.gradeData || []
       majorData.value = response.majorData || []
@@ -567,6 +589,7 @@ const calculatePercentage = (value: number, total: number) => {
 </script>
 
 <style scoped>
+.interrupted { background: #909399; }
 .dashboard-container {
   display: flex;
   flex-direction: column;
@@ -817,7 +840,7 @@ const calculatePercentage = (value: number, total: number) => {
   overflow: hidden;
 }
 
-/* 将已确定实习的文字颜色改为黑色 */
+/* 将已落实实习的文字颜色改为黑色 */
 .status-item.success {
   color: black;
 }

@@ -93,6 +93,17 @@
         </association>
     </resultMap>
 
+    <!-- 当前学生视图只关联最新一条状态记录；没有状态记录的学生仍保留。 -->
+    <sql id="latestStudentStatusJoin">
+        LEFT JOIN student_internship_status sis ON sis.id = (
+            SELECT latest_status.id
+            FROM student_internship_status latest_status
+            WHERE latest_status.student_id = su.id
+            ORDER BY latest_status.create_time DESC, latest_status.id DESC
+            LIMIT 1
+        )
+    </sql>
+
     <sql id="jobSearchHasPassedOffer"><include refid="com.internship.mapper.JobSearchStatusMapper.hasPassedOffer"/></sql>
 
     <sql id="jobSearchHasPendingConfirmation"><include refid="com.internship.mapper.JobSearchStatusMapper.hasPendingConfirmation"/></sql>
@@ -538,7 +549,7 @@
     <!-- 动态条件查询学生实习状态（按管辖范围过滤：学院/系室/班级） -->
     <select id="listByScope" resultMap="StudentInternshipStatusResultMap">
         SELECT
-            sis.id as sis_id, sis.student_id as sis_student_id, sis.status as sis_status,
+            sis.id as sis_id, su.id as sis_student_id, COALESCE(sis.status, 0) as sis_status,
             sis.company_id as sis_company_id, sis.position_id as sis_position_id,
             sis.has_complaint as sis_has_complaint, sis.is_delayed as sis_is_delayed,
             sis.is_interrupted as sis_is_interrupted, sis.create_time as sis_create_time,
@@ -561,13 +572,14 @@
             c.contact_phone as c_contact_phone, c.contact_email as c_contact_email, c.address as c_address,
             p.id as p_id, p.position_name as p_position_name, p.requirements as p_requirements,
             p.planned_recruit as p_planned_recruit, p.recruited_count as p_recruited_count, p.remaining_quota as p_remaining_quota
-        FROM student_internship_status sis
-        LEFT JOIN student_users su ON sis.student_id = su.id
+        FROM student_users su
+        <include refid="latestStudentStatusJoin"/>
         LEFT JOIN class cls ON su.class_id = cls.id
         LEFT JOIN major m ON su.major_id = m.id
         LEFT JOIN company_users c ON sis.company_id = c.id
         LEFT JOIN position p ON sis.position_id = p.id
         <where>
+            AND su.status = 1
             <if test="studentId != null">
                 AND su.id = #{studentId}
             </if>
@@ -618,7 +630,7 @@
                 </foreach>
             </if>
         </where>
-        ORDER BY sis.status ASC, sis.create_time DESC
+        ORDER BY COALESCE(sis.status, 0) ASC, sis.create_time DESC, su.id DESC
     </select>
 
     <!-- 动态条件查询学生实习状态（支持状态列表） -->
@@ -807,18 +819,21 @@
             m.name AS majorName,
             c.name AS className,
             <include refid="com.internship.mapper.JobSearchStatusMapper.effectiveStatusText"/> AS statusText,
-            co.company_name AS companyName,
-            p.position_name AS positionName,
+            <include refid="com.internship.mapper.JobSearchStatusMapper.pendingApplicationText"/> AS pendingApplicationText,
+            COALESCE(co.company_name, sis.company_name) AS companyName,
+            COALESCE(p.position_name, sis.position_name) AS positionName,
+            su.phone AS phone,
             sis.update_time AS updatedTime
         FROM student_users su
-        LEFT JOIN student_internship_status sis ON su.id = sis.student_id
+        <include refid="latestStudentStatusJoin"/>
         LEFT JOIN major m ON su.major_id = m.id
         LEFT JOIN class c ON su.class_id = c.id
         LEFT JOIN company_users co ON sis.company_id = co.id
         LEFT JOIN position p ON sis.position_id = p.id
         <where>
+            AND su.status = 1
             <if test="status != null">
-                sis.status = #{status}
+                <include refid="jobSearchStatusFilter"/>
             </if>
         </where>
         ORDER BY m.name, c.name, su.student_user_id
@@ -829,14 +844,14 @@
         SELECT 
             m.name AS majorName,
             COUNT(DISTINCT su.id) AS totalStudents,
-            SUM(CASE WHEN <include refid="com.internship.mapper.JobSearchStatusMapper.effectiveNumericStatus"/> = 2 THEN 1 ELSE 0 END) AS confirmedCount,
-            SUM(CASE WHEN <include refid="com.internship.mapper.JobSearchStatusMapper.effectiveNumericStatus"/> = 1 THEN 1 ELSE 0 END) AS hasOfferCount,
-            SUM(CASE WHEN <include refid="com.internship.mapper.JobSearchStatusMapper.effectiveNumericStatus"/> = 0 THEN 1 ELSE 0 END) AS notFoundCount,
-            SUM(CASE WHEN <include refid="com.internship.mapper.JobSearchStatusMapper.effectiveNumericStatus"/> = 3 THEN 1 ELSE 0 END) AS completedCount,
-            ROUND(SUM(CASE WHEN sis.status IN (2, 3) THEN 1 ELSE 0 END) * 100.0 / COUNT(DISTINCT su.id), 1) AS progressRate
+            SUM(CASE WHEN su.id IS NOT NULL AND <include refid="com.internship.mapper.JobSearchStatusMapper.effectiveNumericStatus"/> = 2 THEN 1 ELSE 0 END) AS confirmedCount,
+            SUM(CASE WHEN su.id IS NOT NULL AND <include refid="com.internship.mapper.JobSearchStatusMapper.effectiveNumericStatus"/> = 1 THEN 1 ELSE 0 END) AS hasOfferCount,
+            SUM(CASE WHEN su.id IS NOT NULL AND <include refid="com.internship.mapper.JobSearchStatusMapper.effectiveNumericStatus"/> = 0 THEN 1 ELSE 0 END) AS notFoundCount,
+            SUM(CASE WHEN su.id IS NOT NULL AND <include refid="com.internship.mapper.JobSearchStatusMapper.effectiveNumericStatus"/> = 3 THEN 1 ELSE 0 END) AS completedCount,
+            COALESCE(ROUND(SUM(CASE WHEN sis.status IN (2, 3) THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(DISTINCT su.id), 0), 1), 0) AS progressRate
         FROM major m
-        LEFT JOIN student_users su ON m.id = su.major_id
-        LEFT JOIN student_internship_status sis ON su.id = sis.student_id
+        LEFT JOIN student_users su ON m.id = su.major_id AND su.status = 1
+        <include refid="latestStudentStatusJoin"/>
         GROUP BY m.id, m.name
         ORDER BY progressRate DESC
     </select>
@@ -847,14 +862,14 @@
             c.name AS className,
             m.name AS majorName,
             COUNT(DISTINCT su.id) AS totalStudents,
-            SUM(CASE WHEN <include refid="com.internship.mapper.JobSearchStatusMapper.effectiveNumericStatus"/> = 2 THEN 1 ELSE 0 END) AS confirmedCount,
-            SUM(CASE WHEN <include refid="com.internship.mapper.JobSearchStatusMapper.effectiveNumericStatus"/> = 1 THEN 1 ELSE 0 END) AS hasOfferCount,
-            SUM(CASE WHEN <include refid="com.internship.mapper.JobSearchStatusMapper.effectiveNumericStatus"/> = 0 THEN 1 ELSE 0 END) AS notFoundCount,
-            ROUND(SUM(CASE WHEN sis.status IN (2, 3) THEN 1 ELSE 0 END) * 100.0 / COUNT(DISTINCT su.id), 1) AS progressRate
+            SUM(CASE WHEN su.id IS NOT NULL AND <include refid="com.internship.mapper.JobSearchStatusMapper.effectiveNumericStatus"/> = 2 THEN 1 ELSE 0 END) AS confirmedCount,
+            SUM(CASE WHEN su.id IS NOT NULL AND <include refid="com.internship.mapper.JobSearchStatusMapper.effectiveNumericStatus"/> = 1 THEN 1 ELSE 0 END) AS hasOfferCount,
+            SUM(CASE WHEN su.id IS NOT NULL AND <include refid="com.internship.mapper.JobSearchStatusMapper.effectiveNumericStatus"/> = 0 THEN 1 ELSE 0 END) AS notFoundCount,
+            COALESCE(ROUND(SUM(CASE WHEN sis.status IN (2, 3) THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(DISTINCT su.id), 0), 1), 0) AS progressRate
         FROM class c
         LEFT JOIN major m ON c.major_id = m.id
-        LEFT JOIN student_users su ON c.id = su.class_id
-        LEFT JOIN student_internship_status sis ON su.id = sis.student_id
+        LEFT JOIN student_users su ON c.id = su.class_id AND su.status = 1
+        <include refid="latestStudentStatusJoin"/>
         GROUP BY c.id, c.name, m.name
         ORDER BY m.name, c.name
     </select>
@@ -980,7 +995,7 @@
             SUM(CASE WHEN <include refid="com.internship.mapper.JobSearchStatusMapper.effectiveNumericStatus"/> = 5 THEN 1 ELSE 0 END) AS interrupted,
             SUM(CASE WHEN <include refid="com.internship.mapper.JobSearchStatusMapper.effectiveNumericStatus"/> = 6 THEN 1 ELSE 0 END) AS delay
         FROM student_users su
-        LEFT JOIN student_internship_status sis ON su.id = sis.student_id
+        <include refid="latestStudentStatusJoin"/>
         <where>
             AND su.status = 1
             <include refid="dashboardInternshipPeriodFilter"/>
@@ -995,9 +1010,10 @@
             SUM(CASE WHEN sis.status IN (2, 3) THEN 1 ELSE 0 END) AS confirmed,
             SUM(CASE WHEN <include refid="com.internship.mapper.JobSearchStatusMapper.effectiveNumericStatus"/> = 1 THEN 1 ELSE 0 END) AS offer,
             SUM(CASE WHEN <include refid="com.internship.mapper.JobSearchStatusMapper.effectiveNumericStatus"/> = 0 THEN 1 ELSE 0 END) AS noOffer,
-            SUM(CASE WHEN <include refid="com.internship.mapper.JobSearchStatusMapper.effectiveNumericStatus"/> = 6 THEN 1 ELSE 0 END) AS delay
+            SUM(CASE WHEN <include refid="com.internship.mapper.JobSearchStatusMapper.effectiveNumericStatus"/> = 6 THEN 1 ELSE 0 END) AS delay,
+            SUM(CASE WHEN <include refid="com.internship.mapper.JobSearchStatusMapper.effectiveNumericStatus"/> = 5 THEN 1 ELSE 0 END) AS interrupted
         FROM student_users su
-        LEFT JOIN student_internship_status sis ON su.id = sis.student_id
+        <include refid="latestStudentStatusJoin"/>
         <where>
             <include refid="dashboardInternshipPeriodFilter"/>
         </where>
@@ -1013,9 +1029,10 @@
             SUM(CASE WHEN sis.status IN (2, 3) THEN 1 ELSE 0 END) AS confirmed,
             SUM(CASE WHEN <include refid="com.internship.mapper.JobSearchStatusMapper.effectiveNumericStatus"/> = 1 THEN 1 ELSE 0 END) AS offer,
             SUM(CASE WHEN <include refid="com.internship.mapper.JobSearchStatusMapper.effectiveNumericStatus"/> = 0 THEN 1 ELSE 0 END) AS noOffer,
-            SUM(CASE WHEN <include refid="com.internship.mapper.JobSearchStatusMapper.effectiveNumericStatus"/> = 6 THEN 1 ELSE 0 END) AS delay
+            SUM(CASE WHEN <include refid="com.internship.mapper.JobSearchStatusMapper.effectiveNumericStatus"/> = 6 THEN 1 ELSE 0 END) AS delay,
+            SUM(CASE WHEN <include refid="com.internship.mapper.JobSearchStatusMapper.effectiveNumericStatus"/> = 5 THEN 1 ELSE 0 END) AS interrupted
         FROM student_users su
-        LEFT JOIN student_internship_status sis ON su.id = sis.student_id
+        <include refid="latestStudentStatusJoin"/>
         LEFT JOIN major m ON su.major_id = m.id
         <where>
             <include refid="dashboardInternshipPeriodFilter"/>
@@ -1032,9 +1049,10 @@
             SUM(CASE WHEN sis.status IN (2, 3) THEN 1 ELSE 0 END) AS confirmed,
             SUM(CASE WHEN <include refid="com.internship.mapper.JobSearchStatusMapper.effectiveNumericStatus"/> = 1 THEN 1 ELSE 0 END) AS offer,
             SUM(CASE WHEN <include refid="com.internship.mapper.JobSearchStatusMapper.effectiveNumericStatus"/> = 0 THEN 1 ELSE 0 END) AS noOffer,
-            SUM(CASE WHEN <include refid="com.internship.mapper.JobSearchStatusMapper.effectiveNumericStatus"/> = 6 THEN 1 ELSE 0 END) AS delay
+            SUM(CASE WHEN <include refid="com.internship.mapper.JobSearchStatusMapper.effectiveNumericStatus"/> = 6 THEN 1 ELSE 0 END) AS delay,
+            SUM(CASE WHEN <include refid="com.internship.mapper.JobSearchStatusMapper.effectiveNumericStatus"/> = 5 THEN 1 ELSE 0 END) AS interrupted
         FROM student_users su
-        LEFT JOIN student_internship_status sis ON su.id = sis.student_id
+        <include refid="latestStudentStatusJoin"/>
         LEFT JOIN class c ON su.class_id = c.id
         <where>
             <include refid="dashboardInternshipPeriodFilter"/>
@@ -1055,7 +1073,7 @@
             SUM(CASE WHEN <include refid="com.internship.mapper.JobSearchStatusMapper.effectiveNumericStatus"/> = 5 THEN 1 ELSE 0 END) AS interrupted,
             SUM(CASE WHEN <include refid="com.internship.mapper.JobSearchStatusMapper.effectiveNumericStatus"/> = 6 THEN 1 ELSE 0 END) AS delay
         FROM student_users su
-        LEFT JOIN student_internship_status sis ON su.id = sis.student_id
+        <include refid="latestStudentStatusJoin"/>
         <where>
             AND su.status = 1
             <if test="classIds != null and classIds.size() > 0">
@@ -1080,7 +1098,7 @@
             SUM(CASE WHEN <include refid="com.internship.mapper.JobSearchStatusMapper.effectiveNumericStatus"/> = 5 THEN 1 ELSE 0 END) AS interrupted,
             SUM(CASE WHEN <include refid="com.internship.mapper.JobSearchStatusMapper.effectiveNumericStatus"/> = 6 THEN 1 ELSE 0 END) AS delay
         FROM student_users su
-        LEFT JOIN student_internship_status sis ON su.id = sis.student_id
+        <include refid="latestStudentStatusJoin"/>
         LEFT JOIN major m ON su.major_id = m.id
         <where>
             AND su.status = 1
@@ -1101,9 +1119,10 @@
             SUM(CASE WHEN sis.status IN (2, 3) THEN 1 ELSE 0 END) AS confirmed,
             SUM(CASE WHEN <include refid="com.internship.mapper.JobSearchStatusMapper.effectiveNumericStatus"/> = 1 THEN 1 ELSE 0 END) AS offer,
             SUM(CASE WHEN <include refid="com.internship.mapper.JobSearchStatusMapper.effectiveNumericStatus"/> = 0 THEN 1 ELSE 0 END) AS noOffer,
-            SUM(CASE WHEN <include refid="com.internship.mapper.JobSearchStatusMapper.effectiveNumericStatus"/> = 6 THEN 1 ELSE 0 END) AS delay
+            SUM(CASE WHEN <include refid="com.internship.mapper.JobSearchStatusMapper.effectiveNumericStatus"/> = 6 THEN 1 ELSE 0 END) AS delay,
+            SUM(CASE WHEN <include refid="com.internship.mapper.JobSearchStatusMapper.effectiveNumericStatus"/> = 5 THEN 1 ELSE 0 END) AS interrupted
         FROM student_users su
-        LEFT JOIN student_internship_status sis ON su.id = sis.student_id
+        <include refid="latestStudentStatusJoin"/>
         LEFT JOIN class c ON su.class_id = c.id
         <where>
             <if test="classIds != null and classIds.size() > 0">
@@ -1126,9 +1145,10 @@
             SUM(CASE WHEN sis.status IN (2, 3) THEN 1 ELSE 0 END) AS confirmed,
             SUM(CASE WHEN <include refid="com.internship.mapper.JobSearchStatusMapper.effectiveNumericStatus"/> = 1 THEN 1 ELSE 0 END) AS offer,
             SUM(CASE WHEN <include refid="com.internship.mapper.JobSearchStatusMapper.effectiveNumericStatus"/> = 0 THEN 1 ELSE 0 END) AS noOffer,
-            SUM(CASE WHEN <include refid="com.internship.mapper.JobSearchStatusMapper.effectiveNumericStatus"/> = 6 THEN 1 ELSE 0 END) AS delay
+            SUM(CASE WHEN <include refid="com.internship.mapper.JobSearchStatusMapper.effectiveNumericStatus"/> = 6 THEN 1 ELSE 0 END) AS delay,
+            SUM(CASE WHEN <include refid="com.internship.mapper.JobSearchStatusMapper.effectiveNumericStatus"/> = 5 THEN 1 ELSE 0 END) AS interrupted
         FROM student_users su
-        LEFT JOIN student_internship_status sis ON su.id = sis.student_id
+        <include refid="latestStudentStatusJoin"/>
         <where>
             <if test="classIds != null and classIds.size() > 0">
                 AND su.class_id IN
@@ -1146,13 +1166,14 @@
     <select id="getStatsByMajorByClassIds" resultType="java.util.Map">
         SELECT
             m.name AS majorName,
-            COUNT(DISTINCT su.id) AS total,
+            COUNT(DISTINCT CASE WHEN sis.status IS NULL OR sis.status != 4 THEN su.id END) AS total,
             SUM(CASE WHEN sis.status IN (2, 3) THEN 1 ELSE 0 END) AS confirmed,
             SUM(CASE WHEN <include refid="com.internship.mapper.JobSearchStatusMapper.effectiveNumericStatus"/> = 1 THEN 1 ELSE 0 END) AS offer,
             SUM(CASE WHEN <include refid="com.internship.mapper.JobSearchStatusMapper.effectiveNumericStatus"/> = 0 THEN 1 ELSE 0 END) AS noOffer,
-            SUM(CASE WHEN <include refid="com.internship.mapper.JobSearchStatusMapper.effectiveNumericStatus"/> = 6 THEN 1 ELSE 0 END) AS delay
+            SUM(CASE WHEN <include refid="com.internship.mapper.JobSearchStatusMapper.effectiveNumericStatus"/> = 6 THEN 1 ELSE 0 END) AS delay,
+            SUM(CASE WHEN <include refid="com.internship.mapper.JobSearchStatusMapper.effectiveNumericStatus"/> = 5 THEN 1 ELSE 0 END) AS interrupted
         FROM student_users su
-        LEFT JOIN student_internship_status sis ON su.id = sis.student_id
+        <include refid="latestStudentStatusJoin"/>
         LEFT JOIN major m ON su.major_id = m.id
         <where>
             <if test="classIds != null and classIds.size() > 0">
@@ -1175,9 +1196,10 @@
             SUM(CASE WHEN sis.status IN (2, 3) THEN 1 ELSE 0 END) AS confirmed,
             SUM(CASE WHEN <include refid="com.internship.mapper.JobSearchStatusMapper.effectiveNumericStatus"/> = 1 THEN 1 ELSE 0 END) AS offer,
             SUM(CASE WHEN <include refid="com.internship.mapper.JobSearchStatusMapper.effectiveNumericStatus"/> = 0 THEN 1 ELSE 0 END) AS noOffer,
-            SUM(CASE WHEN <include refid="com.internship.mapper.JobSearchStatusMapper.effectiveNumericStatus"/> = 6 THEN 1 ELSE 0 END) AS delay
+            SUM(CASE WHEN <include refid="com.internship.mapper.JobSearchStatusMapper.effectiveNumericStatus"/> = 6 THEN 1 ELSE 0 END) AS delay,
+            SUM(CASE WHEN <include refid="com.internship.mapper.JobSearchStatusMapper.effectiveNumericStatus"/> = 5 THEN 1 ELSE 0 END) AS interrupted
         FROM student_users su
-        LEFT JOIN student_internship_status sis ON su.id = sis.student_id
+        <include refid="latestStudentStatusJoin"/>
         LEFT JOIN major m ON su.major_id = m.id
         <where>
             <if test="divisionIds != null and divisionIds.size() > 0">
@@ -1200,9 +1222,10 @@
             SUM(CASE WHEN sis.status IN (2, 3) THEN 1 ELSE 0 END) AS confirmed,
             SUM(CASE WHEN <include refid="com.internship.mapper.JobSearchStatusMapper.effectiveNumericStatus"/> = 1 THEN 1 ELSE 0 END) AS offer,
             SUM(CASE WHEN <include refid="com.internship.mapper.JobSearchStatusMapper.effectiveNumericStatus"/> = 0 THEN 1 ELSE 0 END) AS noOffer,
-            SUM(CASE WHEN <include refid="com.internship.mapper.JobSearchStatusMapper.effectiveNumericStatus"/> = 6 THEN 1 ELSE 0 END) AS delay
+            SUM(CASE WHEN <include refid="com.internship.mapper.JobSearchStatusMapper.effectiveNumericStatus"/> = 6 THEN 1 ELSE 0 END) AS delay,
+            SUM(CASE WHEN <include refid="com.internship.mapper.JobSearchStatusMapper.effectiveNumericStatus"/> = 5 THEN 1 ELSE 0 END) AS interrupted
         FROM student_users su
-        LEFT JOIN student_internship_status sis ON su.id = sis.student_id
+        <include refid="latestStudentStatusJoin"/>
         LEFT JOIN major m ON su.major_id = m.id
         <where>
             <if test="divisionIds != null and divisionIds.size() > 0">
@@ -1225,9 +1248,10 @@
             SUM(CASE WHEN sis.status IN (2, 3) THEN 1 ELSE 0 END) AS confirmed,
             SUM(CASE WHEN <include refid="com.internship.mapper.JobSearchStatusMapper.effectiveNumericStatus"/> = 1 THEN 1 ELSE 0 END) AS offer,
             SUM(CASE WHEN <include refid="com.internship.mapper.JobSearchStatusMapper.effectiveNumericStatus"/> = 0 THEN 1 ELSE 0 END) AS noOffer,
-            SUM(CASE WHEN <include refid="com.internship.mapper.JobSearchStatusMapper.effectiveNumericStatus"/> = 6 THEN 1 ELSE 0 END) AS delay
+            SUM(CASE WHEN <include refid="com.internship.mapper.JobSearchStatusMapper.effectiveNumericStatus"/> = 6 THEN 1 ELSE 0 END) AS delay,
+            SUM(CASE WHEN <include refid="com.internship.mapper.JobSearchStatusMapper.effectiveNumericStatus"/> = 5 THEN 1 ELSE 0 END) AS interrupted
         FROM student_users su
-        LEFT JOIN student_internship_status sis ON su.id = sis.student_id
+        <include refid="latestStudentStatusJoin"/>
         LEFT JOIN class c ON su.class_id = c.id
         LEFT JOIN major m ON su.major_id = m.id
         <where>
@@ -1251,9 +1275,10 @@
             SUM(CASE WHEN sis.status IN (2, 3) THEN 1 ELSE 0 END) AS confirmed,
             SUM(CASE WHEN <include refid="com.internship.mapper.JobSearchStatusMapper.effectiveNumericStatus"/> = 1 THEN 1 ELSE 0 END) AS offer,
             SUM(CASE WHEN <include refid="com.internship.mapper.JobSearchStatusMapper.effectiveNumericStatus"/> = 0 THEN 1 ELSE 0 END) AS noOffer,
-            SUM(CASE WHEN <include refid="com.internship.mapper.JobSearchStatusMapper.effectiveNumericStatus"/> = 6 THEN 1 ELSE 0 END) AS delay
+            SUM(CASE WHEN <include refid="com.internship.mapper.JobSearchStatusMapper.effectiveNumericStatus"/> = 6 THEN 1 ELSE 0 END) AS delay,
+            SUM(CASE WHEN <include refid="com.internship.mapper.JobSearchStatusMapper.effectiveNumericStatus"/> = 5 THEN 1 ELSE 0 END) AS interrupted
         FROM student_users su
-        LEFT JOIN student_internship_status sis ON su.id = sis.student_id
+        <include refid="latestStudentStatusJoin"/>
         LEFT JOIN major m ON su.major_id = m.id
         LEFT JOIN division d ON m.division_id = d.id
         <where>

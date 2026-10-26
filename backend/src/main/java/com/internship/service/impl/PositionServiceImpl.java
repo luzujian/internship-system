@@ -33,6 +33,9 @@ public class PositionServiceImpl implements PositionService {
     private CompanyContactService companyContactService;
 
     @Autowired
+    private com.internship.service.JobSearchStatusService jobSearchStatusService;
+
+    @Autowired
     public PositionServiceImpl(PositionMapper positionMapper,
                                @Lazy StudentInternshipStatusService studentInternshipStatusService) {
         this.positionMapper = positionMapper;
@@ -351,7 +354,16 @@ public class PositionServiceImpl implements PositionService {
         if (positionId == null || positionId <= 0) {
             return Collections.emptyList();
         }
-        return positionMapper.getRecruitedStudents(positionId);
+        List<Map<String, Object>> students = positionMapper.getRecruitedStudents(positionId);
+        if (jobSearchStatusService != null) {
+            jobSearchStatusService.enrichStudentMaps(students);
+            for (Map<String, Object> student : students) {
+                if (student.get("jobSearchStatusText") != null) {
+                    student.put("statusText", student.get("jobSearchStatusText"));
+                }
+            }
+        }
+        return students;
     }
 
     @Override

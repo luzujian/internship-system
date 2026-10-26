@@ -1,6 +1,7 @@
 package com.internship.service.impl;
 
 import com.internship.entity.SystemConfig;
+import com.internship.agent.business.AgentFeatureGate;
 import com.internship.exception.BusinessException;
 import com.internship.mapper.SystemConfigMapper;
 import com.internship.service.SystemConfigService;
@@ -11,6 +12,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Date;
 import java.util.List;
+import java.util.UUID;
 
 @Slf4j
 @Service
@@ -65,6 +67,9 @@ public class SystemConfigServiceImpl implements SystemConfigService {
         }
         
         int result = systemConfigMapper.insert(systemConfig);
+        if (result > 0 && aiEnabled(systemConfig)) {
+            systemConfigMapper.saveStudentAiOnboardingGeneration(UUID.randomUUID().toString());
+        }
         log.info("系统配置插入成功，ID: {}", systemConfig.getId());
         return result;
     }
@@ -105,12 +110,25 @@ public class SystemConfigServiceImpl implements SystemConfigService {
         if (existing == null) {
             throw new BusinessException("配置不存在");
         }
+
+        if (AgentFeatureGate.CONFIG_KEY.equals(existing.getConfigKey())) {
+            existing = systemConfigMapper.lockByConfigKey(AgentFeatureGate.CONFIG_KEY);
+        }
         
         systemConfig.setUpdateTime(new Date());
         
         int result = systemConfigMapper.update(systemConfig);
+        if (result > 0 && aiEnabled(systemConfig) && !aiEnabled(existing)) {
+            systemConfigMapper.saveStudentAiOnboardingGeneration(UUID.randomUUID().toString());
+        }
         log.info("系统配置更新成功，ID: {}", systemConfig.getId());
         return result;
+    }
+
+    private static boolean aiEnabled(SystemConfig value) {
+        return value != null && AgentFeatureGate.CONFIG_KEY.equals(value.getConfigKey())
+                && (value.getStatus() == null || value.getStatus() == 1)
+                && Boolean.parseBoolean(value.getConfigValue());
     }
     
     @Override

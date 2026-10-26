@@ -512,6 +512,14 @@ export function getAnnouncementWebSocket(): WebSocketClient | null {
   return announcementWebSocket
 }
 
+// Keep authentication changes synchronous without introducing a store/WebSocket import cycle.
+window.addEventListener('auth:access-token-changed', (event: Event) => {
+  const detail = (event as CustomEvent<{ token: string; identityChanged: boolean }>).detail
+  if (!detail || typeof detail.token !== 'string') return
+  if (detail.identityChanged || !detail.token) disconnectAnnouncementWebSocket()
+  else announcementWebSocket?.updateToken(detail.token)
+})
+
 // 注册岗位更新监听器
 export function onPositionUpdate(callback: (data: PositionUpdateData) => void): void {
   if (!positionUpdateListeners.includes(callback)) {

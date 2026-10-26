@@ -79,10 +79,15 @@ export default {
     })
   },
 
-  confirmRecord(id: number) {
+  getConfirmationDetails(id: number) {
+    return request.get(`/company/confirmation/${id}/details`)
+  },
+
+  confirmRecord(id: number, data?: { positionId?: number | null; textPosition?: boolean }) {
     return request({
       url: `/company/confirmation/confirm/${id}`,
-      method: 'post'
+      method: 'post',
+      data
     })
   },
 

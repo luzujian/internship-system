@@ -1,10 +1,13 @@
 import { defineConfig } from '@playwright/test'
 
+const port = Number(process.env.E2E_PORT || 5173)
+const baseURL = process.env.E2E_BASE_URL || `http://127.0.0.1:${port}`
+
 /**
  * Playwright E2E 配置
  *
- * - 三个 project：desktop / tablet / mobile
- * - webServer 在测试启动前自动 `npm run dev -- --host 127.0.0.1`，端口 5173
+ * - Chrome project：desktop / tablet / mobile；WebKit 引擎模拟：webkit-mobile / webkit-tablet
+ * - webServer 在测试启动前自动 `npm run dev -- --host 127.0.0.1`，端口默认 5173，可用 E2E_PORT / E2E_BASE_URL 覆盖
  * - 网络说明：统一走 IPv4 回环（127.0.0.1）。vite 默认 host 'localhost'
  *   会绑定到 IPv6 ::1，部分受限环境下 IPv6 回环连接被拦截会导致
  *   webServer 轮询超时与页面加载失败
@@ -45,9 +48,10 @@ export default defineConfig({
   reporter: [['list'], ['html', { open: 'never' }]],
 
   use: {
-    baseURL: 'http://127.0.0.1:5173',
+    baseURL,
     serviceWorkers: 'block',
-    trace: 'on-first-retry',
+    trace: 'retain-on-failure',
+    screenshot: 'only-on-failure',
     actionTimeout: 10000,
     navigationTimeout: 15000,
     launchOptions: {
@@ -59,9 +63,9 @@ export default defineConfig({
   },
 
   webServer: {
-    command: 'npm run dev -- --host 127.0.0.1',
-    url: 'http://127.0.0.1:5173',
-    reuseExistingServer: true,
+    command: `npm run dev -- --host 127.0.0.1 --port ${port} --strictPort`,
+    url: baseURL,
+    reuseExistingServer: process.env.E2E_REUSE_SERVER !== 'false',
     timeout: 60000
   },
 
@@ -91,6 +95,14 @@ export default defineConfig({
         isMobile: true,
         hasTouch: true
       }
+    },
+    {
+      name: 'webkit-mobile',
+      use: { browserName: 'webkit', viewport: { width: 375, height: 667 }, isMobile: true, hasTouch: true }
+    },
+    {
+      name: 'webkit-tablet',
+      use: { browserName: 'webkit', viewport: { width: 768, height: 1024 }, isMobile: true, hasTouch: true }
     }
   ]
 })

@@ -168,46 +168,54 @@ public class LoginLogController {
         try {
             log.info("获取用户活跃度统计数据，天数: {}, 开始日期: {}, 结束日期: {}", days, startDate, endDate);
             
+            TimeZone statisticsZone = TimeZone.getTimeZone("Asia/Shanghai");
             SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd");
+            dateFormat.setTimeZone(statisticsZone);
             
             if (startDate == null || endDate == null) {
                 if (days == null || days <= 0) {
                     days = 7;
                 }
+                if (days > 365) {
+                    return Result.error("日期范围不能超过365天");
+                }
                 endDate = new Date();
-                Calendar cal = Calendar.getInstance();
+                Calendar cal = Calendar.getInstance(statisticsZone);
                 cal.setTime(endDate);
                 cal.add(Calendar.DAY_OF_MONTH, -(days - 1));
                 startDate = cal.getTime();
-            } else {
-                Calendar startCal = Calendar.getInstance();
-                startCal.setTime(startDate);
-                startCal.set(Calendar.HOUR_OF_DAY, 0);
-                startCal.set(Calendar.MINUTE, 0);
-                startCal.set(Calendar.SECOND, 0);
-                startCal.set(Calendar.MILLISECOND, 0);
-                startDate = startCal.getTime();
-                
-                Calendar endCal = Calendar.getInstance();
-                endCal.setTime(endDate);
-                endCal.set(Calendar.HOUR_OF_DAY, 23);
-                endCal.set(Calendar.MINUTE, 59);
-                endCal.set(Calendar.SECOND, 59);
-                endCal.set(Calendar.MILLISECOND, 999);
-                endDate = endCal.getTime();
-                
-                long diffTime = endDate.getTime() - startDate.getTime();
-                long diffDays = diffTime / (1000 * 60 * 60 * 24) + 1;
-                
-                if (diffDays > 365) {
-                    return Result.error("日期范围不能超过365天");
-                }
+            }
+            Calendar startCal = Calendar.getInstance(statisticsZone);
+            startCal.setTime(startDate);
+            startCal.set(Calendar.HOUR_OF_DAY, 0);
+            startCal.set(Calendar.MINUTE, 0);
+            startCal.set(Calendar.SECOND, 0);
+            startCal.set(Calendar.MILLISECOND, 0);
+            startDate = startCal.getTime();
+
+            Calendar endCal = Calendar.getInstance(statisticsZone);
+            endCal.setTime(endDate);
+            endCal.set(Calendar.HOUR_OF_DAY, 23);
+            endCal.set(Calendar.MINUTE, 59);
+            endCal.set(Calendar.SECOND, 59);
+            endCal.set(Calendar.MILLISECOND, 999);
+            endDate = endCal.getTime();
+
+            if (startDate.after(endDate)) {
+                return Result.error("开始日期不能大于结束日期");
+            }
+
+            long diffTime = endDate.getTime() - startDate.getTime();
+            long diffDays = diffTime / (1000 * 60 * 60 * 24) + 1;
+
+            if (diffDays > 365) {
+                return Result.error("日期范围不能超过365天");
             }
             
             List<LoginLog> logs = loginLogMapper.selectByDateRange(startDate, endDate);
             
             List<String> dateList = new ArrayList<>();
-            Calendar cal = Calendar.getInstance();
+            Calendar cal = Calendar.getInstance(statisticsZone);
             cal.setTime(startDate);
             while (!cal.getTime().after(endDate)) {
                 dateList.add(dateFormat.format(cal.getTime()));
@@ -220,11 +228,12 @@ public class LoginLogController {
                 userSets.put("student", new HashSet<>());
                 userSets.put("teacher", new HashSet<>());
                 userSets.put("admin", new HashSet<>());
+                userSets.put("company", new HashSet<>());
                 dailyActiveUsers.put(date, userSets);
             }
             
             for (LoginLog log : logs) {
-                if (log.getLoginTime() == null) {
+                if (log.getLoginTime() == null || !"SUCCESS".equalsIgnoreCase(log.getLoginStatus())) {
                     continue;
                 }
                 
@@ -235,20 +244,24 @@ public class LoginLogController {
                         continue;
                     }
                     
-                    String normalizedType = userType.toUpperCase().trim();
-                    String roleType = "student";
+                    String normalizedType = userType.toUpperCase(Locale.ROOT).trim().replaceFirst("^ROLE_", "");
+                    String roleType;
                     
-                    if (normalizedType.contains("TEACHER") || normalizedType.contains("INSTRUCTOR")) {
+                    if (normalizedType.equals("TEACHER") || normalizedType.startsWith("TEACHER_") || normalizedType.equals("INSTRUCTOR")) {
                         roleType = "teacher";
-                    } else if (normalizedType.contains("ADMIN") || normalizedType.contains("ADMINISTRATOR")) {
+                    } else if (normalizedType.equals("ADMIN") || normalizedType.equals("ADMINISTRATOR")) {
                         roleType = "admin";
-                    } else if (normalizedType.contains("STUDENT")) {
+                    } else if (normalizedType.equals("STUDENT")) {
                         roleType = "student";
+                    } else if (normalizedType.equals("COMPANY")) {
+                        roleType = "company";
+                    } else {
+                        continue;
                     }
                     
                     String userId = log.getUserId();
                     if (userId != null && !userId.trim().isEmpty()) {
-                        dailyActiveUsers.get(logDate).get(roleType).add(userId);
+                        dailyActiveUsers.get(logDate).get(roleType).add(userId.trim());
                     }
                 }
             }
@@ -256,6 +269,7 @@ public class LoginLogController {
             List<Map<String, Object>> studentData = new ArrayList<>();
             List<Map<String, Object>> teacherData = new ArrayList<>();
             List<Map<String, Object>> adminData = new ArrayList<>();
+            List<Map<String, Object>> companyData = new ArrayList<>();
             
             for (String date : dateList) {
                 Map<String, Set<String>> userSets = dailyActiveUsers.get(date);
@@ -274,16 +288,22 @@ public class LoginLogController {
                 adminItem.put("date", date.substring(5));
                 adminItem.put("count", userSets.get("admin").size());
                 adminData.add(adminItem);
+
+                Map<String, Object> companyItem = new HashMap<>();
+                companyItem.put("date", date.substring(5));
+                companyItem.put("count", userSets.get("company").size());
+                companyData.add(companyItem);
             }
             
             Map<String, Object> result = new HashMap<>();
             result.put("studentData", studentData);
             result.put("teacherData", teacherData);
             result.put("adminData", adminData);
+            result.put("companyData", companyData);
             result.put("dateRange", dateFormat.format(startDate) + " 至 " + dateFormat.format(endDate));
             
-            log.info("用户活跃度统计数据获取成功，日期范围: {}, 学生数据: {}, 教师数据: {}, 管理员数据: {}", 
-                result.get("dateRange"), studentData.size(), teacherData.size(), adminData.size());
+            log.info("用户活跃度统计数据获取成功，日期范围: {}, 学生数据: {}, 教师数据: {}, 管理员数据: {}, 企业数据: {}",
+                result.get("dateRange"), studentData.size(), teacherData.size(), adminData.size(), companyData.size());
             
             return Result.success(result);
         } catch (Exception e) {

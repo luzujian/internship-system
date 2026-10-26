@@ -107,8 +107,9 @@ const PositionCategoryService = {
     return response
   },
 
-  exportCategoryData: async () => {
+  exportCategoryData: async (params: Record<string, unknown> = {}) => {
     return request.get('/admin/position-categories/export', {
+        params,
       responseType: 'blob'
     })
   }

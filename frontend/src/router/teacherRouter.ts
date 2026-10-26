@@ -80,6 +80,17 @@ const teacherRoutes: RouteRecordRaw[] = [
   },
 
   {
+    path: 'recruitment',
+    name: 'teacherRecruitment',
+    component: () => import('../views/teacher/RecruitmentDetails.vue'),
+    meta: {
+      title: '招聘详情',
+      requiresAuth: true,
+      roles: ['ROLE_TEACHER_COLLEGE', 'ROLE_TEACHER_DEPARTMENT', 'ROLE_TEACHER_COUNSELOR']
+    }
+  },
+
+  {
     path: 'resources',
     name: 'teacherResources',
     component: agentPage('views/teacher/Resources.vue', () => import('../views/teacher/Resources.vue')),

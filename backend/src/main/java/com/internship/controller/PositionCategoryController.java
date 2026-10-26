@@ -1,5 +1,7 @@
 package com.internship.controller;
 
+import com.internship.utils.ExcelExports;
+
 import com.internship.anno.Log;
 import com.internship.entity.Position;
 import com.internship.entity.PositionCategory;
@@ -169,116 +171,23 @@ public class PositionCategoryController {
     @Log(operationType = "EXPORT", module = "POSITION_CATEGORY_MANAGEMENT", description = "导出岗位类别数据", riskLevel = "MEDIUM", critical = true)
     @GetMapping("/export")
     @PreAuthorize("hasAuthority('position-category:view')")
-    public void exportCategoryData(HttpServletResponse response) {
-        log.info("导出岗位类别 Excel 数据");
-        List<PositionCategory> categories = null;
-        List<Position> allPositions = null;
-        try {
-            response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-            response.setCharacterEncoding("UTF-8");
-            String fileName = URLEncoder.encode("岗位类别数据" + System.currentTimeMillis(), StandardCharsets.UTF_8) + ".xlsx";
-            response.setHeader("Content-disposition", "attachment;filename=" + fileName);
-
-            categories = positionCategoryService.findAll();
-            allPositions = positionCategoryService.getAllPositions();
-            log.info("查询到 {} 个岗位类别, {} 个岗位", categories.size(), allPositions.size());
-
-            Workbook workbook = new XSSFWorkbook();
-            Sheet sheet = workbook.createSheet("岗位类别数据");
-
-            Row headerRow = sheet.createRow(0);
-            String[] headers = {"类别名称", "岗位名称", "岗位要求", "更新时间"};
-            CellStyle headerStyle = workbook.createCellStyle();
-            headerStyle.setFillForegroundColor(IndexedColors.GREEN.getIndex());
-            headerStyle.setFillPattern(FillPatternType.SOLID_FOREGROUND);
-            headerStyle.setAlignment(HorizontalAlignment.CENTER);
-            headerStyle.setBorderTop(BorderStyle.THIN);
-            headerStyle.setBorderBottom(BorderStyle.THIN);
-            headerStyle.setBorderLeft(BorderStyle.THIN);
-            headerStyle.setBorderRight(BorderStyle.THIN);
-
-            Font headerFont = workbook.createFont();
-            headerFont.setBold(true);
-            headerFont.setColor(IndexedColors.WHITE.getIndex());
-            headerStyle.setFont(headerFont);
-
-            for (int i = 0; i < headers.length; i++) {
-                Cell cell = headerRow.createCell(i);
-                cell.setCellValue(headers[i]);
-                cell.setCellStyle(headerStyle);
-                sheet.autoSizeColumn(i);
-            }
-
-            CellStyle dataStyle = workbook.createCellStyle();
-            dataStyle.setAlignment(HorizontalAlignment.CENTER);
-            dataStyle.setBorderTop(BorderStyle.THIN);
-            dataStyle.setBorderBottom(BorderStyle.THIN);
-            dataStyle.setBorderLeft(BorderStyle.THIN);
-            dataStyle.setBorderRight(BorderStyle.THIN);
-
-            int rowIndex = 1;
-            for (PositionCategory category : categories) {
-                List<Position> categoryPositions = allPositions.stream()
-                        .filter(p -> p.getCategoryId() != null && p.getCategoryId().equals(category.getId()))
-                        .toList();
-
-                if (categoryPositions.isEmpty()) {
-                    Row dataRow = sheet.createRow(rowIndex++);
-                    Cell cell0 = dataRow.createCell(0);
-                    cell0.setCellValue(category.getName() != null ? category.getName() : "");
-                    cell0.setCellStyle(dataStyle);
-                    Cell cell1 = dataRow.createCell(1);
-                    cell1.setCellValue("");
-                    cell1.setCellStyle(dataStyle);
-                    Cell cell2 = dataRow.createCell(2);
-                    cell2.setCellValue("");
-                    cell2.setCellStyle(dataStyle);
-                    Cell cell3 = dataRow.createCell(3);
-                    cell3.setCellValue(category.getUpdateTime() != null ? category.getUpdateTime().toString() : "");
-                    cell3.setCellStyle(dataStyle);
-                } else {
-                    for (Position position : categoryPositions) {
-                        Row dataRow = sheet.createRow(rowIndex++);
-                        Cell cell0 = dataRow.createCell(0);
-                        cell0.setCellValue(category.getName() != null ? category.getName() : "");
-                        cell0.setCellStyle(dataStyle);
-                        Cell cell1 = dataRow.createCell(1);
-                        cell1.setCellValue(position.getPositionName() != null ? position.getPositionName() : "");
-                        cell1.setCellStyle(dataStyle);
-                        Cell cell2 = dataRow.createCell(2);
-                        cell2.setCellValue(position.getRequirements() != null ? position.getRequirements() : "");
-                        cell2.setCellStyle(dataStyle);
-                        Cell cell3 = dataRow.createCell(3);
-                        cell3.setCellValue(category.getUpdateTime() != null ? category.getUpdateTime().toString() : "");
-                        cell3.setCellStyle(dataStyle);
-                    }
-                }
-            }
-
-            // 确保至少有一行数据（即使只有表头）
-            if (rowIndex == 1) {
-                log.warn("导出的岗位类别数据为空，categories数量={}, positions数量={}", categories.size(), allPositions.size());
-            }
-
-            try (OutputStream outputStream = response.getOutputStream()) {
-                workbook.write(outputStream);
-                log.info("导出岗位类别 Excel 数据成功，共导出 {} 条数据", categories.size());
-            } catch (IOException e) {
-                log.error("导出岗位类别 Excel 数据失败（流操作异常）: {}", e.getMessage(), e);
-                throw new RuntimeException("导出岗位类别 Excel 数据失败：" + e.getMessage());
-            } finally {
-                try {
-                    if (workbook != null) {
-                        workbook.close();
-                    }
-                } catch (IOException e) {
-                    log.error("关闭工作簿失败：{}", e.getMessage(), e);
-                }
-            }
-        } catch (Exception e) {
-            log.error("导出岗位类别数据失败：{}", e.getMessage(), e);
-            throw new RuntimeException("导出岗位类别数据失败：" + e.getMessage());
+    public void exportCategoryData(HttpServletResponse response,
+            @RequestParam(required = false) String categoryName,
+            @RequestParam(required = false) String positionName,
+            @RequestParam(required = false) Long categoryId) throws IOException {
+        List<Position> positions = positionCategoryService.getAllPositions();
+        List<Object[]> rows = new java.util.ArrayList<>();
+        for (PositionCategory category : positionCategoryService.findAll()) {
+            if (categoryId != null && !categoryId.equals(category.getId())) continue;
+            if (!ExcelExports.contains(category.getName(),categoryName)) continue;
+            List<Position> all = positions.stream().filter(p -> category.getId().equals(p.getCategoryId())).toList();
+            List<Position> matched = all.stream().filter(p -> ExcelExports.contains(p.getPositionName(),positionName)).toList();
+            for (Position p : matched) rows.add(new Object[]{category.getName(),all.size(),category.getCreateTime(),
+                    p.getPositionName(),p.getRequirements(),p.getCreateTime(),p.getUpdateTime()});
+            if (matched.isEmpty() && (positionName == null || positionName.isBlank()))
+                rows.add(new Object[]{category.getName(),all.size(),category.getCreateTime(),"","",null,null});
         }
+        ExcelExports.write(response,"岗位类别数据",new String[]{"类别名称","岗位数量","类别创建时间","岗位名称","岗位要求","发布时间","更新时间"},rows);
     }
 
     /**

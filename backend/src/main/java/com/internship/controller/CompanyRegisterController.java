@@ -8,6 +8,7 @@ import com.internship.utils.UserCredentialDefaults;
 import com.internship.entity.Result;
 import com.internship.mapper.CompanyUserMapper;
 import com.internship.service.CompanyRegistrationRateLimitService;
+import com.internship.service.CompanyRegistrationService;
 import com.internship.service.CompanyTagService;
 import com.internship.service.CompanyUserService;
 import jakarta.validation.Valid;
@@ -36,6 +37,9 @@ public class CompanyRegisterController {
     
     @Autowired
     private CompanyRegistrationRateLimitService registrationRateLimitService;
+
+    @Autowired
+    private CompanyRegistrationService companyRegistrationService;
     
     @Autowired
     private CompanyTagService companyTagService;
@@ -46,7 +50,7 @@ public class CompanyRegisterController {
                            HttpServletResponse response) {
         try {
             log.info("收到企业注册申请: {}", registerDTO.getCompanyName());
-            if (!registrationRateLimitService.allow(registerDTO.getCompanyName(), registerDTO.getEmail())) {
+            if (!registrationRateLimitService.allow(registerDTO.getCompanyName(), registerDTO.registrationEmail())) {
                 return Result.error("提交过于频繁，请稍后重试");
             }
             
@@ -60,9 +64,7 @@ public class CompanyRegisterController {
             companyUser.setCreditCode(registerDTO.getCreditCode());
             companyUser.setContactPerson(registerDTO.getContactPerson());
             companyUser.setContactPhone(registerDTO.getContactPhone());
-            companyUser.setContactEmail(registerDTO.getContactEmail());
-            companyUser.setEmail(registerDTO.getEmail());
-            companyUser.setPhone(registerDTO.getPhone());
+            companyUser.setContactEmail(registerDTO.registrationEmail());
 
             // 新地址字段
             companyUser.setProvince(registerDTO.getProvince());
@@ -122,7 +124,7 @@ public class CompanyRegisterController {
             companyUser.setCreateTime(new Date());
             companyUser.setUpdateTime(new Date());
             
-            int result = companyUserService.insert(companyUser);
+            int result = companyRegistrationService.register(companyUser);
             if (result > 0) {
                 try {
                     companyTagService.updateCompanyTag(companyUser.getId());
@@ -275,14 +277,15 @@ public class CompanyRegisterController {
                 return ResponseEntity.badRequest().body(Result.error("只能更新已允许撤回或审核未通过的申请"));
             }
             
-            String email = (String) updateData.get("email");
+            String email = (String) updateData.get("contactEmail");
+            if (email == null || email.isBlank()) email = (String) updateData.get("email");
 
             if (email == null || email.isEmpty()) {
                 return ResponseEntity.badRequest().body(Result.error("邮箱不能为空"));
             }
 
             if (!email.trim().matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$")) {
-                return ResponseEntity.badRequest().body(Result.error("个人邮箱格式不正确"));
+                return ResponseEntity.badRequest().body(Result.error("联系邮箱格式不正确"));
             }
 
             CompanyUser companyUser = new CompanyUser();
@@ -295,15 +298,16 @@ public class CompanyRegisterController {
                 companyUser.setContactPerson((String) updateData.get("contactPerson"));
             }
             if (updateData.containsKey("contactPhone")) {
-                companyUser.setContactPhone((String) updateData.get("contactPhone"));
+                String phone = updateData.get("contactPhone") == null ? "" : updateData.get("contactPhone").toString().replaceAll("\\s+", "");
+                if (!phone.matches("^[+0-9()（）\\-转]{7,20}$")) {
+                    return ResponseEntity.badRequest().body(Result.error("请输入有效的手机或固定电话号码"));
+                }
+                companyUser.setContactPhone(phone);
+                companyUser.setPhone(phone);
             }
-            if (updateData.containsKey("contactEmail")) {
-                companyUser.setContactEmail((String) updateData.get("contactEmail"));
-            }
-            if (updateData.containsKey("email")) {
-                companyUser.setEmail(email.trim());
-            }
-            if (updateData.containsKey("phone")) {
+            companyUser.setContactEmail(email.trim());
+            companyUser.setEmail(email.trim());
+            if (!updateData.containsKey("contactPhone") && updateData.containsKey("phone")) {
                 companyUser.setPhone((String) updateData.get("phone"));
             }
             // 新地址字段

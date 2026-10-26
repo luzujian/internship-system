@@ -70,13 +70,18 @@
           <div class="tab-content">
             <!-- 搜索区域 -->
             <el-card class="search-card" shadow="never">
-              <el-form :inline="true" :model="positionSearchForm" class="search-form">
+              <el-form :inline="!isMobile" :label-position="isMobile ? 'top' : 'right'" :model="positionSearchForm" class="search-form">
                 <div class="search-row">
-                  <el-form-item label="企业名称">
+                  <el-form-item v-show="!isMobile || positionFiltersOpen" label="企业名称">
                     <el-input v-model="positionSearchForm.companyName" placeholder="请输入企业名称" clearable></el-input>
                   </el-form-item>
                   <el-form-item label="岗位名称">
                     <el-input v-model="positionSearchForm.positionName" placeholder="请输入岗位名称" clearable></el-input>
+                  </el-form-item>
+                  <el-form-item v-if="isMobile" class="mobile-filter-toggle">
+                    <el-button :aria-expanded="positionFiltersOpen" @click="positionFiltersOpen = !positionFiltersOpen">
+                      {{ positionFiltersOpen ? '收起筛选' : '更多筛选' }}{{ positionFilterCount ? `（${positionFilterCount}）` : '' }}
+                    </el-button>
                   </el-form-item>
                   <el-form-item class="search-actions">
                     <el-button v-if="authStore.hasPermission('recruitment:view')" type="primary" @click="searchPositions" class="search-btn">
@@ -149,7 +154,7 @@
           <div class="tab-content">
             <!-- 搜索区域 -->
             <el-card class="search-card" shadow="never">
-              <el-form :inline="true" :model="applicationSearchForm" class="search-form">
+              <el-form :inline="!isMobile" :label-position="isMobile ? 'top' : 'right'" :model="applicationSearchForm" class="search-form">
                 <div class="search-row">
                   <el-form-item label="学号">
                     <el-input v-model="applicationSearchForm.studentId" placeholder="请输入学号" clearable></el-input>
@@ -157,13 +162,18 @@
                   <el-form-item label="学生姓名">
                     <el-input v-model="applicationSearchForm.name" placeholder="请输入学生姓名" clearable></el-input>
                   </el-form-item>
-                  <el-form-item label="性别">
+                  <el-form-item v-if="isMobile" class="mobile-filter-toggle">
+                    <el-button :aria-expanded="applicationFiltersOpen" @click="applicationFiltersOpen = !applicationFiltersOpen">
+                      {{ applicationFiltersOpen ? '收起筛选' : '更多筛选' }}{{ applicationFilterCount ? `（${applicationFilterCount}）` : '' }}
+                    </el-button>
+                  </el-form-item>
+                  <el-form-item v-show="!isMobile || applicationFiltersOpen" label="性别">
                     <el-select v-model="applicationSearchForm.gender" placeholder="请选择性别" clearable>
                       <el-option label="男" :value="0"></el-option>
                       <el-option label="女" :value="1"></el-option>
                     </el-select>
                   </el-form-item>
-                  <el-form-item label="企业名称">
+                  <el-form-item v-show="!isMobile || applicationFiltersOpen" label="企业名称">
                     <el-input v-model="applicationSearchForm.companyName" placeholder="请输入企业名称" clearable></el-input>
                   </el-form-item>
                   <el-form-item class="search-actions">
@@ -222,7 +232,7 @@
                 <el-table-column prop="status" label="状态" width="120" align="center">
                   <template #default="{ row }">
                     <el-tag :type="getApplicationStatusType(row.status)" size="small" class="status-tag">
-                      {{ getApplicationStatusText(row.status) }}
+                      {{ row.jobSearchStatusText || getApplicationStatusText(row.status) }}
                     </el-tag>
                   </template>
                 </el-table-column>
@@ -306,7 +316,7 @@
           <el-descriptions-item label="电子邮箱">{{ currentApplication.email || '暂无' }}</el-descriptions-item>
           <el-descriptions-item label="状态">
             <el-tag :type="getApplicationStatusType(currentApplication.status)" size="small" class="status-tag">
-              {{ getApplicationStatusText(currentApplication.status) }}
+              {{ currentApplication.jobSearchStatusText || getApplicationStatusText(currentApplication.status) }}
             </el-tag>
           </el-descriptions-item>
           <el-descriptions-item label="企业名称">{{ currentApplication.company?.companyName }}</el-descriptions-item>
@@ -329,11 +339,16 @@
 
 <script lang="ts" setup>
 import logger from '@/utils/logger'
-import { ref, reactive, onMounted, watch } from 'vue'
+import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Search, Refresh, View, DocumentChecked, Briefcase, Document, User, Clock } from '@element-plus/icons-vue'
 import recruitmentService from '../../api/recruitment'
 import { useAuthStore } from '../../store/auth'
+import { useIsMobile } from '@/composables/useIsMobile'
+
+const isMobile = useIsMobile()
+const positionFiltersOpen = ref(false)
+const applicationFiltersOpen = ref(false)
 
 const authStore = useAuthStore()
 
@@ -360,6 +375,9 @@ const applicationSearchForm = reactive({
   gender: null,
   companyName: ''
 })
+const positionFilterCount = computed(() => positionSearchForm.companyName ? 1 : 0)
+const applicationFilterCount = computed(() => [applicationSearchForm.gender, applicationSearchForm.companyName]
+  .filter(value => value !== '' && value !== null && value !== undefined).length)
 
 const positionPagination = reactive({
   currentPage: 1,
@@ -405,10 +423,13 @@ const getStatusType = (status) => {
 
 const getStatusText = (status) => {
   const statusMap = {
-    0: '尚无 Offer',
-    1: '有Offer未确定',
-    2: '已确定实习',
-    3: '实习结束'
+    0: '尚未获录用',
+    1: '已录用待确认',
+    2: '已定单位待实习',
+    3: '实习进行中',
+    4: '实习已结束',
+    5: '实习已中断',
+    6: '已延期实习'
   }
   return statusMap[status] || '未知'
 }
@@ -430,13 +451,13 @@ const getApplicationStatusType = (status) => {
 const getApplicationStatusText = (status) => {
   // 学生状态统一标签
   const statusMap = {
-    0: '无offer',
-    1: '待确认',
-    2: '已确定',
-    3: '实习中',
-    4: '已结束',
-    5: '已中断',
-    6: '延期'
+    0: '尚未获录用',
+    1: '已录用待确认',
+    2: '已定单位待实习',
+    3: '实习进行中',
+    4: '实习已结束',
+    5: '实习已中断',
+    6: '已延期实习'
   }
   return statusMap[status] ?? '未知'
 }

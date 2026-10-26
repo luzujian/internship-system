@@ -41,6 +41,7 @@ public class TeacherCompanyDTO {
     private Integer hasTrainingBaseAgreement;
     private String companyTag;
     private Integer isAlumniUnit;
+    private Integer auditStatus;
     private Integer status;
     private Date applyTime;
     private Date auditTime;

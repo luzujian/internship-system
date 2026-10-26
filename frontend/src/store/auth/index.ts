@@ -303,12 +303,14 @@ export const useAuthStore = defineStore('auth', {
       if (this.user) this.user.permissions = permissions || []
 
       // 供学生端 AI 初始化消费：只对真实登录生效，角色切换和页面刷新不会重复触发。
-      if (role === CONFIG.ROLES.ROLE_STUDENT) {
-        try {
-          sessionStorage.setItem('deepintern.agent.auto-open-student-login', 'true')
-        } catch (error) {
-          logger.warn('记录学生登录后的 AI 自动展开标记失败:', error)
+      try {
+        if (role === CONFIG.ROLES.ROLE_STUDENT) {
+          sessionStorage.setItem('deepintern.agent.auto-open-student-login', String(userInfo.id))
+        } else {
+          sessionStorage.removeItem('deepintern.agent.auto-open-student-login')
         }
+      } catch (error) {
+        logger.warn('记录学生登录后的 AI 自动展开标记失败:', error)
       }
 
       writeTabSession(this)
@@ -455,6 +457,7 @@ export const useAuthStore = defineStore('auth', {
     },
 
     async logout(skipBackendLogout = false): Promise<void> {
+      window.dispatchEvent(new CustomEvent('auth:access-token-changed', { detail: { token: '', identityChanged: true } }))
       try {
         const currentRole = this.role || localStorage.getItem(STORAGE_KEYS.CURRENT_ROLE)
 
@@ -519,6 +522,13 @@ export const useAuthStore = defineStore('auth', {
     // ==================== Token 管理 ====================
 
     setToken(token: string) {
+      const previous = this.token ? decodeToken(this.token) : null
+      const next = token ? decodeToken(token) : null
+      const identityValue = (payload: Record<string, unknown>, key: string) =>
+        key === 'isReadOnly' ? payload[key] === true : String(payload[key] ?? '')
+      const identityChanged = !token || Boolean(previous && next && ['userId', 'username', 'role', 'isReadOnly', 'originalAdminUsername']
+        .some(key => identityValue(previous, key) !== identityValue(next, key)))
+      window.dispatchEvent(new CustomEvent('auth:access-token-changed', { detail: { token, identityChanged } }))
       this.token = token
 
       if (this.role && this.allUsers) {

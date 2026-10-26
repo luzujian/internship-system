@@ -1,5 +1,7 @@
 package com.internship.controller;
 
+import com.internship.utils.ExcelExports;
+
 import com.internship.anno.Log;
 import com.internship.exception.BusinessException;
 import com.internship.entity.PageResult;
@@ -323,159 +325,24 @@ public class TeacherUserController {
     @GetMapping("/export")
     @PreAuthorize("hasRole('ROLE_ADMIN')")
     public void exportTeacherData(HttpServletResponse response,
-                                 @RequestParam(required = false) String teacherUserId,
-                                 @RequestParam(required = false) String name,
-                                 @RequestParam(required = false) String departmentId) {
-        log.info("导出教师Excel数据，筛选条件: 工号={}, 姓名={}, 院系ID={}",
-                teacherUserId, name, departmentId);
-
-        try {
-            // 设置响应头
-            response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-            response.setCharacterEncoding("UTF-8");
-            String fileName = URLEncoder.encode("教师数据" + System.currentTimeMillis(), "UTF-8") + ".xlsx";
-            response.setHeader("Content-disposition", "attachment;filename=" + fileName);
-            
-            // 获取所有满足条件的教师数据（不使用分页）
-            List<TeacherUser> teachers = teacherUserService.findAll(teacherUserId, name, departmentId);
-
-            // 构建系ID -> 系名称映射（一次查询，避免逐行查库）
-            Map<String, String> divisionNameMap = new HashMap<>();
-            try {
-                List<Division> divisionList = divisionService.findAll();
-                if (divisionList != null) {
-                    for (Division d : divisionList) {
-                        if (d.getId() != null && d.getName() != null) {
-                            divisionNameMap.put(String.valueOf(d.getId()), d.getName());
-                        }
-                    }
-                }
-            } catch (Exception e) {
-                log.warn("获取系列表失败，导出时系名称将为空: {}", e.getMessage());
-            }
-            
-            // 创建Excel工作簿
-            Workbook workbook = new XSSFWorkbook();
-            Sheet sheet = workbook.createSheet("教师数据");
-            
-            // 创建表头行
-            Row headerRow = sheet.createRow(0);
-            String[] headers = {"工号", "姓名", "学院", "系", "身份", "手机号", "邮箱"};
-            CellStyle headerStyle = workbook.createCellStyle();
-            headerStyle.setFillForegroundColor(IndexedColors.GREEN.getIndex());
-            headerStyle.setFillPattern(FillPatternType.SOLID_FOREGROUND);
-            headerStyle.setAlignment(HorizontalAlignment.CENTER);
-            headerStyle.setBorderTop(BorderStyle.THIN);
-            headerStyle.setBorderBottom(BorderStyle.THIN);
-            headerStyle.setBorderLeft(BorderStyle.THIN);
-            headerStyle.setBorderRight(BorderStyle.THIN);
-            
-            Font headerFont = workbook.createFont();
-            headerFont.setBold(true);
-            headerFont.setColor(IndexedColors.WHITE.getIndex());
-            headerStyle.setFont(headerFont);
-            
-            for (int i = 0; i < headers.length; i++) {
-                Cell cell = headerRow.createCell(i);
-                cell.setCellValue(headers[i]);
-                cell.setCellStyle(headerStyle);
-            }
-            
-            // 填充数据行
-            CellStyle dataStyle = workbook.createCellStyle();
-            dataStyle.setAlignment(HorizontalAlignment.CENTER);
-            dataStyle.setBorderTop(BorderStyle.THIN);
-            dataStyle.setBorderBottom(BorderStyle.THIN);
-            dataStyle.setBorderLeft(BorderStyle.THIN);
-            dataStyle.setBorderRight(BorderStyle.THIN);
-            
-            for (int i = 0; i < teachers.size(); i++) {
-                TeacherUser teacher = teachers.get(i);
-                Row dataRow = sheet.createRow(i + 1);
-                
-                Cell cell0 = dataRow.createCell(0);
-                cell0.setCellValue(teacher.getTeacherUserId());
-                cell0.setCellStyle(dataStyle);
-                
-                Cell cell1 = dataRow.createCell(1);
-                cell1.setCellValue(teacher.getName());
-                cell1.setCellStyle(dataStyle);
-                
-                Cell cell2 = dataRow.createCell(2);
-                if (teacher.getDepartmentId() != null && !teacher.getDepartmentId().isEmpty()) {
-                    try {
-                        Long deptId = Long.parseLong(teacher.getDepartmentId());
-                        Department department = departmentService.findById(deptId);
-                        if (department != null) {
-                            cell2.setCellValue(department.getName());
-                        } else {
-                            cell2.setCellValue("未知学院");
-                        }
-                    } catch (Exception e) {
-                        log.error("获取院系名称失败: {}", e.getMessage());
-                        cell2.setCellValue(teacher.getDepartmentId());
-                    }
-                } else {
-                    cell2.setCellValue("");
-                }
-                cell2.setCellStyle(dataStyle);
-
-                Cell cell3 = dataRow.createCell(3);
-                String divisionName = "";
-                if (teacher.getDivisionId() != null && !teacher.getDivisionId().isEmpty()) {
-                    divisionName = divisionNameMap.getOrDefault(String.valueOf(teacher.getDivisionId()).trim(), "");
-                }
-                cell3.setCellValue(divisionName);
-                cell3.setCellStyle(dataStyle);
-
-                Cell cell4 = dataRow.createCell(4);
-                String teacherType = teacher.getTeacherType();
-                if (teacherType != null && !teacherType.isEmpty()) {
-                    switch (teacherType) {
-                        case "COLLEGE":
-                            cell4.setCellValue("学院教师");
-                            break;
-                        case "DEPARTMENT":
-                            cell4.setCellValue("系室教师");
-                            break;
-                        case "COUNSELOR":
-                            cell4.setCellValue("辅导员");
-                            break;
-                        default:
-                            cell4.setCellValue(teacherType);
-                    }
-                } else {
-                    cell4.setCellValue("");
-                }
-                cell4.setCellStyle(dataStyle);
-
-                Cell cell5 = dataRow.createCell(5);
-                cell5.setCellValue(teacher.getPhone() != null ? teacher.getPhone() : "");
-                cell5.setCellStyle(dataStyle);
-
-                Cell cell6 = dataRow.createCell(6);
-                cell6.setCellValue(teacher.getEmail() != null ? teacher.getEmail() : "");
-                cell6.setCellStyle(dataStyle);
-            }
-            
-            // 调整列宽
-            for (int i = 0; i < headers.length; i++) {
-                sheet.autoSizeColumn(i);
-                // 自动调整后可能还是不够宽，手动增加一些宽度
-                sheet.setColumnWidth(i, sheet.getColumnWidth(i) * 11 / 10);
-            }
-            
-            // 输出到响应流
-            workbook.write(response.getOutputStream());
-            workbook.close();
-        } catch (Exception e) {
-            log.error("导出教师Excel数据失败", e);
-            try {
-                response.getWriter().write("导出失败：" + e.getMessage());
-            } catch (IOException ioException) {
-                log.error("输出错误信息失败", ioException);
-            }
-        }
+            @RequestParam(required = false) String teacherUserId,
+            @RequestParam(required = false) String name,
+            @RequestParam(required = false) String departmentId,
+            @RequestParam(required = false) Integer status,
+            @RequestParam(required = false) String teacherType) throws IOException {
+        Map<String,Object> filters = new HashMap<>();
+        filters.put("teacherUserId",teacherUserId); filters.put("name",name); filters.put("departmentId",departmentId);
+        filters.put("status",status); filters.put("teacherType",teacherType);
+        List<TeacherUser> teachers = teacherUserService.findPageByCondition(1,Integer.MAX_VALUE,filters).getRows();
+        Map<String,String> departments = new HashMap<>(), divisions = new HashMap<>();
+        for (Department d : departmentService.findAll()) departments.put(String.valueOf(d.getId()),d.getName());
+        for (Division d : divisionService.findAll()) divisions.put(String.valueOf(d.getId()),d.getName());
+        Map<String,String> types = Map.of("COLLEGE","学院教师","DEPARTMENT","系室教师","COUNSELOR","辅导员");
+        List<Object[]> rows = teachers.stream().map(r -> new Object[]{r.getTeacherUserId(),r.getName(),
+                departments.get(r.getDepartmentId()),divisions.get(r.getDivisionId()),
+                types.getOrDefault(ExcelExports.text(r.getTeacherType()),ExcelExports.text(r.getTeacherType())),
+                r.getPhone(),r.getEmail(),ExcelExports.account(r.getStatus()),r.getUpdateTime(),r.getCreateTime()}).toList();
+        ExcelExports.write(response,"教师数据",new String[]{"工号","姓名","学院","系","身份","手机号","邮箱","状态","更新时间","创建时间"},rows);
     }
     
     /**

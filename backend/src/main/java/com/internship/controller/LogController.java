@@ -904,22 +904,22 @@ public class LogController {
                 if (row instanceof OperateLog ol) {
                     values = new String[]{
                             safeStr(ol.getId()), ol.getOperateTime() != null ? timeFormat.format(ol.getOperateTime()) : "",
-                            safeStr(ol.getOperatorName()), safeStr(ol.getOperatorRole()), safeStr(ol.getModule()),
-                            safeStr(ol.getOperationType()), safeStr(ol.getOperationResult()), safeStr(ol.getRiskLevel()),
+                            safeStr(ol.getOperatorName()), com.internship.utils.LogExportPresentation.role(ol.getOperatorRole()), com.internship.utils.LogExportPresentation.module(ol.getModule()),
+                            com.internship.utils.LogExportPresentation.action(ol.getOperationType()), com.internship.utils.LogExportPresentation.result(ol.getOperationResult()), com.internship.utils.LogExportPresentation.risk(ol.getRiskLevel()),
                             safeStr(ol.getTargetType()), safeStr(ol.getTargetId()), safeStr(exportIp(ol.getIpAddress())),
                             ol.getDurationMs() != null ? String.valueOf(ol.getDurationMs()) : "", safeStr(ol.getDescription()), safeStr(ol.getRequestId())
                     };
                 } else if (row instanceof LoginLog ll) {
                     values = new String[]{
                             safeStr(ll.getId()), ll.getLoginTime() != null ? timeFormat.format(ll.getLoginTime()) : "",
-                            safeStr(ll.getUserName()), safeStr(ll.getUserType()), safeStr(ll.getLoginStatus()),
-                            safeStr(ll.getRiskLevel()), safeStr(exportIp(ll.getIpAddress())), safeStr(ll.getDeviceType()), safeStr(ll.getErrorCode()), safeStr(ll.getRequestId())
+                            safeStr(ll.getUserName()), com.internship.utils.LogExportPresentation.role(ll.getUserType()), com.internship.utils.LogExportPresentation.result(ll.getLoginStatus()),
+                            com.internship.utils.LogExportPresentation.risk(ll.getRiskLevel()), safeStr(exportIp(ll.getIpAddress())), safeStr(ll.getDeviceType()), safeStr(ll.getErrorCode()), safeStr(ll.getRequestId())
                     };
                 } else if (row instanceof SecurityEventLog se) {
                     values = new String[]{
                             safeStr(se.getId()), se.getEventTime() != null ? timeFormat.format(se.getEventTime()) : "",
-                            safeStr(se.getUsername()), safeStr(se.getUserRole()), safeStr(se.getEventType()),
-                            safeStr(se.getResult()), safeStr(se.getRiskLevel()), safeStr(exportIp(se.getIpAddress())),
+                            safeStr(se.getUsername()), com.internship.utils.LogExportPresentation.role(se.getUserRole()), com.internship.utils.LogExportPresentation.event(se.getEventType()),
+                            com.internship.utils.LogExportPresentation.result(se.getResult()), com.internship.utils.LogExportPresentation.risk(se.getRiskLevel()), safeStr(exportIp(se.getIpAddress())),
                             safeStr(se.getRequestPath()), safeStr(se.getDescription()), safeStr(se.getRequestId())
                     };
                 } else {

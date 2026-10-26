@@ -75,6 +75,7 @@ const companyService = {
     pageSize?: number
     companyName?: string
     status?: number
+    auditStatus?: number
     companyTag?: string
     industry?: string
   }) => {

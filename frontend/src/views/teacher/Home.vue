@@ -13,7 +13,7 @@
           <div class="card-icon green">📊</div>
           <div class="card-content">
             <h3>{{ internshipCardTitle }}</h3>
-            <p class="card-value">已确定实习单位：{{ backendInternshipRate }}%</p>
+            <p class="card-value">已落实实习单位：{{ backendInternshipRate }}%</p>
             <p class="card-desc">{{ internshipCardDesc }}</p>
           </div>
         </div>
@@ -279,18 +279,19 @@ const currentDate = computed(() => {
 })
 
 const statusData = ref([
-  { name: '已确定实习', value: 0, color: 'success' },
-  { name: '有offer但未确定', value: 0, color: 'info' },
-  { name: '没offer', value: 0, color: 'warning' },
-  { name: '延迟', value: 0, color: 'danger' }
+  { name: '已落实实习', value: 0, color: 'success' },
+  { name: '已录用待确认', value: 0, color: 'info' },
+  { name: '尚未获录用', value: 0, color: 'warning' },
+  { name: '已延期实习', value: 0, color: 'danger' },
+  { name: '实习已中断', value: 0, color: 'danger' }
 ])
 
 const statusExplanations: Record<string, string> = {
-  '已确定实习': '已确定实习单位或已进入实习',
-  '有offer但未确定': '面试通过获得 offer，但尚未确定实习单位',
-  '没offer': '尚无 Offer，包含未投递、无 Offer',
-  '延迟': '因考研延迟实习安排',
-  '考研': '因考研延迟实习安排'
+  '已落实实习': '包含已定单位待实习和实习进行中',
+  '已录用待确认': '已获录用，需提交确认表并完成企业确认',
+  '尚未获录用': '包含暂无有效投递和已投递未录用，不含已延期实习',
+  '已延期实习': '已登记延期实习，待审核的延期申请不计入',
+  '实习已中断': '当前实习已中断，需核对后续安排'
 }
 
 const getStatusExplanation = (name: string) => {
@@ -1358,6 +1359,8 @@ onUnmounted(() => {
   font-size: 14px;
   color: #606266;
   min-height: 100px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .attachments-section {
@@ -1700,7 +1703,7 @@ onUnmounted(() => {
   box-shadow: 0 2px 8px rgba(82, 196, 26, 0.3) !important;
 }
 
-.legend-color.info {
+.home-container .legend-color.info {
   background: linear-gradient(135deg, #1890ff 0%, #40a9ff 100%) !important;
   box-shadow: 0 2px 8px rgba(24, 144, 255, 0.3) !important;
 }

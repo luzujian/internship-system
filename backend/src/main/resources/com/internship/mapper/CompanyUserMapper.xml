@@ -84,6 +84,7 @@
         <result property="hasTrainingBaseAgreement" column="has_training_base_agreement" />
         <result property="companyTag" column="company_tag" />
         <result property="isAlumniUnit" column="is_alumni_unit" />
+        <result property="auditStatus" column="audit_status" />
         <result property="status" column="status" />
         <result property="applyTime" column="apply_time" />
         <result property="auditTime" column="audit_time" />
@@ -116,6 +117,7 @@
         c.has_training_base_agreement,
         c.company_tag,
         c.is_alumni_unit,
+        c.audit_status,
         c.status,
         c.apply_time,
         c.audit_time,
@@ -434,7 +436,17 @@
                 c.company_name LIKE CONCAT('%', #{companyName}, '%')
             </if>
             <if test="status != null">
-                AND c.status = #{status}
+                <choose>
+                    <when test="status == 0">
+                        AND c.status IN (0, 3)
+                    </when>
+                    <otherwise>
+                        AND c.status = #{status}
+                    </otherwise>
+                </choose>
+            </if>
+            <if test="auditStatus != null">
+                AND c.audit_status = #{auditStatus}
             </if>
             <if test="recallStatus != null">
                 AND c.recall_status = #{recallStatus}

@@ -22,7 +22,7 @@ const formatDate = (_row: unknown, _column: unknown, cellValue: string): string 
 }
 
 const currentYear = new Date().getFullYear()
-let searchForm = ref<any>({ keyword: '', status: null, companyTag: [], industry: '', visitedYear: currentYear, visitState: '', visitTeacherId: '', liaisonTeacherId: '' })
+let searchForm = ref<any>({ keyword: '', auditStatus: null, status: null, companyTag: [], industry: '', visitedYear: currentYear, visitState: '', visitTeacherId: '', liaisonTeacherId: '' })
 let tableData = ref<any[]>([])
 let loading = ref(false)
 let pagination = ref<PaginationState>({ currentPage: 1, pageSize: 10, total: 0 })
@@ -66,6 +66,10 @@ const queryPage = async (): Promise<void> => {
 
     if (searchForm.value.status !== null && searchForm.value.status !== undefined && searchForm.value.status !== '') {
       params.status = searchForm.value.status
+    }
+
+    if (searchForm.value.auditStatus !== null && searchForm.value.auditStatus !== undefined && searchForm.value.auditStatus !== '') {
+      params.auditStatus = searchForm.value.auditStatus
     }
 
     if (searchForm.value.companyTag && Array.isArray(searchForm.value.companyTag) && searchForm.value.companyTag.length > 0) {
@@ -113,7 +117,12 @@ const queryPage = async (): Promise<void> => {
 }
 
 const clear = (): void => {
-  searchForm.value = { keyword: '', status: null, companyTag: [], industry: '', visitedYear: currentYear, visitState: '', visitTeacherId: '', liaisonTeacherId: '' }
+  searchForm.value = { keyword: '', auditStatus: null, status: null, companyTag: [], industry: '', visitedYear: currentYear, visitState: '', visitTeacherId: '', liaisonTeacherId: '' }
+  pagination.value.currentPage = 1
+  queryPage()
+}
+
+const handleSearch = (): void => {
   pagination.value.currentPage = 1
   queryPage()
 }
@@ -143,12 +152,31 @@ const viewCompanyDetail = async (id: string): Promise<void> => {
   }
 }
 
+const formatAuditStatus = (auditStatus: number): string => {
+  switch (auditStatus) {
+    case 0: return '待审核'
+    case 1: return '已通过'
+    case 2: return '已驳回'
+    case 3: return '已撤回'
+    default: return '未知状态'
+  }
+}
+
+const getAuditStatusTagType = (auditStatus: number): string => {
+  switch (auditStatus) {
+    case 0: return 'warning'
+    case 1: return 'success'
+    case 2: return 'danger'
+    default: return 'info'
+  }
+}
+
 const formatAccountStatus = (status: number): string => {
   switch (status) {
-    case 0: return '待审核'
+    case 0: return '未启用'
     case 1: return '正常'
     case 2: return '已禁用'
-    case 3: return '已拒绝'
+    case 3: return '未启用'
     default: return '未知状态'
   }
 }
@@ -254,14 +282,13 @@ onMounted(async () => {
     </div>
 
     <el-card class="search-card" shadow="never">
-      <el-form :inline="true" :model="searchForm" class="search-form" @keyup.enter="queryPage">
+      <el-form :inline="true" :model="searchForm" class="search-form" @keyup.enter="handleSearch">
         <div class="search-row">
           <el-form-item label="关键词">
             <el-input
               v-model="searchForm.keyword"
               placeholder="企业、对接人、走访教师或校友"
               clearable
-              @keyup.enter="queryPage"
             ></el-input>
           </el-form-item>
           <el-form-item label="走访年份">
@@ -293,12 +320,19 @@ onMounted(async () => {
               ></el-option>
             </el-select>
           </el-form-item>
-          <el-form-item label="账号状态">
-            <el-select v-model="searchForm.status" placeholder="请选择状态" clearable style="width: 140px;">
+          <el-form-item label="审核状态">
+            <el-select v-model="searchForm.auditStatus" placeholder="全部" clearable style="width: 140px;">
               <el-option label="待审核" :value="0"></el-option>
+              <el-option label="已通过" :value="1"></el-option>
+              <el-option label="已驳回" :value="2"></el-option>
+              <el-option label="已撤回" :value="3"></el-option>
+            </el-select>
+          </el-form-item>
+          <el-form-item label="账号状态">
+            <el-select v-model="searchForm.status" placeholder="全部" clearable style="width: 140px;">
               <el-option label="正常" :value="1"></el-option>
               <el-option label="已禁用" :value="2"></el-option>
-              <el-option label="已拒绝" :value="3"></el-option>
+              <el-option label="未启用" :value="0"></el-option>
             </el-select>
           </el-form-item>
           <el-form-item label="单位行业">
@@ -310,7 +344,7 @@ onMounted(async () => {
             </el-select>
           </el-form-item>
           <el-form-item class="search-actions">
-            <el-button type="primary" @click="queryPage" class="search-btn">
+            <el-button type="primary" @click="handleSearch" class="search-btn">
               <el-icon><Search /></el-icon>&nbsp;查询
             </el-button>
             <el-button type="warning" @click="clear" class="reset-btn">
@@ -334,8 +368,27 @@ onMounted(async () => {
         class="data-table"
         v-loading="loading"
       >
-        <el-table-column type="index" label="序号" width="55" align="center" :index="(index) => (pagination.currentPage - 1) * pagination.pageSize + index + 1" />
-        <el-table-column prop="companyName" label="企业名称" min-width="200" align="center" />
+        <el-table-column type="index" label="序号" width="55" align="center" fixed="left" :index="(index) => (pagination.currentPage - 1) * pagination.pageSize + index + 1" />
+        <el-table-column prop="companyName" label="企业名称" min-width="200" align="center" fixed="left" />
+        <el-table-column label="标签" width="240" align="center">
+          <template #default="scope">
+            <div class="tag-container">
+              <el-tag
+                v-for="tag in getCompanyTagList(scope.row)"
+                :key="tag.text"
+                :type="tag.type"
+                size="small"
+                class="company-tag"
+              >
+                {{ tag.text }}
+              </el-tag>
+            </div>
+            <span v-if="!getCompanyTagList(scope.row).length" class="no-tag">-</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="contactPerson" label="联系人" width="100" align="center" />
+        <el-table-column prop="contactPhone" label="联系电话" width="140" align="center" />
+        <el-table-column prop="contactEmail" label="联系邮箱" min-width="170" align="center" />
         <el-table-column label="校内对接人" min-width="180" align="center">
           <template #default="scope">
             <div v-if="scope.row.schoolLiaisons?.length" class="tag-container">
@@ -354,20 +407,11 @@ onMounted(async () => {
             <el-tag v-else type="info" size="small">未走访</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="标签" width="240" align="center">
+        <el-table-column prop="auditStatus" label="审核状态" width="110" align="center">
           <template #default="scope">
-            <div class="tag-container">
-              <el-tag
-                v-for="tag in getCompanyTagList(scope.row)"
-                :key="tag.text"
-                :type="tag.type"
-                size="small"
-                class="company-tag"
-              >
-                {{ tag.text }}
-              </el-tag>
-            </div>
-            <span v-if="!getCompanyTagList(scope.row).length" class="no-tag">-</span>
+            <el-tag :type="getAuditStatusTagType(scope.row.auditStatus)" size="small" class="status-tag">
+              {{ formatAuditStatus(scope.row.auditStatus) }}
+            </el-tag>
           </template>
         </el-table-column>
         <el-table-column prop="status" label="账号状态" width="110" align="center">
@@ -377,9 +421,6 @@ onMounted(async () => {
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="contactPerson" label="联系人" width="100" align="center" />
-        <el-table-column prop="contactPhone" label="联系电话" width="140" align="center" />
-        <el-table-column prop="contactEmail" label="联系邮箱" min-width="170" align="center" />
         <el-table-column prop="createTime" label="创建时间" width="170" align="center" :formatter="formatDate" />
         <el-table-column label="操作" align="center" width="100" fixed="right">
           <template #default="scope">
@@ -416,9 +457,9 @@ onMounted(async () => {
             </el-tag>
             <span v-if="!getCompanyTagList(currentCompany).length">无</span>
           </el-descriptions-item>
-          <el-descriptions-item label="统一社会信用代码" :span="2">{{ currentCompany.creditCode || '-' }}</el-descriptions-item>
           <el-descriptions-item label="联系人">{{ currentCompany.contactPerson }}</el-descriptions-item>
           <el-descriptions-item label="联系电话">{{ currentCompany.contactPhone }}</el-descriptions-item>
+          <el-descriptions-item label="统一社会信用代码" :span="2">{{ currentCompany.creditCode || '-' }}</el-descriptions-item>
           <el-descriptions-item label="联系邮箱" :span="2">{{ currentCompany.contactEmail }}</el-descriptions-item>
           <el-descriptions-item label="企业地址" :span="2">{{ getFullAddress(currentCompany) }}</el-descriptions-item>
           <el-descriptions-item label="所属行业">
@@ -459,11 +500,16 @@ onMounted(async () => {
           </el-descriptions-item>
           <el-descriptions-item label="申请时间" :span="2">{{ formatDate(null, null, currentCompany.applyTime) }}</el-descriptions-item>
           <el-descriptions-item label="审核状态">
+            <el-tag :type="getAuditStatusTagType(currentCompany.auditStatus)" size="small">
+              {{ formatAuditStatus(currentCompany.auditStatus) }}
+            </el-tag>
+          </el-descriptions-item>
+          <el-descriptions-item label="账号状态">
             <el-tag :type="getAccountStatusTagType(currentCompany.status)" size="small">
               {{ formatAccountStatus(currentCompany.status) }}
             </el-tag>
           </el-descriptions-item>
-          <el-descriptions-item label="审核时间">{{ formatDate(null, null, currentCompany.auditTime) }}</el-descriptions-item>
+          <el-descriptions-item label="审核时间" :span="2">{{ formatDate(null, null, currentCompany.auditTime) }}</el-descriptions-item>
           <el-descriptions-item label="企业ID">{{ currentCompany.id }}</el-descriptions-item>
           <el-descriptions-item label="创建时间">{{ formatDate(null, null, currentCompany.createTime) }}</el-descriptions-item>
           <el-descriptions-item label="更新时间">{{ formatDate(null, null, currentCompany.updateTime) }}</el-descriptions-item>

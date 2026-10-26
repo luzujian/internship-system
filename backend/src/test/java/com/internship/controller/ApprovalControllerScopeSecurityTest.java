@@ -111,7 +111,7 @@ class ApprovalControllerScopeSecurityTest {
         when(applications.findPageWithinStudentIds(1, 10, "delay", "pending", null, null, List.of(501L)))
                 .thenReturn(PageResult.build(1L, List.of(application(501L, "delay"))));
 
-        assertEquals(200, controller.getStudentApplications(1, 10, "delay", "pending", null, null).getCode());
+        assertEquals(200, controller.getStudentApplications(1, 10, "delay", "pending", null, null, null, null).getCode());
         verify(applications).findPageWithinStudentIds(1, 10, "delay", "pending", null, null, List.of(501L));
 
         @SuppressWarnings("unchecked")
@@ -120,6 +120,51 @@ class ApprovalControllerScopeSecurityTest {
         assertEquals(0L, ((PageResult<?>) combined.get("data")).getTotal());
         verify(applications, never()).findPageWithinStudentIds(1, 10,
                 "selfPractice", "pending", null, null, List.of(501L));
+    }
+
+    @Test
+    void counselorListUsesOnlyConfirmedClassScopeWithoutFilters() {
+        TeacherUser counselor = teacher("COUNSELOR", false);
+        when(scope.studentIds(counselor)).thenReturn(List.of(501L, 502L));
+        when(applications.findPageWithinStudentIds(1, 10, "selfPractice", null, null, null, List.of(501L, 502L)))
+                .thenReturn(PageResult.build(2L, List.of(application(501L, "selfPractice"), application(502L, "selfPractice"))));
+
+        PageResult<?> page = (PageResult<?>) controller.getStudentApplications(
+                1, 10, "selfPractice", null, null, null, null, null).getData();
+
+        assertEquals(2L, page.getTotal());
+        verify(applications).findPageWithinStudentIds(1, 10, "selfPractice", null, null, null, List.of(501L, 502L));
+    }
+
+    @Test
+    void majorAndClassFiltersUseTheNarrowedTeacherScopeWithExistingFilters() {
+        TeacherUser counselor = teacher("COUNSELOR", false);
+        when(scope.filteredStudentIds(counselor, 6L, 12L)).thenReturn(List.of(501L));
+        when(applications.findPageWithinStudentIds(2, 5, "selfPractice", "approved", "学生", "学生", List.of(501L)))
+                .thenReturn(PageResult.build(1L, List.of(application(501L, "selfPractice"))));
+
+        assertEquals(200, controller.getStudentApplications(
+                2, 5, "selfPractice", "approved", "学生", "学生", 6L, 12L).getCode());
+
+        verify(applications).findPageWithinStudentIds(2, 5, "selfPractice", "approved", "学生", "学生", List.of(501L));
+        verify(scope, never()).studentIds(counselor);
+    }
+
+    @Test
+    void unclaimedClassAndCounselorWithoutClassesCannotFallBackToAllStudents() {
+        TeacherUser counselor = teacher("COUNSELOR", false);
+        when(scope.studentIds(counselor)).thenReturn(List.of());
+        when(scope.filteredStudentIds(counselor, null, 999L)).thenReturn(List.of());
+        when(applications.findPageWithinStudentIds(1, 10, "selfPractice", null, null, null, List.of()))
+                .thenReturn(PageResult.build(0L, List.of()));
+
+        PageResult<?> unclaimedClass = (PageResult<?>) controller.getStudentApplications(
+                1, 10, "selfPractice", null, null, null, null, 999L).getData();
+        PageResult<?> noClasses = (PageResult<?>) controller.getStudentApplications(
+                1, 10, "selfPractice", null, null, null, null, null).getData();
+
+        assertEquals(0L, unclaimedClass.getTotal());
+        assertEquals(0L, noClasses.getTotal());
     }
 
     @Test

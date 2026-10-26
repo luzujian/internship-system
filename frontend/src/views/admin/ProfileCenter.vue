@@ -3,6 +3,8 @@ import logger from '@/utils/logger'
 import { reactive, ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { useFormContext } from '@/agent/formContext'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import type { FormInstance } from 'element-plus'
+import { createEmailValidator } from '@/utils/validation'
 import { useRouter } from 'vue-router'
 import {
   Avatar,
@@ -33,6 +35,7 @@ import {
   InfoFilled,
   Calendar,
   Phone,
+  Message,
   Postcard,
   Key,
   RefreshLeft,
@@ -53,6 +56,7 @@ const userInfo = reactive({
   username: '',
   name: '',
   phone: '',
+  email: '',
   role: 'admin',
   createTime: ''
 })
@@ -66,8 +70,14 @@ const editingUser = reactive({
   id: 0,
   username: '',
   name: '',
-  phone: ''
+  phone: '',
+  email: ''
 })
+const profileFormRef = ref<FormInstance>()
+const profileSaving = ref(false)
+const profileRules = {
+  email: [createEmailValidator('请输入有效的邮箱地址', false), { max: 254, message: '邮箱长度不能超过254个字符', trigger: 'blur' }]
+}
 
 const passwordDialogVisible = ref(false)
 const passwordForm = reactive({
@@ -100,7 +110,8 @@ watch(editDialogVisible, (open) => {
       title: '编辑个人资料',
       fields: [
         { prop: 'username', label: '用户名', type: 'input', required: true },
-        { prop: 'phone', label: '手机号', type: 'input', patternHint: '11位手机号码' }
+        { prop: 'phone', label: '手机号', type: 'input', patternHint: '11位手机号码' },
+        { prop: 'email', label: '邮箱', type: 'input', patternHint: '邮箱地址，如 example@email.com' }
       ],
       getModel: () => editingUser,
       getValidationSummary: () => ({ missingFields: editingUser.username?.trim() ? [] : ['用户名'], validationErrors: [] })
@@ -222,11 +233,11 @@ const loadUserInfo = async () => {
       return
     }
 
-    const response = await AdminUserService.getAdminById(currentUserId) as unknown as {
+    const response = await AdminUserService.getCurrentProfile() as unknown as {
       code?: number
       message?: string
       msg?: string
-      data?: { id?: number; username?: string; name?: string; phone?: string; createTime?: string; [key: string]: unknown }
+      data?: { id?: number; username?: string; name?: string; phone?: string; email?: string; createTime?: string; [key: string]: unknown }
     }
 
     if (response && response.code === 200 && response.data) {
@@ -235,6 +246,7 @@ const loadUserInfo = async () => {
       if (adminInfo.username !== undefined) userInfo.username = adminInfo.username
       userInfo.name = adminInfo.name || ''
       userInfo.phone = adminInfo.phone || ''
+      userInfo.email = adminInfo.email || ''
       userInfo.createTime = adminInfo.createTime || ''
     }
   } catch (error) {
@@ -259,11 +271,11 @@ const showEditProfile = async () => {
       return
     }
 
-    const response = await AdminUserService.getAdminById(currentUserId) as unknown as {
+    const response = await AdminUserService.getCurrentProfile() as unknown as {
       code?: number
       message?: string
       msg?: string
-      data?: { id?: number; username?: string; name?: string; phone?: string; [key: string]: unknown }
+      data?: { id?: number; username?: string; name?: string; phone?: string; email?: string; [key: string]: unknown }
     }
 
     if (response && response.code === 200 && response.data) {
@@ -272,8 +284,10 @@ const showEditProfile = async () => {
       if (adminInfo.username !== undefined) editingUser.username = adminInfo.username
       editingUser.name = adminInfo.name || ''
       editingUser.phone = adminInfo.phone || ''
+      editingUser.email = adminInfo.email || ''
     } else {
       ElMessage.error('获取用户信息失败')
+      return
     }
 
     editDialogVisible.value = true
@@ -289,24 +303,29 @@ const handleEditDialogClose = () => {
     editingUser.username = ''
     editingUser.name = ''
     editingUser.phone = ''
+    editingUser.email = ''
   })
 }
 
 const saveProfile = async () => {
+  if (profileSaving.value) return
   try {
     if (!editingUser.username) {
       ElMessage.warning('用户名不能为空')
       return
     }
+    editingUser.email = editingUser.email.trim()
+    if (!profileFormRef.value || !await profileFormRef.value.validate().catch(() => false)) return
+    profileSaving.value = true
 
     const updateData = {
-      id: editingUser.id,
       username: editingUser.username,
-      phone: editingUser.phone
+      phone: editingUser.phone,
+      email: editingUser.email
     }
 
     const operation = formContext.beginFormOperation('admin:center-profile')
-    const response = await AdminUserService.updateAdmin(updateData)
+    const response = await AdminUserService.updateCurrentProfile(updateData)
 
     if (response && response.code === 200) {
       operation.complete({ status: 'saved', label: '管理员资料已保存', url: '/admin/profile' })
@@ -319,6 +338,8 @@ const saveProfile = async () => {
   } catch (error) {
     logger.error('更新用户资料失败:', error)
     ElMessage.error('资料更新失败')
+  } finally {
+    profileSaving.value = false
   }
 }
 
@@ -650,6 +671,14 @@ const logout = async () => {
 
                 <div class="info-item">
                   <div class="info-label">
+                    <el-icon><Message /></el-icon>
+                    <span>邮箱</span>
+                  </div>
+                  <div class="info-value">{{ userInfo.email || '未设置' }}</div>
+                </div>
+
+                <div class="info-item">
+                  <div class="info-label">
                     <el-icon><Calendar /></el-icon>
                     <span>创建时间</span>
                   </div>
@@ -740,7 +769,7 @@ const logout = async () => {
     </div>
 
     <el-dialog v-model="editDialogVisible" title="编辑个人资料" width="500px" @close="handleEditDialogClose">
-      <el-form :model="editingUser" label-width="100px">
+      <el-form ref="profileFormRef" :model="editingUser" :rules="profileRules" label-width="100px">
         <el-form-item label="真实姓名">
           <el-input v-model="editingUser.name" disabled />
           <div class="form-tip">真实姓名由管理员设置，不可修改</div>
@@ -754,12 +783,16 @@ const logout = async () => {
         <el-form-item label="手机号" prop="phone">
           <el-input v-model="editingUser.phone" placeholder="请输入手机号" />
         </el-form-item>
+        <el-form-item label="邮箱" prop="email">
+          <el-input v-model="editingUser.email" placeholder="请输入接收问题反馈提醒的邮箱" maxlength="254" clearable />
+          <div class="form-tip">用于接收新问题反馈提醒，留空则不接收。需在系统邮件设置中开启“问题反馈提醒”。</div>
+        </el-form-item>
       </el-form>
 
       <template #footer>
         <span class="dialog-footer">
           <el-button @click="handleEditDialogClose(); editDialogVisible = false">取消</el-button>
-          <el-button type="primary" @click="saveProfile">保存</el-button>
+          <el-button type="primary" :loading="profileSaving" @click="saveProfile">保存</el-button>
         </span>
       </template>
     </el-dialog>

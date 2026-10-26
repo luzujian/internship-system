@@ -166,7 +166,7 @@ public class StudentInternshipConfirmationController {
                 offer.put("companyId", invitation.getCompanyId());
                 offer.put("companyName", company == null ? invitation.getCompanyName() : company.getCompanyName());
                 offer.put("companyAddress", company == null ? invitation.getCompanyAddress() : company.getAddress());
-                offer.put("companyPhone", company == null ? invitation.getContactPhone() : company.getContactPhone());
+                offer.put("companyPhone", com.internship.entity.dto.InternshipContact.resolve(invitation.getCompanyId(), company, position).phone());
                 offer.put("positionId", position.getId());
                 offer.put("positionName", position.getPositionName());
                 offer.put("directHire", "direct_hire".equals(invitation.getInterviewMethod()));
@@ -217,7 +217,7 @@ public class StudentInternshipConfirmationController {
             record.setCompanyId(company.getId());
             record.setCompanyName(company.getCompanyName());
             record.setCompanyAddress(company.getAddress());
-            record.setCompanyPhone(company.getContactPhone());
+            record.setCompanyPhone(com.internship.entity.dto.InternshipContact.resolve(company.getId(), company, position).phone());
             record.setPositionId(position.getId());
             record.setPositionName(position.getPositionName());
             record.setRemark(objectToString(body.get("remark")));
@@ -684,11 +684,11 @@ public class StudentInternshipConfirmationController {
         return switch (status) {
             case "DRAFT" -> "草稿";
             case "PENDING_CONFIRMATION" -> "待企业确认";
-            case "CONFIRMED" -> "已确认";
-            case "IN_PROGRESS" -> "实习中";
-            case "COMPLETED" -> "已结束";
+            case "CONFIRMED" -> "已定单位待实习";
+            case "IN_PROGRESS" -> "实习进行中";
+            case "COMPLETED" -> "实习已结束";
             case "REPLACED" -> "已更换岗位";
-            case "INTERRUPTED" -> "已中断";
+            case "INTERRUPTED" -> "实习已中断";
             case "REJECTED" -> "企业已拒绝";
             case "WITHDRAWN" -> "学生已撤回";
             default -> "历史记录";
