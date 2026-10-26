@@ -358,14 +358,8 @@ public class TokenFilter extends OncePerRequestFilter implements ApplicationCont
                         log.debug("Token 验证成功，用户：{}, 角色：{}", username, role);
 
                         // 检查会话是否超时
-                        Long issuedAt = claims.getIssuedAt() != null ? claims.getIssuedAt().getTime() : 0;
-                        long currentTime = System.currentTimeMillis();
-                        int sessionTimeoutMinutes = SystemSettingsConfig.getSessionTimeout();
-                        long sessionTimeoutMillis = sessionTimeoutMinutes * 60 * 1000L;
-
-                        if (currentTime - issuedAt > sessionTimeoutMillis) {
-                            log.warn("会话已超时：username={}, issuedAt={}, currentTime={}, timeout={}分钟",
-                                    username, issuedAt, currentTime, sessionTimeoutMinutes);
+                        if (!jwtUtils.isSessionActive(claims)) {
+                            log.warn("会话无操作超时：username={}, timeout={}分钟", username, SystemSettingsConfig.getSessionTimeout());
                             // 对于登录请求，不拦截，让登录逻辑处理
                             if (!isLoginRequest) {
                                 recordTokenSecurityEvent(request, "SESSION_TIMEOUT", username, trustedUserId(claims), role, "SESSION_TIMEOUT",
@@ -373,7 +367,7 @@ public class TokenFilter extends OncePerRequestFilter implements ApplicationCont
                                 response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
                                 response.setContentType("application/json;charset=UTF-8");
                                 response.setCharacterEncoding("UTF-8");
-                                response.getWriter().write("{\"code\": 401, \"message\": \"会话已超时，请重新登录\"}");
+                                response.getWriter().write("{\"code\":401,\"errorCode\":\"SESSION_TIMEOUT\",\"message\":\"会话已超时，请重新登录\"}");
                                 return;
                             } else {
                                 log.debug("登录请求中的过期 token，继续处理请求");
@@ -397,7 +391,8 @@ public class TokenFilter extends OncePerRequestFilter implements ApplicationCont
                         boolean safeMethod = "GET".equals(request.getMethod())
                                 || "HEAD".equals(request.getMethod()) || "OPTIONS".equals(request.getMethod());
                         boolean logout = "POST".equals(request.getMethod()) && "/api/auth/logout".equals(requestPath);
-                        if (readOnly && !safeMethod && !logout) {
+                        boolean sessionActivity = "POST".equals(request.getMethod()) && "/api/auth/session/activity".equals(requestPath);
+                        if (readOnly && !safeMethod && !logout && !sessionActivity) {
                             recordTokenSecurityEvent(request, "READ_ONLY_WRITE", username, trustedUserId(claims), role, "READ_ONLY_WRITE",
                                     AuditLogService.RISK_HIGH, "只读角色切换身份禁止写请求");
                             response.setStatus(HttpServletResponse.SC_FORBIDDEN);

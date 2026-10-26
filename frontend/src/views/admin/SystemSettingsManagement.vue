@@ -109,7 +109,7 @@
 
             <el-form-item label="会话超时时间(分钟)" prop="sessionTimeout">
               <el-input-number v-model="securityForm.sessionTimeout" :min="15" :max="480" :step="15" />
-              <div class="form-tip">用户无操作自动退出的时间</div>
+              <div class="form-tip">适用于所有角色。连续无操作达到此时间后需重新登录，后台自动刷新不会延长会话。</div>
             </el-form-item>
 
             <el-form-item>

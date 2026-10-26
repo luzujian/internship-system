@@ -16,6 +16,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 import com.internship.service.JwtRedisService;
+import com.internship.config.SystemSettingsConfig;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
@@ -49,6 +50,25 @@ public class JwtUtils {
 
     @Autowired
     private JwtRedisService jwtRedisService;
+
+    public String createSession() {
+        String sessionId = java.util.UUID.randomUUID().toString();
+        jwtRedisService.startSession(sessionId, sessionRetentionMillis());
+        return sessionId;
+    }
+
+    public boolean isSessionActive(Claims claims) {
+        return sessionLastActivity(claims, false) > 0;
+    }
+
+    public long sessionLastActivity(Claims claims, boolean userActivity) {
+        return jwtRedisService.checkSession(claims.get("sid", String.class),
+                SystemSettingsConfig.getSessionTimeout() * 60_000L, userActivity);
+    }
+
+    private long sessionRetentionMillis() {
+        return Math.max(expirationTime, refreshExpirationTime) + 60_000L;
+    }
 
     /**
      * 初始化 JWT 工具类，准备密钥
@@ -157,6 +177,7 @@ public class JwtUtils {
         // 添加签发时间和过期时间
         Date now = new Date();
         refreshClaims.put("iat", now);
+        jwtRedisService.retainSession((String) claims.get("sid"), sessionRetentionMillis());
 
         return Jwts.builder()
                 .claims(refreshClaims)

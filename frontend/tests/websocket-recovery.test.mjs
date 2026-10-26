@@ -114,6 +114,7 @@ function authActions(websocket) {
     decodeToken: token => JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString()),
     logger: { log() {}, warn() {}, error() {} }, STORAGE_KEYS: { CURRENT_ROLE: 'current_role' },
     localStorage: { getItem() {}, setItem() {}, removeItem() {} },
+    sessionStorage: { getItem() { return null } },
     writeTabSession() {}, clearRoleStorage() {}, cleanupTokens() {}, setTimeout() {},
     async refreshTokenUtil() { return context.nextToken }
   }

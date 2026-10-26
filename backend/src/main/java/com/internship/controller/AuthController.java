@@ -241,7 +241,7 @@ public class AuthController {
         claims.put("teacherType", teacherType);
         claims.put("permissions", permissionCodes);
 
-        claims.put("sid", java.util.UUID.randomUUID().toString());
+        claims.put("sid", jwtUtils.createSession());
         String accessToken = jwtUtils.generateAccessToken(claims);
         String refreshToken = jwtUtils.generateRefreshToken(claims);
 
@@ -370,7 +370,7 @@ public class AuthController {
             }
         }
         
-        claims.put("sid", java.util.UUID.randomUUID().toString());
+        claims.put("sid", jwtUtils.createSession());
         String accessToken = jwtUtils.generateAccessToken(claims);
         String refreshToken = jwtUtils.generateRefreshToken(claims);
 
@@ -515,7 +515,7 @@ public class AuthController {
         
         try {
             // 验证刷新令牌
-            Map<String, Object> claims = jwtUtils.parseToken(refreshToken);
+            var claims = jwtUtils.parseToken(refreshToken);
             
             // Only refresh tokens with an explicit read-only marker may be refreshed.
             // Legacy tokens omitted it, including tokens issued while viewing another role.
@@ -550,6 +550,9 @@ public class AuthController {
             }
             if ("ROLE_TEACHER".equals(role)) {
                 return Result.error("教师身份需重新验证");
+            }
+            if (!jwtUtils.isSessionActive(claims)) {
+                return expiredSession();
             }
 
             // 从刷新令牌中获取其他信息
@@ -596,6 +599,28 @@ public class AuthController {
         }
     }
     
+    @GetMapping("/session")
+    public Result sessionStatus(HttpServletRequest request) {
+        return sessionStatus(request, false);
+    }
+
+    @PostMapping("/session/activity")
+    public Result sessionActivity(HttpServletRequest request) {
+        return sessionStatus(request, true);
+    }
+
+    private Result sessionStatus(HttpServletRequest request, boolean userActivity) {
+        var claims = jwtUtils.parseToken(request.getHeader("Authorization").substring(7));
+        long lastActivity = jwtUtils.sessionLastActivity(claims, userActivity);
+        if (lastActivity <= 0) return expiredSession();
+        return Result.success(Map.of("lastActivityAt", lastActivity,
+                "timeoutMinutes", SystemSettingsConfig.getSessionTimeout(), "serverTime", System.currentTimeMillis()));
+    }
+
+    private Result expiredSession() {
+        return new Result(401, "会话已超时，请重新登录", Map.of("errorCode", "SESSION_TIMEOUT"));
+    }
+
     /**
      * 用户登出接口
      * 将访问令牌加入黑名单
@@ -715,7 +740,7 @@ public class AuthController {
                 claims.put("originalAdminId", adminUser.getId());
                 claims.put("originalAdminUsername", adminUser.getUsername());
                 
-                claims.put("sid", java.util.UUID.randomUUID().toString());
+                claims.put("sid", jwtUtils.createSession());
                 String accessToken = jwtUtils.generateAccessToken(claims);
                 String refreshToken = jwtUtils.generateRefreshToken(claims);
                 
@@ -753,7 +778,7 @@ public class AuthController {
                 claims.put("originalAdminId", adminUser.getId());
                 claims.put("originalAdminUsername", adminUser.getUsername());
                 
-                claims.put("sid", java.util.UUID.randomUUID().toString());
+                claims.put("sid", jwtUtils.createSession());
                 String accessToken = jwtUtils.generateAccessToken(claims);
                 String refreshToken = jwtUtils.generateRefreshToken(claims);
                 
@@ -800,7 +825,7 @@ public class AuthController {
                 claims.put("originalAdminId", adminUser.getId());
                 claims.put("originalAdminUsername", adminUser.getUsername());
                 
-                claims.put("sid", java.util.UUID.randomUUID().toString());
+                claims.put("sid", jwtUtils.createSession());
                 String accessToken = jwtUtils.generateAccessToken(claims);
                 String refreshToken = jwtUtils.generateRefreshToken(claims);
                 

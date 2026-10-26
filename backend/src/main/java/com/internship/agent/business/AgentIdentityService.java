@@ -3,7 +3,6 @@ package com.internship.agent.business;
 import com.internship.entity.*;
 import com.internship.mapper.*;
 import com.internship.service.TeacherPermissionService;
-import com.internship.config.SystemSettingsConfig;
 import com.internship.utils.JwtUtils;
 import io.jsonwebtoken.Claims;
 import lombok.RequiredArgsConstructor;
@@ -29,8 +28,7 @@ public class AgentIdentityService {
             if (!jwtUtils.validateToken(token)) throw unauthorized();
             Claims claims = jwtUtils.parseToken(token);
             if (!"access".equals(claims.get("typ", String.class))) throw unauthorized();
-            if (claims.getIssuedAt() == null || System.currentTimeMillis() - claims.getIssuedAt().getTime()
-                    > SystemSettingsConfig.getSessionTimeout() * 60_000L) throw unauthorized();
+            if (!jwtUtils.isSessionActive(claims)) throw unauthorized();
             String username = claims.get("username", String.class);
             String role = claims.get("role", String.class);
             boolean readOnly = Boolean.TRUE.equals(claims.get("isReadOnly", Boolean.class));

@@ -190,6 +190,18 @@ function handleLogout(): void {
   router.push('/login')
 }
 
+export function handleSessionTimeout(broadcast = true): void {
+  const auth = useAuthStore()
+  if (!auth.token) return
+  auth.expireSession(broadcast)
+  ElMessage.warning('会话已超时，请重新登录')
+  void router.replace('/login')
+}
+
+function isSessionTimeout(data: any): boolean {
+  return data?.errorCode === 'SESSION_TIMEOUT' || data?.data?.errorCode === 'SESSION_TIMEOUT'
+}
+
 /**
  * 后端统一业务包形态。响应拦截器已将 `response.data` 直接返回，
  * 调用方拿到的即此包体而非完整 AxiosResponse，类型在此如实声明。
@@ -238,7 +250,7 @@ interface CustomAxiosRequestConfig extends InternalAxiosRequestConfig {
 
 function requestOwner(): string {
   const auth = useAuthStore()
-  return JSON.stringify([auth.role, auth.user?.id, auth.user?.username, auth.user?.isReadOnly === true])
+  return JSON.stringify([auth.role, auth.user?.id, auth.user?.username, auth.user?.isReadOnly === true, auth.sessionId])
 }
 
 request.interceptors.request.use(
@@ -249,6 +261,8 @@ request.interceptors.request.use(
 
     const authStore = useAuthStore()
 
+    if (config.url?.includes('/auth/refresh-token') && authStore.token) config._authOwner = requestOwner()
+
     if (authStore.user?.isReadOnly) {
       const method = config.method?.toUpperCase()
       const writeMethods = ['POST', 'PUT', 'DELETE', 'PATCH']
@@ -258,8 +272,9 @@ request.interceptors.request.use(
 
         if (!skipReadOnlyCheck) {
           const isRefreshTokenRequest = config.url?.includes('/auth/refresh-token')
+          const isSessionActivity = config.url === '/auth/session/activity'
 
-          if (!isRefreshTokenRequest) {
+          if (!isRefreshTokenRequest && !isSessionActivity) {
             console.warn('[request] 只读模式下禁止写操作:', method, config.url)
             ElMessage.warning('您当前处于只读模式，无法进行修改操作。如需修改，请返回管理员端。')
             return Promise.reject(new Error('只读模式下禁止写操作'))
@@ -338,6 +353,7 @@ request.interceptors.response.use(
     if (owner && owner !== requestOwner()) return Promise.reject(new axios.CanceledError('登录身份已变化，已忽略旧请求结果。'))
     // 检查业务状态码
     const responseData = response.data
+    if (isSessionTimeout(responseData)) handleSessionTimeout()
     if (responseData && responseData.code !== undefined && responseData.code !== 200) {
       // 业务状态码表示失败，抛出错误让 catch 捕获
       // 标记 skipErrorMessage=true，避免错误分支重复显示消息
@@ -353,13 +369,18 @@ request.interceptors.response.use(
     const { config, response, code } = error || {}
     if (axios.isCancel(error) || (config?._authOwner && config._authOwner !== requestOwner())) return Promise.reject(error)
 
+    if (isSessionTimeout(response?.data)) {
+      handleSessionTimeout()
+      return Promise.reject(error)
+    }
+
     if (code === 'ECONNABORTED' || error.message?.includes('timeout')) {
-      ElMessage.error('请求超时，请检查网络或稍后重试')
+      if (!config?.skipErrorMessage) ElMessage.error('请求超时，请检查网络或稍后重试')
       return Promise.reject(error)
     }
 
     if (!response) {
-      ElMessage.error(ERROR_MESSAGES.NETWORK_ERROR)
+      if (!config?.skipErrorMessage) ElMessage.error(ERROR_MESSAGES.NETWORK_ERROR)
       return Promise.reject(error)
     }
 

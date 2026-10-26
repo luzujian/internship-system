@@ -61,6 +61,13 @@ public class SystemSettingsController {
     public Result updateSettings(@RequestBody Map<String, Object> settings) {
         log.info("更新系统设置");
         try {
+            if (settings.get("security") instanceof Map<?, ?> security && security.containsKey("sessionTimeout")) {
+                Object value = security.get("sessionTimeout");
+                if (value == null || !value.toString().matches("[0-9]{1,3}")
+                        || Integer.parseInt(value.toString()) < 15 || Integer.parseInt(value.toString()) > 480) {
+                    return Result.error("会话超时时间须为 15 至 480 分钟的整数");
+                }
+            }
             SystemSettings currentSettings = systemSettingsService.findLatest();
             
             if (currentSettings == null) {

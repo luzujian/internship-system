@@ -123,6 +123,10 @@ export const useAuthStore = defineStore('auth', {
     currentUser: (state) => state.user,
     currentRole: (state) => state.role,
     isAuth: (state) => state.isAuthenticated,
+    sessionId: (state): string | null => {
+      const sid = state.token ? decodeToken(state.token)?.sid : null
+      return typeof sid === 'string' ? sid : null
+    },
     displayName: (state) => {
       if (state.user && state.user.name) {
         return state.user.name
@@ -299,6 +303,7 @@ export const useAuthStore = defineStore('auth', {
       this.saveExtraInfo(role, userInfo, teacherType, permissions, loginResult)
 
       // 更新状态
+      sessionStorage.removeItem('deepintern.auth.restore-blocked')
       this.updateAuthState(accessToken, userInfo, role, refreshToken)
       if (this.user) this.user.permissions = permissions || []
 
@@ -456,7 +461,33 @@ export const useAuthStore = defineStore('auth', {
       return true
     },
 
+    expireSession(broadcast = true) {
+      const token = this.token, role = this.role, sid = this.sessionId
+      const sameSession = (saved: string | null) => !!saved && (saved === token || (!!sid && decodeToken(saved)?.sid === sid))
+      if (role && sameSession(localStorage.getItem(getRoleStoragePrefix(role) + 'accessToken_' + role))) {
+        clearRoleStorage(role)
+        if (localStorage.getItem(STORAGE_KEYS.CURRENT_ROLE) === role) localStorage.removeItem(STORAGE_KEYS.CURRENT_ROLE)
+      }
+      if (sameSession(localStorage.getItem('accessToken'))) {
+        localStorage.removeItem('accessToken')
+        localStorage.removeItem('refreshToken')
+      }
+      clearTabSession()
+      // A timed-out tab must not restore another account from the shared role cache.
+      sessionStorage.setItem('deepintern.auth.restore-blocked', 'true')
+      this.user = null; this.token = null; this.role = null
+      this.isAuthenticated = false; this.hasValidatedToken = false; this.allUsers = {}
+      window.dispatchEvent(new CustomEvent('auth:access-token-changed', { detail: { token: '', identityChanged: true } }))
+      if (broadcast && sid) {
+        localStorage.setItem('deepintern.auth.session-expired', JSON.stringify({ sid, at: Date.now() }))
+      }
+    },
+
     async logout(skipBackendLogout = false): Promise<void> {
+      if (sessionStorage.getItem('deepintern.auth.restore-blocked') === 'true') {
+        this.expireSession(false)
+        return
+      }
       window.dispatchEvent(new CustomEvent('auth:access-token-changed', { detail: { token: '', identityChanged: true } }))
       try {
         const currentRole = this.role || localStorage.getItem(STORAGE_KEYS.CURRENT_ROLE)
@@ -576,6 +607,7 @@ export const useAuthStore = defineStore('auth', {
     // ==================== 认证状态恢复 ====================
 
     async restoreAuthState(allowPathRoleInference = true): Promise<boolean> {
+      if (sessionStorage.getItem('deepintern.auth.restore-blocked') === 'true') return false
       logger.log('开始从本地存储恢复认证状态，允许路径角色推断:', allowPathRoleInference)
 
       const tab = readTabSession()

@@ -18,7 +18,14 @@ class AgentIdentityServiceTest {
     AdminUserMapper admins=mock(AdminUserMapper.class);
     TeacherPermissionService permissions=mock(TeacherPermissionService.class);
     AgentIdentityService identity=new AgentIdentityService(jwt,students,teachers,companies,admins,permissions);
+    @Test void expiredSessionCannotStartAgentTools() {
+        claims("ROLE_STUDENT", "access", false);
+        when(jwt.isSessionActive(any())).thenReturn(false);
+        assertThrows(AgentException.class, () -> identity.resolve("Bearer signed"));
+    }
+
     void claims(String role,String type,boolean readonly){
+        when(jwt.isSessionActive(any())).thenReturn(true);
         when(jwt.validateToken("signed")).thenReturn(true);
         when(jwt.parseToken("signed")).thenReturn(Jwts.claims().add("username","same-username").add("role",role).add("typ",type).add("isReadOnly",readonly).add("originalAdminUsername",readonly?"admin":"").issuedAt(new Date()).build());
     }

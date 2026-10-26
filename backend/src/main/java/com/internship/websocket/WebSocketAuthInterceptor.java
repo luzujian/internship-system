@@ -59,6 +59,7 @@ public class WebSocketAuthInterceptor implements HandshakeInterceptor {
             
             try {
                 Claims claims = jwtUtils.parseToken(token);
+                if (!"access".equals(claims.get("typ", String.class)) || !jwtUtils.isSessionActive(claims)) return false;
 
                 Long userId = claims.get("id", Long.class);
                 if (userId == null) {

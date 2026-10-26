@@ -121,6 +121,7 @@ class TokenFilterSecurityTest {
 
     private TokenFilter filterWithClaims(boolean readOnly, String type) {
         JwtUtils jwt = mock(JwtUtils.class);
+        when(jwt.isSessionActive(any())).thenReturn(true);
         Claims claims = Jwts.claims().add("username", "student")
                 .add("role", "ROLE_STUDENT").add("typ", type)
                 .add("isReadOnly", readOnly).issuedAt(new Date()).build();
@@ -146,6 +147,36 @@ class TokenFilterSecurityTest {
         ReflectionTestUtils.setField(filter, "userCacheService", cache);
         filter.setApplicationContext(context);
         return filter;
+    }
+
+    @Test
+    void activeSessionOutlivesAccessTokenIssuanceAge() throws Exception {
+        TokenFilter filter = filterWithClaims(false, "access");
+        JwtUtils jwt = (JwtUtils) ReflectionTestUtils.getField(filter, "jwtUtils");
+        when(jwt.parseToken("signed")).thenReturn(Jwts.claims().add("username", "student")
+                .add("role", "ROLE_STUDENT").add("typ", "access")
+                .issuedAt(new Date(System.currentTimeMillis() - 24 * 60 * 60_000L)).build());
+        assertTrue(invoke(filter, "GET", "/api/student/profile").chainInvoked.get());
+    }
+
+    @Test
+    void expiredSessionCannotAccessNormalOrStreamingRequests() throws Exception {
+        TokenFilter filter = filterWithClaims(false, "access");
+        JwtUtils jwt = (JwtUtils) ReflectionTestUtils.getField(filter, "jwtUtils");
+        when(jwt.isSessionActive(any())).thenReturn(false);
+        for (String path : new String[]{"/api/student/profile", "/api/agent/chat/stream"}) {
+            Response result = invoke(filter, "GET", path);
+            assertEquals(401, result.response.getStatus());
+            assertTrue(result.response.getContentAsString().contains("SESSION_TIMEOUT"));
+            assertFalse(result.chainInvoked.get());
+        }
+    }
+
+    @Test
+    void readOnlySessionCanReportActivityOnlyAtTheExactEndpoint() throws Exception {
+        TokenFilter filter = filterWithClaims(true, "access");
+        assertTrue(invoke(filter, "POST", "/api/auth/session/activity").chainInvoked.get());
+        assertEquals(403, invoke(filter, "POST", "/api/student/auth/session/activity").response.getStatus());
     }
 
     private Response invoke(TokenFilter filter, String method, String path) throws Exception {

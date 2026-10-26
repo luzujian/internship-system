@@ -23,8 +23,7 @@ class AuthReadOnlyRefreshTest {
 
     @BeforeEach
     void setUp() {
-        JwtRedisService redis = mock(JwtRedisService.class);
-        when(redis.getUserTokenVersion(anyString())).thenReturn(1);
+        JwtRedisService redis = new JwtRedisService();
         jwt = new JwtUtils();
         ReflectionTestUtils.setField(jwt, "secretKeyString", "unit-test-secret-key-32-bytes-minimum-1234567890");
         ReflectionTestUtils.setField(jwt, "expirationTime", 3_600_000L);
@@ -105,7 +104,7 @@ class AuthReadOnlyRefreshTest {
         claims.put("username", "student");
         claims.put("role", "ROLE_STUDENT");
         claims.put("userId", 7L);
-        claims.put("sid", "test-session");
+        claims.put("sid", jwt.createSession());
         return claims;
     }
 }

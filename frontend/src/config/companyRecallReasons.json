@@ -30,11 +30,6 @@
     "fields": [{ "label": "联系邮箱", "fragment": "label=\"联系邮箱\"" }]
   },
   {
-    "value": "personal_email_incorrect",
-    "label": "个人邮箱填写有误，需要修改",
-    "fields": [{ "label": "个人邮箱", "fragment": "label=\"个人邮箱\"" }]
-  },
-  {
     "value": "website_incorrect",
     "label": "企业网站填写有误，需要修改",
     "fields": [{ "label": "企业网站", "fragment": "label=\"企业网站\"" }]

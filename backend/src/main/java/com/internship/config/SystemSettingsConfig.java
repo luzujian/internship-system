@@ -16,7 +16,7 @@ public class SystemSettingsConfig {
     @Autowired
     private SystemSettingsService systemSettingsService;
     
-    private static SystemSettings currentSettings;
+    private static volatile SystemSettings currentSettings;
     
     @PostConstruct
     public void init() {
@@ -94,7 +94,8 @@ public class SystemSettingsConfig {
     }
     
     public static Integer getSessionTimeout() {
-        return currentSettings != null ? currentSettings.getSessionTimeout() : 120;
+        Integer timeout = currentSettings != null ? currentSettings.getSessionTimeout() : null;
+        return timeout != null && timeout >= 15 && timeout <= 480 ? timeout : 120;
     }
     
     public static Integer getMinPasswordLength() {

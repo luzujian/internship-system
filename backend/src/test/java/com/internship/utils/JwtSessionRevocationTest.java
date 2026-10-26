@@ -15,7 +15,7 @@ class JwtSessionRevocationTest {
         ReflectionTestUtils.setField(jwt, "refreshExpirationTime", 86400000L);
         ReflectionTestUtils.setField(jwt, "jwtRedisService", new JwtRedisService());
         jwt.init();
-        Map<String,Object> claims = Map.of("username", "alice", "userId", 1L, "role", "ROLE_STUDENT", "sid", "device1");
+        Map<String,Object> claims = Map.of("username", "alice", "userId", 1L, "role", "ROLE_STUDENT", "sid", jwt.createSession());
         String access = jwt.generateAccessToken(claims);
         String refresh = jwt.generateRefreshToken(claims);
         var controller = new AuthController();
@@ -23,7 +23,7 @@ class JwtSessionRevocationTest {
         var rotated = controller.refreshToken(Map.of("refreshToken", refresh));
         assertEquals(200, rotated.getCode());
         String rotatedAccess = (String)((Map<?,?>)rotated.getData()).get("accessToken");
-        String other = jwt.generateAccessToken(Map.of("username", "alice", "sid", "device2"));
+        String other = jwt.generateAccessToken(Map.of("username", "alice", "sid", jwt.createSession()));
         jwt.revokeSession(access);
         assertThrows(JwtUtils.JwtException.class, () -> jwt.parseToken(access));
         assertThrows(JwtUtils.JwtException.class, () -> jwt.parseToken(refresh));

@@ -29,7 +29,7 @@ function fixture(shared = memory(), session = memory()) {
       if(name.startsWith('.')) return load(resolve(dirname(file),name+'.ts'))
       return require(name)
     }
-    vm.runInNewContext(code,{module,exports:module.exports,require:localRequire,console:quiet,localStorage:shared,sessionStorage:session,window:{location:{pathname:'/login'},atob},setTimeout},{filename:file})
+    vm.runInNewContext(code,{module,exports:module.exports,require:localRequire,console:quiet,localStorage:shared,sessionStorage:session,window:{location:{pathname:'/login'},atob,dispatchEvent(){}},CustomEvent:class { constructor(type,options){this.type=type;this.detail=options.detail} },setTimeout},{filename:file})
     return module.exports
   }
   const api=load(resolve(root,'index.ts')), store=api.useAuthStore(createPinia())
@@ -39,12 +39,30 @@ function fixture(shared = memory(), session = memory()) {
   const getToken=vm.runInNewContext(ts.transpileModule(func+'\ngetAccessToken',{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText,{useAuthStore:()=>store})
   return {store,shared,session,getToken,requests,load}
 }
-function jwt(username, role) { return 'header.'+Buffer.from(JSON.stringify({username,role,userId:username,name:username,teacherType:role.replace('ROLE_TEACHER_',''),exp:Math.floor(Date.now()/1000)+3600,jti:username,typ:'access'})).toString('base64url')+'.signature' }
+function jwt(username, role) { return 'header.'+Buffer.from(JSON.stringify({username,role,userId:username,name:username,sid:username+'-session',teacherType:role.replace('ROLE_TEACHER_',''),exp:Math.floor(Date.now()/1000)+3600,jti:username,typ:'access'})).toString('base64url')+'.signature' }
 function login(f, username, role) {
   const token=jwt(username,role)
   assert.equal(f.store.handleLoginSuccess({code:200,data:{accessToken:token,refreshToken:username+'-refresh',user:{id:username,username,name:username,role,teacherType:role.replace('ROLE_TEACHER_','')}}},''),true)
   return token
 }
+
+test('idle expiration clears only its own session and blocks cache restoration',async()=>{
+  const old=fixture(), newer=fixture(old.shared)
+  login(old,'teacherA','ROLE_TEACHER_DEPARTMENT')
+  const newerToken=login(newer,'teacherB','ROLE_TEACHER_DEPARTMENT')
+  old.store.expireSession()
+  assert.equal(old.store.isAuthenticated,false)
+  assert.equal(tabSession.readTabSession(old.session),null)
+  assert.equal(old.shared.getItem('teacher_accessToken_ROLE_TEACHER_DEPARTMENT'),newerToken)
+  assert.equal(newer.getToken(),newerToken)
+  const reload=fixture(old.shared,old.session)
+  assert.equal(await reload.store.restoreAuthState(false),false)
+  await reload.store.logout()
+  assert.equal(old.shared.getItem('teacher_accessToken_ROLE_TEACHER_DEPARTMENT'),newerToken)
+  login(reload,'teacherA','ROLE_TEACHER_DEPARTMENT')
+  assert.equal(reload.session.getItem('deepintern.auth.restore-blocked'),null)
+  assert.equal(reload.store.isAuthenticated,true)
+})
 
 test('parallel student and company tabs keep request identity after login and reload',async()=>{
   const student=fixture(), company=fixture(student.shared)
