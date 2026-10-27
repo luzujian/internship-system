@@ -1,10 +1,9 @@
 <script setup lang="ts">
-import { useRouter } from 'vue-router'
+import { RouterLink } from 'vue-router'
 import { ArrowRight, Connection } from '@element-plus/icons-vue'
 import { getOnlineUserSummary, ONLINE_ROLES, formatOnlineTime } from '@/api/onlineUsers'
 import { useOnlinePolling } from '@/composables/useOnlinePolling'
 
-const router = useRouter()
 const { data, loading, error, refresh } = useOnlinePolling(async signal => {
   const result = await getOnlineUserSummary(signal)
   if (result.code !== 200 || !result.data) throw new Error('在线状态暂时无法获取')
@@ -22,11 +21,10 @@ const { data, loading, error, refresh } = useOnlinePolling(async signal => {
       <span v-for="role in ONLINE_ROLES" :key="role.value">{{ role.label }}<b>{{ data?.byRole[role.value]?.toLocaleString() ?? '—' }}</b></span>
     </div>
     <div class="overview-actions">
-      <el-button link type="primary" @click="router.push('/admin/logs?tab=online-users')">查看在线用户<el-icon><ArrowRight /></el-icon></el-button>
+      <RouterLink class="online-users-link" to="/admin/logs?tab=online-users">查看在线用户<el-icon aria-hidden="true"><ArrowRight /></el-icon></RouterLink>
       <span v-if="error" class="online-error" role="status">{{ error }}<el-button link type="primary" :loading="loading" @click="refresh">重试</el-button></span>
-      <span v-else class="updated">{{ data ? `更新于 ${formatOnlineTime(data.serverTime)}` : '正在获取在线状态…' }}</span>
     </div>
-    <p class="online-note">最近 3 分钟仍有响应的有效登录用户 · 同一账号只计一人<span v-if="error && data"> · 当前显示上次成功数据：{{ formatOnlineTime(data.serverTime) }}</span></p>
+    <p class="online-note">{{ data ? `${error ? '上次成功更新于' : '更新于'} ${formatOnlineTime(data.serverTime)}` : error ? '' : '正在获取在线状态…' }}</p>
   </section>
 </template>
 
@@ -41,12 +39,15 @@ const { data, loading, error, refresh } = useOnlinePolling(async signal => {
 .role-counts span { display: flex; flex-direction: column; gap: 6px; color: #606266; font-size: 13px; }
 .role-counts b { font-size: 19px; color: #303133; font-variant-numeric: tabular-nums; }
 .overview-actions { display: flex; align-items: flex-end; flex-direction: column; gap: 6px; }
-.updated, .online-note { color: #687b73; font-size: 12px; }
+.online-users-link { display: inline-flex; align-items: center; gap: 4px; color: #409eff; font-size: 14px; text-decoration: none; white-space: nowrap; }
+.online-users-link:hover { color: #337ecc; text-decoration: underline; }
+.online-note { color: #687b73; font-size: 12px; }
 .online-note { width: 100%; margin: 0; line-height: 1.6; }
 .online-error { color: #a06022; font-size: 12px; }
 @media (max-width: 767px) {
   .online-overview { padding: 16px; gap: 16px; }
   .role-counts { flex-basis: calc(100% - 135px); justify-content: space-between; gap: 12px; }
-  .overview-actions { width: 100%; flex-direction: row; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+  .overview-actions { order: 4; flex-direction: row; align-items: center; flex-wrap: wrap; }
+  .online-note { order: 3; flex: 1; width: auto; }
 }
 </style>
