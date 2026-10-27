@@ -34,6 +34,8 @@
       </div>
     </el-card>
 
+    <OnlineUserOverview v-if="authStore.role === 'ROLE_ADMIN' && authStore.hasPermission('log:login:view')" />
+
     <!-- 核心统计卡片和问题反馈 -->
     <div class="dashboard-content">
       <div class="stats-section">
@@ -547,6 +549,7 @@
 <script setup lang="ts">
 import { getUploadErrorMessage } from '@/utils/uploadErrorMessage'
 import logger from '@/utils/logger'
+import OnlineUserOverview from '@/components/admin/OnlineUserOverview.vue'
 import { ref, onMounted, onUnmounted, nextTick, computed, watch } from 'vue'
 import { useFormContext } from '@/agent/formContext'
 import type { TeacherUser, Announcement, Feedback } from '@/types/admin'

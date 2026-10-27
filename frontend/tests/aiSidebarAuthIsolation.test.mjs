@@ -13,8 +13,8 @@ const require = createRequire(import.meta.url)
 const root = fileURLToPath(new URL('../src/store/auth',import.meta.url))
 const memory = () => { const values = new Map(); return { getItem: key => values.get(key) ?? null, setItem: (key,value) => values.set(key,String(value)), removeItem: key => values.delete(key) } }
 function fixture(shared = memory(), session = memory()) {
-  const cache = new Map(), requests = []
-  const request = { defaults: {baseURL:'/api'}, async post(url, body) { requests.push({url,body}); return {code:200,data:{accessToken:jwt('renewed','ROLE_TEACHER_DEPARTMENT'),refreshToken:'next-refresh'}} } }
+  const cache = new Map(), requests = [], messages = []
+  const request = { defaults: {baseURL:'/api'}, async post(url, body, config) { requests.push({url,body,config}); return {code:200,data:{accessToken:jwt('renewed','ROLE_TEACHER_DEPARTMENT'),refreshToken:'next-refresh'}} } }
   const quiet = {log(){},warn(){},error(){}}
   function load(file) {
     if(cache.has(file)) return cache.get(file).exports
@@ -24,7 +24,7 @@ function fixture(shared = memory(), session = memory()) {
       if(name === '@/utils/request') return {__esModule:true,default:request,cleanupTokens(){tabSession.clearTabSession(session)}}
       if(name === '@/utils/logger') return {__esModule:true,default:quiet}
       if(name === '@/store/auth') return {useAuthStore:()=>store}
-      if(name === 'element-plus') return {ElMessage:{error(){},warning(){}}}
+      if(name === 'element-plus') return {ElMessage:{error:text=>messages.push(text),warning:text=>messages.push(text)}}
       if(name.endsWith('tabSession.mjs')) return {readTabSession:()=>tabSession.readTabSession(session),writeTabSession:state=>tabSession.writeTabSession(state,session),clearTabSession:()=>tabSession.clearTabSession(session)}
       if(name.startsWith('.')) return load(resolve(dirname(file),name+'.ts'))
       return require(name)
@@ -37,9 +37,9 @@ function fixture(shared = memory(), session = memory()) {
   const ast=ts.createSourceFile('request.ts',requestSource,ts.ScriptTarget.Latest,true)
   const func=ast.statements.find(node=>ts.isFunctionDeclaration(node)&&node.name?.text==='getAccessToken').getText(ast).replace(/^export /,'')
   const getToken=vm.runInNewContext(ts.transpileModule(func+'\ngetAccessToken',{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText,{useAuthStore:()=>store})
-  return {store,shared,session,getToken,requests,load}
+  return {store,shared,session,getToken,requests,load,request,messages}
 }
-function jwt(username, role) { return 'header.'+Buffer.from(JSON.stringify({username,role,userId:username,name:username,sid:username+'-session',teacherType:role.replace('ROLE_TEACHER_',''),exp:Math.floor(Date.now()/1000)+3600,jti:username,typ:'access'})).toString('base64url')+'.signature' }
+function jwt(username, role, exp = Math.floor(Date.now()/1000)+3600) { return 'header.'+Buffer.from(JSON.stringify({username,role,userId:username,name:username,sid:username+'-session',teacherType:role.replace('ROLE_TEACHER_',''),exp,jti:username,typ:'access'})).toString('base64url')+'.signature' }
 function login(f, username, role) {
   const token=jwt(username,role)
   assert.equal(f.store.handleLoginSuccess({code:200,data:{accessToken:token,refreshToken:username+'-refresh',user:{id:username,username,name:username,role,teacherType:role.replace('ROLE_TEACHER_','')}}},''),true)
@@ -89,6 +89,19 @@ test('same-role tabs restore their own account and refresh with their own creden
   assert.equal(await reload.store.refreshAccessToken(),true)
   assert.equal(reload.requests[0].body.refreshToken,'teacherA-refresh')
   assert.equal(tabSession.readTabSession(reload.session).refreshToken,'next-refresh')
+  assert.equal(reload.requests[0].config.skipTokenRefresh, true)
+  assert.equal(reload.requests[0].config.skipErrorMessage, true)
+})
+
+test('a legacy saved session with an expired access token can still refresh during restoration', async () => {
+  const original = fixture()
+  login(original, 'teacherA', 'ROLE_TEACHER_DEPARTMENT')
+  original.shared.setItem('teacher_accessToken_ROLE_TEACHER_DEPARTMENT', jwt('teacherA', 'ROLE_TEACHER_DEPARTMENT', 1))
+  const f = fixture(original.shared)
+  assert.equal(await f.store.restoreAuthState(false), true)
+  assert.equal(f.requests.length, 1)
+  assert.equal(f.requests[0].url, '/auth/refresh-token')
+  assert.equal(f.store.isAuthenticated, true)
 })
 test('teacher route permissions and identity survive another-role login and reload',async()=>{
   const teacher=fixture()
@@ -206,4 +219,55 @@ test('old account responses and retries are rejected after switching identity',(
   auth.token='company-token';auth.role='ROLE_COMPANY';auth.user={id:'2',username:'company1'}
   assert.throws(()=>prepare(config),axios.isCancel)
   return assert.rejects(receive({config,status:200,data:{code:200,data:{}}}),axios.isCancel)
+})
+
+test('logout blocks refresh and duplicate logout calls, then clears local credentials even when the backend fails', async () => {
+  const f = fixture(), token = login(f, 's001', 'ROLE_STUDENT')
+  let failLogout
+  f.request.post = (url, body, config) => {
+    f.requests.push({url,body,config})
+    return new Promise((resolve, reject) => { failLogout = reject })
+  }
+  const loggingOut = f.store.logout()
+  assert.equal(f.store.isLoggingOut, true)
+  assert.equal(await f.store.refreshAccessToken(), false)
+  await f.store.logout()
+  assert.equal(f.requests.length, 1)
+  assert.equal(f.requests[0].url, '/auth/logout')
+  assert.equal(f.requests[0].config.headers.Authorization, `Bearer ${token}`)
+  assert.equal(f.requests[0].config.skipTokenRefresh, true)
+  assert.equal(f.requests[0].config.skipErrorMessage, true)
+  failLogout(new Error('backend timeout'))
+  await loggingOut
+  assert.equal(f.store.isLoggingOut, false)
+  assert.equal(f.store.isAuthenticated, false)
+  assert.equal(f.store.token, null)
+  assert.equal(tabSession.readTabSession(f.session), null)
+  assert.deepEqual(f.messages, [])
+  assert.equal(await f.store.refreshAccessToken(), false)
+  assert.equal(f.requests.length, 1)
+})
+
+test('a refresh completing during logout cannot replace the credential being revoked', async () => {
+  const f = fixture(), token = login(f, 's001', 'ROLE_STUDENT')
+  let finishRefresh, finishLogout
+  f.request.post = url => new Promise(resolve => {
+    if (url === '/auth/refresh-token') finishRefresh = resolve
+    else finishLogout = resolve
+  })
+  const refreshing = f.store.refreshAccessToken(), loggingOut = f.store.logout()
+  finishRefresh({code:200,data:{accessToken:jwt('s001', 'ROLE_STUDENT'),refreshToken:'next-refresh'}})
+  assert.equal(await refreshing, false)
+  assert.equal(f.store.token, token)
+  finishLogout({code:200,data:null})
+  await loggingOut
+  assert.equal(f.store.token, null)
+})
+
+test('missing refresh credentials are reported to the caller without a second toast', async () => {
+  const f = fixture()
+  const tokenApi = f.load(resolve(root, 'token.ts'))
+  assert.equal(await tokenApi.refreshAccessToken('ROLE_STUDENT', null), null)
+  assert.deepEqual(f.messages, [])
+  assert.equal(f.requests.length, 0)
 })

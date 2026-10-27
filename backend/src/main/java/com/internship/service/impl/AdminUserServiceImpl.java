@@ -27,6 +27,9 @@ import lombok.extern.slf4j.Slf4j;
 @Service
 public class AdminUserServiceImpl implements AdminUserService {
 
+    @Autowired(required = false)
+    private com.internship.service.OnlineUserService onlineUserService;
+
     @Autowired
     private AdminUserMapper adminUserMapper;
 
@@ -67,6 +70,8 @@ public class AdminUserServiceImpl implements AdminUserService {
         }
         
         int result = adminUserMapper.insert(adminUser);
+        if (result > 0 && onlineUserService != null) onlineUserService.accountChanged("ADMIN", null,
+                adminUser.getUsername(), adminUser.getStatus() == null ? 1 : adminUser.getStatus());
         log.info("管理员用户注册成功，用户名: {}", adminUser.getUsername());
         return result;
     }
@@ -135,6 +140,8 @@ public class AdminUserServiceImpl implements AdminUserService {
         adminUser.setUpdateTime(new Date());
         
         int result = adminUserMapper.update(adminUser);
+        if (result > 0 && onlineUserService != null) onlineUserService.accountChanged("ADMIN", existingUser.getUsername(),
+                adminUser.getUsername(), adminUser.getStatus());
         log.info("管理员用户信息更新成功，用户ID: {}", adminUser.getId());
         return result;
     }
@@ -179,6 +186,7 @@ public class AdminUserServiceImpl implements AdminUserService {
         }
         
         int result = adminUserMapper.deleteById(id);
+        if (result > 0 && onlineUserService != null) onlineUserService.accountChanged("ADMIN", adminUser.getUsername(), null, 0);
         log.info("管理员用户删除成功，用户ID: {}", id);
         return result;
     }

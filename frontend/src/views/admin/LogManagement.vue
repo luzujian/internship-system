@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import logger from '@/utils/logger'
+import OnlineUsersPanel from '@/components/admin/OnlineUsersPanel.vue'
 import { useRoute } from 'vue-router'
 import { getRoleName, getRiskName, getRiskTagType, getEventTypeName as getBaseEventTypeName, getResultTagType, getRoleTagType, getResultName } from '@/utils/securityEventPresentation'
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
@@ -19,18 +20,20 @@ const authStore = useAuthStore()
 const route = useRoute()
 
 // ===== 标签与权限 =====
-type TabName = 'operations' | 'login-events' | 'security-events'
+type TabName = 'operations' | 'login-events' | 'security-events' | 'online-users'
 
 const tabPermissionMap: Record<TabName, string> = {
   'operations': 'log:view',
   'login-events': 'log:login:view',
-  'security-events': 'log:security:view'
+  'security-events': 'log:security:view',
+  'online-users': 'log:login:view'
 }
 
 const tabCategoryMap: Record<TabName, string> = {
   'operations': 'operations',
   'login-events': 'login-events',
-  'security-events': 'security-events'
+  'security-events': 'security-events',
+  'online-users': ''
 }
 
 const activeTab = ref<TabName>('operations')
@@ -40,9 +43,11 @@ const visibleTabs = computed(() => {
   const tabs: Array<{ name: TabName; label: string }> = [
     { name: 'operations', label: '操作日志' },
     { name: 'login-events', label: '登录日志' },
-    { name: 'security-events', label: '安全事件' }
+    { name: 'security-events', label: '安全事件' },
+    { name: 'online-users', label: '在线用户' }
   ]
-  return tabs.filter(tab => hasPermission(tabPermissionMap[tab.name]))
+  return tabs.filter(tab => hasPermission(tabPermissionMap[tab.name])
+    && (tab.name !== 'online-users' || authStore.role === 'ROLE_ADMIN'))
 })
 
 const onTabChange = (tab: string | number) => {
@@ -50,6 +55,11 @@ const onTabChange = (tab: string | number) => {
   if (!target || target.name === activeTab.value) return
   const applied = appliedParams.value
   activeTab.value = target.name
+  if (target.name === 'online-users') {
+    listRequestVersion++
+    loading.value = false
+    return
+  }
   // 标签切换沿用已经生效的公共条件，避免未查询或无效条件影响新标签。
   Object.assign(searchForm, emptyFilters(), {
     timeRange: applied.startTime && applied.endTime ? [applied.startTime, applied.endTime] : defaultTimeRange(),
@@ -152,7 +162,8 @@ const appliedFilterLabels = computed(() => {
 const activeDescription = computed(() => ({
   operations: '追溯实习、学生、企业、岗位和权限等业务操作，核对操作人、目标与处理结果。',
   'login-events': '核查登录结果和失败原因。认证失败且身份未确认时角色为未知；查找失败记录可选择全部角色，并扩大时间范围。',
-  'security-events': '关注账号锁定、权限访问及审计管理事件；风险等级代表关注程度，不等同于已发生安全事故。'
+  'security-events': '关注账号锁定、权限访问及审计管理事件；风险等级代表关注程度，不等同于已发生安全事故。',
+  'online-users': '查看当前在线用户及最近活动。'
 }[activeTab.value]))
 
 // ===== 列表 =====
@@ -170,6 +181,7 @@ const clearRows = () => {
   securityTableData.value = []
 }
 const queryPage = async (): Promise<void> => {
+  if (activeTab.value === 'online-users') return
   if (!hasPermission(tabPermissionMap[activeTab.value])) return
   const version = ++listRequestVersion
   const category = activeTab.value
@@ -196,6 +208,7 @@ const queryPage = async (): Promise<void> => {
   }
 }
 const handleSearch = () => {
+  if (activeTab.value === 'online-users') return
   if (!searchForm.timeRange?.[0] || !searchForm.timeRange?.[1]) searchForm.timeRange = defaultTimeRange()
   const [start, end] = searchForm.timeRange.map(value => new Date(value.replace(' ', 'T')).getTime())
   if (!Number.isFinite(start) || !Number.isFinite(end) || start > end || end - start > 365 * 86400000) {
@@ -745,11 +758,18 @@ onMounted(() => {
       </div>
       <div class="header-actions">
         <el-button v-if="hasPermission('log:retention:manage')" :icon="DataAnalysis" @click="openRetention">保留策略</el-button>
-        <el-button v-if="hasPermission('log:export') && visibleTabs.length" type="primary" :icon="Download"
+        <el-button v-if="activeTab !== 'online-users' && hasPermission('log:export') && visibleTabs.length" type="primary" :icon="Download"
           :loading="exportLoading" :disabled="loading || !!listError || pagination.total === 0" @click="handleExport">导出查询结果</el-button>
       </div>
     </div>
     <el-empty v-if="!visibleTabs.length" description="暂无日志查看权限，请联系管理员分配权限" />
+    <template v-else>
+    <el-card class="search-card" shadow="never">
+      <el-tabs :model-value="activeTab" class="log-tabs" @tab-change="onTabChange">
+        <el-tab-pane v-for="tab in visibleTabs" :key="tab.name" :label="tab.label" :name="tab.name" />
+      </el-tabs>
+    </el-card>
+    <OnlineUsersPanel v-if="activeTab === 'online-users'" />
     <template v-else>
     <div class="section-heading">
       <div><h2>今日概览</h2><span>系统当天累计 · 不随下方筛选变化</span></div>
@@ -767,9 +787,6 @@ onMounted(() => {
     </div>
 
     <el-card class="search-card" shadow="never">
-      <el-tabs :model-value="activeTab" class="log-tabs" @tab-change="onTabChange">
-        <el-tab-pane v-for="tab in visibleTabs" :key="tab.name" :label="tab.label" :name="tab.name" />
-      </el-tabs>
       <p class="category-description">{{ activeDescription }}</p>
       <div class="quick-filters">
         <span>快捷查看</span>
@@ -1003,6 +1020,8 @@ onMounted(() => {
           @size-change="handleSizeChange" @current-change="handleCurrentChange" />
       </div>
     </el-card>
+
+    </template>
 
     </template>
 

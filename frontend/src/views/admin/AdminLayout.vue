@@ -52,7 +52,7 @@ import positionService from '../../api/position'
 import { useUserStatusCheck } from '../../composables/useUserStatusCheck'
 import AgentWorkspace from '@/components/agent/AgentWorkspace.vue'
 import AgentEntry from '@/components/agent/AgentEntry.vue'
-import { getAdminMenuPermission } from '@/utils/adminMenuPermissions'
+import { getAdminMenuPermission, ADMIN_LOG_VIEW_PERMISSIONS } from '@/utils/adminMenuPermissions'
 import { useResponsiveSidebar } from '@/composables/useResponsiveSidebar'
 
 useUserStatusCheck(180000)
@@ -281,7 +281,9 @@ const canShowMenu = (menuPath) => {
     logger.log('canShowMenu - 权限未加载完成:', menuPath)
     return false
   }
-  const result = hasPermission(permissionCode)
+  const result = menuPath === '/admin/logs'
+    ? ADMIN_LOG_VIEW_PERMISSIONS.some(code => hasPermission(code))
+    : hasPermission(permissionCode)
   logger.log('canShowMenu - 菜单:', menuPath, '权限码:', permissionCode, '结果:', result)
   return result
 }

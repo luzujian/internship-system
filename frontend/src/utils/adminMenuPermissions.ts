@@ -25,6 +25,8 @@ export const ADMIN_MENU_PERMISSIONS: Record<string, string> = {
   '/admin/recruitment': 'recruitment:view'
 }
 
+export const ADMIN_LOG_VIEW_PERMISSIONS = ['log:view', 'log:login:view', 'log:security:view']
+
 export function getAdminMenuPermission(path: string): string | undefined {
   return ADMIN_MENU_PERMISSIONS[path]
 }

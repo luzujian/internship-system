@@ -393,6 +393,10 @@ public class JwtUtils {
         return jwtRedisService.incrementUserTokenVersion(username);
     }
 
+    public int getUserTokenVersion(String username) {
+        return jwtRedisService.getUserTokenVersion(username);
+    }
+
     /**
      * 删除用户的 Token 版本（用户注销时使用）
      * @param username 用户名

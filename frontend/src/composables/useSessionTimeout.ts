@@ -22,7 +22,7 @@ export function useSessionTimeout() {
   }
 
   onMounted(() => {
-    unwatch = watch(() => auth.isAuthenticated ? `${auth.role}:${auth.user?.username}:${auth.sessionId || 'legacy'}` : '', owner => {
+    unwatch = watch(() => auth.isAuthenticated && !auth.isLoggingOut ? `${auth.role}:${auth.user?.username}:${auth.sessionId || 'legacy'}` : '', owner => {
       monitor?.stop(); monitor = undefined
       if (!owner) return
       monitor = createSessionActivityMonitor({

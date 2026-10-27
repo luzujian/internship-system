@@ -36,6 +36,12 @@ export function permissionGuard(
     }
 
     const requiredPermission = to.meta.permission
+    const anyPermissions = to.meta.anyPermissions
+    if (Array.isArray(anyPermissions) && anyPermissions.length > 0
+      && !anyPermissions.some(code => typeof code === 'string' && authStore.hasPermission(code))) {
+      redirectToDashboard(userRole, next)
+      return
+    }
     if (typeof requiredPermission === 'string' && !authStore.hasPermission(requiredPermission)) {
       logger.warn('功能权限不足 - 需要权限:', requiredPermission, '目标路由:', to.path)
       redirectToDashboard(userRole, next)

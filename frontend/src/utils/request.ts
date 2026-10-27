@@ -170,6 +170,7 @@ function cleanupTokens(): void {
 
 function handleLogout(): void {
   const authStore = useAuthStore()
+  if (!authStore.token || authStore.isLoggingOut) return
 
   if (authStore.user?.isReadOnly) {
     ElMessage.warning('您当前处于只读模式，正在返回管理员端...')
@@ -192,7 +193,7 @@ function handleLogout(): void {
 
 export function handleSessionTimeout(broadcast = true): void {
   const auth = useAuthStore()
-  if (!auth.token) return
+  if (!auth.token || auth.isLoggingOut) return
   auth.expireSession(broadcast)
   ElMessage.warning('会话已超时，请重新登录')
   void router.replace('/login')
@@ -250,7 +251,11 @@ interface CustomAxiosRequestConfig extends InternalAxiosRequestConfig {
 
 function requestOwner(): string {
   const auth = useAuthStore()
-  return JSON.stringify([auth.role, auth.user?.id, auth.user?.username, auth.user?.isReadOnly === true, auth.sessionId])
+  return JSON.stringify([auth.role, auth.user?.id, auth.user?.username, auth.user?.isReadOnly === true, auth.sessionId, auth.isLoggingOut === true])
+}
+
+function isLogoutRequest(config?: AxiosRequestConfig): boolean {
+  return config?.url?.endsWith('/auth/logout') === true
 }
 
 request.interceptors.request.use(
@@ -260,6 +265,9 @@ request.interceptors.request.use(
     }
 
     const authStore = useAuthStore()
+    if (authStore.isLoggingOut && !isLogoutRequest(config)) {
+      throw new axios.CanceledError('正在退出登录，已停止请求。')
+    }
 
     if (config.url?.includes('/auth/refresh-token') && authStore.token) config._authOwner = requestOwner()
 
@@ -353,7 +361,7 @@ request.interceptors.response.use(
     if (owner && owner !== requestOwner()) return Promise.reject(new axios.CanceledError('登录身份已变化，已忽略旧请求结果。'))
     // 检查业务状态码
     const responseData = response.data
-    if (isSessionTimeout(responseData)) handleSessionTimeout()
+    if (isSessionTimeout(responseData) && !isLogoutRequest(response.config)) handleSessionTimeout()
     if (responseData && responseData.code !== undefined && responseData.code !== 200) {
       // 业务状态码表示失败，抛出错误让 catch 捕获
       // 标记 skipErrorMessage=true，避免错误分支重复显示消息
@@ -368,6 +376,7 @@ request.interceptors.response.use(
   async (error) => {
     const { config, response, code } = error || {}
     if (axios.isCancel(error) || (config?._authOwner && config._authOwner !== requestOwner())) return Promise.reject(error)
+    if (isLogoutRequest(config)) return Promise.reject(error)
 
     if (isSessionTimeout(response?.data)) {
       handleSessionTimeout()
@@ -400,18 +409,17 @@ request.interceptors.response.use(
         router.push('/login')
       } else {
         const fullMessage = details ? `${message}（${details}）` : message
-        ElMessage.warning(fullMessage)
+        if (!config?.skipErrorMessage) ElMessage.warning(fullMessage)
       }
       return Promise.reject(error)
     }
 
     if (response.status === CONFIG.UNAUTHORIZED_STATUS) {
-      if (config?.skipTokenRefresh || config?.skipBackendLogout) {
+      if (!useAuthStore().token || config?.skipTokenRefresh || config?.skipBackendLogout) {
         return Promise.reject(error)
       }
 
       if (config?.url?.includes('/auth/refresh-token')) {
-        ElMessage.warning(ERROR_MESSAGES.TOKEN_REFRESH_FAILED)
         return Promise.reject(error)
       }
 
@@ -449,7 +457,7 @@ request.interceptors.response.use(
         return request(config as InternalAxiosRequestConfig)
       } catch (refreshError) {
         console.error('[request] 刷新令牌失败，自动退出到登录页:', refreshError)
-        refreshSubscribers = []
+        executeSubscribers(null)
         if (!config._authOwner || config._authOwner === requestOwner()) handleLogout()
         return Promise.reject(refreshError)
       } finally {

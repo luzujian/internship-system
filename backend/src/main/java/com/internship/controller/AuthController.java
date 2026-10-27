@@ -60,6 +60,9 @@ public class AuthController {
     @Autowired
     private JwtUtils jwtUtils;
 
+    @Autowired(required = false)
+    private com.internship.service.OnlineUserService onlineUserService;
+
     @Autowired
     private AuthenticationManager authenticationManager;
     
@@ -570,6 +573,8 @@ public class AuthController {
             if (readOnly) {
                 newClaims.put("originalAdminId", originalAdminId);
                 newClaims.put("originalAdminUsername", originalAdminUsername);
+                newClaims.put("originalAdminName", claims.get("originalAdminName"));
+                newClaims.put("originalAdminVersion", claims.get("originalAdminVersion"));
             }
             if (teacherType != null) {
                 newClaims.put("teacherType", teacherType);
@@ -613,6 +618,7 @@ public class AuthController {
         var claims = jwtUtils.parseToken(request.getHeader("Authorization").substring(7));
         long lastActivity = jwtUtils.sessionLastActivity(claims, userActivity);
         if (lastActivity <= 0) return expiredSession();
+        if (onlineUserService != null) onlineUserService.observe(claims, lastActivity);
         return Result.success(Map.of("lastActivityAt", lastActivity,
                 "timeoutMinutes", SystemSettingsConfig.getSessionTimeout(), "serverTime", System.currentTimeMillis()));
     }
@@ -739,6 +745,8 @@ public class AuthController {
                 claims.put("isReadOnly", true);
                 claims.put("originalAdminId", adminUser.getId());
                 claims.put("originalAdminUsername", adminUser.getUsername());
+                claims.put("originalAdminName", adminUser.getName());
+                claims.put("originalAdminVersion", jwtUtils.getUserTokenVersion(adminUser.getUsername()));
                 
                 claims.put("sid", jwtUtils.createSession());
                 String accessToken = jwtUtils.generateAccessToken(claims);
@@ -777,6 +785,8 @@ public class AuthController {
                 claims.put("isReadOnly", true);
                 claims.put("originalAdminId", adminUser.getId());
                 claims.put("originalAdminUsername", adminUser.getUsername());
+                claims.put("originalAdminName", adminUser.getName());
+                claims.put("originalAdminVersion", jwtUtils.getUserTokenVersion(adminUser.getUsername()));
                 
                 claims.put("sid", jwtUtils.createSession());
                 String accessToken = jwtUtils.generateAccessToken(claims);
@@ -824,6 +834,8 @@ public class AuthController {
                 claims.put("isReadOnly", true);
                 claims.put("originalAdminId", adminUser.getId());
                 claims.put("originalAdminUsername", adminUser.getUsername());
+                claims.put("originalAdminName", adminUser.getName());
+                claims.put("originalAdminVersion", jwtUtils.getUserTokenVersion(adminUser.getUsername()));
                 
                 claims.put("sid", jwtUtils.createSession());
                 String accessToken = jwtUtils.generateAccessToken(claims);

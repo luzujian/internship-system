@@ -33,6 +33,9 @@ import lombok.extern.slf4j.Slf4j;
 @Service
 public class TeacherUserServiceImpl implements TeacherUserService {
 
+    @Autowired(required = false)
+    private com.internship.service.OnlineUserService onlineUserService;
+
     @Autowired
     private TeacherUserMapper teacherUserMapper;
 
@@ -119,6 +122,8 @@ public class TeacherUserServiceImpl implements TeacherUserService {
         }
 
         log.info("教师用户注册成功，教师编号: {}, 类型: {}, 角色: {}", teacherUser.getTeacherUserId(), teacherUser.getTeacherType(), role);
+        if (result > 0 && onlineUserService != null) onlineUserService.accountChanged("TEACHER", null,
+                teacherUser.getTeacherUserId(), teacherUser.getStatus() == null ? 1 : teacherUser.getStatus());
         return result;
     }
 
@@ -206,6 +211,8 @@ public class TeacherUserServiceImpl implements TeacherUserService {
             accountIdentifierMapper.renameTeacher(existingUser.getTeacherUserId(), teacherUser.getTeacherUserId());
         }
         log.info("教师用户信息更新成功，用户ID: {}, 类型: {}, 角色: {}", teacherUser.getId(), teacherUser.getTeacherType(), teacherUser.getRole());
+        if (result > 0 && onlineUserService != null) onlineUserService.accountChanged("TEACHER", existingUser.getTeacherUserId(),
+                StringUtils.isNotBlank(teacherUser.getTeacherUserId()) ? teacherUser.getTeacherUserId() : existingUser.getTeacherUserId(), teacherUser.getStatus());
         return result;
     }
 
@@ -308,6 +315,7 @@ public class TeacherUserServiceImpl implements TeacherUserService {
         }
         
         int result = teacherUserMapper.deleteById(id);
+        if (result > 0 && onlineUserService != null) onlineUserService.accountChanged("TEACHER", teacherUser.getTeacherUserId(), null, 0);
         log.info("教师用户删除成功，用户ID: {}", id);
         return result;
     }
@@ -342,7 +350,10 @@ public class TeacherUserServiceImpl implements TeacherUserService {
             }
         }
         
+        List<TeacherUser> removed = onlineUserService == null ? List.of() : teacherUserMapper.selectByIds(ids);
         int result = teacherUserMapper.batchDeleteByIds(ids);
+        if (result > 0 && onlineUserService != null) removed.forEach(user ->
+                onlineUserService.accountChanged("TEACHER", user.getTeacherUserId(), null, 0));
         log.info("批量删除教师用户成功，删除数量: {}", result);
         return result;
     }
@@ -445,6 +456,8 @@ public class TeacherUserServiceImpl implements TeacherUserService {
                 if (batchResult != batchList.size()) {
                     throw new BusinessException("教师导入未全部写入，请重试");
                 }
+                if (onlineUserService != null) batchList.forEach(user -> onlineUserService.accountChanged("TEACHER", null,
+                        user.getTeacherUserId(), user.getStatus() == null ? 1 : user.getStatus()));
                 successCount += batchResult;
                 for (TeacherUser insertedTeacher : batchList) {
                     initialCredentials.add(Map.of("username", insertedTeacher.getUsername(),

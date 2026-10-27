@@ -69,6 +69,7 @@ interface AuthState {
   allUsers: AllUsers
   storageListenerInitialized: boolean
   justLoggedIn: boolean
+  isLoggingOut: boolean
 }
 
 interface LoginResult {
@@ -116,7 +117,8 @@ export const useAuthStore = defineStore('auth', {
     hasValidatedToken: false,
     allUsers: {},
     storageListenerInitialized: false,
-    justLoggedIn: false
+    justLoggedIn: false,
+    isLoggingOut: false
   }),
 
   getters: {
@@ -484,12 +486,14 @@ export const useAuthStore = defineStore('auth', {
     },
 
     async logout(skipBackendLogout = false): Promise<void> {
+      if (this.isLoggingOut) return
       if (sessionStorage.getItem('deepintern.auth.restore-blocked') === 'true') {
         this.expireSession(false)
         return
       }
-      window.dispatchEvent(new CustomEvent('auth:access-token-changed', { detail: { token: '', identityChanged: true } }))
+      this.isLoggingOut = true
       try {
+        window.dispatchEvent(new CustomEvent('auth:access-token-changed', { detail: { token: '', identityChanged: true } }))
         const currentRole = this.role || localStorage.getItem(STORAGE_KEYS.CURRENT_ROLE)
 
         // 调用后端登出
@@ -524,15 +528,16 @@ export const useAuthStore = defineStore('auth', {
         this.token = null
         this.role = null
         this.isAuthenticated = false
+      } finally {
+        cleanupTokens()
+
+        // 触发跨标签页登出事件
+        localStorage.setItem('auth_logout_event', Date.now().toString())
+        setTimeout(() => {
+          localStorage.removeItem('auth_logout_event')
+        }, 100)
+        this.isLoggingOut = false
       }
-
-      cleanupTokens()
-
-      // 触发跨标签页登出事件
-      localStorage.setItem('auth_logout_event', Date.now().toString())
-      setTimeout(() => {
-        localStorage.removeItem('auth_logout_event')
-      }, 100)
     },
 
     async callBackendLogout(role: string): Promise<void> {
@@ -541,7 +546,10 @@ export const useAuthStore = defineStore('auth', {
       if (accessToken) {
         try {
           await request.post('/auth/logout', {}, {
-            headers: { 'Authorization': `Bearer ${accessToken}` }
+            headers: { 'Authorization': `Bearer ${accessToken}` },
+            skipTokenRefresh: true,
+            skipErrorMessage: true,
+            skipReadOnlyCheck: true
           } as CustomAxiosRequestConfig)
           logger.log('后端登出接口调用成功')
         } catch (logoutError) {
@@ -573,6 +581,7 @@ export const useAuthStore = defineStore('auth', {
     },
 
     async refreshAccessToken(): Promise<boolean> {
+      if (this.isLoggingOut || (!this.token && !this.role)) return false
       let currentRole = this.role || localStorage.getItem(STORAGE_KEYS.CURRENT_ROLE) || getRoleFromPath()
 
       if (!currentRole) {
@@ -583,7 +592,7 @@ export const useAuthStore = defineStore('auth', {
       const previousToken = this.token
       let refreshedCredential = this.allUsers[currentRole]?.refreshToken
       const newToken = await refreshTokenUtil(currentRole, refreshedCredential, value => { refreshedCredential = value })
-      if (this.role !== currentRole || this.token !== previousToken) return false
+      if (this.isLoggingOut || this.role !== currentRole || this.token !== previousToken) return false
 
       if (newToken) {
         this.setToken(newToken)

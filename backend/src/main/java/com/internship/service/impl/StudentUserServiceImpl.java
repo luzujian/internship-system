@@ -33,6 +33,9 @@ import java.util.*;
 @Slf4j
 @Service
 public class StudentUserServiceImpl implements StudentUserService {
+
+    @Autowired(required = false)
+    private com.internship.service.OnlineUserService onlineUserService;
     private final StudentUserMapper studentUserMapper;
 
     @org.springframework.beans.factory.annotation.Autowired
@@ -120,6 +123,8 @@ public class StudentUserServiceImpl implements StudentUserService {
             throw new BusinessException("学生实习状态未能创建，账号已回滚，请重试");
         }
         log.info("学生实习状态记录创建成功，学号: {}", studentUser.getStudentId());
+        if (result > 0 && onlineUserService != null) onlineUserService.accountChanged("STUDENT", null,
+                studentUser.getStudentId(), studentUser.getStatus() == null ? 1 : studentUser.getStatus());
 
         return result;
     }
@@ -203,6 +208,8 @@ public class StudentUserServiceImpl implements StudentUserService {
             accountIdentifierMapper.renameConfirmationStudent(id, number);
         }
         log.info("学生用户信息更新成功，用户ID: {}", studentUser.getId());
+        if (result > 0 && onlineUserService != null) onlineUserService.accountChanged("STUDENT", existingUser.getStudentId(),
+                StringUtils.isNotBlank(studentUser.getStudentId()) ? studentUser.getStudentId() : existingUser.getStudentId(), studentUser.getStatus());
         return result;
     }
 
@@ -392,6 +399,7 @@ public class StudentUserServiceImpl implements StudentUserService {
 
             if (result > 0) {
                 log.info("学生用户删除成功，用户ID: {}", id);
+                if (onlineUserService != null) onlineUserService.accountChanged("STUDENT", studentUser.getStudentId(), null, 0);
             } else {
                 log.warn("删除学生用户失败，未找到记录或已被删除，用户ID: {}", id);
             }
@@ -674,6 +682,8 @@ public class StudentUserServiceImpl implements StudentUserService {
                 if (batchResult != batchList.size()) {
                     throw new BusinessException("学生导入未全部写入，请重试");
                 }
+                if (onlineUserService != null) batchList.forEach(user -> onlineUserService.accountChanged("STUDENT", null,
+                        user.getStudentId(), user.getStatus() == null ? 1 : user.getStatus()));
                 successCount += batchResult;
                 for (StudentUser insertedStudent : batchList) {
                     initialCredentials.add(Map.of("username", insertedStudent.getUsername(),
@@ -920,7 +930,10 @@ public class StudentUserServiceImpl implements StudentUserService {
                 }
             }
 
+            List<StudentUser> removed = onlineUserService == null ? List.of() : studentUserMapper.selectByIds(ids);
             int result = studentUserMapper.batchDeleteByIds(ids);
+            if (result > 0 && onlineUserService != null) removed.forEach(user ->
+                    onlineUserService.accountChanged("STUDENT", user.getStudentId(), null, 0));
             log.info("批量删除学生用户成功，删除数量: {}", result);
             return result;
 
@@ -1032,6 +1045,8 @@ public class StudentUserServiceImpl implements StudentUserService {
 
             int result = studentUserMapper.insert(studentUser);
             log.info("学生用户保存成功，学号: {}", studentUser.getStudentId());
+            if (result > 0 && onlineUserService != null) onlineUserService.accountChanged("STUDENT", null,
+                    studentUser.getStudentId(), studentUser.getStatus() == null ? 1 : studentUser.getStatus());
             return result;
         } else {
             // 如果是已存在用户（ID不为空），则执行更新操作

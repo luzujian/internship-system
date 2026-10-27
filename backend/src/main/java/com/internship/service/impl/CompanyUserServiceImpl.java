@@ -32,6 +32,9 @@ import java.util.stream.Collectors;
 @Service
 public class CompanyUserServiceImpl implements CompanyUserService {
 
+    @Autowired(required = false)
+    private com.internship.service.OnlineUserService onlineUserService;
+
     private final CompanyUserMapper companyUserMapper;
     private final PasswordEncoder passwordEncoder;
     private final CompanyAlumniService companyAlumniService;
@@ -76,6 +79,8 @@ public class CompanyUserServiceImpl implements CompanyUserService {
             companyUser.setAlumniMembers(alumniMembers);
         }
         log.info("企业信息插入成功，企业名称: {}", companyUser.getCompanyName());
+        if (result > 0 && onlineUserService != null) onlineUserService.accountChanged("COMPANY", null,
+                companyUser.getUsername(), companyUser.getStatus() == null ? 1 : companyUser.getStatus());
         return result;
     }
     
@@ -121,6 +126,7 @@ public class CompanyUserServiceImpl implements CompanyUserService {
         if (existingCompany == null) {
             throw new BusinessException("企业不存在");
         }
+        String previousUsername = existingCompany.getUsername();
 
         List<CompanyAlumniMember> normalizedAlumniMembers = null;
         boolean alumniUpdateRequested = companyUser.getIsAlumniUnit() != null
@@ -275,6 +281,8 @@ public class CompanyUserServiceImpl implements CompanyUserService {
             companyUser.setAlumniMembers(normalizedAlumniMembers);
         }
         log.info("企业信息更新成功，企业名称: {}", companyUser.getCompanyName());
+        if (result > 0 && onlineUserService != null) onlineUserService.accountChanged("COMPANY", previousUsername,
+                existingCompany.getUsername(), companyUser.getStatus());
         return result;
     }
 
@@ -306,6 +314,7 @@ public class CompanyUserServiceImpl implements CompanyUserService {
 
         // 最后删除企业用户记录
         int result = companyUserMapper.deleteById(id);
+        if (result > 0 && onlineUserService != null) onlineUserService.accountChanged("COMPANY", company.getUsername(), null, 0);
         log.info("企业信息删除成功，企业名称: {}", company.getCompanyName());
         return result;
     }
@@ -358,7 +367,10 @@ public class CompanyUserServiceImpl implements CompanyUserService {
             }
         }
 
+        List<CompanyUser> removed = onlineUserService == null ? List.of() : companyUserMapper.selectByIds(ids);
         int result = companyUserMapper.batchDeleteByIds(ids);
+        if (result > 0 && onlineUserService != null) removed.forEach(user ->
+                onlineUserService.accountChanged("COMPANY", user.getUsername(), null, 0));
         log.info("批量删除企业信息成功，删除数量: {}", result);
         return result;
     }
@@ -613,6 +625,7 @@ public class CompanyUserServiceImpl implements CompanyUserService {
             if (isNew) {
                 company.setPassword(passwordEncoder.encode(UserCredentialDefaults.PASSWORD));
                 if (companyUserMapper.insert(company) != 1) throw new BusinessException("企业导入未全部写入，请重试");
+                if (onlineUserService != null) onlineUserService.accountChanged("COMPANY", null, company.getUsername(), 1);
                 created++;
                 initialCredentials.add(Map.of("username", company.getUsername(), "password", UserCredentialDefaults.PASSWORD));
             } else {
@@ -865,7 +878,9 @@ public class CompanyUserServiceImpl implements CompanyUserService {
         company.setStatus(1);
         company.setAuditTime(new Date());
         company.setReviewerId(reviewerId);
-        return companyUserMapper.update(company);
+        int result = companyUserMapper.update(company);
+        if (result > 0 && onlineUserService != null) onlineUserService.accountChanged("COMPANY", company.getUsername(), company.getUsername(), 1);
+        return result;
     }
 
     @Override
@@ -882,7 +897,9 @@ public class CompanyUserServiceImpl implements CompanyUserService {
         company.setAuditTime(new Date());
         company.setReviewerId(reviewerId);
         company.setAuditRemark(reason);
-        return companyUserMapper.update(company);
+        int result = companyUserMapper.update(company);
+        if (result > 0 && onlineUserService != null) onlineUserService.accountChanged("COMPANY", company.getUsername(), company.getUsername(), company.getStatus());
+        return result;
     }
 
     /**

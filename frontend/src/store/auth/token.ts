@@ -2,12 +2,11 @@
  * Token 管理工具
  */
 
-import { CONFIG, ERROR_MESSAGES } from './config'
+import { CONFIG } from './config'
 import { getRoleStoragePrefix, getRefreshTokenKey, getAccessTokenKey } from './storage'
 import logger from '@/utils/logger'
 import request from '@/utils/request'
-import type { ApiResult } from '@/utils/request'
-import { ElMessage } from 'element-plus'
+import type { ApiResult, CustomAxiosRequestConfig } from '@/utils/request'
 
 interface TokenPayload {
   exp?: number
@@ -127,7 +126,6 @@ export async function refreshAccessToken(currentRole: string, tabRefreshToken?: 
 
   if (!refreshToken) {
     logger.error('无法刷新令牌：未找到刷新令牌')
-    ElMessage.error(ERROR_MESSAGES.TOKEN_REFRESH_FAILED)
     return null
   }
 
@@ -154,7 +152,7 @@ export async function refreshAccessToken(currentRole: string, tabRefreshToken?: 
     logger.log('尝试刷新访问令牌...')
     const response = await request.post('/auth/refresh-token', {
       refreshToken: refreshToken
-    })
+    }, { skipTokenRefresh: true, skipErrorMessage: true } as CustomAxiosRequestConfig)
 
     const envelope = response as ApiResult<unknown> & { status?: number }
     const tokens = response.data as { accessToken?: string; refreshToken?: string } | null | undefined

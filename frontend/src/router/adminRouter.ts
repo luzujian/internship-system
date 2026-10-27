@@ -1,6 +1,6 @@
 import { agentPage } from '@/agent/pageForms'
 import type { RouteRecordRaw } from 'vue-router'
-import { getAdminMenuPermission } from '@/utils/adminMenuPermissions'
+import { getAdminMenuPermission, ADMIN_LOG_VIEW_PERMISSIONS } from '@/utils/adminMenuPermissions'
 
 const permissionMeta = (path: string) => ({ permission: getAdminMenuPermission(path) })
 
@@ -92,7 +92,7 @@ const adminRoutes: RouteRecordRaw[] = [
     path: 'logs',
     name: 'logManagement',
     component: agentPage('views/admin/LogManagement.vue', () => import('../views/admin/LogManagement.vue')),
-    meta: permissionMeta('/admin/logs')
+    meta: { anyPermissions: ADMIN_LOG_VIEW_PERMISSIONS }
   },
   {
     path: 'announcements',
