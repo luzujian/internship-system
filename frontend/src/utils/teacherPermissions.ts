@@ -5,6 +5,7 @@
  */
 
 import { useAuthStore } from '@/store/auth'
+import { reflectionEnabled } from './businessFeatures'
 
 // 教师类型枚举
 export enum TeacherType {
@@ -80,6 +81,8 @@ function getStoredTeacherPermissions(): string[] {
  * @returns 是否有权限
  */
 export function hasRoutePermission(teacherType: TeacherType, routeName: string): boolean {
+  if (!reflectionEnabled.value && ['teacherEvaluation', 'teacherGradeFinalize', 'teacherAiSettings',
+    'teacherAiKeywordConfig', 'teacherAiScoringConfig', 'teacherScoringRules', 'teacherKeywordLibrary'].includes(routeName)) return false
   if (ALWAYS_ACCESSIBLE_ROUTES.has(routeName)) {
     return true
   }

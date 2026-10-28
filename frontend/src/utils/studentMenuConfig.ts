@@ -1,4 +1,5 @@
 import request from '@/utils/request'
+import { isBusinessRouteEnabled } from './businessFeatures'
 
 export interface StudentMenuItem {
   path: string
@@ -45,7 +46,7 @@ export function resolveStudentMenus(configMenus: StoredStudentMenu[]): StudentMe
   for (const configMenu of configMenus) {
     const defaultMenu = DEFAULT_STUDENT_MENUS.find(menu => menu.path === configMenu.path)
     if (defaultMenu) {
-      resolvedMenus.push({ ...defaultMenu, visible: configMenu.visible !== false })
+      resolvedMenus.push({ ...defaultMenu, visible: configMenu.visible !== false && isBusinessRouteEnabled(configMenu.path) })
     }
   }
 
@@ -94,6 +95,7 @@ export async function loadStudentMenus(): Promise<StudentMenuItem[]> {
 }
 
 export async function canAccessStudentMenu(path: string): Promise<boolean> {
+  if (!isBusinessRouteEnabled(path)) return false
   if (SAFE_STUDENT_PATHS.has(path)) {
     return true
   }

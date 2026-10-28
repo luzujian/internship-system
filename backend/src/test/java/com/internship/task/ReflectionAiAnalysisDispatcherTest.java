@@ -67,7 +67,9 @@ class ReflectionAiAnalysisDispatcherTest {
     }
 
     private ReflectionAiAnalysisDispatcher createDispatcher() {
-        return new ReflectionAiAnalysisDispatcher(reflections, analysis, assignments, settings, teachers, gate, notifications, 1, 1, 60);
+        var instance = new ReflectionAiAnalysisDispatcher(reflections, analysis, assignments, settings, teachers, gate, notifications, 1, 1, 60);
+        com.internship.support.ReflectionFeatureTestSupport.enable(instance);
+        return instance;
     }
 
     @AfterEach

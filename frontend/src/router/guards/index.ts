@@ -7,6 +7,10 @@ import { permissionGuard } from './permissionGuard'
 import { paramGuard } from './paramGuard'
 import { logGuard, createLogGuard } from './logGuard'
 import type { Router } from 'vue-router'
+import { ElMessage } from 'element-plus'
+import { useAuthStore } from '@/store/auth'
+import { ROLE_TO_DASHBOARD_MAP } from '@/store/auth/config'
+import { isBusinessRouteEnabled, loadBusinessFeatures } from '@/utils/businessFeatures'
 
 export {
   authGuard,
@@ -29,6 +33,15 @@ export function registerGuards(router: Router) {
 
   router.beforeEach(paramGuard)
   router.beforeEach(authGuard)
+  router.beforeEach(async to => {
+    if (!to.meta.requiresAuth || !useAuthStore().isAuthenticated) return
+    await loadBusinessFeatures()
+    if (!isBusinessRouteEnabled(to.path)) {
+      ElMessage.info('实习心得业务已停用，历史数据保留')
+      const role = useAuthStore().role as keyof typeof ROLE_TO_DASHBOARD_MAP
+      return ROLE_TO_DASHBOARD_MAP[role] || '/login'
+    }
+  })
   router.beforeEach(permissionGuard)
   router.beforeEach(logGuard)
 }

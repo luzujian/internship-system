@@ -14,6 +14,7 @@ const root = fileURLToPath(new URL('../src/store/auth',import.meta.url))
 const memory = () => { const values = new Map(); return { getItem: key => values.get(key) ?? null, setItem: (key,value) => values.set(key,String(value)), removeItem: key => values.delete(key) } }
 function fixture(shared = memory(), session = memory()) {
   const cache = new Map(), requests = [], messages = []
+  const businessFeatures = { reflectionEnabled: { value: true } }
   const request = { defaults: {baseURL:'/api'}, async post(url, body, config) { requests.push({url,body,config}); return {code:200,data:{accessToken:jwt('renewed','ROLE_TEACHER_DEPARTMENT'),refreshToken:'next-refresh'}} } }
   const quiet = {log(){},warn(){},error(){}}
   function load(file) {
@@ -24,6 +25,7 @@ function fixture(shared = memory(), session = memory()) {
       if(name === '@/utils/request') return {__esModule:true,default:request,cleanupTokens(){tabSession.clearTabSession(session)}}
       if(name === '@/utils/logger') return {__esModule:true,default:quiet}
       if(name === '@/store/auth') return {useAuthStore:()=>store}
+      if(name === './businessFeatures') return businessFeatures
       if(name === 'element-plus') return {ElMessage:{error:text=>messages.push(text),warning:text=>messages.push(text)}}
       if(name.endsWith('tabSession.mjs')) return {readTabSession:()=>tabSession.readTabSession(session),writeTabSession:state=>tabSession.writeTabSession(state,session),clearTabSession:()=>tabSession.clearTabSession(session)}
       if(name.startsWith('.')) return load(resolve(dirname(file),name+'.ts'))
@@ -37,7 +39,7 @@ function fixture(shared = memory(), session = memory()) {
   const ast=ts.createSourceFile('request.ts',requestSource,ts.ScriptTarget.Latest,true)
   const func=ast.statements.find(node=>ts.isFunctionDeclaration(node)&&node.name?.text==='getAccessToken').getText(ast).replace(/^export /,'')
   const getToken=vm.runInNewContext(ts.transpileModule(func+'\ngetAccessToken',{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText,{useAuthStore:()=>store})
-  return {store,shared,session,getToken,requests,load,request,messages}
+  return {store,shared,session,getToken,requests,load,request,messages,businessFeatures}
 }
 function jwt(username, role, exp = Math.floor(Date.now()/1000)+3600) { return 'header.'+Buffer.from(JSON.stringify({username,role,userId:username,name:username,sid:username+'-session',teacherType:role.replace('ROLE_TEACHER_',''),exp,jti:username,typ:'access'})).toString('base64url')+'.signature' }
 function login(f, username, role) {
@@ -270,4 +272,17 @@ test('missing refresh credentials are reported to the caller without a second to
   assert.equal(await tokenApi.refreshAccessToken('ROLE_STUDENT', null), null)
   assert.deepEqual(f.messages, [])
   assert.equal(f.requests.length, 0)
+})
+
+
+test('retired reflection remains unavailable even when a teacher retains its menu permission', () => {
+  const f = fixture()
+  f.store.handleLoginSuccess({code:200,data:{token:jwt('counselor','ROLE_TEACHER_COUNSELOR'),refreshToken:'r',
+    userInfo:{id:'t1',username:'counselor',role:'ROLE_TEACHER_COUNSELOR',teacherType:'COUNSELOR'},
+    permissions:['menu:evaluation','menu:settings','menu:appraisal-collection']}},'')
+  const helper=f.load(fileURLToPath(new URL('../src/utils/teacherPermissions.ts',import.meta.url)))
+  f.businessFeatures.reflectionEnabled.value = false
+  assert.equal(helper.currentUserHasRoutePermission('teacherEvaluation'), false)
+  assert.equal(helper.currentUserHasRoutePermission('teacherKeyTimelineConfig'), true)
+  assert.equal(helper.currentUserHasRoutePermission('teacherInternshipAppraisals'), true)
 })

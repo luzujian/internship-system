@@ -105,7 +105,8 @@ class HomeServiceImplCalendarTest {
         var result = service.getHomeStats(1L, "ADMIN", "2026-09-01", "2027-09-01");
 
         assertEquals(38.3, result.getInternshipRate());
+        assertEquals(47, result.getStatusData().stream().mapToInt(item -> item.getValue()).sum());
         assertEquals(29, result.getStatusData().stream()
-                .filter(item -> "没offer".equals(item.getName())).findFirst().orElseThrow().getValue());
+                .filter(item -> "尚未获录用".equals(item.getName())).findFirst().orElseThrow().getValue());
     }
 }

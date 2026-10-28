@@ -44,6 +44,9 @@ class InternshipProgressRecordServiceImplTest {
     @InjectMocks
     private InternshipProgressRecordServiceImpl service;
 
+    @org.junit.jupiter.api.BeforeEach
+    void enableRetainedBusiness() { com.internship.support.ReflectionFeatureTestSupport.enable(service); }
+
     @AfterEach
     void clearTransactionSynchronization() {
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
@@ -59,7 +62,7 @@ class InternshipProgressRecordServiceImplTest {
                 20L, "confirmation_submitted", "pending", new Date(2_000L), 2, 600L);
         RecentActivityRecordRow extra = row(
                 10L, "reflection_scored", "success", new Date(1_000L), 1, 700L);
-        when(mapper.selectRecentPage(eq(42L), isNull(), isNull(), eq(3)))
+        when(mapper.selectRecentPage(eq(42L), isNull(), isNull(), eq(3), eq(true)))
                 .thenReturn(List.of(directOffer, confirmation, extra));
 
         RecentActivityPageDTO page = service.getRecentActivities(42L, 2, null);
@@ -75,7 +78,7 @@ class InternshipProgressRecordServiceImplTest {
         assertEquals("VIEW_CONFIRMATION", page.items().get(1).action().key());
         assertEquals("+08:00", page.items().get(0).occurredAt().getOffset().toString());
 
-        when(mapper.selectRecentPage(eq(42L), eq(new Date(2_000L)), eq(20L), eq(3)))
+        when(mapper.selectRecentPage(eq(42L), eq(new Date(2_000L)), eq(20L), eq(3), eq(true)))
                 .thenReturn(List.of(extra));
         RecentActivityPageDTO secondPage = service.getRecentActivities(42L, 2, page.nextCursor());
 
@@ -90,11 +93,11 @@ class InternshipProgressRecordServiceImplTest {
         RecentActivityRecordRow first = row(3L, "job_applied", "pending", sameTime, 1, 31L);
         RecentActivityRecordRow second = row(2L, "job_applied", "pending", sameTime, 1, 32L);
         RecentActivityRecordRow extra = row(1L, "job_applied", "pending", sameTime, 1, 33L);
-        when(mapper.selectRecentPage(eq(42L), isNull(), isNull(), eq(3)))
+        when(mapper.selectRecentPage(eq(42L), isNull(), isNull(), eq(3), eq(true)))
                 .thenReturn(List.of(first, second, extra));
 
         RecentActivityPageDTO page = service.getRecentActivities(42L, 2, null);
-        when(mapper.selectRecentPage(eq(42L), eq(sameTime), eq(2L), eq(3)))
+        when(mapper.selectRecentPage(eq(42L), eq(sameTime), eq(2L), eq(3), eq(true)))
                 .thenReturn(List.of(extra));
 
         RecentActivityPageDTO next = service.getRecentActivities(42L, 2, page.nextCursor());
@@ -113,7 +116,7 @@ class InternshipProgressRecordServiceImplTest {
                 3L, "internship_confirmation", "success", new Date(3_000L), 1, 13L);
         RecentActivityRecordRow legacyReflection = row(
                 4L, "reflection_submit", "success", new Date(4_000L), 1, 14L);
-        when(mapper.selectRecentPage(eq(42L), isNull(), isNull(), eq(5)))
+        when(mapper.selectRecentPage(eq(42L), isNull(), isNull(), eq(5), eq(true)))
                 .thenReturn(List.of(legacyReflection, legacyConfirmation, legacyInterview, legacyJob));
 
         RecentActivityPageDTO page = service.getRecentActivities(42L, 4, null);
@@ -140,7 +143,7 @@ class InternshipProgressRecordServiceImplTest {
         RecentActivityRecordRow unknown = row(
                 1L, "future_event", "warning", new Date(1_000L), null, 99L);
         unknown.setEventTitle("未来事件");
-        when(mapper.selectRecentPage(eq(42L), isNull(), isNull(), eq(11)))
+        when(mapper.selectRecentPage(eq(42L), isNull(), isNull(), eq(11), eq(true)))
                 .thenReturn(List.of(unknown));
 
         RecentActivityPageDTO page = service.getRecentActivities(42L, 10, null);
@@ -157,7 +160,7 @@ class InternshipProgressRecordServiceImplTest {
         RecentActivityRecordRow rejected = row(
                 1L, "job_rejected", "failed", new Date(1_000L), null, 99L);
         rejected.setTargetExists(false);
-        when(mapper.selectRecentPage(eq(42L), isNull(), isNull(), eq(11)))
+        when(mapper.selectRecentPage(eq(42L), isNull(), isNull(), eq(11), eq(true)))
                 .thenReturn(List.of(rejected));
 
         RecentActivityPageDTO page = service.getRecentActivities(42L, 10, null);
@@ -171,7 +174,7 @@ class InternshipProgressRecordServiceImplTest {
     void unitChangeActionTargetsTheConfirmationWorkflow() {
         RecentActivityRecordRow unitChange = row(
                 1L, "unit_change_rejected", "failed", new Date(1_000L), null, 88L);
-        when(mapper.selectRecentPage(eq(42L), isNull(), isNull(), eq(11)))
+        when(mapper.selectRecentPage(eq(42L), isNull(), isNull(), eq(11), eq(true)))
                 .thenReturn(List.of(unitChange));
 
         RecentActivityPageDTO page = service.getRecentActivities(42L, 10, null);
@@ -189,7 +192,7 @@ class InternshipProgressRecordServiceImplTest {
         assertThrows(IllegalArgumentException.class,
                 () -> service.getRecentActivities(42L, 10, "not-a-valid-cursor"));
 
-        verify(mapper, never()).selectRecentPage(eq(42L), isNull(), isNull(), eq(11));
+        verify(mapper, never()).selectRecentPage(eq(42L), isNull(), isNull(), eq(11), eq(true));
     }
 
     @Test

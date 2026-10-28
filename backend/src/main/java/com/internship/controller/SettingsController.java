@@ -28,6 +28,8 @@ import java.util.Map;
 @RequestMapping("/api/settings")
 @SuppressWarnings("unchecked")
 public class SettingsController {
+    @Autowired
+    private com.internship.service.ReflectionFeatureService reflectionFeature;
     
     @Autowired
     private InternshipCalendarService internshipCalendarService;
@@ -176,7 +178,8 @@ public class SettingsController {
     @GetMapping("/report-cycle-visible")
     @PreAuthorize("hasAnyRole('TEACHER_COLLEGE', 'TEACHER_COUNSELOR', 'TEACHER_DEPARTMENT', 'TEACHER')")
     public Result getReportCycleVisible() {
-        boolean visible = teacherPermissionService.isPermissionGrantedToAnyTeacherRole("menu:evaluation");
+        boolean visible = reflectionFeature.enabled()
+                && teacherPermissionService.isPermissionGrantedToAnyTeacherRole("menu:evaluation");
         Map<String, Object> result = new HashMap<>();
         result.put("visible", visible);
         return Result.success(result);

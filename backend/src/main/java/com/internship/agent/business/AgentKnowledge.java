@@ -123,15 +123,25 @@ public class AgentKnowledge {
         effective.addAll(systemCards);
         this.version = computeVersion(json.writeValueAsBytes(effective));
     }
-    public String getVersion() { return version; }
+    public String getVersion() { return version + (com.internship.service.ReflectionFeatureService.isEnabled(configService) ? "-reflection-on" : "-reflection-off"); }
     public ToolResult lookup(Actor actor,String topic) {
+        boolean reflectionEnabled = com.internship.service.ReflectionFeatureService.isEnabled(configService);
+        if (!reflectionEnabled && topic != null && (topic.contains("心得")
+                || topic.toLowerCase(Locale.ROOT).contains("reflection") || topic.contains("智慧评分"))) {
+            return AgentReadTools.result("knowledge_lookup", "心得业务状态", actor,
+                    List.of(Map.of("id", "reflection-retired", "title", "实习心得业务已停用",
+                            "rules", "心得及附属AI分析、批阅评分、专属配置和周期催交已停用，代码和历史数据仅为恢复保留。当前无需提交，不属于现行功能；只有用户明确要求才讨论恢复。")), 1,
+                    Map.of("knowledgeVersion", getVersion(), "matched", true, "reflectionEnabled", false), List.of(), List.of());
+        }
         String actorRole = role(actor);
         boolean admin = "admin".equals(actorRole);
         Map<String,Map<String,Object>> all = new LinkedHashMap<>();
         cards.forEach(card -> all.put(String.valueOf(card.get("id")), card));
         systemCards.forEach(card -> all.put(String.valueOf(card.get("id")), card));
-        Set<String> studentMenus = "student".equals(actorRole) ? studentMenuPaths() : Set.of();
+        Set<String> studentMenus = "student".equals(actorRole) ? studentMenuPaths(reflectionEnabled) : Set.of();
         List<Map<String,Object>> visible = all.values().stream()
+                .filter(card -> reflectionEnabled || !reflectionCard(card))
+                .map(card -> effectiveCard(card, reflectionEnabled))
                 .filter(card -> admin || visibleFor(card, actor, actorRole, studentMenus)).toList();
         String fieldKey = AgentAnswerScope.fieldKey(actor, topic);
         if (fieldKey != null) {
@@ -143,7 +153,7 @@ public class AgentKnowledge {
                     if (card.containsKey(key)) focused.put(key, card.get(key));
                 focused.put("field", fieldKey); focused.put("answer", answer);
                 return AgentReadTools.result("knowledge_lookup", "字段填写说明", actor, List.of(focused), 1,
-                        Map.of("knowledgeVersion", version, "matched", true, "fieldKey", fieldKey, "conciseAnswer", answer), List.of(), List.of());
+                        Map.of("knowledgeVersion", getVersion(), "matched", true, "fieldKey", fieldKey, "conciseAnswer", answer), List.of(), List.of());
             }
         }
         String normalized=topic==null?"":topic.trim().toLowerCase(Locale.ROOT);
@@ -158,7 +168,7 @@ public class AgentKnowledge {
         if (admin) warnings.add("管理员可了解四端功能规则；知识可见不增加任何业务查询或执行权限，不能据此断言具体用户的状态。");
         if ("student".equals(actorRole)) warnings.add("学生入口说明按本次可核验的菜单范围筛选；配置无法读取时仅保留基础入口，不能据此断言其他业务不存在。");
         if(!normalized.isEmpty()&&matching.isEmpty())warnings.add("当前身份可用的知识资料未匹配该内容，请核对权限或缩小问题，不能编造入口、规则或日期。");
-        Map<String,Object> facts = new LinkedHashMap<>(Map.of("knowledgeVersion",version,"matched",!matching.isEmpty()));
+        Map<String,Object> facts = new LinkedHashMap<>(Map.of("knowledgeVersion",getVersion(),"matched",!matching.isEmpty(),"reflectionEnabled",reflectionEnabled));
         if ("student".equals(actorRole)) facts.put("visibleStudentMenus", studentMenus.stream().sorted().toList());
         return AgentReadTools.result("knowledge_lookup","系统功能与流程依据",actor,matching,matching.size(),facts,List.of(),warnings);
     }
@@ -178,7 +188,22 @@ public class AgentKnowledge {
                 || paths.stream().anyMatch(studentMenus::contains);
     }
 
-    private Set<String> studentMenuPaths() {
+    private boolean reflectionCard(Map<String,Object> card) {
+        Map<String,Object> policy = accessRules.getOrDefault(String.valueOf(card.get("id")), card);
+        return "reflection".equals(policy.get("businessFeature"))
+                || "reflection".equals(card.get("businessFeature"));
+    }
+
+    private Map<String,Object> effectiveCard(Map<String,Object> card, boolean reflectionEnabled) {
+        Map<String,Object> effective = new LinkedHashMap<>(card);
+        Map<String,Object> policy = accessRules.getOrDefault(String.valueOf(card.get("id")), card);
+        if (!reflectionEnabled && policy.get("whenReflectionDisabled") instanceof Map<?,?> projection)
+            projection.forEach((key,value) -> effective.put(String.valueOf(key), value));
+        effective.remove("whenReflectionDisabled");
+        return effective;
+    }
+
+    private Set<String> studentMenuPaths(boolean reflectionEnabled) {
         Set<String> paths = new HashSet<>(Set.of("/student/home", "/student/profile"));
         if (configService == null) return paths;
         try {
@@ -189,6 +214,8 @@ public class AgentKnowledge {
             if (!menus.isArray()) return paths;
             for (var menu : menus) {
                 String path = menu.path("path").asText();
+                if (!reflectionEnabled && ("/student/internships".equals(path)
+                        || path.startsWith("/student/internship-reflection"))) continue;
                 if (path.startsWith("/student/") && (!menu.path("visible").isBoolean()
                         || menu.path("visible").asBoolean())) paths.add(path);
             }

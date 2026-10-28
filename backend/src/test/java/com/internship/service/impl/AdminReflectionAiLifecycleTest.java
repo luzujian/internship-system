@@ -49,6 +49,7 @@ class AdminReflectionAiLifecycleTest {
         """;
 
     @BeforeEach void setUp() {
+        com.internship.support.ReflectionFeatureTestSupport.enable(target);
         snapshot = new InternshipReflection();
         snapshot.setId(11L); snapshot.setStudentId(7L); snapshot.setContent("我的实习心得");
         snapshot.setStatus(0); snapshot.setDeleted(0);

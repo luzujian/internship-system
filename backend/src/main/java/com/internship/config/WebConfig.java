@@ -11,6 +11,9 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 public class WebConfig implements WebMvcConfigurer {
 
     @Autowired
+    private com.internship.interceptor.ReflectionFeatureInterceptor reflectionFeatureInterceptor;
+
+    @Autowired
     private SystemStatusInterceptor systemStatusInterceptor;
 
     @Autowired
@@ -18,6 +21,7 @@ public class WebConfig implements WebMvcConfigurer {
 
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
+        registry.addInterceptor(reflectionFeatureInterceptor).addPathPatterns("/api/**");
         registry.addInterceptor(systemStatusInterceptor)
                 .addPathPatterns("/api/**")
                 .excludePathPatterns(

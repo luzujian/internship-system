@@ -36,6 +36,8 @@ import java.util.concurrent.ConcurrentHashMap;
 @Slf4j
 @Service
 public class StudentReflectionAIAnalysisServiceImpl implements StudentReflectionAIAnalysisService {
+    @Autowired
+    private com.internship.service.ReflectionFeatureService reflectionFeature;
 
     @Autowired
     private StudentReflectionAIAnalysisMapper analysisMapper;
@@ -137,6 +139,7 @@ public class StudentReflectionAIAnalysisServiceImpl implements StudentReflection
     @Override
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public Map<String, Object> analyzeReflectionContent(String content, Long counselorId, Long studentId, Long reflectionId) {
+        if (!reflectionFeature.enabled()) return failure(com.internship.service.ReflectionFeatureService.DISABLED_MESSAGE, false);
         if (reflectionId == null || studentId == null || counselorId == null || content == null || content.isBlank()) {
             return failure("实习心得及辅导员信息不完整", false);
         }
@@ -216,6 +219,7 @@ public class StudentReflectionAIAnalysisServiceImpl implements StudentReflection
     }
 
     private boolean persistResult(InternshipReflection snapshot, Long submissionVersion, StudentReflectionAIAnalysis analysis) {
+        if (!reflectionFeature.enabled()) return false;
         return Boolean.TRUE.equals(transactionTemplate.execute(transaction -> {
             InternshipReflection current = reflectionMapper.lockById(snapshot.getId());
             if (!submitted(current) || reflectionMapper.hasManualEvaluation(snapshot.getId())

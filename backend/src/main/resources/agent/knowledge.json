@@ -101,7 +101,98 @@
     "rules": "当前显示状态由有效业务记录汇总计算，不能只看最近一条申请。一个申请失败但另一个仍有效，应保持已投递未录用。数据库数字0是尚未获录用的兼容汇总，包含暂无有效投递和已投递未录用，不含已延期实习，不能直接解释成暂无有效投递。已定单位待实习、实习进行中、实习已结束、实习已中断、已延期实习优先于其他投递和录用机会，不因另一次普通投递或面试失败被覆盖。历史已关闭或已拒绝的录用事项不当成当前机会。申请审核状态、面试状态、实习确认表审核状态、学生实习状态和侧栏流程阶段分别解释。常见主线是暂无有效投递、已投递未录用、已录用待确认、已定单位待实习、实习进行中、实习已结束，并非每人都必须逐项经过。自主实习审核通过可直接落实单位：统一开始日期尚未到达时进入已定单位待实习，开始后进入实习进行中，结束处理后进入实习已结束。系统正式生命周期服务统一处理日期边界，各用户端显示同一正式状态。状态待核实表示暂未核实，不能当成已确认的业务结论。具体日期查询统一实习日历，当前状态与变化原因查询学生真实记录，不输出内部状态码或数据库编号。自主实习申请按实际办理方区分：新提交或重提到有效合作企业的申请由该企业确认，确认后直接落实实习；系统外企业及仍由辅导员办理的历史待审申请由负责辅导员审核，通过后不再要求企业确认。不能把辅导员审核的历史记录说成企业亲自确认。自主实习待企业确认、自主实习待审核、延期申请待审核作为补充信息单独展示，不覆盖已有实习主状态；暂无有效投递也不代表学生没有办理这两类申请。已延期实习包含审核通过和导入登记，是否有批准记录必须另外核实。已落实实习是已定单位待实习与实习进行中的统计汇总。旧名称仅用于理解历史提问，回答统一使用当前新名称。",
     "source": "JobSearchStatusService / JobSearchStatusMapper / InternshipConfirmationWorkflowService / StudentApplicationServiceImpl / InternshipStatusScheduler",
     "verifiedAt": "2026-10-14",
-    "verifyLevel": "CODE_TRACED"
+    "verifyLevel": "CODE_TRACED",
+    "whenReflectionDisabled": {
+      "keywords": [
+        "实习状态",
+        "未投递",
+        "无 Offer",
+        "待确认",
+        "已确定",
+        "实习中",
+        "已结束",
+        "已中断",
+        "延期",
+        "状态变化",
+        "状态流转",
+        "暂无有效投递",
+        "已投递未录用",
+        "已录用待确认",
+        "已定单位待实习",
+        "实习进行中",
+        "实习已结束",
+        "实习已中断",
+        "已延期实习",
+        "自主实习待审核",
+        "延期申请待审核"
+      ],
+      "states": [
+        {
+          "code": "NOT_FOUND",
+          "name": "暂无有效投递",
+          "meaning": "当前没有有效岗位投递或录用机会，且没有已落实、已结束、中断或延期的正式实习状态。可能未投过简历，也可能此前投递全部已拒绝、撤回、取消或失败。自主实习或延期申请待审核会另外显示。",
+          "entry": "没有仍有效的岗位申请、面试或录用事项，也没有优先展示的正式实习状态。",
+          "exit": "成功投递后进入已投递未录用；有效面试通过或直接录取后进入已录用待确认。",
+          "next": "浏览岗位并投递，或按实际情况申请自主实习。"
+        },
+        {
+          "code": "NO_OFFER",
+          "name": "已投递未录用",
+          "meaning": "学生已投递岗位，当前仍有有效申请或由该投递产生的面试机会，尚未获录用。系统没有企业脱离学生投递主动邀请面试的入口。",
+          "entry": "投递成功且申请仍有效，或该投递产生的面试机会仍有效。",
+          "exit": "面试通过或直接录取后进入已录用待确认；所有有效机会结束且没有优先正式实习状态时回到暂无有效投递。",
+          "next": "查看申请处理进度，按安排参加面试。"
+        },
+        {
+          "code": "PENDING_CONFIRMATION",
+          "name": "已录用待确认",
+          "meaning": "已经面试通过或直接录取，存在有效的实习确认事项，但尚未完成企业最终确认。",
+          "entry": "企业选择面试通过或直接录取后进入，不需要再点击第二次录用按钮。",
+          "exit": "学生提交实习确认表并由企业最终确认后落实正式实习；具体后续状态以真实业务记录为准。",
+          "next": "尚未提交时提交实习确认表；已提交时等待企业确认。若退回，查询原因后修改，不能让已提交的学生重复提交。"
+        },
+        {
+          "code": "CONFIRMED",
+          "name": "已定单位待实习",
+          "meaning": "单位已经正式落实，系统记录的实习开始日期尚未到达。",
+          "entry": "企业正式确认接收，或自主实习审核通过，且尚未到达系统记录的开始日期。",
+          "exit": "开始日期到达后由正式生命周期服务更新为实习进行中；中断、延期须经对应业务处理。",
+          "next": "按教师统一实习安排准备并开始实习。"
+        },
+        {
+          "code": "IN_PROGRESS",
+          "name": "实习进行中",
+          "meaning": "系统记录当前已在正式实习。",
+          "entry": "单位已落实且实习开始日期已到达；自主实习审核通过也按统一日历判断开始状态。",
+          "exit": "结束条件满足并完成系统结束处理后进入实习已结束；正式中断处理后进入实习已中断。",
+          "next": "按真实实习状态和当前有效待办办理；历史停用事项不影响当前流程。"
+        },
+        {
+          "code": "ENDED",
+          "name": "实习已结束",
+          "meaning": "当前实习业务已结束，不等于整个实习流程的材料已全部办完。",
+          "entry": "系统已完成实习结束处理。",
+          "exit": "不会因为另一次投递或面试失败自动回到暂无有效投递；后续安排以真实业务办理结果为准。",
+          "next": "核对实习鉴定表是否已正式提交，以及提交窗口。仅上传文件、保存草稿不算提交。"
+        },
+        {
+          "code": "INTERRUPTED",
+          "name": "实习已中断",
+          "meaning": "原实习已中断，后续安排需要核对。",
+          "entry": "按真实实习状态和当前有效待办办理；历史停用事项不影响当前流程。",
+          "exit": "恢复或重新落实实习须经过实际业务办理，以新的有效记录为准，不承诺某个申请自动恢复。",
+          "next": "联系负责老师核对后续安排；换岗按新岗位申请和实习确认流程办理。"
+        },
+        {
+          "code": "DELAYED",
+          "name": "已延期实习",
+          "meaning": "系统已正式登记延期实习，可能来自延期申请审核通过，也可能来自学生数据导入；不能一概声称都有已批准的申请记录。",
+          "entry": "延期申请审核通过并更新正式状态，或导入时明确登记延期状态；待审核申请仅显示延期申请待审核。",
+          "exit": "后续恢复和开始安排以获批安排及真实业务状态为准。",
+          "next": "有申请记录时查看审核结果；否则联系负责老师核对登记依据和后续实习安排。"
+        }
+      ]
+    }
   },
   {
     "id": "recent-activity-guide",
@@ -120,7 +211,17 @@
     "rules": "最近动态是学生首页的时间线卡片，展示系统已登记且与本人相关的实习进展事件，例如岗位投递、面试邀请或结果、自主实习或延期申请、确认表提交或确认、心得提交、实习开始、结束或中断。每条动态通常包含事件标题、简短说明、发生时间、该事件的结果状态和在目标仍存在时的继续办理入口。它回答“最近发生了什么”，不是当前实习状态、不是完整待办清单、不是实习阶段进度，也不代表事件对应业务现在仍可操作。当前状态要查询student_internship，待办要查询student_todos，阶段要查询student_plan。删除或失效的关联对象可能只保留允许展示的历史事件。没有动态表示当前查询范围没有可显示的进展记录，不能解释为系统没有业务。用户要知道某条动态的具体含义时，应根据标题、说明和时间解释，不能只复述内部事件类型或编号。",
     "source": "InternshipProgressRecordService / StudentHomeController / Home.vue",
     "verifiedAt": "2026-09-21",
-    "verifyLevel": "CODE_TRACED"
+    "verifyLevel": "CODE_TRACED",
+    "whenReflectionDisabled": {
+      "rules": "最近动态展示本人真实岗位投递、面试、申请、确认和实习变动的历史事件，包含标题、说明、时间及可继续办理入口。历史事件不是当前实习状态、完整待办或阶段进度；当前状态查student_internship，待办查student_todos，计划查student_plan。停用业务的事件保留在历史数据中，但不展示为当前动态或办理入口。",
+      "keywords": [
+        "最近动态",
+        "首页动态",
+        "动态卡片",
+        "最近进展",
+        "最近发生了什么"
+      ]
+    }
   },
   {
     "id": "unified-internship-calendar",
@@ -145,7 +246,19 @@
     "rules": "实习起止时间由教师在重要设置中统一设置。助手须调用internship_calendar实时读取startDate、endDate、appraisalDeadline和reportCycleDays，不在知识库中固定具体日期。问实习什么时候结束或我的实习什么时候结束时，回答教师统一设置的endDate；个人实习记录未填结束时间不等于系统没有统一日期。学生无需填写个人实习起止时间。只有对应配置字段为空时才能说明该日期尚未设置；读取异常须说明暂时无法读取，不能编造或回退历史答案。",
     "source": "SettingsController.getInternshipCalendar / InternshipCalendarService.getCalendar / AgentReadTools.internshipCalendar",
     "verifiedAt": "2026-09-20",
-    "verifyLevel": "CODE_TRACED"
+    "verifyLevel": "CODE_TRACED",
+    "whenReflectionDisabled": {
+      "rules": "实习起止时间和鉴定截止时间由教师统一设置，须调用internship_calendar读取最新值。个人经历日期为空不等于未安排实习，不能推测或要求学生自行填写统一日期。",
+      "keywords": [
+        "实习什么时候结束",
+        "我的实习什么时候结束",
+        "实习什么时候开始",
+        "统一起止时间",
+        "重要设置",
+        "实习日历",
+        "鉴定截止日期"
+      ]
+    }
   },
   {
     "id": "system-business-overview",
@@ -168,7 +281,18 @@
     "rules": "系统围绕学生实习从准备、岗位对接、实习确认到过程管理与材料收集形成闭环。主线为：企业发布岗位，学生投递，企业处理申请并安排面试或免面试录用，学生选择 Offer 并提交实习确认，企业最终确认接收后更新当前实习及岗位名额。实习期间学生提交心得，实习结束后在开放窗口提交鉴定材料，教师按职责和负责范围跟进、批阅及核对材料。自主实习、考研延期是独立申请分支；换岗通过申请新岗位、选择新 Offer 并完成新确认办理。管理员负责账号、权限、系统配置等管理。申请通过、面试通过、学生提交确认不等于企业已确认接收。解释流程不表示已提交、审核、发布或发送通知；个人当前状态、是否符合条件和具体截止日期需要另外查询真实记录。",
     "source": "StudentJobApplicationServiceImpl / StudentInternshipConfirmationController / InternshipConfirmationWorkflowService / TeacherInternshipAppraisalServiceImpl / AgentReadTools",
     "verifiedAt": "2026-10-08",
-    "verifyLevel": "CODE_TRACED"
+    "verifyLevel": "CODE_TRACED",
+    "whenReflectionDisabled": {
+      "rules": "系统主线为企业发布岗位、学生投递、企业安排面试或直接录取、学生提交实习确认、企业确认接收、实习状态跟进与鉴定材料收集。自主实习、考研延期、换岗是独立分支。教师按实际权限及负责范围处理申请、跟进学生和收集材料；管理员维护账号、权限及系统配置。具体状态、日期和资格应查本轮真实记录。",
+      "keywords": [
+        "系统核心业务逻辑",
+        "系统核心业务流程",
+        "业务流程",
+        "业务逻辑",
+        "整体流程",
+        "主要功能"
+      ]
+    }
   },
   {
     "id": "application",
@@ -227,7 +351,8 @@
     "rules": "当前期次和截止来自全局实习日历，不固定在提示词中。辅导员按负责班级，系室教师按division，学院教师按department限制学生范围。空范围不能扩大到全校。未提交且未到截止日不能称逾期；没有日历不能编造日期。当前查询仅展示状态，不评分、不发布、不发送通知。心得期数按floor((日期-实习开始日)/心得周期)+1计算，换岗不重置期次。",
     "source": "InternshipCalendarService / TeacherInternshipAppraisalServiceImpl.resolveScope",
     "verifiedAt": "2026-09-15",
-    "verifyLevel": "RUNTIME_VERIFIED"
+    "verifyLevel": "RUNTIME_VERIFIED",
+    "businessFeature": "reflection"
   },
   {
     "id": "confirmationowner",
@@ -255,7 +380,10 @@
     "rules": "教师待办按实际教师类型、业务权限及负责范围统计。辅导员处理本人负责班级内由辅导员审核的自主实习待审、获准批阅的心得和鉴定提交跟进；系室与学院教师按获准的申请类型处理负责范围内的延期等申请，并在已有权限内使用看板和鉴定收集。企业资质审核另需独立审核权限，不能用全校企业数量替代当前教师学生待办。平台岗位实习确认由学生提交、企业最终确认。未到截止的未提交不能称逾期，知识规则不能替代个人最新待办查询。",
     "source": "ApprovalController / TeacherInternshipAppraisalController / AgentReadTools",
     "verifiedAt": "2026-10-08",
-    "verifyLevel": "CODE_TRACED"
+    "verifyLevel": "CODE_TRACED",
+    "whenReflectionDisabled": {
+      "rules": "教师待办按实际教师类型、业务权限和负责范围统计。辅导员处理负责班级内的获准申请和鉴定跟进；系/学院教师在负责范围内处理获准业务、看板及材料收集。企业资质审核需独立权限，平台实习接收由企业确认。统计必须查本轮真实结果。"
+    }
   },
   {
     "id": "capabilities",
@@ -313,7 +441,11 @@
     "verifyLevel": "CODE_TRACED",
     "studentMenus": [
       "/student/jobs"
-    ]
+    ],
+    "whenReflectionDisabled": {
+      "rules": "学生在职位浏览核对在招岗位、要求、地点与薪资后投递，在我的申请跟进进度。企业安排面试或直接录取后，学生选择有效Offer提交确认表，企业最终确认后才落实正式实习。投递、录用机会与最终实习是不同环节。",
+      "steps": "按当前页面入口、业务开关、权限和真实数据办理，操作结果以系统回执为准。"
+    }
   },
   {
     "id": "company-job-entry",
@@ -366,7 +498,8 @@
     },
     "studentMenus": [
       "/student/internships"
-    ]
+    ],
+    "businessFeature": "reflection"
   },
   {
     "id": "appraisal-howto",
@@ -387,7 +520,11 @@
     },
     "studentMenus": [
       "/student/internship-appraisal"
-    ]
+    ],
+    "whenReflectionDisabled": {
+      "rules": "在实习鉴定页面按当前窗口上传学校要求的材料并正式提交。上传附件或保存草稿不等于提交完成；具体截止、材料数量、状态和退回原因须查student_appraisal及统一日历。",
+      "steps": "按当前页面入口、业务开关、权限和真实数据办理，操作结果以系统回执为准。"
+    }
   },
   {
     "id": "company-confirm-howto",
@@ -455,6 +592,9 @@
       "teacher": [
         "menu:appraisal-collection"
       ]
+    },
+    "whenReflectionDisabled": {
+      "rules": "鉴定材料以学校提供的当前模板及页面要求为准，上传后核对文件并正式提交。不能从文件名推断内容或签章真实性；材料详情仅在授权范围内读取。"
     }
   },
   {
@@ -483,7 +623,10 @@
     "rules": "换岗不需要教师审批：学生向新岗位提交申请→获得新Offer→提交新的实习确认表→新企业确认接收。企业确认时系统在单事务内原子性完成：归档原实习经历（状态置为REPLACED）、释放原岗位名额、扣减新岗位名额、生成新实习经历。心得期次不因换岗重置。",
     "source": "InternshipConfirmationWorkflowService / 旧unitChange流程已停用",
     "verifiedAt": "2026-09-15",
-    "verifyLevel": "CODE_TRACED"
+    "verifyLevel": "CODE_TRACED",
+    "whenReflectionDisabled": {
+      "rules": "换岗通过学生申请新岗位、获得新Offer、提交新实习确认、企业确认接收办理。企业成功确认时按真实业务规则关闭或分段旧经历、更新当前单位与岗位名额。新岗位投递或确认失败不应取消原实习。"
+    }
   },
   {
     "id": "calendar-end-branch",
@@ -525,7 +668,10 @@
     "rules": "学生端菜单由系统配置STUDENT_MENU_CONFIG控制显隐（如实习心得菜单可被隐藏）；教师端菜单由管理员按教师角色分配（teacher_permission，如智慧评分menu:evaluation）。看不到某菜单时：确认角色是否拥有该功能权限，或联系管理员调整配置。助手不能绕过菜单限制访问功能。",
     "source": "system_config.STUDENT_MENU_CONFIG / teacher_role_permission",
     "verifiedAt": "2026-09-15",
-    "verifyLevel": "CODE_TRACED"
+    "verifyLevel": "CODE_TRACED",
+    "whenReflectionDisabled": {
+      "rules": "学生菜单受STUDENT_MENU_CONFIG及独立业务开关共同控制；教师菜单受实际角色权限及业务开关控制。看不到入口时核对实时配置与权限，业务已停用时不能通过分配菜单或AI对话绕过。"
+    }
   },
   {
     "id": "faq-duplicate-apply",
@@ -602,7 +748,8 @@
     "rules": "学生端实习心得菜单受系统配置控制，可能被隐藏。隐藏后首页不再提示对应心得待办，实习计划与自动跟进应按实际配置及任务结果解释，不代表历史心得已删除。其他没有心得待办的原因还包括：尚无当前有效实习经历、当前不在统一日历期内或当期已提交。有效经历可来自平台企业确认或辅导员批准的自主实习，不能一概要求企业再次确认。当前是否有待办以本人真实结果为准；菜单开放与可提交资格不同，无权限时联系负责老师或管理员核对。",
     "source": "StudentHomeTodoServiceImpl.addReflectionSubmission isStudentMenuVisible / STUDENT_MENU_CONFIG / cron-wakeup.json A4实测",
     "verifiedAt": "2026-10-08",
-    "verifyLevel": "CODE_TRACED"
+    "verifyLevel": "CODE_TRACED",
+    "businessFeature": "reflection"
   },
   {
     "id": "ai-assistant-scope",
@@ -670,6 +817,10 @@
         "menu:student-tracking",
         "view:student_tracking"
       ]
+    },
+    "whenReflectionDisabled": {
+      "rules": "获授权的教师可在AI侧栏预览并确认创建定时或重复提醒，支持鉴定缺交、Offer待确认和按指定日期/每天/每周的自定义提醒。对象限定当前教师负责范围，渠道为获准的站内提醒或邮件。预览不发送，创建默认暂停，启用与立即运行是独立操作；发送结果未知时停止重发。已停用业务的历史催交任务不得执行。",
+      "steps": "描述当前有效业务的提醒对象、正文、渠道和时间，核对预览后确认创建并启用。"
     }
   },
   {

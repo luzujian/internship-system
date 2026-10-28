@@ -121,7 +121,8 @@ public class StudentHomeController {
             stats.put("applied", statsData.getOrDefault("applied", 0));
             stats.put("interviewInvites", statsData.getOrDefault("interviewInvites", 0));
             stats.put("current", statsData.getOrDefault("confirmedRecords", 0));
-            stats.put("pendingReports", statsData.getOrDefault("submittedReflections", 0));
+            stats.put("pendingReports", com.internship.service.ReflectionFeatureService.isEnabled(systemConfigService)
+                    ? statsData.getOrDefault("submittedReflections", 0) : 0);
             return Result.success(stats);
         } catch (Exception e) {
             log.error("获取首页统计失败: {}", e.getMessage(), e);

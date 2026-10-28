@@ -53,6 +53,7 @@ import { useUserStatusCheck } from '../../composables/useUserStatusCheck'
 import AgentWorkspace from '@/components/agent/AgentWorkspace.vue'
 import AgentEntry from '@/components/agent/AgentEntry.vue'
 import { getAdminMenuPermission, ADMIN_LOG_VIEW_PERMISSIONS } from '@/utils/adminMenuPermissions'
+import { isBusinessRouteEnabled } from '@/utils/businessFeatures'
 import { useResponsiveSidebar } from '@/composables/useResponsiveSidebar'
 
 useUserStatusCheck(180000)
@@ -275,6 +276,7 @@ const hasPermission = (permissionCode) => {
 }
 
 const canShowMenu = (menuPath) => {
+  if (!isBusinessRouteEnabled(menuPath)) return false
   const permissionCode = getAdminMenuPermission(menuPath)
   if (!permissionCode) return true
   if (!adminPermissionsLoaded.value) {

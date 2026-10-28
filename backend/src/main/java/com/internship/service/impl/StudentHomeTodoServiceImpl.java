@@ -87,6 +87,8 @@ public class StudentHomeTodoServiceImpl implements StudentHomeTodoService {
 
     /** 找不到菜单配置或配置解析失败时维持原有的默认可见行为。 */
     private boolean isStudentMenuVisible(String menuPath) {
+        if ("/student/internships".equals(menuPath)
+                && !com.internship.service.ReflectionFeatureService.isEnabled(systemConfigService)) return false;
         try {
             SystemConfig config = systemConfigService.findByConfigKey("STUDENT_MENU_CONFIG");
             if (config == null || config.getConfigValue() == null) return true;

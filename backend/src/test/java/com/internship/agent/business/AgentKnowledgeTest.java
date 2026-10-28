@@ -15,6 +15,13 @@ import static org.mockito.Mockito.*;
 
 class AgentKnowledgeTest {
     private final ObjectMapper json = new ObjectMapper();
+    private AgentKnowledge enabledKnowledge() throws java.io.IOException {
+        AgentKnowledge knowledge = new AgentKnowledge(json);
+        var configs = mock(com.internship.service.SystemConfigService.class);
+        com.internship.support.ReflectionFeatureTestSupport.enableConfig(configs);
+        org.springframework.test.util.ReflectionTestUtils.setField(knowledge, "configService", configs);
+        return knowledge;
+    }
 
     @Test void requiredCoreFlowsAreRegisteredAndStructured() throws Exception {
         List<Map<String,Object>> cards;
@@ -36,7 +43,7 @@ class AgentKnowledgeTest {
     }
 
     @Test void lookupDoesNotInventUnknownTopicAndFiltersByRole() {
-        AgentKnowledge knowledge = assertDoesNotThrow(() -> new AgentKnowledge(json));
+        AgentKnowledge knowledge = assertDoesNotThrow(() -> enabledKnowledge());
         Actor student = new Actor("ROLE_STUDENT:1:false:", 1L, "ROLE_STUDENT", "学生", null,
                 null, null, false, Set.of());
         Actor teacher = new Actor("ROLE_TEACHER_COUNSELOR:9:false:", 9L, "ROLE_TEACHER_COUNSELOR", "教师", "COUNSELOR",
@@ -52,7 +59,7 @@ class AgentKnowledgeTest {
     }
 
     @Test void forgotPasswordCardDescribesSelfServiceForAllThreeRoles() {
-        AgentKnowledge knowledge = assertDoesNotThrow(() -> new AgentKnowledge(json));
+        AgentKnowledge knowledge = assertDoesNotThrow(() -> enabledKnowledge());
         Actor student = new Actor("ROLE_STUDENT:1:false:", 1L, "ROLE_STUDENT", "学生", null,
                 null, null, false, Set.of());
         var items = knowledge.lookup(student, "忘记密码").items();
@@ -64,7 +71,7 @@ class AgentKnowledgeTest {
         assertTrue(text.contains("管理员账号暂不支持自助"));
     }
     @Test void calendarQuestionsUseUnifiedSettingsWithoutBypassingMixedObjectQuestions() {
-        var knowledge = assertDoesNotThrow(() -> new AgentKnowledge(json));
+        var knowledge = assertDoesNotThrow(() -> enabledKnowledge());
         var student = new Actor("s1",1L,"ROLE_STUDENT","学生",null,null,null,false,Set.of());
         for (String question : List.of("实习什么时候结束？", "我的实习什么时候开始", "请问实习结束日期是什么", "实习起止时间", "鉴定表截止日期是什么"))
             assertTrue(AgentKnowledge.isCalendarQuestion(question),question);
@@ -75,7 +82,7 @@ class AgentKnowledgeTest {
     }
 
     @Test void coreWorkflowMatchesNaturalQuestionsWithoutClaimingPersonalStatus() throws Exception {
-        var knowledge=new AgentKnowledge(json);
+        var knowledge=enabledKnowledge();
         var actor=new Actor("ROLE_COMPANY:1:false:",1L,"ROLE_COMPANY","企业",null,null,null,false,Set.of());
         for(String question:List.of("该系统的核心业务逻辑是什么", "该系统的核心业务流程是什么？", "请介绍一下系统的主要功能", "请绘制该系统的核心流程图，以文本的形式", "请画出系统的核心业务流程图，用文字表示")) {
             assertTrue(AgentKnowledge.isSystemOverviewQuestion(question));
@@ -86,7 +93,7 @@ class AgentKnowledgeTest {
     }
 
     @Test void emptyStatusDictionaryDoesNotMatchEveryQuestion() throws Exception {
-        var knowledge = new AgentKnowledge(json);
+        var knowledge = enabledKnowledge();
         var dict = mock(SysDictService.class);
         when(dict.codesByType("internship_status")).thenReturn(List.of());
         Field field = AgentKnowledge.class.getDeclaredField("dictService");

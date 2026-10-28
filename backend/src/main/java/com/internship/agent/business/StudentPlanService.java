@@ -171,6 +171,8 @@ public class StudentPlanService {
 
     /** 心得页隐藏时计划不再出现心得；找不到配置时维持原有可见行为。 */
     private boolean isStudentMenuVisible(String menuPath) {
+        if ("/student/internships".equals(menuPath)
+                && !com.internship.service.ReflectionFeatureService.isEnabled(systemConfigs)) return false;
         try {
             SystemConfig config = systemConfigs.findByConfigKey(
                     "STUDENT_MENU_CONFIG");

@@ -82,7 +82,7 @@
               class="el-menu-vertical-demo"
             >
               <el-menu-item
-                v-for="menu in dynamicMenus"
+                v-for="menu in availableMenus"
                 :key="menu.path"
                 :index="menu.path"
                 @click="handleMenuClick(menu.path)"
@@ -142,6 +142,7 @@ import AgentWorkspace from '@/components/agent/AgentWorkspace.vue'
 import AgentEntry from '@/components/agent/AgentEntry.vue'
 import FeedbackSubmitDialog from '@/components/FeedbackSubmitDialog.vue'
 import { useResponsiveSidebar } from '@/composables/useResponsiveSidebar'
+import { isBusinessRouteEnabled } from '@/utils/businessFeatures'
 
 defineOptions({
   components: {
@@ -167,6 +168,7 @@ const systemSettingsStore = useSystemSettingsStore()
 
 const isReadOnlyMode = computed(() => authStore.user?.isReadOnly || false)
 const dynamicMenus = ref<MenuItem[]>([])
+const availableMenus = computed(() => dynamicMenus.value.filter(menu => isBusinessRouteEnabled(menu.path)))
 const menuLoading = ref(true)
 const withoutOfferStudentCount = ref<number | null>(null)
 const totalRemainingQuota = ref<number | null>(null)

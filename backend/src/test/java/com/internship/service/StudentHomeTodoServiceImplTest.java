@@ -45,6 +45,7 @@ class StudentHomeTodoServiceImplTest {
 
     @BeforeEach
     void setUp() {
+        com.internship.support.ReflectionFeatureTestSupport.enableConfig(systemConfigService);
         service = new StudentHomeTodoServiceImpl(
                 interviewInvitationService,
                 jobApplicationService,

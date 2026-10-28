@@ -17,7 +17,18 @@
     "rules": "系统主线是企业登记与准入、发布岗位、学生投递、企业处理申请和面试或直接录取、学生提交实习确认、企业确认接收、实习过程跟进、心得批阅和鉴定材料收集。另有自主实习、考研延期及换岗分支。学生端涵盖首页待办、职位浏览、我的申请、面试管理、实习确认、心得、鉴定和个人中心。教师端涵盖负责范围内的看板、学生跟进、申请审核、心得评分、鉴定收集、班级、统一日历、评分配置、公告、资源和报表。企业端涵盖招聘、申请处理、确认接收、当前实习学生、企业资料和账户设置。管理员端涵盖账号、企业准入、组织班级、岗位类别、公告资源、问题反馈、撤回记录、数据统计、权限、模型、关键词和评分规则、日志、备份及系统设置。询问完整功能时按这些模块归纳；询问单个功能时再检索对应详细说明。菜单和实际办理权限以当前授权为准，保留路由不代表每个角色都能使用。",
     "source": "frontend/src/router/adminRouter.ts; frontend/src/router/studentRouter.ts; frontend/src/router/teacherRouter.ts; frontend/src/router/companyRouter.ts",
     "verifiedAt": "2026-10-08",
-    "verifyLevel": "CODE_TRACED"
+    "verifyLevel": "CODE_TRACED",
+    "whenReflectionDisabled": {
+      "rules": "当前有效业务包括企业登记与准入、岗位发布、学生投递、企业处理申请及面试/录取、实习确认与企业接收、状态跟进和鉴定材料收集，以及自主实习、延期和换岗。学生端有待办、岗位、申请、面试、确认、鉴定及个人中心；教师端有看板、跟进、审核、材料、班级、日历、公告、资源和报表；企业端有招聘、申请处理、确认接收、实习学生和企业资料；管理员端维护账号、企业、组织、权限、公告资源、反馈、模型、日志、备份和系统设置。当前功能以实时开关、菜单及权限为准。",
+      "keywords": [
+        "全系统知识",
+        "全部业务功能",
+        "全方面知识",
+        "功能总览",
+        "模块清单",
+        "四端功能"
+      ]
+    }
   },
   {
     "id": "admin-role-boundaries",
@@ -41,7 +52,19 @@
     "rules": "学生办理本人的投递、申请、面试回复、实习确认和材料提交；企业处理本企业招聘申请、面试及实习确认；教师按实际负责范围跟进学生、处理获准的申请、批阅心得和收集鉴定；管理员维护账号、授权及系统管理配置。辅导员负责班级，系室教师负责本系，学院教师负责本学院，具体对象还需通过服务端归属校验。有效合作企业的新自主实习申请或重提申请由该企业确认；系统外企业及历史辅导员待审申请由负责辅导员处理。延期等申请按教师类型和授权处理。平台岗位的最终实习接收由企业确认，不能说教师代企业确认。能讲解某角色的规则不等于管理员AI获得该角色的业务明细查询或执行能力。",
     "source": "backend/src/main/java/com/internship/controller/ApprovalController.java; backend/src/main/java/com/internship/agent/business/AgentIdentityService.java; backend/src/main/java/com/internship/agent/business/AgentReadTools.java",
     "verifiedAt": "2026-10-08",
-    "verifyLevel": "CODE_TRACED"
+    "verifyLevel": "CODE_TRACED",
+    "whenReflectionDisabled": {
+      "rules": "学生办理本人的投递、申请、面试回复、实习确认和鉴定材料；企业处理本企业招聘、面试及接收确认；教师按实际负责范围与权限跟进学生、处理获准申请并收集鉴定材料；管理员维护账号、授权及系统配置。辅导员按班级、系教师按系、学院教师按学院限制数据。有效合作企业的新自主实习申请由企业确认；系统外企业及历史教师待审申请按负责教师办理。管理员了解规则不代表获得其他角色的业务明细或执行权限。",
+      "keywords": [
+        "角色分工",
+        "四端职责",
+        "辅导员",
+        "系室教师",
+        "学院教师",
+        "数据范围",
+        "谁负责"
+      ]
+    }
   },
   {
     "id": "admin-readonly-role-switch",
@@ -564,7 +587,8 @@
     "rules": "系统级规则模板与辅导员自己的评分配置不同，修改模板不等于自动改写已经提交的心得成绩。等级、各类别得分、类别权重与最终评定是不同信息；不能未经真实计算把某项分数当作总成绩。规则的生效周期应核对教师配置与心得周期，不承诺修改后所有历史评分立即重算。",
     "source": "frontend/src/views/admin/ScoringRuleManagement.vue; backend/src/main/java/com/internship/controller/ScoringRuleController.java; backend/src/main/java/com/internship/service/impl/ScoringRuleServiceImpl.java",
     "verifiedAt": "2026-10-08",
-    "verifyLevel": "CODE_TRACED"
+    "verifyLevel": "CODE_TRACED",
+    "businessFeature": "reflection"
   },
   {
     "id": "admin-keyword-library",
@@ -589,7 +613,8 @@
     "rules": "关键词是心得分析和评分配置的参考内容，不是业务菜单权限，也不是岗位类别。系统关键词与教师个人关键词的来源和适用配置不同，不能说增加关键词就自动改变所有学生成绩；是否参与当前周期分析需按教师设置和实际分析结果核对。",
     "source": "frontend/src/views/admin/KeywordLibraryManagement.vue; frontend/src/views/teacher/CounselorKeywordLibraryManagement.vue; backend/src/main/java/com/internship/controller/KeywordLibraryController.java; backend/src/main/java/com/internship/controller/CounselorKeywordController.java",
     "verifiedAt": "2026-10-08",
-    "verifyLevel": "CODE_TRACED"
+    "verifyLevel": "CODE_TRACED",
+    "businessFeature": "reflection"
   },
   {
     "id": "admin-log-center",
@@ -1001,7 +1026,19 @@
     "rules": "常规换岗通过新的岗位申请、录用机会和实习确认流程办理；成功确认新安排时才按业务规则关闭或分段旧经历、更新当前单位岗位与名额。投递新岗位本身不等于已经换岗，另一次申请失败不应取消旧的正式实习。当前实习、历史经历、已结束和已中断需分别解释；缺交心得或一条取消记录不能自动证明实习已中断。保留的单位变更类型或旧页面不能替代当前实际开放的新确认流程。",
     "source": "backend/src/main/java/com/internship/service/InternshipConfirmationWorkflowService.java; backend/src/main/java/com/internship/service/impl/InternshipStageAssignmentServiceImpl.java; backend/src/main/java/com/internship/controller/ApprovalController.java",
     "verifiedAt": "2026-10-08",
-    "verifyLevel": "CODE_TRACED"
+    "verifyLevel": "CODE_TRACED",
+    "whenReflectionDisabled": {
+      "rules": "换岗通过新岗位申请、有效录用机会和新的实习确认办理；成功确认时更新当前单位、经历与名额。投递本身不等于换岗，另一申请失败不取消原实习。当前、历史、结束和中断需分别解释，不能凭单条取消记录推断中断。",
+      "keywords": [
+        "换岗",
+        "单位变更",
+        "换单位",
+        "实习经历",
+        "历史实习",
+        "实习中断",
+        "实习结束"
+      ]
+    }
   },
   {
     "id": "admin-student-reflections",
@@ -1038,7 +1075,8 @@
     },
     "studentMenus": [
       "/student/internships"
-    ]
+    ],
+    "businessFeature": "reflection"
   },
   {
     "id": "admin-student-appraisal",
@@ -1173,7 +1211,8 @@
         "menu:evaluation",
         "view:reflection"
       ]
-    }
+    },
+    "businessFeature": "reflection"
   },
   {
     "id": "admin-teacher-scoring-configuration",
@@ -1209,7 +1248,8 @@
     },
     "teacherTypes": [
       "COUNSELOR"
-    ]
+    ],
+    "businessFeature": "reflection"
   },
   {
     "id": "admin-teacher-class-claim",
@@ -1275,7 +1315,21 @@
     },
     "teacherTypes": [
       "DEPARTMENT"
-    ]
+    ],
+    "whenReflectionDisabled": {
+      "rules": "有权限的教师维护全校统一实习开始、结束日期与鉴定截止。统一日历用于教学安排和材料窗口，个人经历日期为空不代表没有统一安排；实习状态仍取真实业务。遗留周期字段只为历史恢复保留，不属于当前学生任务。",
+      "steps": "按当前页面入口、业务开关、权限和真实数据办理，操作结果以系统回执为准。",
+      "title": "重要设置、全校统一实习日历",
+      "keywords": [
+        "重要设置",
+        "实习日历",
+        "实习时间",
+        "实习开始",
+        "实习结束",
+        "鉴定截止",
+        "时间节点"
+      ]
+    }
   },
   {
     "id": "admin-teacher-appraisal-collection",
@@ -1551,7 +1605,19 @@
     "rules": "源代码中保留页面或路由不代表当前菜单已开放，也不代表原业务入口仍支持提交。学生默认菜单以首页、职位浏览、我的申请、面试、实习确认、心得、鉴定和个人中心为主；实习登记、测试等保留路径不能凭存在就推荐为当前正式流程。教师旧的时间节点、AI设置及成绩等路径有与当前页面共用的情况，应按实际菜单标签和权限说明。业务已明确停用的入口不能通过AI对话重新启用。",
     "source": "frontend/src/router/studentRouter.ts; frontend/src/router/teacherRouter.ts; frontend/src/utils/studentMenuConfig.ts; backend/src/main/java/com/internship/service/InternshipConfirmationWorkflowService.java",
     "verifiedAt": "2026-10-08",
-    "verifyLevel": "CODE_TRACED"
+    "verifyLevel": "CODE_TRACED",
+    "whenReflectionDisabled": {
+      "rules": "源代码或历史路由存在不代表当前业务开放。当前可办理事项应同时核对业务开关、菜单、权限与资格；已停用的历史入口不能通过AI对话重新开放。学生默认使用首页、岗位、申请、面试、确认、鉴定及个人中心；教师以当前真实菜单和负责范围为准。",
+      "keywords": [
+        "旧路由",
+        "停用流程",
+        "实习登记",
+        "旧入口",
+        "测试页面",
+        "没有菜单",
+        "是否启用"
+      ]
+    }
   },
   {
     "id": "admin-files-and-materials",
@@ -1574,7 +1640,18 @@
     "rules": "申请资质、心得、鉴定及资源文档的上传格式和大小应按各自当前页面限制解释，不能套用一个全系统统一大小。申请或鉴定材料上传后仍需正式提交相应业务；实习心得的Word上传入口则会同时提交，应按实际接口回执判断，不能一概说上传不算提交。材料读取还需核对角色、记录归属及当前权限。预览或下载失败不等于材料没有上传，也不自动代表审批失败。AI不能仅凭文件名推断正文、签章真伪或模板版式。",
     "source": "backend/src/main/java/com/internship/controller/StudentInternshipAppraisalController.java; backend/src/main/java/com/internship/controller/ApprovalController.java; backend/src/main/java/com/internship/controller/ResourceDocumentController.java; backend/src/main/java/com/internship/controller/CompanyUserController.java",
     "verifiedAt": "2026-10-08",
-    "verifyLevel": "CODE_TRACED"
+    "verifyLevel": "CODE_TRACED",
+    "whenReflectionDisabled": {
+      "rules": "企业资质、申请、鉴定及资源文档的上传格式和大小以对应页面为准。申请与鉴定附件上传后仍需正式提交业务。材料读取还需核对角色、记录归属和权限；预览失败不等于未上传或审批失败。不能仅凭文件名判断正文、签章真伪或模板版式。",
+      "keywords": [
+        "附件上传",
+        "文件预览",
+        "材料下载",
+        "文件限制",
+        "上传成功",
+        "无法下载附件"
+      ]
+    }
   },
   {
     "id": "admin-state-and-error-interpretation",
@@ -1598,7 +1675,19 @@
     "rules": "申请、面试、录用机会、确认表、实习经历、学生汇总状态、心得提交、AI分析和评分不是同一个状态。当前结果无记录只说明当前授权范围没有匹配项，权限不足和接口失败不能被解释成系统没有此业务。解释一般规则可使用知识库；断言某个用户为何卡住需核对真实记录，管理员AI没有对应明细工具时应明确无法确认个案，只说明已核实的通常条件和原页面核对入口。服务可启动、AI测试成功或存在日志不代表完整业务已经验证通过。",
     "source": "backend/src/main/java/com/internship/agent/business/AgentTaskService.java; backend/src/main/java/com/internship/service/InternshipConfirmationWorkflowService.java; backend/src/main/java/com/internship/task/ReflectionAiAnalysisDispatcher.java",
     "verifiedAt": "2026-10-08",
-    "verifyLevel": "CODE_TRACED"
+    "verifyLevel": "CODE_TRACED",
+    "whenReflectionDisabled": {
+      "rules": "申请、面试、录用机会、确认表、实习经历、学生汇总状态和鉴定提交是不同状态。无记录、无权限、未接入能力与查询失败应分别说明。具体个案应查本轮真实记录；管理员缺少明细工具时不能断言个人状态。服务健康或AI测试成功不能代替完整业务验收。",
+      "keywords": [
+        "状态区别",
+        "没有记录",
+        "无权限",
+        "查询失败",
+        "为什么不能下一步",
+        "流程卡住",
+        "故障排查"
+      ]
+    }
   },
   {
     "id": "student-knowledge-map",
@@ -1617,7 +1706,16 @@
     "rules": "学生端围绕本人的实习办理：首页查看状态、待办、最近动态和自主实习或延期申请入口；职位浏览了解在招岗位并投递；我的申请查看投递及普通申请进度；面试管理查看面试信息和结果；实习确认选择有效Offer并提交给企业确认；实习心得按期次输入内容或提交Word文件；实习鉴定在窗口内提交材料；个人中心维护资料、简历证书、消息与资源。实际显示菜单由当前配置决定，不能把已隐藏的入口说成当前可办理。问当前功能可用性先核对实时权限，不提供管理员管理操作或他人的私人业务信息。",
     "source": "frontend/src/router/studentRouter.ts; frontend/src/utils/studentMenuConfig.ts; frontend/src/views/student/Profile.vue; frontend/src/views/student/Home.vue",
     "verifiedAt": "2026-10-08",
-    "verifyLevel": "CODE_TRACED"
+    "verifyLevel": "CODE_TRACED",
+    "whenReflectionDisabled": {
+      "rules": "学生当前可用业务包括首页状态、待办、最近动态、自主实习/延期申请、岗位浏览与投递、我的申请、面试管理、实习确认、实习鉴定、个人资料与资源。具体入口以当前业务开关、菜单、权限和资格为准。问当前可用功能先查my_permissions，不能将隐藏或停用模块说成可办理业务。",
+      "keywords": [
+        "学生端功能",
+        "学生功能目录",
+        "学生所有功能",
+        "学生能做什么"
+      ]
+    }
   },
   {
     "id": "teacher-knowledge-map",
@@ -1637,7 +1735,17 @@
     "rules": "教师基础入口包括首页、个人资料和账号设置。业务模块按当前授权开放，包括实习状态看板、学生跟进、申请审核、智慧评分、实习材料收集、企业信息、公告、资源、统计报表、班级及有关设置。不能按学院、系室或辅导员称谓直接推定拥有全部菜单，解释当前功能先查实时权限，详细说明只使用当前角色获准的知识。功能授权、教师类型和实际负责学生范围共同约束业务，菜单开放不等于可以访问全校学生；无有效负责范围时也不能扩大查询。",
     "source": "frontend/src/router/teacherRouter.ts; frontend/src/utils/teacherPermissions.ts; backend/src/main/java/com/internship/agent/business/AgentIdentityService.java",
     "verifiedAt": "2026-10-08",
-    "verifyLevel": "CODE_TRACED"
+    "verifyLevel": "CODE_TRACED",
+    "whenReflectionDisabled": {
+      "rules": "教师按当前角色、负责范围与菜单权限使用首页、实习状态看板、学生跟进、申请审核、鉴定材料收集、班级、企业与招聘、公告、资源、统计报表、统一日历和账户设置。历史路由存在不代表已开放。",
+      "keywords": [
+        "教师端功能",
+        "教师功能目录",
+        "教师所有功能",
+        "教师能做什么",
+        "教师菜单授权"
+      ]
+    }
   },
   {
     "id": "company-knowledge-map",
@@ -1656,7 +1764,16 @@
     "rules": "企业端主要包括首页动态和通知、招聘管理、收到的申请、实习确认、当前实习学生、企业信息及账户设置。招聘管理维护本企业岗位及面试信息；申请处理可按状态办理面试或直接录取；学生正式提交确认后由本企业最终确认接收；实习学生页查看当前有效关联学生。企业信息维护获准的基础字段和材料，账户设置维护联系资料、绑定邮箱和密码。企业只办理本企业业务，不能访问其他企业申请或教师内部评分设置；AI可用能力还须核对当前权限。",
     "source": "frontend/src/router/companyRouter.ts; frontend/src/views/company/CompanyLayout.vue; backend/src/main/java/com/internship/controller/CompanyController.java",
     "verifiedAt": "2026-10-08",
-    "verifyLevel": "CODE_TRACED"
+    "verifyLevel": "CODE_TRACED",
+    "whenReflectionDisabled": {
+      "rules": "企业可使用本企业岗位发布与维护、申请处理、面试或直接录取、实习接收确认、当前实习学生名单、企业资料与账户设置。只读取本企业的数据，AI填表不等于发布、录取或确认。",
+      "keywords": [
+        "企业端功能",
+        "企业功能目录",
+        "企业所有功能",
+        "企业能做什么"
+      ]
+    }
   },
   {
     "id": "student-profile-completeness",
@@ -1965,7 +2082,8 @@
     "rules": "个人关键词归当前辅导员所有，不能读取或修改其他辅导员的个人关键词。关键词库与是否启用关键词分析是不同设置，新增词条不等于所有心得已经重新分析，也不改变菜单或学生负责范围。系统提供的参考关键词和个人词条应按页面标示区分；当前是否生效需核对本人配置和实际分析结果。",
     "source": "frontend/src/views/teacher/CounselorKeywordLibraryManagement.vue; frontend/src/views/teacher/CounselorAISettings.vue; backend/src/main/java/com/internship/controller/CounselorKeywordController.java; backend/src/main/java/com/internship/controller/SettingsController.java",
     "verifiedAt": "2026-10-08",
-    "verifyLevel": "CODE_TRACED"
+    "verifyLevel": "CODE_TRACED",
+    "businessFeature": "reflection"
   },
   {
     "id": "teacher-personal-scoring-rules",
@@ -2000,7 +2118,8 @@
     "rules": "类别权重与某条规则的分数区间不同。分类生成的默认规则应以实际生成结果为准；AI生成描述后仍需检查。个人规则只作用于当前辅导员的配置范围，不能修改他人规则，不能仅因保存成功就断言历史评分已重新计算；生效周期和分析执行结果需另行核对。",
     "source": "frontend/src/views/teacher/CounselorScoringRuleManagement.vue; backend/src/main/java/com/internship/controller/CounselorAISettingsController.java; backend/src/main/java/com/internship/service/impl/CounselorAISettingsServiceImpl.java",
     "verifiedAt": "2026-10-08",
-    "verifyLevel": "CODE_TRACED"
+    "verifyLevel": "CODE_TRACED",
+    "businessFeature": "reflection"
   },
   {
     "id": "company-position-contacts",

@@ -40,6 +40,9 @@ class ReflectionTaskGeneratorTest {
 
     @InjectMocks private ReflectionTaskGenerator generator;
 
+    @org.junit.jupiter.api.BeforeEach
+    void enableRetainedBusiness() { com.internship.support.ReflectionFeatureTestSupport.enable(generator); }
+
     @Test
     void switchWithinOneGlobalPeriodCreatesOnlyOneTaskForTheLatestPlacement() {
         LocalDate today = LocalDate.now(ReflectionTaskGenerator.BUSINESS_ZONE);

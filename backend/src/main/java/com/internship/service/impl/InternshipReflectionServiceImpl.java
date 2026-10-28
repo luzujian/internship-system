@@ -32,6 +32,8 @@ import java.util.*;
 @Slf4j
 @Service
 public class InternshipReflectionServiceImpl implements InternshipReflectionService {
+    @Autowired
+    private com.internship.service.ReflectionFeatureService reflectionFeature;
 
     @Autowired
     private InternshipReflectionMapper internshipReflectionMapper;
@@ -201,6 +203,8 @@ public class InternshipReflectionServiceImpl implements InternshipReflectionServ
     @Override
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public Map<String, Object> analyzeReflectionContent(String content, String modelCode) {
+        if (!reflectionFeature.enabled()) return Map.of("success", false, "retryable", false,
+                "message", com.internship.service.ReflectionFeatureService.DISABLED_MESSAGE);
         Map<String, Object> result = new HashMap<>();
         
         try {

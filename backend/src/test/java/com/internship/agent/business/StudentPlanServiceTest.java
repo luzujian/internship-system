@@ -50,6 +50,7 @@ class StudentPlanServiceTest {
         students = mock(StudentUserMapper.class);
         plans = mock(StudentInternshipPlanMapper.class);
         systemConfigs = mock(com.internship.service.SystemConfigService.class);
+        com.internship.support.ReflectionFeatureTestSupport.enableConfig(systemConfigs);
         when(todos.getActionableTodos(anyLong())).thenReturn(List.of());
         when(applications.findByStudentId(anyLong())).thenReturn(List.of());
         when(interviews.findByStudentId(anyLong())).thenReturn(List.of());

@@ -178,8 +178,8 @@
               <el-button type="warning" @click="remindStudent(row.id)">邮件提醒</el-button>
             </template>
             <template v-else>
-              <el-button type="primary" @click="viewReports(row)">查看实习心得</el-button>
-              <el-button type="success" @click="checkAIStatus(row)">AI 分析状态</el-button>
+              <el-button v-if="reflectionEnabled" type="primary" @click="viewReports(row)">查看实习心得</el-button>
+              <el-button v-if="reflectionEnabled" type="success" @click="checkAIStatus(row)">AI 分析状态</el-button>
             </template>
           </div>
         </article>
@@ -229,12 +229,12 @@
         <el-table-column label="操作" width="180" fixed="right" align="center">
           <template #default="scope">
             <MobileMoreActions>
-              <el-tooltip content="查看实习心得" placement="top" v-if="!showInternshipFields">
+              <el-tooltip content="查看实习心得" placement="top" v-if="reflectionEnabled && !showInternshipFields">
                 <el-button size="small" type="primary" @click="viewReports(scope.row)" class="table-btn view">
                   <el-icon><Document /></el-icon>
                 </el-button>
               </el-tooltip>
-              <el-tooltip content="AI分析状态" placement="top" v-if="!showInternshipFields">
+              <el-tooltip content="AI分析状态" placement="top" v-if="reflectionEnabled && !showInternshipFields">
                 <el-button size="small" type="success" @click="checkAIStatus(scope.row)" class="table-btn ai">
                   <el-icon><MagicStick /></el-icon>
                 </el-button>
@@ -522,6 +522,7 @@
 </template>
 
 <script setup lang="ts">
+import { reflectionEnabled } from '@/utils/businessFeatures'
 import { useAuthStore } from '@/store/auth'
 const authStore = useAuthStore()
 import { useAgentPageContext } from "@/agent/useAgentPageContext"

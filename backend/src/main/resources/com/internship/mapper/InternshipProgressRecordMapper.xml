@@ -121,6 +121,9 @@
             FROM internship_progress_record r
             INNER JOIN student_users su ON su.id = r.student_id
             WHERE r.student_id = #{studentId}
+            <if test="!includeReflections">
+                AND LOWER(r.event_type) NOT LIKE 'reflection%'
+            </if>
         ) activity
         WHERE (activity.target_exists = 1
                OR activity.event_type IN (

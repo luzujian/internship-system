@@ -588,6 +588,7 @@
 </template>
 
 <script setup lang="ts">
+import { reflectionEnabled } from '@/utils/businessFeatures'
 import { ref, computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useFormContext } from '@/agent/formContext'
@@ -724,6 +725,7 @@ const stats = ref({
 // 学生端菜单配置（用于控制心得卡片与待办的显隐）
 const menuConfig = ref<StudentMenuItem[]>([])
 const isReflectionMenuVisible = computed(() => {
+  if (!reflectionEnabled.value) return false
   const item = menuConfig.value.find(m => m.path === '/student/internships')
   // fail-closed：menuConfig 未加载完时不显示心得卡片，避免加载瞬间闪现后再隐藏
   return item ? item.visible !== false : false

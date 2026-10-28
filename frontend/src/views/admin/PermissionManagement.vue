@@ -110,6 +110,7 @@
                 <div 
                   v-for="(menu, index) in studentMenus" 
                   :key="menu.path" 
+                  v-show="isBusinessRouteEnabled(menu.path)"
                   class="menu-item-draggable"
                   :class="{ 'selected': menu.visible, 'dragging': draggedStudentIndex === index }"
                   draggable="true"
@@ -338,6 +339,7 @@
           <div 
             v-for="(menu, index) in sortedMenuList" 
             :key="menu.id" 
+            v-show="isBusinessPermissionEnabled(menu)"
             class="menu-item-draggable"
             :class="{ 'selected': selectedMenuIds.includes(menu.id), 'dragging': draggedIndex === index }"
             draggable="true"
@@ -381,6 +383,8 @@ import { ElScrollbar } from 'element-plus'
 import { Key, User, DocumentChecked, DataLine, Setting, MagicStick, Lock, Briefcase, ChatDotRound, Folder, ChatLineRound, Document, School, Collection, Download, HomeFilled, Monitor, Edit, Bell, OfficeBuilding, Upload, Clock, Rank } from '@element-plus/icons-vue'
 import request from '@/utils/request'
 import { useAuthStore } from '@/store/auth'
+import { reflectionEnabled, isBusinessRouteEnabled, isBusinessPermissionEnabled } from '@/utils/businessFeatures'
+import { isReflectionPermission } from '@/utils/reflectionBusiness.mjs'
 
 defineOptions({
   components: {
@@ -416,6 +420,7 @@ const permissionTree = ref<PermissionNode[]>([])
 const permissionDialogVisible = ref(false)
 const permissionTreeRef = ref(null)
 const currentRole = ref(null)
+const retainedAdminPermissionIds = ref<number[]>([])
 
 const teacherLoading = ref(false)
 const teacherSaving = ref(false)
@@ -679,7 +684,7 @@ const getMenuIcon = (iconName) => {
 const filteredPermissionTree = computed(() => {
   const normalizeTree = (nodes) => {
     if (!nodes) return []
-    return nodes.map(node => {
+    return nodes.filter(isBusinessPermissionEnabled).map(node => {
       const newNode: any = {
         id: node.id,
         module: node.module,
@@ -701,7 +706,7 @@ const filteredPermissionTree = computed(() => {
 const dialogPermissionTree = computed(() => {
   const normalizeTree = (nodes) => {
     if (!nodes) return []
-    return nodes.map(node => {
+    return nodes.filter(isBusinessPermissionEnabled).map(node => {
       const newNode: any = {
         id: node.id,
         module: node.module,
@@ -781,7 +786,7 @@ const fetchTeacherPermissionCounts = async () => {
       const response = await request.get<PermissionNode[]>(`/teacher/permissions/role/${role.id}`)
       if (response.code === 200) {
         const countRows = Array.isArray(response.data) ? response.data : []
-        if (role.id !== undefined) teacherPermissionCounts.value[role.id] = countRows.length
+        if (role.id !== undefined) teacherPermissionCounts.value[role.id] = countRows.filter(isBusinessPermissionEnabled).length
       }
     } catch (error) {
       logger.error(`获取角色 ${role.id} 权限数量失败:`, error)
@@ -804,6 +809,7 @@ const fetchTeacherPermissionList = async () => {
 
 const handleAssignPermissions = async (row) => {
   currentRole.value = row
+  retainedAdminPermissionIds.value = []
   permissionDialogVisible.value = true
 
   await nextTick()
@@ -812,6 +818,8 @@ const handleAssignPermissions = async (row) => {
     const response = await request.get<PermissionNode[]>(`/admin/permissions/roles/${row.id}/permissions`)
     if (response.code === 200) {
       const permissionRows = Array.isArray(response.data) ? response.data : []
+      retainedAdminPermissionIds.value = permissionRows.filter(isReflectionPermission)
+        .map(p => p.id).filter((id): id is number => id !== undefined)
       let checkedKeys: Array<string | number> = permissionRows.map(p => p.id).filter((id): id is number => id !== undefined)
 
       // 如果是admin角色，确保权限管理权限始终被选中
@@ -867,7 +875,8 @@ const savePermissions = async () => {
     logger.log('[PermissionManagement] 选中的所有节点ID:', checkedKeys)
     logger.log('[PermissionManagement] 半选中的节点ID:', halfCheckedKeys)
 
-    let allKeys = [...checkedKeys, ...halfCheckedKeys]
+    let allKeys = [...checkedKeys, ...halfCheckedKeys,
+      ...(reflectionEnabled.value ? [] : retainedAdminPermissionIds.value)]
 
     // 如果是admin角色，确保权限管理权限始终被包含
     if (currentRole.value.id === 1 || currentRole.value.roleCode === 'ROLE_ADMIN') {

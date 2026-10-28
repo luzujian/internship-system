@@ -13,6 +13,7 @@ import com.internship.websocket.AnnouncementWebSocketHandler;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -33,6 +34,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 @Slf4j
 @Component
 public class ReflectionAiAnalysisDispatcher {
+    @Autowired
+    private com.internship.service.ReflectionFeatureService reflectionFeature;
     public static final int MAX_ATTEMPTS = 3;
     public static final String FAILURE_MESSAGE = "心得已提交，AI分析暂未完成，可稍后重试或教师人工批阅，无需重复提交";
     private final InternshipReflectionMapper reflections;
@@ -72,6 +75,7 @@ public class ReflectionAiAnalysisDispatcher {
     }
 
     public void dispatchAfterCommit(Long reflectionId) {
+        if (!reflectionFeature.enabled()) return;
         if (reflectionId == null) return;
         if (TransactionSynchronizationManager.isActualTransactionActive()) {
             if (TransactionSynchronizationManager.isSynchronizationActive()) {
@@ -86,6 +90,7 @@ public class ReflectionAiAnalysisDispatcher {
     }
 
     boolean enqueue(Long reflectionId) {
+        if (!reflectionFeature.enabled()) return false;
         if (reflectionId == null || executor.isShutdown() || !queued.add(reflectionId)) return false;
         try {
             executor.execute(() -> {
@@ -103,6 +108,7 @@ public class ReflectionAiAnalysisDispatcher {
     @Scheduled(initialDelayString = "${ai.reflection.recovery-initial-delay-ms:10000}",
             fixedDelayString = "${ai.reflection.recovery-delay-ms:30000}")
     public void recoverPending() {
+        if (!reflectionFeature.enabled()) return;
         if (executor.isShutdown() || !gate.enabled()) return;
         try {
             int capacity = executor.getQueue().remainingCapacity();
@@ -115,6 +121,7 @@ public class ReflectionAiAnalysisDispatcher {
     }
 
     private void analyzePending(Long reflectionId) {
+        if (!reflectionFeature.enabled()) return;
         InternshipReflection snapshot = null;
         Long version = null;
         boolean analysisStarted = false;

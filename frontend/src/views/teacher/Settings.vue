@@ -20,7 +20,7 @@
         </div>
         <div class="calendar-setting-panel">
           <h4>教学任务</h4>
-          <template v-if="reportCycleVisible">
+          <template v-if="reflectionEnabled && reportCycleVisible">
             <label>心得周期（天）</label>
             <input v-model.number="calendar.reportCycle" type="number" min="1" max="90" :disabled="!canEditCalendar" />
           </template>
@@ -51,6 +51,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { reflectionEnabled } from '@/utils/businessFeatures'
 import {
   getInternshipCalendar,
   getReportCycleVisible,
@@ -91,8 +92,8 @@ const showOperationFeedback = (message: string, type: 'success' | 'error' = 'suc
 const validateCalendar = (): string | null => {
   if (!calendar.value.startDate || !calendar.value.endDate) return '请完整设置参考开始和结束日期'
   if (calendar.value.startDate > calendar.value.endDate) return '参考结束日期不能早于开始日期'
-  if (!Number.isInteger(calendar.value.reportCycle)
-      || calendar.value.reportCycle < 1 || calendar.value.reportCycle > 90) {
+  if (reflectionEnabled.value && (!Number.isInteger(calendar.value.reportCycle)
+      || calendar.value.reportCycle < 1 || calendar.value.reportCycle > 90)) {
     return '心得周期必须为1至90天'
   }
   if (!calendar.value.appraisalDeadline) return '请设置鉴定表截止日期'

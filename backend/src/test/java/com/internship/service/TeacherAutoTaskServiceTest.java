@@ -37,6 +37,22 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 class TeacherAutoTaskServiceTest {
+    @Test void historicalCustomReflectionRemindersArePausedWithoutSending() {
+        var task = dueScheduledTask("STATION_REMINDER");
+        task.setMessageTemplate("请提交本周心得");
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "reflectionFeature", mock(ReflectionFeatureService.class));
+        service.runEnabledTasks();
+        verifyNoInteractions(reminders, guard);
+        verify(tasks).updateStatus(eq(1L), eq(9L), eq("PAUSED"), eq(0), contains("已停用"), any());
+    }
+    @Test void disabledReflectionCannotBeReintroducedByAnAiDraft() {
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "reflectionFeature", mock(ReflectionFeatureService.class));
+        when(parser.parse("定期催交心得")).thenReturn(Map.of("triggerCondition", TeacherAutoTaskService.TRIGGER_REFLECTION));
+        BusinessException failure = assertThrows(BusinessException.class, () -> service.preview("定期催交心得", counselor));
+        assertTrue(failure.getMessage().contains("已停用"));
+        verifyNoInteractions(reminders);
+        verify(tasks, never()).insert(any());
+    }
     private TeacherAutoTaskMapper tasks;
     private TeacherAutoTaskLogMapper logs;
     private TeacherAutoTaskSendLogMapper sends;
@@ -76,6 +92,7 @@ class TeacherAutoTaskServiceTest {
         when(capabilities.effectiveAutomationPolicy(any())).thenReturn(fullPolicy());
         service = new TeacherAutoTaskService(tasks, logs, sends, teacherUsers, relations,
                 students, todos, reminders, emails, capabilities, parser, redis);
+        com.internship.support.ReflectionFeatureTestSupport.enable(service);
         counselor = new TeacherUser();
         counselor.setId(9L);
         counselor.setTeacherType("COUNSELOR");

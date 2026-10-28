@@ -36,6 +36,8 @@ import java.util.stream.Collectors;
 @Slf4j
 @Component
 public class ReflectionTaskGenerator {
+    @Autowired
+    private com.internship.service.ReflectionFeatureService reflectionFeature;
     static final ZoneId BUSINESS_ZONE = ZoneId.of("Asia/Shanghai");
     private static final Set<String> REFLECTION_ASSIGNMENT_STATUSES =
             Set.of("CONFIRMED", "IN_PROGRESS", "REPLACED", "INTERRUPTED", "ENDED");
@@ -66,6 +68,7 @@ public class ReflectionTaskGenerator {
 
     @Scheduled(cron = "0 0 2 * * ?")
     public void generateReflectionTasks() {
+        if (!reflectionFeature.enabled()) return;
         PeriodWindow window = currentWindow(calendarService.getCalendar(), LocalDate.now(BUSINESS_ZONE));
         if (window == null) {
             log.info("当前不在已配置的全局实习日历内，跳过心得任务生成");
@@ -108,6 +111,7 @@ public class ReflectionTaskGenerator {
      * 提交心得后不再按“提交时间 + 周期”滚动创建下一期；仅补齐当前全局期次的缺失任务。
      */
     public void generateNextTask(Long studentId, Long counselorId) {
+        if (!reflectionFeature.enabled()) return;
         if (studentId == null || counselorId == null) return;
         PeriodWindow window = currentWindow(calendarService.getCalendar(), LocalDate.now(BUSINESS_ZONE));
         if (window == null) return;
@@ -128,6 +132,7 @@ public class ReflectionTaskGenerator {
     private boolean createTaskIfMissing(InternshipStageAssignment placement,
                                         Long counselorId,
                                         PeriodWindow window) {
+        if (!reflectionFeature.enabled()) return false;
         Long studentId = placement.getStudentId();
         if (reflectionMapper.existsByStudentIdAndPeriodNumber(studentId, window.periodNumber())) {
             return false;

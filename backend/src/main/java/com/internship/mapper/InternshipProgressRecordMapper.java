@@ -14,5 +14,6 @@ public interface InternshipProgressRecordMapper extends BaseMapper<InternshipPro
     List<RecentActivityRecordRow> selectRecentPage(@Param("studentId") Long studentId,
                                                     @Param("cursorTime") Date cursorTime,
                                                     @Param("cursorId") Long cursorId,
-                                                    @Param("limit") int limit);
+                                                    @Param("limit") int limit,
+                                                    @Param("includeReflections") boolean includeReflections);
 }

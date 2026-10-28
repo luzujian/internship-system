@@ -44,6 +44,8 @@ import java.util.stream.Collectors;
 @Service
 public class HomeServiceImpl implements HomeService {
     @Autowired
+    private com.internship.service.ReflectionFeatureService reflectionFeature;
+    @Autowired
     private com.internship.service.AnnouncementAudiencePolicy announcementAudiencePolicy;
     
     @Autowired
@@ -129,7 +131,8 @@ public class HomeServiceImpl implements HomeService {
                         .collect(Collectors.toList());
                     dashboardStats = studentInternshipStatusMapper.getDashboardStatsByClassIds(classIds, startDate, endDate);
                     log.info("辅导员负责班级统计：{} 个班级，{} 名学生", classIds.size(), dashboardStats != null ? dashboardStats.get("totalStudents") : 0);
-                    int pendingReflectionCount = internshipReflectionMapper.countPendingByClassIds(classIds);
+                    int pendingReflectionCount = reflectionFeature != null && reflectionFeature.enabled()
+                            ? internshipReflectionMapper.countPendingByClassIds(classIds) : 0;
                     homeStats.setPendingReflectionCount(pendingReflectionCount);
                 } else {
                     dashboardStats = Map.of();

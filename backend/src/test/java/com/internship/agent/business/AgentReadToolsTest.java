@@ -39,7 +39,16 @@ class AgentReadToolsTest {
     AgentReadTools tools;
     Actor student=new Actor("s1",1L,"ROLE_STUDENT","学生",null,null,null,false,Set.of());
     Actor teacher=new Actor("t1",2L,"ROLE_TEACHER_COLLEGE","老师","COLLEGE",5L,null,false,Set.of("view:student_tracking"));
-    @BeforeEach void setup()throws Exception{when(capabilities.has(any(),eq("agent_chat"))).thenReturn(true);ObjectMapper json=new ObjectMapper();tools=new AgentReadTools(json,students,companies,positions,applications,ordinary,interviews,confirmations,placements,todos,calendar,mapper,new AgentKnowledge(json),homeService,companyUsers,reflections,counselorRelations,teacherUsers,appraisals,plans,capabilities,summaries,jobSearchStatuses,progressRecords,mock(com.internship.service.SysDictService.class));tools.setReminderDrafts(reminderDrafts);}
+    @BeforeEach void setup()throws Exception{when(capabilities.has(any(),eq("agent_chat"))).thenReturn(true);ObjectMapper json=new ObjectMapper();tools=new AgentReadTools(json,students,companies,positions,applications,ordinary,interviews,confirmations,placements,todos,calendar,mapper,new AgentKnowledge(json),homeService,companyUsers,reflections,counselorRelations,teacherUsers,appraisals,plans,capabilities,summaries,jobSearchStatuses,progressRecords,mock(com.internship.service.SysDictService.class));tools.setReminderDrafts(reminderDrafts);com.internship.support.ReflectionFeatureTestSupport.enable(tools);}
+    @Test void retiredReflectionIsNotAdvertisedOrExecutableDespiteRetainedPermissions(){
+        org.springframework.test.util.ReflectionTestUtils.setField(tools, "reflectionFeature", mock(ReflectionFeatureService.class));
+        assertTrue(tools.specs(student).stream().noneMatch(spec -> spec.name().equals("student_reflections")));
+        assertTrue(tools.specs(teacher).stream().noneMatch(spec -> spec.name().equals("teacher_reflections")));
+        assertTrue(tools.specs(student).stream().anyMatch(spec -> spec.name().equals("student_appraisal")));
+        assertTrue(tools.specs(student).stream().anyMatch(spec -> spec.name().equals("internship_calendar")));
+        assertThrows(AgentException.class, () -> tools.execute(student, "student_reflections", "{}"));
+        verifyNoInteractions(reflections);
+    }
     @Test void failedSnapshotMustNotClaimSaved(){
         when(capabilities.has(student,"internship_plan")).thenReturn(true);
         when(plans.refresh(student)).thenReturn(new StudentPlanService.PlanView(

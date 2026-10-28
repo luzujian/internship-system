@@ -34,6 +34,8 @@ import java.util.regex.Pattern;
 /** 教师自动化任务自然语言解析：模型产出结构化草稿，白名单与范围校验在应用侧完成。 */
 @Service
 public class TeacherAutoTaskParseService {
+    @org.springframework.beans.factory.annotation.Autowired
+    private ReflectionFeatureService reflectionFeature;
     private static final Logger log = LoggerFactory.getLogger(TeacherAutoTaskParseService.class);
     private static final ObjectMapper MAPPER = new ObjectMapper()
             .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
@@ -117,7 +119,11 @@ public class TeacherAutoTaskParseService {
     private ModelResult callModel(String text, int tokenBudget) {
         String code = modelCode == null || modelCode.isBlank() ? "deepseek-chat" : modelCode.trim();
         try {
-            ChatClient client = chatClientFactory.createPreviewChatClient(code, SYSTEM + "\n" + AgentClock.nowLine());
+            String currentSystem = SYSTEM;
+            if (reflectionFeature == null || !reflectionFeature.enabled()) currentSystem = SYSTEM
+                    .replace("REFLECTION_NOT_SUBMITTED(实习心得未提交)、", "")
+                    + "\n心得及周期催交业务已停用，不属于当前可用功能。不得建议或选择REFLECTION_NOT_SUBMITTED，不得将其他材料提醒解释为心得提醒；用户明确要求该停用业务时返回UNSUPPORTED并说明已停用。";
+            ChatClient client = chatClientFactory.createPreviewChatClient(code, currentSystem + "\n" + AgentClock.nowLine());
             DeepSeekChatOptions options = DeepSeekChatOptions.builder()
                     .temperature(0.1)
                     .maxTokens(tokenBudget)

@@ -51,6 +51,9 @@ public class InternshipProgressRecordServiceImpl implements InternshipProgressRe
     private InternshipProgressRecordMapper mapper;
 
     @Autowired
+    private com.internship.service.ReflectionFeatureService reflectionFeature;
+
+    @Autowired
     private AnnouncementWebSocketHandler webSocketHandler;
 
     @Autowired(required = false)
@@ -107,7 +110,7 @@ public class InternshipProgressRecordServiceImpl implements InternshipProgressRe
                 studentId,
                 decodedCursor == null ? null : decodedCursor.occurredAt(),
                 decodedCursor == null ? null : decodedCursor.id(),
-                limit + 1);
+                limit + 1, reflectionFeature.enabled());
         if (rows == null) {
             rows = List.of();
         }

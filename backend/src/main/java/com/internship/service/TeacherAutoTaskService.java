@@ -58,6 +58,8 @@ import jakarta.annotation.PreDestroy;
 @Slf4j
 @Service
 public class TeacherAutoTaskService {
+    @org.springframework.beans.factory.annotation.Autowired
+    private ReflectionFeatureService reflectionFeature;
 
     public static final String TRIGGER_REFLECTION = "REFLECTION_NOT_SUBMITTED";
     public static final String TRIGGER_APPRAISAL = "APPRAISAL_MISSING";
@@ -191,6 +193,7 @@ public class TeacherAutoTaskService {
         }
         Map<String, Object> draft = new LinkedHashMap<>(parser.parse(naturalLanguage));
         String trigger = (String) draft.get("triggerCondition");
+        if (TRIGGER_REFLECTION.equals(trigger)) requireTrigger(trigger);
         String action = (String) draft.get("action");
         Integer frequency = (Integer) draft.get("frequencyMinutes");
         draft.put("triggerLabel", triggerLabel(trigger));
@@ -336,6 +339,10 @@ public class TeacherAutoTaskService {
     public List<TeacherAutoTask> list(TeacherUser teacher) {
         requireCounselor(teacher);
         List<TeacherAutoTask> result = tasks.findByTeacherId(teacher.getId());
+        if (reflectionFeature == null || !reflectionFeature.enabled()) result = result.stream()
+                .filter(task -> !TRIGGER_REFLECTION.equals(task.getTriggerCondition())
+                        && (task.getMessageTemplate() == null || !task.getMessageTemplate().contains("心得")))
+                .toList();
         result.forEach(task -> describeTargets(teacher, task));
         return result;
     }
@@ -456,6 +463,7 @@ public class TeacherAutoTaskService {
             if (ACTION_EMAIL.equals(task.getAction())) requireEmailConfigured();
             requireSelectedTargets(teacher, TeacherAutoTaskTargets.decode(task.getTargetScope()));
             requireTrigger(task.getTriggerCondition());
+            requireMessage(task.getMessageTemplate());
             requireScheduledTime(task.getTriggerCondition(), task.getScheduleConfig());
             task.setStatus(STATUS_ACTIVE);
             task.setEnabled(1);
@@ -899,6 +907,8 @@ public class TeacherAutoTaskService {
     }
 
     private String requireTrigger(String trigger) {
+        if (TRIGGER_REFLECTION.equals(trigger) && (reflectionFeature == null || !reflectionFeature.enabled()))
+            throw new BusinessException(ReflectionFeatureService.DISABLED_MESSAGE);
         if (trigger == null || !TRIGGERS.contains(trigger)) throw new BusinessException("不支持的触发条件。");
         return trigger;
     }
@@ -974,6 +984,8 @@ public class TeacherAutoTaskService {
     }
 
     private String requireMessage(String message) {
+        if (message != null && message.contains("心得") && (reflectionFeature == null || !reflectionFeature.enabled()))
+            throw new BusinessException(ReflectionFeatureService.DISABLED_MESSAGE);
         if (message == null || message.isBlank() || message.trim().length() > 200) {
             throw new BusinessException("提醒文案需为1至200字。");
         }
@@ -1100,6 +1112,7 @@ public class TeacherAutoTaskService {
         catch (BusinessException e) { return e.getMessage(); }
         try {
             requireTrigger(task.getTriggerCondition());
+            requireMessage(task.getMessageTemplate());
             requireScheduledTime(task.getTriggerCondition(), task.getScheduleConfig());
             requireSelectedTargets(teacher, TeacherAutoTaskTargets.decode(task.getTargetScope()));
         } catch (BusinessException e) { return e.getMessage(); }

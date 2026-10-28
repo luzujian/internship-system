@@ -63,6 +63,17 @@
             </section>
           </div>
 
+          <section class="cfg-panel">
+            <div class="cfg-panel-head">
+              <div class="cfg-panel-title"><el-icon><Setting /></el-icon><span>实习心得业务</span></div>
+              <el-switch v-model="reflectionForm.enabled" :disabled="!authStore.hasPermission('system:settings:view')" active-text="启用" inactive-text="停用" />
+            </div>
+            <p class="cfg-tip">{{ reflectionEnabled ? '当前业务已启用。' : '当前业务已停用。' }}关闭后隐藏心得及批阅评分入口，并停止心得任务、分析和催交；历史记录保留。实习鉴定与其他 AI 功能继续使用。</p>
+            <div class="cfg-actions">
+              <el-button v-if="authStore.hasPermission('system:settings:view')" type="primary" size="small" :loading="savingReflection" @click="saveReflectionFeature">保存业务状态</el-button>
+            </div>
+          </section>
+
           <!-- 数据管理（危险操作区） -->
           <section class="cfg-panel danger-panel">
             <div class="cfg-panel-head">
@@ -168,7 +179,7 @@
             </el-checkbox>
           </div>
           <el-checkbox-group v-model="selectedPages" class="page-selection">
-            <el-checkbox v-for="page in availablePages" :key="page.value" :label="page.value">
+            <el-checkbox v-for="page in currentClearablePages" :key="page.value" :label="page.value">
               {{ page.label }}
             </el-checkbox>
           </el-checkbox-group>
@@ -226,6 +237,8 @@ import recruitmentService from '../../api/recruitment'
 import aiModelService from '../../api/aiModel'
 import internshipService from '../../api/internship'
 import type { FormFieldDescriptor } from '@/agent/types'
+import { loadBusinessFeatures, reflectionEnabled, isBusinessRouteEnabled } from '@/utils/businessFeatures'
+import { resetStudentMenuConfigCache } from '@/utils/studentMenuConfig'
 // 系统设置载荷精确局部接口（/admin/settings 返回体 data 形态）
 interface SystemSettingsPayload {
   basic?: {
@@ -261,6 +274,26 @@ const saving = ref(false)
 const savingStatus = ref(false)
 const clearing = ref(false)
 const loading = ref(false)
+const reflectionForm = reactive({ enabled: false })
+const savingReflection = ref(false)
+const saveReflectionFeature = async () => {
+  if (reflectionForm.enabled) {
+    try {
+      await ElMessageBox.confirm('启用后将恢复心得入口、任务和分析。是否确定恢复该业务？', '恢复心得业务', { type: 'warning' })
+    } catch { return }
+  }
+  savingReflection.value = true
+  try {
+    const response = await request.put('/admin/business-features/reflection', { reflectionEnabled: reflectionForm.enabled })
+    if (response.code !== 200) throw new Error(response.message || '保存失败')
+    await loadBusinessFeatures(true)
+    reflectionForm.enabled = reflectionEnabled.value
+    resetStudentMenuConfigCache()
+    ElMessage.success(reflectionForm.enabled ? '心得业务已恢复' : '心得业务已停用，历史数据保留')
+  } catch (error: any) {
+    ElMessage.error(error?.message || '保存业务状态失败')
+  } finally { savingReflection.value = false }
+}
 
 const basicFormRef = ref(null)
 const securityFormRef = ref(null)
@@ -333,6 +366,8 @@ onUnmounted(() => formContext.unregister('admin:security'))
 const loadSettings = async () => {
   loading.value = true
   try {
+    await loadBusinessFeatures(true)
+    reflectionForm.enabled = reflectionEnabled.value
     const response = await request.get('/admin/settings')
     if (response.code === 200) {
       // /admin/settings 的 data 为未知载荷，用精确局部接口收窄后使用
@@ -497,6 +532,9 @@ const availablePages = ref([
   { value: 'logs', label: '日志管理', service: 'log' }
 ])
 
+const currentClearablePages = computed(() => availablePages.value
+  .filter(page => isBusinessRouteEnabled(`/admin/${page.value}`)))
+
 const showClearDataDialog = () => {
   selectedPages.value = []
   clearPassword.value = ''
@@ -511,19 +549,19 @@ const showClearDataDialog = () => {
 
 const toggleSelectAll = (checked) => {
   if (checked) {
-    selectedPages.value = availablePages.value.map(page => page.value)
+    selectedPages.value = currentClearablePages.value.map(page => page.value)
   } else {
     selectedPages.value = []
   }
 }
 
 const isAllSelected = computed(() => {
-  return selectedPages.value.length === availablePages.value.length && availablePages.value.length > 0
+  return selectedPages.value.length === currentClearablePages.value.length && currentClearablePages.value.length > 0
 })
 
 const isIndeterminate = computed(() => {
   const selectedCount = selectedPages.value.length
-  return selectedCount > 0 && selectedCount < availablePages.value.length
+  return selectedCount > 0 && selectedCount < currentClearablePages.value.length
 })
 
 const selectAllChecked = computed({
@@ -544,6 +582,7 @@ const cancelClearData = () => {
 }
 
 const clearSelectedData = async () => {
+  selectedPages.value = selectedPages.value.filter(value => currentClearablePages.value.some(page => page.value === value))
   if (selectedPages.value.length === 0) {
     ElMessage.warning('请至少选择一个模块进行清除')
     return
