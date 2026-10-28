@@ -4,6 +4,7 @@ import com.internship.entity.PositionViewRecord;
 import com.internship.mapper.PositionViewRecordMapper;
 import com.internship.mapper.PositionMapper;
 import com.internship.service.PositionViewRecordService;
+import com.internship.service.PositionCacheService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -20,6 +21,9 @@ public class PositionViewRecordServiceImpl implements PositionViewRecordService 
 
     @Autowired
     private PositionMapper positionMapper;
+
+    @Autowired
+    private PositionCacheService positionCacheService;
 
     @Override
     public boolean hasViewed(Long positionId, Long studentId) {
@@ -43,6 +47,7 @@ public class PositionViewRecordServiceImpl implements PositionViewRecordService 
 
         // 浏览次数+1
         positionMapper.incrementViewCount(positionId);
+        positionCacheService.clearPositionsCache();
 
         log.debug("学生 {} 首次浏览岗位 {}，浏览次数+1", studentId, positionId);
         return true;

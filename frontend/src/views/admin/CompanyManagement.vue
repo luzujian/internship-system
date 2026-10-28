@@ -726,39 +726,39 @@ const resetPassword = async (): Promise<void> => {
 
 
 const formatAuditStatus = (auditStatus: number | string): string => {
-  switch (auditStatus) {
-    case 0: return '待审核'
-    case 1: return '审核通过'
-    case 2: return '审核拒绝'
+  switch (String(auditStatus)) {
+    case '0': return '待审核'
+    case '1': return '审核通过'
+    case '2': return '审核拒绝'
     default: return '未知状态'
   }
 }
 
 const formatAccountStatus = (status: number | string): string => {
-  switch (status) {
-    case 0: return '待审核'
-    case 1: return '正常'
-    case 2: return '已禁用'
-    case 3: return '已拒绝'
+  switch (String(status)) {
+    case '0': return '已禁用'
+    case '1': return '正常'
+    case '2': return '已禁用'
+    case '3': return '已拒绝'
     default: return '未知状态'
   }
 }
 
 const getAuditStatusTagType = (auditStatus: number | string): string => {
-  switch (auditStatus) {
-    case 0: return 'warning'
-    case 1: return 'success'
-    case 2: return 'danger'
+  switch (String(auditStatus)) {
+    case '0': return 'warning'
+    case '1': return 'success'
+    case '2': return 'danger'
     default: return 'info'
   }
 }
 
 const getAccountStatusTagType = (status: number | string): string => {
-  switch (status) {
-    case 0: return 'warning'
-    case 1: return 'success'
-    case 2: return 'danger'
-    case 3: return 'info'
+  switch (String(status)) {
+    case '0': return 'danger'
+    case '1': return 'success'
+    case '2': return 'danger'
+    case '3': return 'info'
     default: return 'info'
   }
 }
@@ -978,10 +978,10 @@ useSmartImportRefresh('company', () => { queryPage() })
               ></el-option>
             </el-select>
           </el-form-item>
-          <el-form-item v-show="!isMobile || advancedFiltersOpen" label="状态">
-            <el-select v-model="searchForm.status" placeholder="请选择状态" clearable>
-              <el-option label="待审核" value="0"></el-option>
-              <el-option label="审核通过" value="1"></el-option>
+          <el-form-item v-show="!isMobile || advancedFiltersOpen" label="账号状态">
+            <el-select v-model="searchForm.status" placeholder="请选择账号状态" clearable>
+              <el-option label="已禁用" value="0"></el-option>
+              <el-option label="正常" value="1"></el-option>
             </el-select>
           </el-form-item>
           <el-form-item class="search-actions">
@@ -1261,6 +1261,11 @@ useSmartImportRefresh('company', () => { queryPage() })
           </el-descriptions-item>
           <el-descriptions-item label="申请时间" :span="2">{{ formatDate(null, null, currentCompany.applyTime) }}</el-descriptions-item>
           <el-descriptions-item label="审核状态">
+            <el-tag :type="getAuditStatusTagType(currentCompany.auditStatus)" size="small">
+              {{ formatAuditStatus(currentCompany.auditStatus) }}
+            </el-tag>
+          </el-descriptions-item>
+          <el-descriptions-item label="账号状态">
             <el-tag :type="getAccountStatusTagType(currentCompany.status)" size="small">
               {{ formatAccountStatus(currentCompany.status) }}
             </el-tag>

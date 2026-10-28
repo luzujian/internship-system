@@ -73,7 +73,10 @@
     </div>
 
     <!-- 申请列表 + 空状态 -->
-    <div class="list-wrapper">
+    <div v-loading="applicationsLoading" class="list-wrapper" :aria-busy="applicationsLoading">
+      <el-alert v-if="applicationsError" :title="applicationsError" type="error" :closable="false" show-icon>
+        <el-button link type="primary" :loading="applicationsLoading" @click="fetchApplications">重新加载</el-button>
+      </el-alert>
       <div v-if="filteredApplications.length > 0" class="applications-list">
         <div
           v-for="application in filteredApplications"
@@ -129,7 +132,7 @@
           </div>
         </div>
       </div>
-      <div v-else class="empty-state">
+      <div v-else-if="!applicationsLoading && !applicationsError" class="empty-state">
         <el-icon class="empty-icon"><Document /></el-icon>
         <div class="empty-text">暂无{{ getFilterLabel() }}的申请记录</div>
         <el-button type="primary" class="go-browse-button" @click="goToJobs">
@@ -509,6 +512,7 @@ const filters = [
   { label: "待审核", value: "pending" },
   { label: "已通过", value: "approved" },
   { label: "已拒绝", value: "rejected" },
+  { label: "已撤回", value: "withdrawn" },
 ];
 
 // 申请类型选项（单位变更已停用，历史记录并入"全部"；考研延迟启用中，提供专属筛选）
@@ -520,6 +524,9 @@ const applicationTypes = [
 ];
 
 const applications = ref([])
+const applicationsLoading = ref(false)
+const applicationsError = ref('')
+let applicationsRequestId = 0
 const highlightedApplicationId = ref<string | number | null>(null)
 
 // 状态值转换：后端数字/字符串到前端字符串
@@ -532,7 +539,11 @@ const statusMap = {
   'approved': 'approved',
   'rejected': 'rejected',
   'withdrawn': 'withdrawn',
+  'cancelled': 'withdrawn',
+  'canceled': 'withdrawn',
   'hired': 'hired',
+  'pending_interview': 'pending_interview',
+  'interview': 'interview',
   'interview_passed': 'interview_passed',
   'interview_failed': 'interview_failed'
 };
@@ -540,8 +551,8 @@ const statusMap = {
 // 申请页只反映申请审批链：企业同意后无论面试结果如何都显示"已通过"，面试细节看面试管理页
 // 直录保留原始状态以显示"直接录取（免面试）"
 const normalizeApplicationStatus = (status, directHire) => {
-  if (directHire) return status;
-  if (status === 'interview_passed' || status === 'interview_failed') return 'approved';
+  if (directHire && status === 'interview_passed') return status;
+  if (['pending_interview', 'interview', 'interview_passed', 'interview_failed'].includes(status)) return 'approved';
   return status;
 };
 
@@ -555,115 +566,134 @@ const formatDateTimeMinute = (time?: string | null) => {
   const pad = (n: number) => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
-// 从后端API获取申请数据
+interface StudentApplicationRow {
+  id?: number | string
+  positionName?: string
+  position_name?: string
+  companyName?: string
+  company_name?: string
+  company?: string
+  applicationType?: string
+  application_type?: string
+  oldCompany?: string
+  newCompany?: string
+  companyCity?: string
+  location?: string
+  hrManagerName?: string
+  hrName?: string
+  contactPerson?: string
+  recruiterName?: string
+  hrManagerPhone?: string
+  hrPhone?: string
+  contactPhone?: string
+  recruiterPhone?: string
+  hrEmail?: string
+  contactEmail?: string
+  recruiterEmail?: string
+  status?: string | number
+  directHire?: boolean
+  direct_hire?: boolean
+  applyTime?: string
+  apply_time?: string
+  createTime?: string
+  jobTitle?: string
+  salary?: string
+  duration?: string
+  [key: string]: unknown
+}
+const studentApplicationRows = ref<StudentApplicationRow[]>([])
+const jobApplicationRows = ref<StudentApplicationRow[]>([])
+
+// 两类申请独立加载；部分接口失败时保留已成功的数据并明确提示。
 const fetchApplications = async () => {
+  const requestId = ++applicationsRequestId
+  applicationsLoading.value = true
+  applicationsError.value = ''
   try {
-    interface StudentApplicationRow {
-      id?: number | string
-      positionName?: string
-      position_name?: string
-      companyName?: string
-      company_name?: string
-      company?: string
-      applicationType?: string
-      application_type?: string
-      oldCompany?: string
-      newCompany?: string
-      companyCity?: string
-      location?: string
-      hrManagerName?: string
-      hrName?: string
-      contactPerson?: string
-      recruiterName?: string
-      hrManagerPhone?: string
-      hrPhone?: string
-      contactPhone?: string
-      recruiterPhone?: string
-      hrEmail?: string
-      contactEmail?: string
-      recruiterEmail?: string
-      status?: string | number
-      directHire?: boolean
-      direct_hire?: boolean
-      applyTime?: string
-      apply_time?: string
-      createTime?: string
-      jobTitle?: string
-      salary?: string
-      duration?: string
-      [key: string]: unknown
-    }
     // 并行获取学生申请(自主实习/单位变更/考研延迟)和岗位申请
-    const [appResponse, jobResponse] = await Promise.all([
+    const responses = await Promise.allSettled([
       request.get<StudentApplicationRow[]>(`/student/applications`),
       request.get<StudentApplicationRow[]>(`/student/job-applications`)
     ]);
+    if (requestId !== applicationsRequestId) return
+
+    const sources = [studentApplicationRows, jobApplicationRows]
+    const sourceNames = ['自主实习/单位变更/考研延迟申请', '岗位申请']
+    const failedSources = []
+    responses.forEach((result, index) => {
+      if (result.status === 'fulfilled' && result.value.code === 200 && Array.isArray(result.value.data)) {
+        sources[index].value = result.value.data
+      } else {
+        failedSources.push(sourceNames[index])
+      }
+    })
+    applicationsError.value = failedSources.length ? `${failedSources.join('、')}加载失败，请重试` : ''
 
     const allApplications = [];
 
     // 处理学生申请(自主实习/单位变更/考研延迟)
-    if (appResponse.code === 200) {
-      const data = Array.isArray(appResponse.data) ? appResponse.data : [];
-      data.forEach(app => {
-        let jobTitle = app.positionName || '';
-        let company = app.companyName || app.company || '';
+    studentApplicationRows.value.forEach(app => {
+      const applicationType = app.applicationType || app.application_type;
+      let jobTitle = app.positionName || app.position_name || '';
+      let company = app.companyName || app.company_name || app.company || '';
 
-        // 对于学生申请设置合适的显示标题
-        if (app.applicationType === 'selfPractice') {
-          jobTitle = jobTitle || '自主实习申请';
-          company = company || app.company || '';
-        } else if (app.applicationType === 'unitChange') {
-          jobTitle = jobTitle || '单位变更申请';
-          company = app.oldCompany && app.newCompany
-            ? `${app.oldCompany} → ${app.newCompany}`
-            : (app.oldCompany || app.newCompany || '');
-        } else if (app.applicationType === 'delay') {
-          jobTitle = jobTitle || '考研延迟申请';
-          company = company || '';
-        }
+      // 对于学生申请设置合适的显示标题
+      if (applicationType === 'selfPractice') {
+        jobTitle = jobTitle || '自主实习申请';
+        company = company || app.company || '';
+      } else if (applicationType === 'unitChange') {
+        jobTitle = jobTitle || '单位变更申请';
+        company = app.oldCompany && app.newCompany
+          ? `${app.oldCompany} → ${app.newCompany}`
+          : (app.oldCompany || app.newCompany || '');
+      } else if (applicationType === 'delay') {
+        jobTitle = jobTitle || '考研延迟申请';
+        company = company || '';
+      }
 
-        allApplications.push({
-          ...app,
-          applicationType: app.applicationType,
-          jobTitle,
-          company,
-          location: app.companyCity || app.location || '',
-          contactPerson: app.hrManagerName || app.hrName || app.contactPerson || app.recruiterName || '',
-          contactPhone: app.hrManagerPhone || app.hrPhone || app.contactPhone || app.recruiterPhone || '',
-          contactEmail: app.hrEmail || app.contactEmail || app.recruiterEmail || '',
-          status: normalizeApplicationStatus(statusMap[String(app.status ?? '')] || 'pending', app.directHire),
-          applyDate: formatDateTimeMinute(app.applyTime || app.createTime).slice(0, 10),
-          applyDateTime: formatDateTimeMinute(app.applyTime || app.createTime)
-        });
+      allApplications.push({
+        ...app,
+        applicationType,
+        jobTitle: jobTitle || '申请记录',
+        company,
+        location: app.companyCity || app.location || '',
+        contactPerson: app.hrManagerName || app.hrName || app.contactPerson || app.recruiterName || '',
+        contactPhone: app.hrManagerPhone || app.hrPhone || app.contactPhone || app.recruiterPhone || '',
+        contactEmail: app.hrEmail || app.contactEmail || app.recruiterEmail || '',
+        status: normalizeApplicationStatus(statusMap[String(app.status ?? '').trim().toLowerCase()] || 'unknown', app.directHire),
+        applyTime: app.applyTime || app.apply_time || app.createTime,
+        applyDate: formatDateTimeMinute(app.applyTime || app.apply_time || app.createTime).slice(0, 10),
+        applyDateTime: formatDateTimeMinute(app.applyTime || app.apply_time || app.createTime)
       });
-    }
+    });
 
     // 处理岗位申请
-    if (jobResponse.code === 200) {
-      const jobData = Array.isArray(jobResponse.data) ? jobResponse.data : [];
-      jobData.forEach(app => {
-        allApplications.push({
-          ...app,
-          applicationType: 'job', // 岗位申请标记为 job
-          jobTitle: app.positionName || app.jobTitle || '',
-          company: app.companyName || app.company || '',
-          location: app.location || '',
-          salary: app.salary || '',
-          duration: app.duration || '',
-          contactPerson: app.hrName || app.contactPerson || app.recruiterName || '',
-          contactPhone: app.hrPhone || app.contactPhone || app.recruiterPhone || '',
-          contactEmail: app.hrEmail || app.contactEmail || app.recruiterEmail || '',
-          status: normalizeApplicationStatus(statusMap[String(app.status ?? '')] || 'pending', app.directHire),
-          applyDate: formatDateTimeMinute((app.applyDate as string) || app.createTime).slice(0, 10),
-          applyDateTime: formatDateTimeMinute((app.applyDate as string) || app.createTime)
-        });
+    jobApplicationRows.value.forEach(app => {
+      allApplications.push({
+        ...app,
+        applicationType: 'job', // 岗位申请标记为 job
+        jobTitle: app.positionName || app.position_name || app.jobTitle || '岗位申请',
+        company: app.companyName || app.company_name || app.company || '',
+        location: app.location || '',
+        salary: app.salary || '',
+        duration: app.duration || '',
+        contactPerson: app.hrName || app.contactPerson || app.recruiterName || '',
+        contactPhone: app.hrPhone || app.contactPhone || app.recruiterPhone || '',
+        contactEmail: app.hrEmail || app.contactEmail || app.recruiterEmail || '',
+        status: normalizeApplicationStatus(statusMap[String(app.status ?? '').trim().toLowerCase()] || 'unknown', app.directHire),
+        applyTime: app.createTime || (app.applyDate as string),
+        applyDate: formatDateTimeMinute(app.createTime || (app.applyDate as string)).slice(0, 10),
+        applyDateTime: formatDateTimeMinute(app.createTime || (app.applyDate as string))
       });
-    }
+    });
 
     applications.value = allApplications;
   } catch (error) {
+    if (requestId !== applicationsRequestId) return
     console.error('获取申请数据失败:', error);
-    // 保留默认数据，确保页面正常显示
+    applicationsError.value = '申请记录加载失败，请重试';
+  } finally {
+    if (requestId === applicationsRequestId) applicationsLoading.value = false
   }
 };
 
@@ -686,7 +716,7 @@ const filteredApplications = computed(() => {
   if (selectedFilter.value !== "all") {
     result = result.filter((app) => {
       if (selectedFilter.value === "approved") {
-        return app.status === "approved" || app.status === "interview_passed";
+        return ['approved', 'interview_passed', 'hired'].includes(app.status);
       }
       return app.status === selectedFilter.value;
     });
@@ -696,7 +726,7 @@ const filteredApplications = computed(() => {
   return [...result].sort((a, b) => {
     const ta = new Date(a.applyTime || a.applyDateTime || a.applyDate || a.createTime || 0).getTime() || 0;
     const tb = new Date(b.applyTime || b.applyDateTime || b.applyDate || b.createTime || 0).getTime() || 0;
-    return tb - ta;
+    return tb - ta || Number(b.id || 0) - Number(a.id || 0);
   });
 });
 
@@ -721,7 +751,7 @@ const getFilterLabel = () => {
 };
 
 // 方法：获取状态中文文本
-const getStatusText = (status, directHire = false) => getApplicationStatusText(status, directHire);
+const getStatusText = (status, directHire = false) => status === 'unknown' ? '未知状态' : getApplicationStatusText(status, directHire);
 
 // 考研计划材料上传状态；在按申请记录授权下载前不暴露存储地址。
 const hasDelayPlan = computed(() => {
@@ -921,8 +951,11 @@ const withdrawApplication = async (application) => {
       if (index !== -1) {
         if (isDelay) {
           applications.value[index] = { ...applications.value[index], status: 'withdrawn' };
+          const source = studentApplicationRows.value.find(app => String(app.id) === String(application.id))
+          if (source) source.status = 'withdrawn'
         } else {
           applications.value.splice(index, 1);
+          jobApplicationRows.value = jobApplicationRows.value.filter(app => String(app.id) !== String(application.id))
         }
       }
       ElMessage.success(response.message || '申请已撤回');
@@ -1444,7 +1477,8 @@ useAgentPageContext(() => ({
     inset 0 1px 0 rgba(255, 255, 255, 0.6);
 }
 
-.status-tag.interview_passed {
+.status-tag.interview_passed,
+.status-tag.hired {
   background: linear-gradient(135deg, #f6ffed 0%, #d9f7be 100%);
   color: #52c41a;
   border: 1px solid #b7eb8f;
@@ -1460,6 +1494,13 @@ useAgentPageContext(() => ({
   box-shadow:
     0 2px 8px rgba(245, 34, 45, 0.2),
     inset 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+
+.status-tag.withdrawn,
+.status-tag.unknown {
+  background: #f4f4f5;
+  color: #606266;
+  border: 1px solid #d3d4d6;
 }
 
 .card-body {

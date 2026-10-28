@@ -48,6 +48,7 @@
                 type="button"
                 :class="['quick-filter-item', { active: activeQuickFilter === item.value }]"
                 :aria-pressed="activeQuickFilter === item.value"
+                :title="item.description"
                 @click="handleQuickFilter(item.value)"
               >
                 {{ item.label }}
@@ -224,8 +225,10 @@
             <el-tag v-else-if="row.applicationStatus === 'interview_passed'" type="success">面试通过</el-tag>
             <el-tag v-else-if="row.applicationStatus === 'interview_failed'" type="danger">面试未通过</el-tag>
             <el-tag v-else-if="row.applicationStatus === 'approved'" type="success">已通过</el-tag>
+            <el-tag v-else-if="row.applicationStatus === 'hired'" type="success">已录用</el-tag>
             <el-tag v-else-if="row.applicationStatus === 'rejected'" type="danger">已拒绝</el-tag>
             <el-tag v-else-if="row.applicationStatus === 'withdrawn'" type="info">已撤回</el-tag>
+            <el-tag v-else type="info">未知状态</el-tag>
           </template>
         </el-table-column>
         <el-table-column label="操作" width="300" align="center" fixed="right">
@@ -667,6 +670,7 @@ const jobApplicationStatus = (status: unknown) => {
     interview_passed: { text: '面试通过', type: 'success' },
     interview_failed: { text: '面试未通过', type: 'danger' },
     approved: { text: '已通过', type: 'success' },
+    hired: { text: '已录用', type: 'success' },
     rejected: { text: '已拒绝', type: 'danger' },
     withdrawn: { text: '已撤回', type: 'info' }
   }
@@ -684,18 +688,8 @@ const handlePositionUpdate = (data: PositionUpdateData) => {
     }
     return
   }
-  if (index !== -1) {
-    // 名额仅在企业确认入职时占用；名额为 0 的岗位仍允许学生提交申请。
-    jobs.value[index] = {
-      ...jobs.value[index],
-      remainingQuota: data.remainingQuota,
-      recruitedCount: data.recruitedCount,
-      plannedRecruit: data.plannedRecruit
-    }
-  } else {
-    // 新职位或恢复招聘：调用接口获取完整列表以包含所有信息
-    loadPositions()
-  }
+  // 更新可能涉及地区、类别和发布时间，重新读取当前排序，保持组合筛选正确。
+  loadPositions()
 }
 
 const handlePositionDelete = (data: { positionId: number }) => {
@@ -737,6 +731,7 @@ const route = useRoute()
 const searchKeyword = ref('')
 const positionsLoading = ref(false)
 const positionsError = ref('')
+let positionsRequestId = 0
 const showFilter = ref(false)
 const activeQuickFilter = ref('all')
 const selectedIndustry = ref([])
@@ -780,10 +775,10 @@ watch(showApplicationDialog, (open) => { if (!open) formContext.unregister('jobs
 onUnmounted(() => { formContext.unregister('jobs:apply') })
 
 const quickFilters = [
-  { value: 'all', label: '全部' },
-  { value: 'latest', label: '最新' },
-  { value: 'hot', label: '热门' },
-  { value: 'recommended', label: '推荐' }
+  { value: 'all', label: '全部', description: '显示所有在招岗位，按默认顺序排列' },
+  { value: 'latest', label: '最新', description: '所有在招岗位按发布时间从新到旧排列' },
+  { value: 'hot', label: '热门', description: '所有在招岗位按学生浏览人数从多到少排列' },
+  { value: 'recommended', label: '推荐', description: '所有在招岗位按学生提交的企业评分排序，暂无评分的排在后面' }
 ]
 
 const industryOptions = ref([])
@@ -815,7 +810,7 @@ const internshipBaseOptions = [
 
 const cascaderProps = {
   expandTrigger: 'hover',
-  checkStrictly: false,
+  checkStrictly: true,
   emitPath: true
 }
 
@@ -841,12 +836,6 @@ const jobs = ref<Array<{
   isFavorite?: boolean
   [key: string]: unknown
 }>>([])
-const originalJobs = ref<Array<{
-  id?: number | string
-  isApplied?: boolean
-  applicationStatus?: string | null
-  [key: string]: unknown
-}>>([])
 const confirmedPositionId = ref(null) // 学生已确认的职位ID
 const highlightedJobId = ref<number | string | null>(null)
 let highlightTimer = 0
@@ -864,40 +853,37 @@ const highlightTableRow = (jobId: number) => {
     if (row) row.scrollIntoView({ behavior: 'smooth', block: 'center' })
   })
 }
-const ACTIVE_APPLICATION_STATUSES = new Set([
-  'pending',
-  'approved',
-  'interview',
-  'pending_interview',
-  'interview_passed'
+const RETRYABLE_APPLICATION_STATUSES = new Set([
+  'rejected', 'interview_failed', 'withdrawn', 'cancelled', 'canceled'
 ])
 
 const filteredJobs = computed(() => {
   let result = [...jobs.value]
 
-  if (searchKeyword.value) {
-    const keyword = searchKeyword.value.toLowerCase()
+  const keyword = searchKeyword.value.trim().toLowerCase()
+  if (keyword) {
     result = result.filter(job => 
-      job.title.toLowerCase().includes(keyword) ||
-      job.company.toLowerCase().includes(keyword)
+      String(job.title || '').toLowerCase().includes(keyword) ||
+      String(job.company || '').toLowerCase().includes(keyword)
     )
   }
   
   if (selectedIndustry.value.length > 0) {
-    result = result.filter(job => selectedIndustry.value.includes(job.industry))
+    result = result.filter(job => selectedIndustry.value.some(value => String(value) === String(job.industry)))
   }
   
   if (selectedCompany.value.length > 0) {
     result = result.filter(job =>
-      selectedCompany.value.includes(job.companyId)
+      selectedCompany.value.some(value => String(value) === String(job.companyId))
     )
   }
   
   if (selectedRegion.value.length > 0) {
     const regionStr = selectedRegion.value.join('-')
-    result = result.filter(job => 
-      job.location.toLowerCase().includes(regionStr.toLowerCase())
-    )
+    result = result.filter(job => {
+      const location = String(job.location || '')
+      return location === regionStr || location.startsWith(`${regionStr}-`)
+    })
   }
   
   if (selectedSalary.value) {
@@ -906,7 +892,7 @@ const filteredJobs = computed(() => {
       if (!jobRange) return false
       const filterValue = selectedSalary.value
       if (filterValue === '12+') {
-        return jobRange.min >= 12
+        return jobRange.max >= 12
       }
       const parts = filterValue.split('-')
       const filterMin = parseInt(parts[0])
@@ -915,11 +901,11 @@ const filteredJobs = computed(() => {
     })
   }
   
-  if (selectedDuration) {
+  if (selectedDuration.value) {
     result = result.filter(job => {
       if (!selectedDuration.value) return true
       const durationRange = selectedDuration.value
-      const jobDuration = job.duration
+      const jobDuration = String(job.duration || '')
       return jobDuration.includes(durationRange.split('-')[0])
     })
   }
@@ -938,6 +924,9 @@ const totalJobs = computed(() => filteredJobs.value.length)
 watch([searchKeyword, selectedIndustry, selectedCompany, selectedRegion, selectedSalary, selectedDuration, selectedInternshipBase, pageSize], () => {
   currentPage.value = 1
 }, { deep: true })
+watch(totalJobs, (total) => {
+  currentPage.value = Math.min(currentPage.value, Math.max(1, Math.ceil(total / pageSize.value)))
+})
 
 const paginatedJobs = computed(() => {
   const start = (currentPage.value - 1) * pageSize.value
@@ -1031,43 +1020,9 @@ const handleSearch = () => {
 }
 
 const handleQuickFilter = async (value) => {
-  if (positionsLoading.value) return
-  positionsLoading.value = true
-  positionsError.value = ''
-  console.log('点击快捷筛选:', value)
-  console.log('当前activeQuickFilter:', activeQuickFilter.value)
   activeQuickFilter.value = value
   currentPage.value = 1
-
-  try {
-    let response
-    if (value === 'all') {
-      response = await request.get(`/positions/all`)
-    } else if (value === 'latest') {
-      response = await request.get(`/positions/latest`)
-    } else if (value === 'hot') {
-      response = await request.get(`/positions/hot`)
-    } else if (value === 'recommended') {
-      response = await request.get(`/positions/recommended`)
-    }
-
-    if (response.code === 200) {
-      jobs.value = response.data || []
-      originalJobs.value = [...jobs.value]
-      // 重新标记已申请的职位
-      await markAppliedJobs()
-      ElMessage.success('筛选成功')
-    } else {
-      positionsError.value = response.message || '职位加载失败，请重试'
-      ElMessage.error(response.data.msg || '筛选失败')
-    }
-  } catch (error) {
-    positionsError.value = '职位加载失败，请检查网络后重试'
-    console.error('筛选失败:', error)
-    ElMessage.error('网络错误，请稍后重试')
-  } finally {
-    positionsLoading.value = false
-  }
+  await loadPositions()
 }
 
 const viewJobDetail = async (job) => {
@@ -1320,7 +1275,7 @@ const companyVideos = computed(() => {
 })
 
 // 标记已申请的职位及其状态
-const markAppliedJobs = async () => {
+const markAppliedJobs = async (positionRows = jobs.value) => {
   try {
     // 使用与 StudentJobApplicationService.list() 相同的 API
     interface AppliedJobRow {
@@ -1333,35 +1288,23 @@ const markAppliedJobs = async () => {
       data?: AppliedJobRow[]
     }
     if (response.code === 200) {
-      // 仅进行中的招聘流程阻止同一岗位重复提交；已拒绝、未通过或已撤回后可重新申请。
-      // 注意：必须存入小写化的 status，模板里用 === 严格比较，原值若是大写会匹配不上任何分支。
+      // 接口按新到旧返回，只取同一岗位最新记录，与后端防重复申请规则一致。
       const applicationStatusMap = new Map()
-      console.log('[markAppliedJobs] 申请列表原始数据:', response.data)
       const appliedRows = Array.isArray(response.data) ? response.data : []
       appliedRows.forEach((app) => {
-        const status = String(app.status || '').toLowerCase()
-        console.log('[markAppliedJobs] 申请记录 positionId=', app.positionId, '原始status=', app.status, '小写=', status, '是否活跃=', ACTIVE_APPLICATION_STATUSES.has(status))
-        if (ACTIVE_APPLICATION_STATUSES.has(status)) {
-          applicationStatusMap.set(String(app.positionId), status)
+        const positionId = String(app.positionId)
+        if (!applicationStatusMap.has(positionId)) {
+          applicationStatusMap.set(positionId, String(app.status || '').toLowerCase())
         }
       })
 
-      jobs.value.forEach(job => {
-        const positionIdStr = String(job.id)
+      positionRows.forEach(job => {
+        const status = applicationStatusMap.get(String(job.id))
         job.isApplied = false
         job.applicationStatus = null
-        if (applicationStatusMap.has(positionIdStr)) {
+        if (status !== undefined && !RETRYABLE_APPLICATION_STATUSES.has(status)) {
           job.isApplied = true
-          job.applicationStatus = applicationStatusMap.get(positionIdStr)
-        }
-      })
-      originalJobs.value.forEach(job => {
-        const positionIdStr = String(job.id)
-        job.isApplied = false
-        job.applicationStatus = null
-        if (applicationStatusMap.has(positionIdStr)) {
-          job.isApplied = true
-          job.applicationStatus = applicationStatusMap.get(positionIdStr)
+          job.applicationStatus = status
         }
       })
     }
@@ -1420,13 +1363,7 @@ const loadRegionOptions = async () => {
     }
     const response = await request.get<RegionOptionRow[]>(`/positions/options/regions`)
     if (response.code === 200) {
-      // 将省份列表转换为级联选择器格式
-      const regionRows = Array.isArray(response.data) ? response.data : []
-      regionOptions.value = regionRows.map(item => ({
-        value: item.value,
-        label: item.label,
-        children: []
-      }))
+      regionOptions.value = Array.isArray(response.data) ? response.data : []
     }
   } catch (error) {
     console.error('获取地区选项失败:', error)
@@ -1435,6 +1372,7 @@ const loadRegionOptions = async () => {
 
 // 加载职位列表
 const loadPositions = async () => {
+  const requestId = ++positionsRequestId
   positionsLoading.value = true
   positionsError.value = ''
   try {
@@ -1442,26 +1380,32 @@ const loadPositions = async () => {
       id?: number | string
       [key: string]: unknown
     }
-    const response = await request.get<JobListRow[]>(`/positions/all`)
+    const response = await request.get<JobListRow[]>(`/positions/${activeQuickFilter.value}`)
+    if (requestId !== positionsRequestId) return
     if (response.code === 200) {
-      const positionRows = Array.isArray(response.data) ? response.data : []
-      jobs.value = positionRows as typeof jobs.value
-      originalJobs.value = [...jobs.value]
+      const positionRows = (Array.isArray(response.data) ? response.data : []) as typeof jobs.value
+      await markAppliedJobs(positionRows)
+      if (requestId !== positionsRequestId) return
+      jobs.value = positionRows
     } else {
-      positionsError.value = response.message || '职位加载失败，请重试'
+      jobs.value = []
+      positionsError.value = response.message || response.msg || '职位加载失败，请重试'
     }
   } catch (error) {
-    positionsError.value = '职位加载失败，请检查网络后重试'
+    if (requestId !== positionsRequestId) return
+    jobs.value = []
+    const message = error instanceof Error ? error.message : ''
+    positionsError.value = message && message !== 'Network Error' ? message : '职位加载失败，请检查网络后重试'
     console.error('获取职位列表失败:', error)
   } finally {
-    positionsLoading.value = false
+    if (requestId === positionsRequestId) positionsLoading.value = false
   }
 }
 
 onMounted(async () => {
   console.log('Jobs component mounted')
 
-  // 先加载岗位，再标记进行中的申请，避免两个并行请求产生竞态。
+  // 职位加载内部会标记申请状态，独立选项可以并行读取。
   await Promise.all([
     loadPositions(),
     loadIndustryOptions(),
@@ -1469,7 +1413,6 @@ onMounted(async () => {
     loadRegionOptions(),
     fetchCurrentPlacement()
   ])
-  await markAppliedJobs()
 
   // Result links resolve details independently of the current list filters.
   const linkedPositionId = route.query.positionId

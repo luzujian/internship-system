@@ -212,7 +212,12 @@ public class StudentPositionController {
 
     /** 到期安全阀(读取时兜底):实习期已过的岗位即使尚未暂停,也视为不在招 */
     private boolean isExpired(Date endDate) {
-        return endDate != null && endDate.before(new java.sql.Date(System.currentTimeMillis()));
+        return endDate != null && endDate.before(java.sql.Date.valueOf(java.time.LocalDate.now()));
+    }
+
+    private static Comparator<PositionVO> latestComparator() {
+        return Comparator.comparing(PositionVO::getPublishTime, Comparator.nullsLast(Comparator.reverseOrder()))
+                .thenComparing(PositionVO::getId, Comparator.nullsLast(Comparator.reverseOrder()));
     }
 
     private void enrichStudentPositionData(List<PositionVO> positions) {
@@ -375,11 +380,10 @@ public class StudentPositionController {
                 positionCacheService.cachePositions(allPositions);
             }
 
-            // 从缓存数据中筛选最新10条（按发布时间倒序）
+            // 返回全部在招岗位的排序结果，供前端组合筛选后分页，避免先截断导致漏显。
             List<PositionVO> latest = allPositions.stream()
                     .filter(this::isActive)
-                    .sorted(Comparator.comparing(p -> p.getPublishTime() == null ? 0L : -p.getPublishTime().getTime()))
-                    .limit(10)
+                    .sorted(latestComparator())
                     .collect(Collectors.toList());
 
             // 补充学生个性化数据（申请状态、收藏状态、真实申请人数）
@@ -435,11 +439,11 @@ public class StudentPositionController {
                 positionCacheService.cachePositions(allPositions);
             }
 
-            // 从缓存数据中筛选热门10条（按浏览次数倒序）
+            // 热门按独立学生浏览次数排序，同分时按发布时间和ID排序；不截断筛选范围。
             List<PositionVO> hot = allPositions.stream()
                     .filter(this::isActive)
-                    .sorted(Comparator.comparingInt(p -> -(p.getViewCount() == null ? 0 : p.getViewCount())))
-                    .limit(10)
+                    .sorted(Comparator.comparingInt((PositionVO p) -> p.getViewCount() == null ? 0 : p.getViewCount())
+                            .reversed().thenComparing(latestComparator()))
                     .collect(Collectors.toList());
 
             // 补充学生个性化数据（申请状态、收藏状态、真实申请人数）
@@ -465,7 +469,7 @@ public class StudentPositionController {
     public Result getRecommended() {
         try {
             List<PositionVO> recommended = loadBasePositions().stream()
-                    .filter(position -> "active".equalsIgnoreCase(position.getStatus()))
+                    .filter(this::isActive)
                     .collect(Collectors.toCollection(ArrayList::new));
             if (recommended.isEmpty()) return Result.success(Collections.emptyList());
 
@@ -714,9 +718,10 @@ public class StudentPositionController {
     }
 
     /**
-     * 获取所有省份选项（从岗位表中获取实际存在的省份）
+     * 获取在招岗位实际存在的省、市、区选项。
      */
     @GetMapping("/options/regions")
+    @SuppressWarnings("unchecked")
     public Result getRegionOptions() {
         try {
             // 尝试从缓存获取
@@ -725,16 +730,25 @@ public class StudentPositionController {
                 return Result.success(cached);
             }
 
-            List<String> provinces = positionService.findDistinctProvinces();
-            if (provinces.isEmpty()) {
-                return Result.success(Collections.emptyList());
-            }
             List<Map<String, Object>> regions = new ArrayList<>();
-            for (String province : provinces) {
-                Map<String, Object> item = new HashMap<>();
-                item.put("value", province);
-                item.put("label", province);
-                regions.add(item);
+            for (Position position : positionService.findAll()) {
+                if (!isActive(position)) continue;
+                String[] path = {position.getProvince(), position.getCity(), position.getDistrict()};
+                List<Map<String, Object>> level = regions;
+                for (int i = 0; i < path.length; i++) {
+                    String value = path[i];
+                    if (value == null || value.isBlank()) break;
+                    Map<String, Object> option = level.stream()
+                            .filter(item -> value.equals(item.get("value"))).findFirst().orElse(null);
+                    if (option == null) {
+                        option = new LinkedHashMap<>();
+                        option.put("value", value);
+                        option.put("label", value);
+                        level.add(option);
+                    }
+                    if (i + 1 == path.length || path[i + 1] == null || path[i + 1].isBlank()) break;
+                    level = (List<Map<String, Object>>) option.computeIfAbsent("children", key -> new ArrayList<>());
+                }
             }
 
             // 存入缓存
