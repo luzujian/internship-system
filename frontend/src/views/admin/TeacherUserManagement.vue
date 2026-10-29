@@ -761,7 +761,7 @@ const handleUpdateTeacher = async (id) => {
         id: teacherData.id ? teacherData.id : '',
         teacherUserId: teacherData.teacherUserId ? teacherData.teacherUserId : '',
         name: teacherData.name ? teacherData.name : '',
-        gender: teacherData.gender ? teacherData.gender : 1,
+        gender: teacherData.gender ?? undefined,
         departmentId: departments.value.length > 0 && deptRaw !== undefined ?
           (typeof departments.value[0].value === 'number' ? Number(deptRaw) : String(deptRaw)) :
           null,

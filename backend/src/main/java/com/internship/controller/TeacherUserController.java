@@ -183,8 +183,9 @@ public class TeacherUserController {
     public Result updateTeacherUser(@RequestBody TeacherUser teacherUser) {
         log.info("更新教师用户: ID={}, 教师编号={}", teacherUser.getId(), teacherUser.getTeacherUserId());
         try {
-            // 安全处理：不允许通过此接口修改密码
+            // 密码和账号状态由各自的专用接口修改。
             teacherUser.setPassword(null);
+            teacherUser.setStatus(null);
             teacherUserService.update(teacherUser);
             return Result.success("更新成功");
         } catch (BusinessException e) {

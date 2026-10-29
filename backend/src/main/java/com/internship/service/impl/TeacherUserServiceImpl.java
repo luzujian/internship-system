@@ -212,7 +212,8 @@ public class TeacherUserServiceImpl implements TeacherUserService {
         }
         log.info("教师用户信息更新成功，用户ID: {}, 类型: {}, 角色: {}", teacherUser.getId(), teacherUser.getTeacherType(), teacherUser.getRole());
         if (result > 0 && onlineUserService != null) onlineUserService.accountChanged("TEACHER", existingUser.getTeacherUserId(),
-                StringUtils.isNotBlank(teacherUser.getTeacherUserId()) ? teacherUser.getTeacherUserId() : existingUser.getTeacherUserId(), teacherUser.getStatus());
+                StringUtils.isNotBlank(teacherUser.getTeacherUserId()) ? teacherUser.getTeacherUserId() : existingUser.getTeacherUserId(),
+                teacherUser.getStatus() != null ? teacherUser.getStatus() : existingUser.getStatus());
         return result;
     }
 

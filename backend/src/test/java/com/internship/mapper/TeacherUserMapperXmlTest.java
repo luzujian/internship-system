@@ -13,8 +13,34 @@ import java.util.Locale;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 
 class TeacherUserMapperXmlTest {
+    @Test
+    void phoneUpdateDistinguishesClearedValueFromOmittedValue() throws Exception {
+        Configuration configuration = new Configuration();
+        String resource = "com/internship/mapper/TeacherUserMapper.xml";
+        try (InputStream input = Resources.getResourceAsStream(resource)) {
+            new XMLMapperBuilder(input, configuration, resource, configuration.getSqlFragments()).parse();
+        }
+
+        TeacherUser teacher = new TeacherUser();
+        teacher.setId(1L);
+        for (String phone : List.of("", "13800000000")) {
+            teacher.setPhone(phone);
+            BoundSql sql = configuration.getMappedStatement("com.internship.mapper.TeacherUserMapper.update")
+                    .getBoundSql(teacher);
+            assertTrue(sql.getSql().contains("phone = ?"));
+            assertTrue(sql.getParameterMappings().stream().anyMatch(mapping -> mapping.getProperty().equals("phone")));
+        }
+
+        teacher.setPhone(null);
+        BoundSql sql = configuration.getMappedStatement("com.internship.mapper.TeacherUserMapper.update")
+                .getBoundSql(teacher);
+        assertFalse(sql.getSql().contains("phone = ?"));
+        assertFalse(sql.getParameterMappings().stream().anyMatch(mapping -> mapping.getProperty().equals("phone")));
+    }
+
     @Test
     void singleAndBulkTeacherCreationPersistRoleAndDivision() throws Exception {
         Configuration configuration = new Configuration();

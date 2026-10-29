@@ -49,7 +49,7 @@
             <if test="status != null">
                 status = #{status},
             </if>
-            <if test="phone != null and phone != ''">
+            <if test="phone != null">
                 phone = #{phone},
             </if>
             <if test="email != null and email != ''">

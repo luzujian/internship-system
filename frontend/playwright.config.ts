@@ -34,6 +34,7 @@ export default defineConfig({
     '**/mobile-interactions.spec.ts',
     '**/responsive-overflow.spec.ts',
     '**/student-recent-activity.spec.ts',
+    '**/admin-teacher-contact.spec.ts',
     '**/zz-smoke.spec.ts'
   ],
   timeout: 60000,
