@@ -8,7 +8,7 @@ import { createWorkbook, jsonToSheet, appendSheet, writeWorkbook, writeWorkbookT
 import { usePositionStore } from '../../store/position'
 import { useAuthStore } from '@/store/auth'
 import applicationApi from '@/api/InternshipApplicationService'
-import studentArchiveService from '@/api/StudentArchiveService'
+import studentArchiveService, { type StudentArchive } from '@/api/StudentArchiveService'
 import FilePreviewDialog from '@/components/FilePreviewDialog.vue'
 import { companyArchiveByteUrl } from '@/utils/authorizedFileUrl'
 import { downloadAuthorizedFile } from '@/utils/authorizedFileDownload'
@@ -63,7 +63,6 @@ const archiveDownloading = ref('')
 const filePreviewVisible = ref(false)
 const previewFileName = ref('')
 const previewAuthorizedUrl = ref('')
-const archiveFileTypeText = (type: string) => ({ resume: '简历', certificate: '证书' }[type] || type || '申请材料')
 const exportMode = ref('excel')
 const isMobile = useIsMobile()
 const showMobileFilters = ref(false)
@@ -141,7 +140,24 @@ const rejectDialogVisible = ref(false)
 const rejectSubmitting = ref(false)
 const rejectTarget = ref<ApplicationViewRow | null>(null)
 const rejectReason = ref('')
-const studentArchives = ref([])
+const studentArchives = ref<StudentArchive[]>([])
+const archiveGroups = computed(() => [
+  {
+    type: 'resume',
+    title: '简历',
+    archives: studentArchives.value.filter(archive => archive.fileType === 'resume')
+  },
+  {
+    type: 'certificate',
+    title: '证书',
+    archives: studentArchives.value.filter(archive => archive.fileType === 'certificate')
+  },
+  {
+    type: 'other',
+    title: '其他材料',
+    archives: studentArchives.value.filter(archive => !['resume', 'certificate'].includes(archive.fileType))
+  }
+].filter(group => group.archives.length > 0))
 
 const groupedApplications = computed(() => {
   const groups: Record<string, { applications: ApplicationViewRow[]; status?: string | number; isSystemPosition: boolean }> = {}
@@ -415,14 +431,9 @@ const handleViewDetail = async (row) => {
   // 获取学生申请材料
   if (row.studentId && !row.historical) {
     try {
-      interface StudentArchiveRow {
-        id?: number | string
-        fileName?: string
-        [key: string]: unknown
-      }
       const response = await studentArchiveService.getStudentArchives(row.studentId) as unknown as {
         code?: number
-        data?: StudentArchiveRow[]
+        data?: StudentArchive[]
       }
       if (!isCurrentStudent()) return
       if (response.code === 200) {
@@ -1040,18 +1051,31 @@ useAgentPageContext(() => {
         <!-- 申请材料区域 -->
         <div v-if="!currentStudent.historical" class="detail-section">
           <h3 class="section-title">申请材料</h3>
-          <div v-if="studentArchives.length > 0" class="archives-list">
-            <div v-for="archive in studentArchives" :key="archive.id" class="archive-item">
-              <div class="archive-info">
-                <el-icon class="archive-icon"><Document /></el-icon>
-                <span class="archive-name">{{ archive.fileName }}</span>
-                <el-tag size="small" type="info">{{ archiveFileTypeText(archive.fileType) }}</el-tag>
+          <div v-if="studentArchives.length > 0" class="archive-groups">
+            <section
+              v-for="group in archiveGroups"
+              :key="group.type"
+              class="archive-group"
+              :class="{ 'archive-group--resume': group.type === 'resume' }"
+              :aria-label="group.title"
+            >
+              <div class="archive-group-header">
+                <h4 class="archive-group-title">{{ group.title }}</h4>
+                <span class="archive-group-count">{{ group.archives.length }} 份</span>
               </div>
-              <div class="archive-actions">
-                <el-button size="small" type="primary" link @click="handlePreviewArchive(archive)">预览</el-button>
-                <el-button size="small" type="primary" link :loading="archiveDownloading === String(archive.id)" :disabled="Boolean(archiveDownloading)" @click="handleDownloadArchive(archive)">下载</el-button>
+              <div class="archives-list">
+                <div v-for="archive in group.archives" :key="archive.id" class="archive-item">
+                  <div class="archive-info">
+                    <el-icon class="archive-icon"><Document /></el-icon>
+                    <span class="archive-name" :title="archive.fileName">{{ archive.fileName }}</span>
+                  </div>
+                  <div class="archive-actions">
+                    <el-button size="small" type="primary" link @click="handlePreviewArchive(archive)">预览</el-button>
+                    <el-button size="small" type="primary" link :loading="archiveDownloading === String(archive.id)" :disabled="Boolean(archiveDownloading)" @click="handleDownloadArchive(archive)">下载</el-button>
+                  </div>
+                </div>
               </div>
-            </div>
+            </section>
           </div>
           <div v-else class="no-archives">
             <el-empty description="暂无申请材料" :image-size="60" />
@@ -1416,6 +1440,43 @@ useAgentPageContext(() => {
 }
 
 /* 申请材料样式 */
+.archive-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.archive-group {
+  padding: 16px;
+  border: 1px solid #ebeef5;
+  border-radius: 10px;
+  background: #fafbfc;
+}
+
+.archive-group--resume {
+  background: #f2f7ff;
+  border-color: #d9e8ff;
+}
+
+.archive-group-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.archive-group-title {
+  margin: 0;
+  color: #303133;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.archive-group-count {
+  color: #606266;
+  font-size: 12px;
+}
+
 .archives-list {
   display: flex;
   flex-direction: column;
@@ -1426,8 +1487,9 @@ useAgentPageContext(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 16px;
   padding: 12px 16px;
-  background: #f5f7fa;
+  background: #fff;
   border-radius: 8px;
   border: 1px solid #ebeef5;
 }
@@ -1439,23 +1501,35 @@ useAgentPageContext(() => {
 
 .archive-info {
   display: flex;
+  flex: 1;
+  min-width: 0;
   align-items: center;
   gap: 10px;
 }
 
 .archive-icon {
+  flex-shrink: 0;
   font-size: 20px;
   color: #409EFF;
 }
 
 .archive-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  line-height: 1.6;
   color: #303133;
   font-size: 14px;
 }
 
 .archive-actions {
   display: flex;
+  flex-shrink: 0;
+  align-items: center;
   gap: 12px;
+}
+
+.archive-actions :deep(.el-button + .el-button) {
+  margin-left: 0;
 }
 
 .no-archives {
@@ -1632,6 +1706,26 @@ useAgentPageContext(() => {
 }
 
 @media (max-width: 768px) {
+  .archive-group {
+    padding: 12px;
+  }
+
+  .archive-item {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    padding: 12px;
+  }
+
+  .archive-actions {
+    align-self: flex-end;
+  }
+
+  .archive-actions :deep(.el-button) {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
   .page-header {
     padding: 18px 20px;
     margin-bottom: 16px;

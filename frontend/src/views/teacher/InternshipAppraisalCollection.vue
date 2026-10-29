@@ -7,9 +7,9 @@
       </div>
       <el-button
         type="primary"
-        :loading="activeTab === 'agreement' ? agreementCollection?.exporting : exporting"
-        :disabled="activeTab === 'agreement' ? !agreementCollection?.canExport : filters.status === 'NOT_SUBMITTED' || summary.submittedCount === 0"
-        @click="activeTab === 'agreement' ? agreementCollection?.handleExport() : handleExport()"
+        :loading="exporting"
+        :disabled="exporting || (activeTab === 'agreement' ? !agreementCollection?.canExport : filters.status === 'NOT_SUBMITTED' || summary.submittedCount === 0)"
+        @click="handleExport"
       >
         <el-icon><Download /></el-icon>
         全部导出
@@ -179,7 +179,7 @@ import { nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import InternshipAgreementCollection from './InternshipAgreementCollection.vue'
 import { Document, Download, Search } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   downloadAppraisalFile,
   exportAppraisalFiles,
@@ -377,14 +377,35 @@ const handleDownload = async (file: AppraisalFileItem) => {
 }
 
 const handleExport = async () => {
+  if (exporting.value) return
+  const isAgreement = activeTab.value === 'agreement'
+  const agreementExporter = agreementCollection.value
+  if (isAgreement ? !agreementExporter?.canExport : filters.status === 'NOT_SUBMITTED' || summary.submittedCount === 0) return
+  const materialName = isAgreement ? '实习协议' : '实习鉴定表'
+  let waitingMessage: ReturnType<typeof ElMessage> | undefined
   exporting.value = true
   try {
+    await ElMessageBox.confirm(
+      `将把当前筛选范围内已提交的${materialName}打包为 ZIP 压缩包，下载后请解压查看。文件较多时，打包可能需要一些时间。`,
+      '导出提示',
+      { confirmButtonText: '开始导出', cancelButtonText: '取消', type: 'info' }
+    )
+    waitingMessage = ElMessage({
+      message: `正在打包导出${materialName}压缩包，请稍等…`,
+      type: 'info',
+      duration: 0
+    })
+    if (isAgreement) {
+      await agreementExporter!.handleExport()
+      return
+    }
     const blob = await exportAppraisalFiles(queryParams(false))
     saveBlob(blob, `实习鉴定表_${formatFileTimestamp(new Date())}.zip`)
     ElMessage.success('鉴定表压缩包导出完成')
   } catch (error: any) {
-    ElMessage.error(error?.message || '鉴定表导出失败')
+    if (error !== 'cancel' && error !== 'close') ElMessage.error(error?.message || `${materialName}导出失败`)
   } finally {
+    waitingMessage?.close()
     exporting.value = false
   }
 }

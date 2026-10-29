@@ -364,101 +364,104 @@
 
     <!-- 申请详情查看弹窗 -->
     <div v-if="showApplicationDetailModal" class="modal-overlay" @click.self="showApplicationDetailModal = false">
-      <div class="modal-content large card">
+      <div class="modal-content large card application-detail-modal" role="dialog" aria-modal="true" aria-labelledby="application-detail-title">
         <div class="modal-header">
-          <h3>{{ currentApplication ? getApplicationTypeText(currentApplication.type) + '详情' : '申请详情' }}</h3>
+          <h3 id="application-detail-title">{{ currentApplication ? getApplicationTypeText(currentApplication.type) + '详情' : '申请详情' }}</h3>
           <button class="close-btn" aria-label="关闭申请详情" @click="showApplicationDetailModal = false">×</button>
         </div>
         <div class="modal-body">
           <div v-if="currentApplication" class="application-detail-info">
-            <!-- 基本信息 -->
-            <div class="form-row">
-              <div class="form-group half">
-                <label>姓名：</label>
-                <div class="student-name-display">{{ currentApplication.studentName }}</div>
-              </div>
-              <div class="form-group half">
-                <label>学号：</label>
-                <div class="student-id-display">{{ currentApplication.studentUserId || currentApplication.studentId }}</div>
-              </div>
+            <div class="application-detail-summary">
+              <el-tag :type="getStatusTagType(currentApplication.status)">
+                {{ currentApplication.status === 'pending' && currentApplication.reviewTarget === 'COMPANY' ? '待企业确认' : getStatusText(currentApplication.status) }}
+              </el-tag>
+              <span>申请时间：{{ currentApplication.applyTime || '未填写' }}</span>
+              <span v-if="currentApplication.reviewTime">审核时间：{{ currentApplication.reviewTime }}</span>
             </div>
-            <div class="form-row">
-              <div class="form-group half">
-                <label>年级：</label>
-                <div class="grade-display">{{ currentApplication.grade || '未填写' }}</div>
-              </div>
-              <div class="form-group half">
-                <label>班级：</label>
-                <div class="class-display">{{ currentApplication.className }}</div>
-              </div>
-            </div>
-            <div class="form-group">
-              <label>申请理由：</label>
-              <div class="reason-display">{{ currentApplication.reason }}</div>
-            </div>
-            
-            <!-- 自主实习申请特有信息 -->
-            <div v-if="currentApplication.type === 'selfPractice'" class="form-row">
-              <div class="form-group half">
-                <label>实习单位：</label>
-                <div class="company-display">
+
+            <section class="application-section">
+              <h4>学生信息</h4>
+              <el-descriptions :column="isMobile ? 1 : 2" border>
+                <el-descriptions-item label="姓名">{{ currentApplication.studentName || '未填写' }}</el-descriptions-item>
+                <el-descriptions-item label="学号">{{ currentApplication.studentUserId || currentApplication.studentId || '未填写' }}</el-descriptions-item>
+                <el-descriptions-item label="年级">{{ currentApplication.grade || '未填写' }}</el-descriptions-item>
+                <el-descriptions-item label="班级">{{ currentApplication.className || '未填写' }}</el-descriptions-item>
+              </el-descriptions>
+            </section>
+
+            <section v-if="currentApplication.type === 'selfPractice'" class="application-section">
+              <h4>实习信息</h4>
+              <el-descriptions :column="isMobile ? 1 : 2" border>
+                <el-descriptions-item label="实习单位" :span="isMobile ? 1 : 2">
                   {{ currentApplication.company || '未填写' }}
                   <el-tag v-if="currentApplication.cooperativeCompany" type="warning" size="small" class="cooperative-company-tag">校企合作企业</el-tag>
-                </div>
-              </div>
-              <div class="form-group half">
-                <label>实习岗位：</label>
-                <div class="company-display">{{ currentApplication.positionName || '未填写' }}</div>
-              </div>
-            </div>
-            <div v-if="currentApplication.type === 'selfPractice'" class="form-row">
-              <div class="form-group half">
-                <label>单位所在城市：</label>
-                <div class="company-display">{{ currentApplication.companyCity || '未填写' }}</div>
-              </div>
-              <div class="form-group half">
-                <label>申请时间：</label>
-                <div class="apply-time-display">{{ currentApplication.applyTime || '未填写' }}</div>
-              </div>
-            </div>
-            <div v-if="currentApplication.type === 'selfPractice'" class="form-row">
-              <div class="form-group half">
-                <label>人事经理姓名：</label>
-                <div class="company-display">{{ currentApplication.hrManagerName || '未填写' }}</div>
-              </div>
-              <div class="form-group half">
-                <label>人事经理联系电话：</label>
-                <div class="company-display">{{ currentApplication.hrManagerPhone || '未填写' }}</div>
-              </div>
-            </div>
-            <div v-if="currentApplication.type === 'selfPractice' && currentApplication.materials" class="form-group">
-              <label>上传资料：</label>
-              <div class="document-grid horizontal">
-                <div class="document-item fade-in" v-for="label in Object.keys(currentApplication.materials).filter(key => currentApplication.materials[key])" :key="label">
-                  <label>{{ label }}：</label>
-                  <div class="document-preview">
-                    <button v-if="hasApplicationMaterial(label)" class="btn-default btn-sm"
-                      @click="downloadApplicationMaterial(label)">下载</button>
-                    <span v-else class="no-document">未上传</span>
+                </el-descriptions-item>
+                <el-descriptions-item label="实习岗位">{{ currentApplication.positionName || '未填写' }}</el-descriptions-item>
+                <el-descriptions-item label="所在城市">{{ currentApplication.companyCity || '未填写' }}</el-descriptions-item>
+                <el-descriptions-item label="人事联系人">{{ currentApplication.hrManagerName || '未填写' }}</el-descriptions-item>
+                <el-descriptions-item label="联系电话">{{ currentApplication.hrManagerPhone || '未填写' }}</el-descriptions-item>
+              </el-descriptions>
+            </section>
+
+            <section class="application-section">
+              <h4>申请说明</h4>
+              <div class="application-reason">{{ currentApplication.reason || '未填写申请理由' }}</div>
+              <el-alert v-if="currentApplication.status === 'rejected' && currentApplication.rejectReason"
+                type="warning" :closable="false" class="application-reject-reason" :title="`驳回理由：${currentApplication.rejectReason}`" />
+            </section>
+
+            <section class="application-section">
+              <h4>申请材料</h4>
+              <div class="application-materials">
+                <section v-if="currentApplication.type === 'selfPractice'" class="application-material-group agreement-material-group" aria-label="盖章实习协议" :aria-busy="applicationAgreementLoading">
+                  <div class="application-material-header">
+                    <h5>盖章实习协议</h5>
+                    <span v-if="currentAgreementVersion">{{ currentAgreementVersion.files.length }} 份</span>
                   </div>
-                </div>
-              </div>
-            </div>
-            
-            <!-- 考研延迟申请特有信息 -->
-            <div v-if="currentApplication.type === 'delay' && currentApplication.materials" class="form-group">
-              <label>上传资料：</label>
-              <div class="document-grid horizontal">
-                <div class="document-item fade-in" v-for="label in materialItems.delay" :key="label">
-                  <label>{{ label }}：</label>
-                  <div class="document-preview">
-                    <button v-if="hasApplicationMaterial(label)" class="btn-default btn-sm"
-                      @click="downloadApplicationMaterial(label)">下载</button>
-                    <span v-else class="no-document">未上传</span>
+                  <p v-if="applicationAgreementLoading" class="application-material-empty" role="status">正在加载实习协议…</p>
+                  <el-alert v-else-if="applicationAgreementError" type="warning" :closable="false" :title="applicationAgreementError">
+                    <el-button link type="primary" @click="loadApplicationAgreement">重新加载</el-button>
+                  </el-alert>
+                  <template v-else-if="currentAgreementVersion?.files.length">
+                    <p class="application-material-meta">第 {{ currentAgreementVersion.version }} 版 · 提交于 {{ currentAgreementVersion.submittedAt }}</p>
+                    <div class="application-file-list">
+                      <div v-for="file in currentAgreementVersion.files" :key="file.id" class="application-file-row">
+                        <div class="application-file-info">
+                          <el-icon><Document /></el-icon>
+                          <span :title="file.fileName">{{ file.fileName }}</span>
+                        </div>
+                        <div class="application-file-actions">
+                          <el-button link type="primary" @click="agreementPreview?.show(file)">预览</el-button>
+                          <el-button link type="primary" :loading="materialDownloading === `agreement:${file.id}`" :disabled="Boolean(materialDownloading)" @click="downloadApplicationAgreement(file)">下载</el-button>
+                        </div>
+                      </div>
+                    </div>
+                  </template>
+                  <p v-else class="application-material-empty">该申请暂无已提交的实习协议</p>
+                </section>
+
+                <section class="application-material-group" :aria-label="currentApplication.type === 'selfPractice' ? '其他资料' : '上传资料'">
+                  <div class="application-material-header">
+                    <h5>{{ currentApplication.type === 'selfPractice' ? '其他资料' : '上传资料' }}</h5>
+                    <span>{{ applicationMaterials.filter(material => material.available).length }} 份</span>
                   </div>
-                </div>
+                  <div v-if="applicationMaterials.length" class="application-file-list">
+                    <div v-for="material in applicationMaterials" :key="material.label" class="application-file-row">
+                      <div class="application-file-info">
+                        <el-icon><Document /></el-icon>
+                        <span :title="material.fileName">{{ material.fileName }}</span>
+                      </div>
+                      <div v-if="material.available" class="application-file-actions">
+                        <el-button link type="primary" @click="previewApplicationMaterial(material.label)">预览</el-button>
+                        <el-button link type="primary" :loading="materialDownloading === `material:${material.label}`" :disabled="Boolean(materialDownloading)" @click="downloadApplicationMaterial(material.label)">下载</el-button>
+                      </div>
+                      <span v-else class="no-document">未上传</span>
+                    </div>
+                  </div>
+                  <p v-else class="application-material-empty">暂无其他上传资料</p>
+                </section>
               </div>
-            </div>
+            </section>
           </div>
         </div>
         <div class="modal-footer">
@@ -472,7 +475,9 @@
         </div>
       </div>
     </div>
-    
+
+    <InternshipAgreementPreview v-if="showApplicationDetailModal && currentApplication?.type === 'selfPractice'" ref="agreementPreview" role="teacher" />
+    <FilePreviewDialog v-if="showApplicationDetailModal" v-model="materialPreviewVisible" file-url="" :file-name="materialPreviewName" :authorized-url="materialPreviewUrl" />
   </div>
 </template>
 
@@ -487,8 +492,11 @@ import { getCurrentUser } from '../../utils/teacherUser'
 import { getCurrentTeacherType } from '../../utils/teacherPermissions'
 import { useAuthStore } from '@/store/auth'
 import { ElMessage } from 'element-plus'
-import { Search, Refresh } from '@element-plus/icons-vue'
+import { Search, Refresh, Document } from '@element-plus/icons-vue'
 import MobileMoreActions from '../../components/MobileMoreActions.vue'
+import FilePreviewDialog from '@/components/FilePreviewDialog.vue'
+import InternshipAgreementPreview from '@/components/student/InternshipAgreementPreview.vue'
+import { getAgreementDetail, readAgreementFile, saveAgreementBlob, type AgreementDetail, type AgreementFile } from '@/api/internshipAgreements'
 import { studentApplicationMaterialByteUrl } from '@/utils/authorizedFileUrl'
 import { downloadAuthorizedFile } from '@/utils/authorizedFileDownload'
 import { useIsMobile } from '@/composables/useIsMobile'
@@ -569,6 +577,50 @@ const showRejectModal = ref(false)
 const showCompanyQualificationModal = ref(false)
 const showApplicationDetailModal = ref(false)
 const currentApplication = ref<any>(null)
+const applicationAgreement = ref<AgreementDetail | null>(null)
+const applicationAgreementLoading = ref(false)
+const applicationAgreementError = ref('')
+const currentAgreementVersion = computed(() => applicationAgreement.value?.versions[0])
+const agreementPreview = ref<InstanceType<typeof InternshipAgreementPreview> | null>(null)
+const materialPreviewVisible = ref(false)
+const materialPreviewName = ref('')
+const materialPreviewUrl = ref('')
+const materialDownloading = ref('')
+let agreementRequestId = 0
+
+const loadApplicationAgreement = async () => {
+  const application = currentApplication.value
+  if (!showApplicationDetailModal.value || application?.type !== 'selfPractice') return
+  const requestId = ++agreementRequestId
+  applicationAgreement.value = null
+  applicationAgreementLoading.value = true
+  applicationAgreementError.value = ''
+  try {
+    const response = await getAgreementDetail('teacher', 'SELF_PRACTICE', application.id) as unknown as {
+      code: number; message?: string; data?: AgreementDetail
+    }
+    if (requestId !== agreementRequestId || !showApplicationDetailModal.value || currentApplication.value?.id !== application.id) return
+    if (response.code !== 200 || !response.data) throw new Error(response.message || '实习协议加载失败')
+    applicationAgreement.value = response.data
+  } catch (error: any) {
+    if (requestId === agreementRequestId) applicationAgreementError.value = error?.message || '实习协议加载失败，请重试'
+  } finally {
+    if (requestId === agreementRequestId) applicationAgreementLoading.value = false
+  }
+}
+
+watch(() => [showApplicationDetailModal.value, currentApplication.value?.id, currentApplication.value?.type], () => {
+  if (showApplicationDetailModal.value && currentApplication.value?.type === 'selfPractice') {
+    void loadApplicationAgreement()
+  } else {
+    agreementRequestId++
+    applicationAgreement.value = null
+    applicationAgreementLoading.value = false
+    applicationAgreementError.value = ''
+  }
+  materialPreviewVisible.value = false
+})
+onUnmounted(() => { agreementRequestId++ })
 const rejectReason = ref('')
 const reviewingApplications = ref(new Set<string>())
 const applicationReviewKey = (application: any) => `${application?.type === 'companyQualification' ? 'companyQualification' : 'studentApplication'}:${application?.id}`
@@ -584,6 +636,15 @@ const markApplicationReviewed = (application: any, approved: boolean) => {
 
 const materialItems = ref({
   delay: ['考研计划', '学习计划', '延迟申请书']
+})
+const applicationMaterials = computed(() => {
+  const materials = currentApplication.value?.materials || {}
+  const labels = currentApplication.value?.type === 'delay' ? materialItems.value.delay : Object.keys(materials).filter(label => materials[label])
+  return labels.map(label => ({
+    label,
+    fileName: attachmentName(label, materials[applicationMaterialKey(label)]),
+    available: hasApplicationMaterial(label)
+  }))
 })
 
 const applications = ref<any[]>([])
@@ -929,17 +990,43 @@ const confirmReject = async () => {
 
 const attachmentName = (label: string, stored: unknown): string => {
   const extension = typeof stored === 'string' ? /\.([a-z0-9]{1,8})(?:$|[?#])/i.exec(stored)?.[1] : ''
-  return extension ? `${label}.${extension}` : label
+  return extension && !label.toLowerCase().endsWith(`.${extension.toLowerCase()}`) ? `${label}.${extension}` : label
+}
+const applicationMaterialKey = (label: string) => label === '考研计划' && currentApplication.value?.materials?.delayPlan ? 'delayPlan' : label
+const previewApplicationMaterial = (label: string) => {
+  const application = currentApplication.value
+  const key = applicationMaterialKey(label)
+  const url = studentApplicationMaterialByteUrl(application?.id, key, true)
+  if (!url || !hasApplicationMaterial(label)) return ElMessage.error('申请材料记录不可用')
+  materialPreviewName.value = attachmentName(label, application.materials[key])
+  materialPreviewUrl.value = url
+  materialPreviewVisible.value = true
 }
 const downloadApplicationMaterial = async (label: string) => {
+  if (materialDownloading.value) return
   const application = currentApplication.value
-  const key = label === '考研计划' && application?.materials?.delayPlan ? 'delayPlan' : label
+  const key = applicationMaterialKey(label)
   const url = studentApplicationMaterialByteUrl(application?.id, key, true)
-  if (!url) return ElMessage.error('申请材料记录不可用')
+  if (!url || !hasApplicationMaterial(label)) return ElMessage.error('申请材料记录不可用')
+  materialDownloading.value = `material:${label}`
   try {
     await downloadAuthorizedFile(url, attachmentName(label, application?.materials?.[key]))
   } catch {
     ElMessage.error('申请材料下载失败，请检查权限或联系管理员')
+  } finally {
+    materialDownloading.value = ''
+  }
+}
+const downloadApplicationAgreement = async (file: AgreementFile) => {
+  if (materialDownloading.value) return
+  if (!file.id) return ElMessage.error('实习协议记录不可用')
+  materialDownloading.value = `agreement:${file.id}`
+  try {
+    saveAgreementBlob(await readAgreementFile('teacher', file.id), file.fileName)
+  } catch (error: any) {
+    ElMessage.error(error?.message || '实习协议下载失败，请重试')
+  } finally {
+    materialDownloading.value = ''
   }
 }
 
@@ -1621,6 +1708,224 @@ useAgentPageContext(() => ({
     gap: 6px;
   }
 }
+.modal-content.application-detail-modal {
+  display: flex;
+  flex-direction: column;
+  width: 860px;
+  max-height: calc(100dvh - 48px);
+  padding: 0;
+}
+
+.modal-content.application-detail-modal:hover {
+  transform: none;
+}
+
+.application-detail-modal .modal-header {
+  flex-shrink: 0;
+  background: #fff;
+}
+
+.application-detail-modal .modal-header h3 {
+  color: #303133;
+}
+
+.application-detail-modal .close-btn {
+  color: #606266;
+  box-shadow: none;
+}
+
+.application-detail-modal .modal-body {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+}
+
+.application-detail-modal .modal-footer {
+  flex-shrink: 0;
+}
+
+.application-detail-info,
+.application-materials,
+.application-file-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.application-detail-info {
+  gap: 24px;
+}
+
+.application-detail-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  color: #606266;
+  font-size: 13px;
+}
+
+.application-section h4 {
+  margin: 0 0 14px;
+  padding-left: 10px;
+  border-left: 3px solid #409eff;
+  color: #303133;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.application-detail-modal :deep(.el-descriptions__table) {
+  table-layout: fixed;
+}
+
+.application-detail-modal :deep(.el-descriptions__label) {
+  width: 100px;
+  color: #606266;
+  font-weight: 500;
+}
+
+.application-reason {
+  padding: 14px 16px;
+  border-radius: 8px;
+  background: #f5f7fa;
+  color: #606266;
+  font-size: 14px;
+  line-height: 1.8;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.application-reject-reason {
+  margin-top: 12px;
+}
+
+.application-materials {
+  gap: 20px;
+}
+
+.application-material-group {
+  padding: 16px;
+  border: 1px solid #ebeef5;
+  border-radius: 10px;
+  background: #fafbfc;
+}
+
+.agreement-material-group {
+  border-color: #d9e8ff;
+  background: #f2f7ff;
+}
+
+.application-material-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.application-material-header h5 {
+  margin: 0;
+  color: #303133;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.application-material-header span,
+.application-material-meta,
+.application-material-empty {
+  color: #606266;
+  font-size: 12px;
+}
+
+.application-material-meta {
+  margin: 0 0 12px;
+  overflow-wrap: anywhere;
+}
+
+.application-material-empty {
+  margin: 0;
+  line-height: 1.8;
+}
+
+.application-file-list {
+  gap: 10px;
+}
+
+.application-file-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 14px;
+  border: 1px solid #ebeef5;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.application-file-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  color: #303133;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.application-file-info .el-icon {
+  flex-shrink: 0;
+  color: #409eff;
+  font-size: 20px;
+}
+
+.application-file-info span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.application-file-actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 16px;
+}
+
+.application-file-actions :deep(.el-button + .el-button) {
+  margin-left: 0;
+}
+
+.application-file-actions :deep(.el-button) {
+  min-height: 32px;
+  padding: 4px 8px;
+  box-shadow: none;
+}
+
+@media (max-width: 768px) {
+  .modal-content.application-detail-modal {
+    width: calc(100vw - 24px);
+    max-height: calc(100% - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  }
+
+  .application-material-group {
+    padding: 12px;
+  }
+
+  .application-file-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    padding: 12px;
+  }
+
+  .application-file-actions {
+    align-self: flex-end;
+  }
+
+  .application-file-actions :deep(.el-button) {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
 .qualification-documents {
   margin-top: 20px;
 }
