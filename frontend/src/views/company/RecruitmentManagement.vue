@@ -2098,7 +2098,7 @@ useAgentPageContext(() => ({
           <el-select
             ref="positionNameSelectRef"
             v-model="positionForm.positionName"
-            placeholder="请选择岗位名称"
+            placeholder="请输入或选择岗位名称"
             filterable
             allow-create
             default-first-option
