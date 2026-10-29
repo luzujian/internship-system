@@ -4,6 +4,7 @@ export interface Position {
   id: number
   name: string
   companyId?: number
+  companyName?: string
   categoryId?: number
   description?: string
   requirements?: string

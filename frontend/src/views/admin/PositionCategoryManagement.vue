@@ -170,6 +170,8 @@
       <el-table
         v-if="activeCategoryId"
         :data="displayedPositions"
+        :span-method="mergePositionCompanyCells"
+        row-key="id"
         border
         style="width: 100%"
         fit
@@ -177,6 +179,11 @@
         height="400"
       >
           <el-table-column type="index" label="序号" width="60" align="center" :index="(index) => index + 1" />
+          <el-table-column prop="companyName" label="企业名称" align="center" min-width="180" show-overflow-tooltip>
+            <template #default="scope">
+              {{ scope.row.companyName || (scope.row.companyId ? '企业名称缺失' : '未关联企业') }}
+            </template>
+          </el-table-column>
           <el-table-column prop="positionName" label="岗位名称" align="center" min-width="150">
             <template #default="scope">
               <span class="position-name" @click.stop="handlePositionClick(scope.row)">{{ scope.row.positionName }}</span>
@@ -342,6 +349,10 @@ import type { Position, PositionCategory } from '@/types/admin'
 // 岗位行精确局部接口：覆盖后端驼峰/snake两种形态，模板与脚本实际使用的全部字段，均可选
 interface PositionRow {
   id?: string | number
+  companyId?: string | number
+  company_id?: string | number
+  companyName?: string
+  company_name?: string
   positionName?: string
   position_name?: string
   categoryId?: string | number
@@ -525,6 +536,8 @@ const getPositionList = async (): Promise<void> => {
 
         return {
           id: position.id || '',
+          companyId: position.companyId ?? position.company_id,
+          companyName: position.companyName || position.company_name || '',
           positionName: position.positionName || position.position_name || '未知岗位',
           categoryId: categoryId,
           requirements: position.requirements || '',
@@ -680,12 +693,40 @@ const handlePositionClick = (position) => {
   logger.log('点击了岗位:', position)
 }
 
-const displayedPositions = computed(() => {
-  if (activeCategoryId.value) {
-    return getCategoryPositions(activeCategoryId.value)
-  }
-  return []
+const positionCompanyKey = (position: PositionRow, index: number) => {
+  const companyId = Number(position.companyId)
+  return Number.isSafeInteger(companyId) && companyId > 0
+    ? `company:${companyId}` : `position:${position.id ?? `row-${index}`}`
+}
+
+const displayedPositions = computed<PositionRow[]>(() => {
+  const positions: PositionRow[] = activeCategoryId.value ? getCategoryPositions(activeCategoryId.value) : []
+  const groups = new Map<string, PositionRow[]>()
+  positions.forEach((position, index) => {
+    const key = positionCompanyKey(position, index)
+    if (!groups.has(key)) groups.set(key, [])
+    groups.get(key)!.push(position)
+  })
+  return Array.from(groups.values()).flat()
 })
+
+const positionCompanyRowSpans = computed(() => {
+  const spans = new Array<number>(displayedPositions.value.length).fill(0)
+  let groupStart = 0
+  displayedPositions.value.forEach((position, index) => {
+    if (index === 0 || positionCompanyKey(position, index) !== positionCompanyKey(displayedPositions.value[index - 1], index - 1)) {
+      groupStart = index
+    }
+    spans[groupStart] += 1
+  })
+  return spans
+})
+
+const mergePositionCompanyCells = ({ column, rowIndex }: { column: { property?: string }; rowIndex: number }) => {
+  if (column.property !== 'companyName') return { rowspan: 1, colspan: 1 }
+  const rowspan = positionCompanyRowSpans.value[rowIndex]
+  return { rowspan, colspan: rowspan > 0 ? 1 : 0 }
+}
 
 const clearAddCategoryForm = () => {
   categoryForm.value = {

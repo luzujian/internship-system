@@ -8,6 +8,7 @@
     <resultMap id="PositionResultMap" type="com.internship.entity.Position">
         <id property="id" column="id" />
         <result property="companyId" column="company_id" />
+        <result property="companyName" column="company_name" />
         <result property="contactId" column="contact_id" />
         <result property="contactPerson" column="contact_person" />
         <result property="contactPhone" column="contact_phone" />
@@ -222,6 +223,7 @@
                  WHERE sis.position_id = p.id AND sis.status IN (1, 2, 3)
                    AND COALESCE(sis.recall_status, 0) != 2), 0
             ) AS recruited_count,
+            cu.company_name AS company_name,
             p.*, <include refid="ContactColumns"/>
         FROM position p
         <include refid="ContactJoins"/>

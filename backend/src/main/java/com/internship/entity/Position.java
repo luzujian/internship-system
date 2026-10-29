@@ -1,6 +1,7 @@
 package com.internship.entity;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
@@ -18,6 +19,9 @@ public class Position {
     private Long id;
 
     private Long companyId;
+
+    @JsonProperty(access = JsonProperty.Access.READ_ONLY)
+    private String companyName;
 
     private Long contactId;
     @JsonIgnore
