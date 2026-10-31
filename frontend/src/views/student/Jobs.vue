@@ -186,12 +186,17 @@
         :row-class-name="tableRowClassName"
         style="width: 100%"
       >
-        <el-table-column label="职位名称" min-width="220" show-overflow-tooltip>
+        <el-table-column label="职位名称" width="210" show-overflow-tooltip>
           <template #default="{ row }">
             <span class="job-title-text">{{ row.industryName ? row.industryName + ' - ' + row.title : row.title }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="company" label="企业" min-width="150" show-overflow-tooltip />
+        <el-table-column prop="company" label="企业" width="190" show-overflow-tooltip />
+        <el-table-column label="发布时间" width="120" align="center">
+          <template #default="{ row }">
+            {{ formatPublishTime(row.publishTime) }}
+          </template>
+        </el-table-column>
         <el-table-column label="剩余名额" width="120" align="center">
           <template #default="{ row }">
             <span class="quota-num">{{ row.remainingQuota }}</span> 个
@@ -265,6 +270,7 @@
           </div>
           <div class="mobile-card-body">
             <div class="mobile-card-row"><span class="mobile-card-label">企业</span><span class="mobile-card-value">{{ row.company }}</span></div>
+            <div class="mobile-card-row"><span class="mobile-card-label">发布时间</span><span class="mobile-card-value">{{ formatPublishTime(row.publishTime) }}</span></div>
             <div class="mobile-card-row"><span class="mobile-card-label">工作地点</span><span class="mobile-card-value">{{ row.location || '未填写' }}</span></div>
             <div class="mobile-card-row"><span class="mobile-card-label">薪资</span><span class="mobile-card-value">{{ row.salary || '面议' }}</span></div>
             <div class="mobile-card-row"><span class="mobile-card-label">剩余名额</span><span class="mobile-card-value"><strong class="quota-num">{{ row.remainingQuota }}</strong> 个<span v-if="row.remainingQuota === 0">（仍可申请）</span></span></div>
@@ -373,6 +379,11 @@
                 <el-icon><OfficeBuilding /></el-icon>
                 <span class="info-label">公司：</span>
                 <span class="info-value">{{ selectedJob.company }}</span>
+              </div>
+              <div class="info-item">
+                <el-icon><Clock /></el-icon>
+                <span class="info-label">发布时间：</span>
+                <span class="info-value">{{ formatPublishTime(selectedJob.publishTime) }}</span>
               </div>
               <div class="info-item">
                 <el-icon><OfficeBuilding /></el-icon>
@@ -662,6 +673,14 @@ import { useIsMobile } from '@/composables/useIsMobile'
 
 const authStore = useAuthStore()
 const isMobile = useIsMobile()
+const formatPublishTime = (value: unknown) => {
+  if (value == null || value === '') return '未记录'
+  const date = new Date(value as string | number)
+  if (Number.isNaN(date.getTime())) return '未记录'
+  return new Intl.DateTimeFormat('zh-CN', {
+    timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit'
+  }).format(date).replace(/\//g, '-')
+}
 const jobApplicationStatus = (status: unknown) => {
   const statuses: Record<string, { text: string; type: 'warning' | 'success' | 'danger' | 'info' }> = {
     pending: { text: '待审核', type: 'warning' },

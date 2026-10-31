@@ -50,7 +50,9 @@ test('application loading preserves the submitted date and same-day ordering', a
     ]
     const formatDateTimeMinute = declaration('student/Applications', 'formatDateTimeMinute', {})
     await declaration('student/Applications', 'fetchApplications', {
-      applications, console: { error: noop }, formatDateTimeMinute,
+      applications, applicationsRequestId: 0, applicationsLoading: ref(false), applicationsError: ref(''),
+      studentApplicationRows: ref([]), jobApplicationRows: ref([]),
+      console: { error: noop }, formatDateTimeMinute,
       statusMap: { pending: 'pending' }, normalizeApplicationStatus: status => status,
       request: { get: async url => ({ code: 200, data: url.endsWith('job-applications') ? rows : [] }) }
     })()

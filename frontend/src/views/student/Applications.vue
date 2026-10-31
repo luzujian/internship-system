@@ -105,10 +105,6 @@
                 <el-icon><Money /></el-icon>
                 <span>{{ application.salary }}</span>
               </div>
-              <div class="info-item">
-                <el-icon><Clock /></el-icon>
-                <span>{{ getDurationDisplay(application.duration) }}</span>
-              </div>
             </div>
             <div class="card-footer">
               <span class="apply-time">{{ application.applyDate }}</span>
@@ -202,10 +198,6 @@
                 <span class="info-value">{{ currentApplication.salary || '-' }}</span>
               </div>
               <div class="info-item">
-                <span class="info-label">时长：</span>
-                <span class="info-value">{{ getDurationDisplay(currentApplication.duration) }}</span>
-              </div>
-              <div class="info-item">
                 <span class="info-label">行业：</span>
                 <span class="info-value">{{ currentApplication.industryName || '-' }}</span>
               </div>
@@ -243,7 +235,7 @@
             </div>
             <div class="info-item">
               <span class="info-label">考研计划：</span>
-              <span v-if="hasDelayPlan" class="info-value">已上传，暂不可查看</span>
+              <span v-if="hasDelayPlan" class="info-value">已上传，可在下方“我的申请材料”中预览或下载</span>
               <span v-else class="info-value">-</span>
             </div>
           </div>
@@ -319,9 +311,13 @@
                   <div v-for="item in appMaterials" :key="item.label" class="material-item">
                     <div class="material-info">
                       <el-icon class="material-icon"><Document /></el-icon>
-                      <span class="material-name">{{ item.label }}</span>
+                      <span class="material-name">{{ item.displayName }}</span>
                     </div>
                     <div class="material-actions">
+                      <el-button type="primary" size="small" link @click="previewApplicationMaterial(item.label)">
+                        <el-icon><View /></el-icon>
+                        预览
+                      </el-button>
                       <el-button type="primary" size="small" link @click="downloadApplicationMaterial(item.label)">
                         <el-icon><Download /></el-icon>
                         下载
@@ -348,6 +344,10 @@
                       <el-tag v-if="resume.uploadTime" size="small" type="info" class="upload-time-tag">
                         {{ resume.uploadTime }}
                       </el-tag>
+                      <el-button type="primary" size="small" link @click="previewProfileMaterial('resume', resume)">
+                        <el-icon><View /></el-icon>
+                        预览
+                      </el-button>
                       <el-button type="primary" size="small" link @click="downloadResume(resume)">
                         <el-icon><Download /></el-icon>
                         下载
@@ -374,6 +374,10 @@
                       <el-tag v-if="cert.uploadTime" size="small" type="info" class="upload-time-tag">
                         {{ cert.uploadTime }}
                       </el-tag>
+                      <el-button type="primary" size="small" link @click="previewProfileMaterial('certificate', cert)">
+                        <el-icon><View /></el-icon>
+                        预览
+                      </el-button>
                       <el-button type="primary" size="small" link @click="downloadCertificate(cert)">
                         <el-icon><Download /></el-icon>
                         下载
@@ -384,7 +388,7 @@
               </div>
 
               <!-- 无材料提示 -->
-              <div v-if="applicationMaterials.resumes.length === 0 && applicationMaterials.certificates.length === 0" class="no-materials">
+              <div v-if="appMaterials.length === 0 && applicationMaterials.resumes.length === 0 && applicationMaterials.certificates.length === 0" class="no-materials">
                 <el-empty description="暂无已上传的申请材料" :image-size="60" />
                 <p class="no-materials-tip">请前往个人中心的简历管理页面上传简历和证书</p>
               </div>
@@ -403,6 +407,8 @@
 
     <InternshipAgreementDialog v-if="currentApplication?.applicationType === 'selfPractice'" v-model="agreementVisible"
       source-type="SELF_PRACTICE" :source-id="Number(currentApplication.id)" />
+    <FilePreviewDialog v-if="showDetailDialog" v-model="materialPreviewVisible" file-url=""
+      :file-name="materialPreviewName" :authorized-url="materialPreviewUrl" />
   </div>
 </template>
 
@@ -419,10 +425,10 @@ import {
   OfficeBuilding,
   Location,
   Money,
-  Clock,
   Message,
   InfoFilled,
   Download,
+  View,
   Medal,
   Loading,
   Filter,
@@ -431,13 +437,13 @@ import {
 
 import request from '@/utils/request';
 import InternshipAgreementDialog from '@/components/student/InternshipAgreementDialog.vue'
+import FilePreviewDialog from '@/components/FilePreviewDialog.vue'
 import { studentApplicationMaterialByteUrl, studentProfileByteUrl } from '@/utils/authorizedFileUrl'
 import { downloadAuthorizedFile } from '@/utils/authorizedFileDownload'
 import { useAuthStore } from '@/store/auth';
 import type { ApplicationStatusUpdateData } from '@/utils/websocket';
 import { onApplicationStatusUpdate, offApplicationStatusUpdate } from '@/utils/websocket';
 import { getApplicationStatusText } from '@/utils/directHire';
-import { getInternshipCalendar } from '@/api/teacherSettings';
 
 const authStore = useAuthStore()
 
@@ -452,10 +458,19 @@ const route = useRoute();
 // 状态管理
 const showDetailDialog = ref(false);
 const agreementVisible = ref(false)
+const materialPreviewVisible = ref(false)
+const materialPreviewName = ref('')
+const materialPreviewUrl = ref('')
 const selectedFilter = ref("all");
 const selectedType = ref("all");
 const currentApplication = ref(null);
 const filterCollapsed = ref(true); // 默认折叠
+
+watch(() => [showDetailDialog.value, currentApplication.value?.id, currentApplication.value?.applicationType], () => {
+  materialPreviewVisible.value = false
+  materialPreviewName.value = ''
+  materialPreviewUrl.value = ''
+})
 
 // 切换筛选区域折叠状态
 const toggleFilterCollapse = () => {
@@ -498,13 +513,6 @@ const applicationMaterials = ref<{
 const materialsLoading = ref(false);
 // 材料数据缓存标记，避免重复加载
 const materialsCacheLoaded = ref(false);
-
-// 全局教学日历（仅作岗位时长缺失时的参考展示）
-const systemInternshipTime = ref({
-  startDate: '',
-  endDate: ''
-});
-
 
 // 筛选选项
 const filters = [
@@ -598,7 +606,6 @@ interface StudentApplicationRow {
   createTime?: string
   jobTitle?: string
   salary?: string
-  duration?: string
   [key: string]: unknown
 }
 const studentApplicationRows = ref<StudentApplicationRow[]>([])
@@ -676,7 +683,6 @@ const fetchApplications = async () => {
         company: app.companyName || app.company_name || app.company || '',
         location: app.location || '',
         salary: app.salary || '',
-        duration: app.duration || '',
         contactPerson: app.hrName || app.contactPerson || app.recruiterName || '',
         contactPhone: app.hrPhone || app.contactPhone || app.recruiterPhone || '',
         contactEmail: app.hrEmail || app.contactEmail || app.recruiterEmail || '',
@@ -835,7 +841,7 @@ const loadApplicationMaterials = async () => {
 
   materialsLoading.value = true;
   try {
-    // 并行加载简历、证书和系统实习时间设置
+    // 并行加载简历和证书
     const [resumeRes, certRes] = await Promise.all([
       request.get<ApplicationMaterialRow[]>('/student/profile/resumes'),
       request.get<ApplicationMaterialRow[]>('/student/profile/certificates')
@@ -859,18 +865,44 @@ const loadApplicationMaterials = async () => {
   }
 };
 
-// 申请专属材料
+const materialFileName = (name: string, stored: unknown) => {
+  const extension = typeof stored === 'string' ? /\.([a-z0-9]{1,8})(?:$|[?#])/i.exec(stored)?.[1] : ''
+  return extension && !name.toLowerCase().endsWith(`.${extension.toLowerCase()}`) ? `${name}.${extension}` : name
+}
+
+// 申请专属材料：原存储地址仅用于识别文件格式，预览和下载均走当前记录的授权接口。
 const appMaterials = computed(() => {
   const m = currentApplication.value?.materials
   if (!m) return []
   try {
     const parsed = typeof m === 'string' ? JSON.parse(m) : m
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return []
-    return Object.entries(parsed).filter(([, v]) => v).map(([label]) => ({ label }))
+    return Object.entries(parsed).filter(([, v]) => v).map(([label, stored]) => {
+      const displayName = label === 'delayPlan' ? '考研计划' : label
+      return { label, displayName, fileName: materialFileName(displayName, stored) }
+    })
   } catch {
     return []
   }
 })
+
+const previewApplicationMaterial = (key: string) => {
+  const material = appMaterials.value.find(item => item.label === key)
+  const url = ['selfPractice', 'delay'].includes(currentApplication.value?.applicationType)
+    ? studentApplicationMaterialByteUrl(currentApplication.value?.id, key) : ''
+  if (!url || !material) return ElMessage.error('申请材料记录不可用')
+  materialPreviewName.value = material.fileName
+  materialPreviewUrl.value = url
+  materialPreviewVisible.value = true
+}
+
+const previewProfileMaterial = (kind: 'resume' | 'certificate', file: ApplicationMaterialRow) => {
+  const url = studentProfileByteUrl(kind, file?.id)
+  if (!url) return ElMessage.error('材料记录不可用')
+  materialPreviewName.value = materialFileName(file.name || (kind === 'resume' ? '简历' : '证书'), file.url)
+  materialPreviewUrl.value = url
+  materialPreviewVisible.value = true
+}
 
 const downloadApplicationMaterial = async (key) => {
   if (!['selfPractice', 'delay'].includes(currentApplication.value?.applicationType)) {
@@ -879,30 +911,12 @@ const downloadApplicationMaterial = async (key) => {
   }
   const url = studentApplicationMaterialByteUrl(currentApplication.value?.id, key)
   if (!url) return ElMessage.error('申请材料记录不可用')
-  const rawMaterials = currentApplication.value?.materials
-  let stored = rawMaterials?.[key]
-  if (typeof rawMaterials === 'string') {
-    try { stored = JSON.parse(rawMaterials)?.[key] } catch { stored = '' }
-  }
-  const extension = typeof stored === 'string' ? /\.([a-z0-9]{1,8})(?:$|[?#])/i.exec(stored)?.[1] : ''
   try {
-    await downloadAuthorizedFile(url, extension ? `${key}.${extension}` : key)
+    await downloadAuthorizedFile(url, appMaterials.value.find(item => item.label === key)?.fileName || key)
   } catch {
     ElMessage.error('申请材料下载失败，请检查权限或联系管理员')
   }
 }
-
-// 计算实习时长显示
-const getDurationDisplay = (duration) => {
-  // 如果岗位没有设置时长，显示全局教学日历的参考范围。
-  if (!duration || duration.trim() === '' || duration === '不限') {
-    if (systemInternshipTime.value.startDate && systemInternshipTime.value.endDate) {
-      return `${systemInternshipTime.value.startDate} 至 ${systemInternshipTime.value.endDate}`;
-    }
-    return '未设置';
-  }
-  return duration;
-};
 
 // 下载简历
 const downloadResume = async (resume) => {
@@ -978,10 +992,7 @@ const goToInterview = () => {
 
 // 生命周期钩子
 onMounted(async () => {
-  await Promise.all([
-    fetchApplications(),
-    fetchSystemInternshipTime()
-  ]);
+  await fetchApplications();
   await openApplicationFromQuery()
   // 注册申请状态更新监听器
   onApplicationStatusUpdate(handleApplicationStatusUpdate)
@@ -1005,29 +1016,6 @@ const handleApplicationStatusUpdate = (data: ApplicationStatusUpdateData) => {
     console.log('fetchApplications完成, 当前申请数:', applications.value.length)
   })
 }
-
-// 获取全局教学日历
-const fetchSystemInternshipTime = async () => {
-  try {
-    interface InternshipCalendarRow {
-      startDate?: string
-      start_date?: string
-      endDate?: string
-      end_date?: string
-      [key: string]: unknown
-    }
-    const timeRes = await getInternshipCalendar() as unknown as { code?: number; data?: InternshipCalendarRow };
-    if (timeRes.code === 200) {
-      const calendarData = timeRes.data
-      systemInternshipTime.value = {
-        startDate: calendarData?.startDate ?? calendarData?.start_date ?? '',
-        endDate: calendarData?.endDate ?? calendarData?.end_date ?? ''
-      };
-    }
-  } catch (error) {
-    console.error('获取实习教学日历失败:', error);
-  }
-};
 
 useAgentPageContext(() => ({
   title: '我的申请', view: showDetailDialog.value ? 'application-detail' : 'page',
@@ -2044,6 +2032,8 @@ useAgentPageContext(() => ({
 
 .material-info {
   display: flex;
+  flex: 1;
+  min-width: 0;
   align-items: center;
   gap: 12px;
 }
@@ -2052,10 +2042,13 @@ useAgentPageContext(() => ({
   font-size: 14px;
   color: #303133;
   font-weight: 500;
+  overflow-wrap: anywhere;
 }
 
 .material-actions {
   display: flex;
+  flex-shrink: 0;
+  flex-wrap: wrap;
   align-items: center;
   gap: 12px;
 }
@@ -2121,6 +2114,17 @@ useAgentPageContext(() => ({
 }
 
 @media screen and (max-width: 768px) {
+  .material-item {
+    flex-wrap: wrap;
+    gap: 12px;
+    padding: 12px;
+  }
+
+  .material-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
   .header-content {
     flex-direction: column;
     align-items: flex-start;

@@ -49,9 +49,9 @@ public class StudentJourneyService {
             case "profile" -> "姓名、学号、电话和邮箱均已填写。";
             case "placement" -> title.contains("自主")?"自主实习申请通过并落实实习经历。":"存在当前有效的面试通过或直接录取结果。仅投递或收到面试邀请不算完成。";
             case "confirmation" -> "学生提交实习确认表，企业确认通过。";
-            case "internship" -> "系统真实业务状态已进入实习结束，不能只凭日期推断完成。";
+            case "internship" -> "已达到学院本次实习统一结束时间，且系统状态为“实习已结束”。";
             case "appraisal" -> "实习鉴定表已正式提交。仅上传附件或保存草稿不算完成。";
-            case "complete" -> "实习已结束，且鉴定表已正式提交。";
+            case "complete" -> "学院本次实习已统一结束，且鉴定表已正式提交。";
             case "delay" -> "延期审批和恢复安排以真实业务记录为准，获准延期不代表整个实习已完成。";
             default -> "以最新业务记录为准。";
         };
