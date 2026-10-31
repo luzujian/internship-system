@@ -6,6 +6,7 @@ import com.internship.entity.dto.*;
 import com.internship.mapper.*;
 import com.internship.service.*;
 import org.junit.jupiter.api.*;
+import java.math.BigDecimal;
 import java.util.*;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -94,6 +95,8 @@ class AgentReadToolsTest {
         when(mapper.studentAdvisorProfile(1L)).thenReturn(Map.of("title","学生"));
         ToolResult incomplete=tools.execute(student,"student_profile","{}");assertEquals("",incomplete.items().getFirst().get("major"));assertFalse(incomplete.warnings().isEmpty());assertFalse(incomplete.items().getFirst().containsKey("password"));
         assertTrue(((List<?>)incomplete.facts().get("unverifiedFields")).contains("学历层次"));
+        assertTrue(((List<?>)incomplete.facts().get("unverifiedFields")).contains("技能熟练程度"));
+        assertFalse(((List<?>)incomplete.facts().get("unverifiedFields")).contains("到岗时间"));
     }
     @Test void missingCalendarIsAnErrorNotZeroSubmissions(){
         assertEquals("CALENDAR_UNAVAILABLE",assertThrows(AgentException.class,()->tools.execute(teacher,"teacher_reflections","{}")).getCode());
@@ -159,6 +162,69 @@ class AgentReadToolsTest {
         Map<String,Object> found=tools.execute(student,"jobs_search","{\"city\":\"深圳\"}").items().getFirst();
         assertEquals("RECORDED",found.get("salaryStatus"));assertEquals(180,found.get("salaryMin"));assertEquals("元/天",found.get("salaryUnit"));
         assertEquals("广东省 · 深圳市",found.get("location"));assertFalse(daily.containsKey("salaryStatus"));
+    }
+    @Test void absentOrZeroSalaryIsNegotiableInDetailsAndSearch(){
+        Position job=salaryJob();
+        for(String unit:Arrays.asList(null,"","K/月","元/天","元/小时","面议"," 面议 ")) {
+            job.setSalaryUnit(unit);
+            for(BigDecimal low:Arrays.asList(null,BigDecimal.ZERO))for(BigDecimal high:Arrays.asList(null,BigDecimal.ZERO)) {
+                job.setSalaryMin(low);job.setSalaryMax(high);
+                Map<String,Object> detail=tools.execute(student,"jobs_details","{\"ids\":[\"10\"]}").items().getFirst();
+                assertEquals("面议",detail.get("salary"),"unit="+unit+", low="+low+", high="+high);
+                assertEquals("NEGOTIABLE",detail.get("salaryStatus"));assertFalse(detail.containsKey("salaryNote"));
+            }
+        }
+        Map<String,Object> raw=Map.of("id","10","title","工程师实习生","salaryUnit","K/月");
+        when(mapper.searchJobs(null,null,0,10)).thenReturn(List.of(raw));
+        Map<String,Object> found=tools.execute(student,"jobs_search","{}").items().getFirst();
+        assertEquals("面议",found.get("salary"));assertEquals("NEGOTIABLE",found.get("salaryStatus"));
+        assertFalse(found.containsKey("salaryNote"));assertFalse(raw.containsKey("salary"));
+    }
+    @Test void recordedSalaryKeepsPartialBoundsUnitsAndNegotiableOverride(){
+        Position job=salaryJob();
+        record Example(BigDecimal low,BigDecimal high,String unit,String expected) {}
+        for(Example example:List.of(
+                new Example(new BigDecimal("3"),new BigDecimal("5"),"K/月","3-5K/月"),
+                new Example(new BigDecimal("150"),new BigDecimal("200"),"元/日","150-200元/天"),
+                new Example(new BigDecimal("20"),new BigDecimal("30"),"元/时","20-30元/小时"),
+                new Example(new BigDecimal("5"),null,"K/月","5K/月起"),
+                new Example(null,new BigDecimal("8"),"K/月","最高8K/月"),
+                new Example(new BigDecimal("150"),BigDecimal.ZERO,"元/天","150元/天起"),
+                new Example(BigDecimal.ZERO,new BigDecimal("200"),"元/天","最高200元/天"),
+                new Example(new BigDecimal("3"),new BigDecimal("5"),"面议","面议"))) {
+            job.setSalaryMin(example.low());job.setSalaryMax(example.high());job.setSalaryUnit(example.unit());
+            Map<String,Object> actual=tools.execute(student,"jobs_details","{\"ids\":[\"10\"]}").items().getFirst();
+            assertEquals(example.expected(),actual.get("salary"));
+            assertEquals("面议".equals(example.expected())?"NEGOTIABLE":"RECORDED",actual.get("salaryStatus"));
+            assertEquals(example.low()==null?"":example.low(),actual.get("salaryMin"));
+            assertEquals(example.high()==null?"":example.high(),actual.get("salaryMax"));
+            assertEquals(example.unit(),actual.get("salaryUnit"));assertFalse(actual.containsKey("salaryNote"));
+        }
+    }
+    @Test void malformedSalaryIsStillUncertainInsteadOfNegotiable(){
+        Position job=salaryJob();
+        record Example(BigDecimal low,BigDecimal high,String unit) {}
+        for(Example example:List.of(
+                new Example(BigDecimal.ZERO,BigDecimal.ZERO,"年薪"),
+                new Example(new BigDecimal("-1"),new BigDecimal("5"),"K/月"),
+                new Example(null,new BigDecimal("-1"),"K/月"),
+                new Example(new BigDecimal("8"),new BigDecimal("5"),"K/月"))) {
+            job.setSalaryMin(example.low());job.setSalaryMax(example.high());job.setSalaryUnit(example.unit());
+            Map<String,Object> actual=tools.execute(student,"jobs_details","{\"ids\":[\"10\"]}").items().getFirst();
+            assertEquals("待核实",actual.get("salary"));assertEquals("NEEDS_CONFIRMATION",actual.get("salaryStatus"));
+            assertTrue(actual.containsKey("salaryNote"));
+        }
+        for(Object invalid:List.of("abc",Double.NaN,Double.POSITIVE_INFINITY)) {
+            when(mapper.searchJobs(null,null,0,10)).thenReturn(List.of(Map.of("id","10","salaryMin",invalid,"salaryUnit","K/月")));
+            Map<String,Object> found=tools.execute(student,"jobs_search","{}").items().getFirst();
+            assertEquals("待核实",found.get("salary"));assertEquals("NEEDS_CONFIRMATION",found.get("salaryStatus"));
+        }
+    }
+    private Position salaryJob(){
+        CompanyUser company=new CompanyUser();company.setStatus(1);company.setAuditStatus(1);company.setCompanyName("示例企业");
+        Position job=new Position();job.setId(10L);job.setCompanyId(7L);job.setStatus("active");job.setPositionName("工程师实习生");
+        when(companies.findById(7L)).thenReturn(company);when(positions.findById(10L)).thenReturn(job);
+        return job;
     }
     @Test void missingTeacherScopeCannotExpandToAllStudents(){
         Actor unassigned=new Actor("t2",3L,"ROLE_TEACHER_DEPARTMENT","老师","DEPARTMENT",null,null,false,Set.of("view:student_tracking"));

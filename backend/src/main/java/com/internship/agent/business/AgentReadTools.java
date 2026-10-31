@@ -5,9 +5,11 @@ import com.internship.entity.*;
 import com.internship.entity.dto.*;
 import com.internship.mapper.*;
 import com.internship.service.*;
+import com.internship.utils.SalaryFormatter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import java.math.BigDecimal;
 import java.time.*;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
@@ -363,8 +365,8 @@ public class AgentReadTools {
             if(value==null || value.toString().isBlank())missing.add(key);
         }
         return result("student_profile","本人基本资料",actor,List.of(profile),1,
-            Map.of("missingFields",missing,"unverifiedFields",List.of("学历层次","技能熟练程度","项目经历","求职偏好","到岗时间")),List.of(),
-            List.of("学院、系、专业、班级来自实际组织关联；空字段只能说尚未登记，不能猜测。年级不能推断学历或能力；手机邮箱仅提供是否已填写，不输出原始联系方式。"));
+            Map.of("missingFields",missing,"unverifiedFields",List.of("学历层次","技能熟练程度","项目经历","求职偏好")),List.of(),
+            List.of("学院、系、专业、班级来自实际组织关联；空字段只能说尚未登记，不能猜测。年级不能推断学历或能力；手机邮箱仅提供是否已填写，不输出原始联系方式。未核验字段用于限制判断范围，不是需要逐项向学生复述的提醒清单；仅在直接影响本轮结论时说明必要缺口。"));
     }
 
     private ToolResult recentActivity(Actor actor, JsonNode args) {
@@ -427,7 +429,7 @@ public class AgentReadTools {
                     "requiredMajors",clip(p.getRequiredMajors(),600),"remainingQuota",p.getRemainingQuota(),"plannedRecruit",p.getPlannedRecruit(),"positionType",p.getPositionType(),"providesAccommodation",p.getProvidesAccommodation(),"internshipEnvironment",p.getInternshipEnvironment(),"internshipStartDate",p.getInternshipStartDate(),"internshipEndDate",p.getInternshipEndDate(),"interviewMethod",p.getInterviewMethod(),"interviewLocation",p.getInterviewLocation(),"status",p.getStatus())));
             links.add(new Link(jobLinkLabel(items.get(items.size()-1)),"OPEN_JOB",p.getId().toString(),Map.of()));
         }
-        return result("jobs_details","当前岗位信息",actor,items,items.size(),Map.of(),links,List.of("剩余确认名额不等同于是否可以投递；匹配分析不能替代企业录用判断。"));
+        return result("jobs_details","当前岗位信息",actor,items,items.size(),Map.of(),links,List.of("剩余确认名额不等同于是否可以投递；仅在用户询问名额或投递条件时解释。"));
     }
 
     /** 实习计划：仅学生本人；需 internship_plan 能力；快照随业务变化更新。 */
@@ -489,17 +491,30 @@ public class AgentReadTools {
         item.put("location",List.of("province","city","district","detailAddress").stream()
                 .map(key->Objects.toString(raw.get(key),"").trim()).filter(value->!value.isEmpty())
                 .collect(java.util.stream.Collectors.joining(" · ")));
-        String unit=Objects.toString(raw.get("salaryUnit"),"");
-        if("面议".equals(unit))item.put("salaryStatus","NEGOTIABLE");
-        else {
-            Double low=raw.get("salaryMin") instanceof Number n?n.doubleValue():null;
-            Double high=raw.get("salaryMax") instanceof Number n?n.doubleValue():null;
-            boolean valid=Set.of("K/月","元/天","元/小时").contains(unit)
-                    &&low!=null&&high!=null&&Double.isFinite(low)&&Double.isFinite(high)&&low>=0&&high>0&&high>=low;
-            item.put("salaryStatus",valid?"RECORDED":"NEEDS_CONFIRMATION");
-            if(!valid)item.put("salaryNote","原记录金额或单位不完整、为零或异常，需向企业核实；不能据此认定为无薪或换算薪资。");
+        String unit=Objects.toString(raw.get("salaryUnit"),"").trim();
+        BigDecimal low=salaryAmount(raw.get("salaryMin")),high=salaryAmount(raw.get("salaryMax"));
+        boolean negotiable=SalaryFormatter.UNIT_NEGOTIABLE.equals(unit);
+        boolean invalid=!SalaryFormatter.isSupportedInputUnit(unit)
+                ||(!Objects.toString(raw.get("salaryMin"),"").isBlank()&&(low==null||low.signum()<0))
+                ||(!Objects.toString(raw.get("salaryMax"),"").isBlank()&&(high==null||high.signum()<0))
+                ||(low!=null&&high!=null&&low.signum()>0&&high.signum()>0&&low.compareTo(high)>0);
+        if(!negotiable&&invalid) {
+            item.put("salary","待核实");
+            item.put("salaryStatus","NEEDS_CONFIRMATION");
+            item.put("salaryNote","原记录金额或单位异常，具体薪资需向企业核实；不能据此认定为无薪或换算薪资。核实提示仅在本轮涉及薪资时说明。");
+        } else {
+            String salary=SalaryFormatter.format(low,high,unit);
+            item.put("salary",salary);
+            item.put("salaryStatus",SalaryFormatter.UNIT_NEGOTIABLE.equals(salary)?"NEGOTIABLE":"RECORDED");
         }
         return item;
+    }
+
+    private static BigDecimal salaryAmount(Object value) {
+        String amount=Objects.toString(value,"").trim();
+        if(amount.isEmpty())return null;
+        try {return new BigDecimal(amount);}
+        catch(NumberFormatException e) {return null;}
     }
 
     private Position visiblePosition(Long id) {

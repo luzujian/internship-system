@@ -1530,13 +1530,15 @@ onUnmounted(() => {
 
 const agentComparedJobs = ref<string[]>([])
 const agentWorkspace = useAgentStore()
+const agentSingleJobPrompt = '结合我的专业，分析选中岗位是否值得投递，并说明理由。'
+const agentCompareJobsPrompt = '结合我的专业，比较选中岗位的关键差异，帮我判断优先投哪些。'
 function toggleAgentCompare(job: any) {
   const id = String(job.id)
   if (agentComparedJobs.value.includes(id)) agentComparedJobs.value = agentComparedJobs.value.filter(value => value !== id)
   else if (agentComparedJobs.value.length < 3) agentComparedJobs.value.push(id)
   else { ElMessage.info('每次最多比较 3 个岗位'); return }
-  if (!agentWorkspace.draft || ['结合我的专业比较我选中的这些岗位', '结合我的专业分析我选中的这个岗位', '比较我选中的这些岗位', '分析我选中的这个岗位'].includes(agentWorkspace.draft)) {
-    agentWorkspace.draft = agentComparedJobs.value.length > 1 ? '结合我的专业比较我选中的这些岗位' : agentComparedJobs.value.length ? '结合我的专业分析我选中的这个岗位' : ''
+  if (!agentWorkspace.draft || [agentSingleJobPrompt, agentCompareJobsPrompt, '结合我的专业比较我选中的这些岗位', '结合我的专业分析我选中的这个岗位', '比较我选中的这些岗位', '分析我选中的这个岗位'].includes(agentWorkspace.draft)) {
+    agentWorkspace.draft = agentComparedJobs.value.length > 1 ? agentCompareJobsPrompt : agentComparedJobs.value.length ? agentSingleJobPrompt : ''
   }
   void agentWorkspace.openWithPrompt()
 }
