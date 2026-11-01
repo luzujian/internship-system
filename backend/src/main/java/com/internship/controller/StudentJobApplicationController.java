@@ -7,6 +7,9 @@ import com.internship.entity.StudentJobApplication;
 import com.internship.entity.StudentUser;
 import com.internship.entity.User;
 import com.internship.entity.dto.StudentPositionKey;
+import com.internship.entity.dto.JobApplicationMaterialModels.Selection;
+import org.springframework.http.MediaType;
+import org.springframework.web.multipart.MultipartFile;
 import com.internship.service.DirectHireService;
 import com.internship.service.PositionService;
 import com.internship.service.StudentJobApplicationService;
@@ -102,9 +105,24 @@ public class StudentJobApplicationController {
             return Result.error("获取申请详情失败");
         }
     }
-    @PostMapping
+    @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
     @Log(operationType = "ADD", module = "APPLICATION_MANAGEMENT", description = "申请职位")
     public Result create(@RequestBody StudentJobApplication application) {
+        return submit(application, null, null, List.of(), false);
+    }
+
+    @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @Log(operationType = "ADD", module = "APPLICATION_MANAGEMENT", description = "提交岗位申请及本次材料")
+    public Result createWithMaterials(@RequestPart("application") StudentJobApplication application,
+                                     @RequestPart("materials") Selection selection,
+                                     @RequestPart(value = "resume", required = false) MultipartFile resume,
+                                     @RequestPart(value = "certificates", required = false) List<MultipartFile> certificates) {
+        if (selection == null || selection.archiveIds() == null) return Result.error("请确认本次申请材料后重新提交");
+        return submit(application, selection.archiveIds(), resume, certificates, true);
+    }
+
+    private Result submit(StudentJobApplication application, List<Long> archiveIds, MultipartFile resume,
+                          List<MultipartFile> certificates, boolean customized) {
         try {
             User user = getCurrentUser();
             if (user == null) return Result.error("未登录");
@@ -136,7 +154,8 @@ public class StudentJobApplicationController {
                     .isBefore(java.time.LocalDate.now(java.time.ZoneId.of("Asia/Shanghai")))) {
                 return Result.error("该岗位实习期已结束,无法申请");
             }
-            applicationService.create(application);
+            if (customized) applicationService.create(application, archiveIds, resume, certificates);
+            else applicationService.create(application);
 
             // 推送给企业端静默更新最新动态
             if (application.getCompanyId() != null) {
@@ -157,7 +176,7 @@ public class StudentJobApplicationController {
     }
 
     @DeleteMapping("/{id}")
-    @Log(operationType = "DELETE", module = "APPLICATION_MANAGEMENT", description = "删除职位申请")
+    @Log(operationType = "DELETE", module = "APPLICATION_MANAGEMENT", description = "撤回职位申请")
     public Result delete(@PathVariable Long id) {
         try {
             User user = getCurrentUser();
@@ -177,10 +196,10 @@ public class StudentJobApplicationController {
                 webSocketHandler.sendCompanyTodoUpdateForApplication(companyId);
             }
 
-            return Result.success("删除成功");
+            return Result.success("申请已撤回");
         } catch (Exception e) {
-            log.error("删除申请失败: {}", e.getMessage(), e);
-            return Result.error("删除失败: " + e.getMessage());
+            log.error("撤回申请失败: {}", e.getMessage(), e);
+            return Result.error("撤回失败: " + e.getMessage());
         }
     }
 

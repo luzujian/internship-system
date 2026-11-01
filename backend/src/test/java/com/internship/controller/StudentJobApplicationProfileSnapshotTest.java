@@ -28,6 +28,33 @@ import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class StudentJobApplicationProfileSnapshotTest {
+    @Test void multipartSubmissionAcceptsOnlyTheChosenLibraryIdsAndThisApplicationsUploads() throws Exception {
+        activePosition();
+        var mvc = org.springframework.test.web.servlet.setup.MockMvcBuilders.standaloneSetup(controller).build();
+        var resume = new org.springframework.mock.web.MockMultipartFile("resume", "custom.pdf", "application/pdf", "%PDF-1.7".getBytes());
+        var certificate = new org.springframework.mock.web.MockMultipartFile("certificates", "extra.pdf", "application/pdf", "%PDF-1.7".getBytes());
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart("/api/student/job-applications")
+                .file(new org.springframework.mock.web.MockMultipartFile("application", "blob", "application/json", "{\"positionId\":10,\"studentId\":999}".getBytes()))
+                .file(new org.springframework.mock.web.MockMultipartFile("materials", "blob", "application/json", "{\"archiveIds\":[12]}".getBytes()))
+                .file(resume).file(certificate))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isOk())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.code").value(200));
+        var captured = org.mockito.ArgumentCaptor.forClass(StudentJobApplication.class);
+        verify(applicationService).create(captured.capture(), eq(List.of(12L)), any(), anyList());
+        assertEquals(42L, captured.getValue().getStudentId());
+        assertEquals(profile.getPhone(), captured.getValue().getPhone());
+    }
+
+    @Test void materialFailureIsReturnedAsAnUnsubmittedApplication() {
+        activePosition();
+        var app = staleApplication("");
+        doThrow(new com.internship.exception.BusinessException("申请材料保存失败，本次申请未提交"))
+                .when(applicationService).create(eq(app), eq(List.of(12L)), isNull(), isNull());
+        var response = controller.createWithMaterials(app,
+                new com.internship.entity.dto.JobApplicationMaterialModels.Selection(List.of(12L)), null, null);
+        assertEquals(400, response.getCode());
+        assertTrue(response.getMessage().contains("本次申请未提交"));
+    }
     @Mock private UserService userService;
     @Mock private StudentUserService studentUserService;
     @Mock private StudentJobApplicationService applicationService;

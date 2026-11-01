@@ -440,36 +440,22 @@
               </el-form-item>
             </div>
 
-            <!-- 上传简历和证书模块 -->
+            <!-- 本次申请材料模块 -->
             <div class="form-module">
               <div class="module-header">
                 <div class="module-icon-container">
                   <el-icon class="module-icon"><Upload /></el-icon>
                 </div>
-                <h2 class="module-title">上传简历和证书</h2>
+                <h2 class="module-title">本次申请材料</h2>
               </div>
-              <div class="material-list">
-                <div v-if="resumeList.length === 0 && certificateList.length === 0" class="no-material-tip">
-                  <span>暂无可用的申请材料，请在个人中心上传简历和证书</span>
-                  <el-link type="primary" :underline="false" class="material-upload-link" @click="goToMaterialManagement">
-                    去个人中心上传
-                  </el-link>
-                </div>
-                <div v-for="resume in resumeList" :key="resume.id" class="material-item">
-                  <el-icon class="material-icon"><Document /></el-icon>
-                  <span class="material-name">{{ resume.name || '个人简历' }}</span>
-                </div>
-                <div v-for="cert in certificateList" :key="cert.id" class="material-item">
-                  <el-icon class="material-icon"><Document /></el-icon>
-                  <span class="material-name">{{ cert.name || '证书文件' }}</span>
-                </div>
-              </div>
+              <JobApplicationMaterialsEditor v-if="showApplicationDialog" v-model="applicationMaterialSelection"
+                :disabled="submitting" @ready="applicationMaterialsReady = $event" />
             </div>
           </div>
 
           <div class="form-actions">
             <el-button @click="showApplicationDialog = false" class="reset-btn">取消</el-button>
-            <el-button type="primary" @click="submitApplication" :loading="submitting" class="submit-btn">
+            <el-button type="primary" @click="submitApplication" :loading="submitting" :disabled="!applicationMaterialsReady" class="submit-btn">
               提交申请
             </el-button>
           </div>
@@ -1070,6 +1056,7 @@
 </template>
 
 <script setup>
+import JobApplicationMaterialsEditor from '@/components/JobApplicationMaterialsEditor.vue'
 import { useAgentPageContext } from '@/agent/useAgentPageContext'
 import { useFormContext } from '@/agent/formContext'
 import { ref, reactive, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
@@ -1166,6 +1153,9 @@ const certificateDragActive = ref(false)
 
 // 申请相关变量
 const showApplicationDialog = ref(false)
+const applicationMaterialSelection = ref(null)
+const applicationMaterialsReady = ref(false)
+watch(showApplicationDialog, () => { applicationMaterialSelection.value = null; applicationMaterialsReady.value = false })
 const submitting = ref(false)
 const applicationFormRef = ref(null)
 const currentApplyingJob = ref(null)
@@ -2588,40 +2578,13 @@ const applyJob = async (job) => {
     companyName: job.companyName,
     selfIntroduction: ''
   }
-  // 先加载已正式保存的简历和证书，再打开投递申请表
-  await loadStudentMaterials()
   showApplicationDialog.value = true
-}
-
-const goToMaterialManagement = async () => {
-  showApplicationDialog.value = false
-  await router.push({
-    path: '/student/profile',
-    query: { action: 'resumeManagement' }
-  })
-}
-
-// 加载学生简历和证书列表
-const loadStudentMaterials = async () => {
-  try {
-    // 加载简历列表
-    const resumeResponse = await request.get('/student/profile/resumes')
-    if (resumeResponse.code === 200) {
-      resumeList.value = resumeResponse.data || []
-    }
-    // 加载证书列表
-    const certResponse = await request.get('/student/profile/certificates')
-    if (certResponse.code === 200) {
-      certificateList.value = certResponse.data || []
-    }
-  } catch (error) {
-    console.error('加载学生材料失败:', error)
-  }
 }
 
 // 提交申请
 const submitApplication = async () => {
   if (!applicationFormRef.value) return
+  if (!applicationMaterialsReady.value || !applicationMaterialSelection.value) return ElMessage.error('请先成功加载本次申请材料')
 
   try {
     await applicationFormRef.value.validate()
@@ -2645,7 +2608,7 @@ const submitApplication = async () => {
     }
 
     const operation = formContext.beginFormOperation('profile:apply')
-    const response = await studentJobApplicationService.create(applicationData)
+    const response = await studentJobApplicationService.create(applicationData, applicationMaterialSelection.value)
     if (response.code === 200) {
       operation.complete({ status: 'submitted', label: '岗位投递已提交', url: '/student/applications' })
       currentApplyingJob.value.isApplied = true

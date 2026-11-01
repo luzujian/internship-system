@@ -9,7 +9,7 @@ const ref = value => ({ value })
 const noop = () => {}
 const messages = { success: noop, error: noop, warning: noop }
 function declaration(file, name, scope) {
-  const source = readFileSync(new URL(`../src/views/${file}.vue`, import.meta.url), 'utf8')
+  const source = readFileSync(new URL(`../src/${file.startsWith('components/') ? file : 'views/' + file}.vue`, import.meta.url), 'utf8')
   const { descriptor } = parse(source)
   const ast = ts.createSourceFile(file, descriptor.scriptSetup.content, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
   const variable = ast.statements.filter(ts.isVariableStatement)
@@ -29,12 +29,12 @@ for (const type of ['job', 'delay']) test(`withdrawing ${type} keeps another app
   const calls = []
   const write = async url => { calls.push(url); return { code: 200 } }
   await declaration('student/Applications', 'withdrawApplication', {
-    applications, request: { post: write, delete: write },
+    applications, studentApplicationRows: ref(type === 'delay' ? [target] : []), jobApplicationRows: ref(type === 'job' ? [target] : []), request: { post: write, delete: write },
     ElMessageBox: { confirm: async () => {} }, ElMessage: messages
   })(target)
   assert.equal(applications.value[0], original)
-  if (type === 'job') assert.equal(applications.value.length, 1)
-  else assert.equal(applications.value[1].status, 'withdrawn')
+  assert.equal(applications.value.length, 2)
+  assert.equal(applications.value[1].status, 'withdrawn')
   assert.equal(calls.length, 1)
 })
 
@@ -86,27 +86,25 @@ test('confirmation search supports missing names and numeric student numbers', (
   assert.equal(result[0].id, 1)
 })
 
-test('switching student details never shows attachments from a previous request', async () => {
-  const responses = new Map()
-  const studentArchives = ref([{ id: 99, fileName: 'previous student.pdf' }])
-  const currentStudent = ref(null)
-  const show = declaration('company/ApplicationView', 'handleViewDetail', {
-    currentStudent, detailDialogVisible: ref(false), studentArchives,
-    detailRequest: 0, activityReadError: ref(''), activityReadUnavailable: ref(false), acknowledgeActivity: async () => {},
-    console: { log: noop, error: noop },
-    studentArchiveService: { getStudentArchives: id => new Promise(resolve => responses.set(id, resolve)) }
+test('switching application details never shows materials from a previous request', async () => {
+  const pending = new Map()
+  const props = { applicationId: 101, scope: 'company' }
+  const snapshot = ref({ files: [{ id: 99, fileName: 'previous.pdf' }] })
+  const loading = ref(false), error = ref('')
+  const load = declaration('components/JobApplicationMaterialSnapshot', 'load', {
+    props, snapshot, loading, error, requestVersion: 0, previewVisible: ref(false),
+    getApplicationMaterialSnapshot: id => new Promise(resolve => pending.set(id, resolve))
   })
-  const first = show({ id: 1, studentId: 11 })
-  assert.equal(studentArchives.value.length, 0, 'clear previous material immediately')
-  const second = show({ id: 2, studentId: 22 })
-  responses.get(22)({ code: 200, data: [{ id: 222, fileName: 'student B.pdf' }] })
+  const first = load()
+  assert.equal(snapshot.value, null, 'clear previous material immediately')
+  props.applicationId = 102
+  const second = load()
+  pending.get(102)({ data: { snapshotAvailable: true, files: [{ id: 82, fileName: 'B.pdf' }] } })
   await second
-  responses.get(11)({ code: 200, data: [{ id: 111, fileName: 'student A.pdf' }] })
+  pending.get(101)({ data: { snapshotAvailable: true, files: [{ id: 81, fileName: 'A.pdf' }] } })
   await first
-  assert.equal(currentStudent.value.studentId, 22)
-  assert.equal(studentArchives.value[0].id, 222)
-  await show({ id: 3 })
-  assert.equal(studentArchives.value.length, 0, 'a record without student ID must not retain other material')
+  assert.equal(snapshot.value.files[0].id, 82)
+  assert.equal(loading.value, false)
 })
 
 for (const keys of [['selfPractice'], ['delay', 'companyQualification']]) {

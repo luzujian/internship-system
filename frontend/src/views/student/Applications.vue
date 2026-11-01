@@ -298,6 +298,9 @@
               <el-button v-if="currentApplication.applicationType === 'selfPractice'" link type="primary" @click="agreementVisible = true">实习协议</el-button>
             </div>
 
+            <JobApplicationMaterialSnapshot v-if="currentApplication.applicationType === 'job' && showDetailDialog"
+              :application-id="currentApplication.id" scope="student" />
+            <template v-else>
             <div v-if="materialsLoading" class="materials-loading">
               <el-icon class="is-loading"><Loading /></el-icon>
               <span>加载材料中...</span>
@@ -393,6 +396,7 @@
                 <p class="no-materials-tip">请前往个人中心的简历管理页面上传简历和证书</p>
               </div>
             </template>
+            </template>
           </div>
         </div>
       </div>
@@ -439,6 +443,7 @@ import request from '@/utils/request';
 import InternshipAgreementDialog from '@/components/student/InternshipAgreementDialog.vue'
 import FilePreviewDialog from '@/components/FilePreviewDialog.vue'
 import { studentApplicationMaterialByteUrl, studentProfileByteUrl } from '@/utils/authorizedFileUrl'
+import JobApplicationMaterialSnapshot from '@/components/JobApplicationMaterialSnapshot.vue'
 import { downloadAuthorizedFile } from '@/utils/authorizedFileDownload'
 import { useAuthStore } from '@/store/auth';
 import type { ApplicationStatusUpdateData } from '@/utils/websocket';
@@ -834,6 +839,7 @@ const openApplicationFromQuery = async () => {
 
 // 加载申请人的简历和证书材料（带缓存优化）
 const loadApplicationMaterials = async () => {
+  if (currentApplication.value?.applicationType === 'job') return
   // 如果已经加载过材料数据，直接使用缓存
   if (materialsCacheLoaded.value) {
     return;
@@ -946,12 +952,12 @@ const downloadCertificate = async (cert) => {
   }
 };
 
-// 方法：撤回申请（仅岗位申请，后端物理删除）
+// 撤回后保留申请与提交材料，重新申请时生成独立的新记录。
 const withdrawApplication = async (application) => {
   const isDelay = application?.applicationType === 'delay';
   try {
     await ElMessageBox.confirm(
-      isDelay ? '撤回后教师将无法继续审核原申请，你可以重新填写并提交。' : '确定要撤回这条申请吗？撤回后无法恢复。',
+      isDelay ? '撤回后教师将无法继续审核原申请，你可以重新填写并提交。' : '撤回后可调整材料并重新提交，原申请及其材料将保留为已撤回记录。',
       isDelay ? '撤回考研延迟申请' : '撤回申请',
       { confirmButtonText: '确定', cancelButtonText: '取消', type: 'warning' }
     );
@@ -968,8 +974,9 @@ const withdrawApplication = async (application) => {
           const source = studentApplicationRows.value.find(app => String(app.id) === String(application.id))
           if (source) source.status = 'withdrawn'
         } else {
-          applications.value.splice(index, 1);
-          jobApplicationRows.value = jobApplicationRows.value.filter(app => String(app.id) !== String(application.id))
+          applications.value[index] = { ...applications.value[index], status: 'withdrawn' };
+          const source = jobApplicationRows.value.find(app => String(app.id) === String(application.id))
+          if (source) source.status = 'withdrawn'
         }
       }
       ElMessage.success(response.message || '申请已撤回');

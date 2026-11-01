@@ -3,6 +3,10 @@
         PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.internship.mapper.InternshipApplicationMapper">
+    <update id="withdrawPendingById">
+        UPDATE internship_application SET status = 'withdrawn', viewed = 0, update_time = NOW()
+        WHERE id = #{id} AND status = 'pending'
+    </update>
     
     <resultMap id="InternshipApplicationResultMap" type="com.internship.entity.InternshipApplicationEntity">
         <id property="id" column="id" />

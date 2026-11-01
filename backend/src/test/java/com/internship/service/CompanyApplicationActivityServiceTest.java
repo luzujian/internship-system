@@ -16,7 +16,22 @@ import static org.mockito.Mockito.*;
 class CompanyApplicationActivityServiceTest {
     private final InternshipApplicationMapper mapper = mock(InternshipApplicationMapper.class);
     private final StudentJobApplicationService jobs = mock(StudentJobApplicationService.class);
-    private final CompanyApplicationActivityService service = new CompanyApplicationActivityService(mapper, jobs);
+    private final com.internship.mapper.JobApplicationMaterialMapper materials = mock(com.internship.mapper.JobApplicationMaterialMapper.class);
+    private final CompanyApplicationActivityService service = new CompanyApplicationActivityService(mapper, jobs, materials);
+
+    @Test void newSubmissionsUseTheirExplicitBindingEvenWhenRetriesShareATimestamp() {
+        var oldJob = job(91, 1000, "withdrawn");
+        var oldActivity = snapshot(31, 1000, "withdrawn");
+        var binding = new com.internship.entity.dto.JobApplicationMaterialModels.Submission();
+        binding.setJobApplicationId(91L); binding.setCompanyApplicationId(31L);
+        when(materials.findByCompanyApplicationId(31L)).thenReturn(binding);
+        when(materials.findByJobApplicationId(91L)).thenReturn(binding);
+        when(mapper.findById(31L)).thenReturn(oldActivity);
+        when(jobs.findById(91L)).thenReturn(oldJob);
+        assertEquals(91L, service.detail(7L, 31L).application().getId());
+        assertEquals(31L, service.forApplication(7L, 91L).id());
+        verify(mapper, never()).findActivityAttempts(any(), any(), any());
+    }
 
     @Test void pageUsesGlobalUnreadCountAndBusinessUpdateTime() {
         InternshipApplicationEntity row = snapshot(31, 1000, "pending");

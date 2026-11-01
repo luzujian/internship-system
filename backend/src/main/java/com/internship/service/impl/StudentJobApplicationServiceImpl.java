@@ -13,6 +13,8 @@ import com.internship.service.InternshipProgressRecordService;
 import com.internship.service.InternshipFlowRules;
 import com.internship.service.StudentJobApplicationService;
 import com.internship.service.StudentJobApplicationStatuses;
+import com.internship.service.JobApplicationMaterialService;
+import org.springframework.web.multipart.MultipartFile;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -40,6 +42,12 @@ public class StudentJobApplicationServiceImpl implements StudentJobApplicationSe
     @Autowired
     private InternshipProgressRecordService progressRecordService;
 
+    @Autowired
+    private JobApplicationMaterialService materials;
+
+    @Autowired
+    private com.internship.mapper.JobApplicationMaterialMapper materialSubmissions;
+
     @Override
     public List<StudentJobApplication> findByStudentId(Long studentId) {
         return mapper.findByStudentId(studentId);
@@ -53,6 +61,17 @@ public class StudentJobApplicationServiceImpl implements StudentJobApplicationSe
     @Override
     @Transactional(rollbackFor = Exception.class)
     public int create(StudentJobApplication application) {
+        return create(application, null, null, List.of());
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public int create(StudentJobApplication application, List<Long> archiveIds,
+                      MultipartFile resume, List<MultipartFile> certificates) {
+        // Read and validate the selected source bytes before acquiring the position lock.
+        var prepared = materials.prepare(application.getStudentId(), archiveIds, resume, certificates);
+        application.setId(null);
+        application.setResumeUrl(null);
         application.setStageNo(1);
         application.setStageAssignmentId(null);
         application.setSourceType(InternshipFlowRules.SOURCE_NEW_APPLICATION);
@@ -107,6 +126,7 @@ public class StudentJobApplicationServiceImpl implements StudentJobApplicationSe
 
         // 同时创建 internship_application 记录，以便企业端可以查看。
         // 两张申请表与动态必须在同一事务内成功，不能吞掉异常后留下半完成状态。
+        Long companyApplicationId = null;
         if (result > 0 && application.getPositionId() != null && application.getCompanyId() != null) {
             InternshipApplicationEntity internshipApp = new InternshipApplicationEntity();
             internshipApp.setStudentId(application.getStudentId());
@@ -130,7 +150,10 @@ public class StudentJobApplicationServiceImpl implements StudentJobApplicationSe
             if (internshipApplicationMapper.insert(internshipApp) <= 0) {
                 throw new BusinessException("岗位申请同步失败");
             }
+            companyApplicationId = internshipApp.getId();
         }
+
+        if (result > 0) materials.save(application, companyApplicationId, prepared);
 
         return result;
     }
@@ -175,8 +198,15 @@ public class StudentJobApplicationServiceImpl implements StudentJobApplicationSe
 
         if (result > 0) {
             if (existing.getPositionId() != null) {
-                internshipApplicationMapper.updateLatestStatusByStudentAndPosition(
-                        existing.getStudentId(), existing.getPositionId(), "withdrawn");
+                var submission = materialSubmissions.findByJobApplicationId(id);
+                if (submission != null) {
+                    if (internshipApplicationMapper.withdrawPendingById(submission.getCompanyApplicationId()) != 1) {
+                        throw new BusinessException("申请状态已变化，请刷新后重试");
+                    }
+                } else {
+                    internshipApplicationMapper.updateLatestStatusByStudentAndPosition(
+                            existing.getStudentId(), existing.getPositionId(), "withdrawn");
+                }
             }
             append(progressRecordService,
                     existing.getStudentId(),

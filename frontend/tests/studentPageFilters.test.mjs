@@ -202,8 +202,8 @@ test('撤回同步更新来源缓存，随后接口失败时不会把已撤回�
   await withdraw(scope.applications.value.find(app => app.applicationType === 'job'))
   scope.request.get = async () => { throw new Error('offline') }
   await fetch()
-  assert.deepEqual(ids(scope.applications.value), [2])
-  assert.equal(scope.applications.value[0].status, 'withdrawn')
+  assert.deepEqual(ids(scope.applications.value), [2, 1])
+  assert.ok(scope.applications.value.every(application => application.status === 'withdrawn'))
   scope.selectedFilter.value = 'pending'
   assert.deepEqual(ids(load('filteredApplications').value), [])
 })

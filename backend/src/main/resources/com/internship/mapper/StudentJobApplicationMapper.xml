@@ -134,9 +134,10 @@
           AND status IN ('pending', 'approved', 'interview', 'pending_interview', 'interview_passed')
     </update>
 
-    <delete id="deleteById">
-        DELETE FROM student_job_application WHERE id = #{id} AND status = 'pending'
-    </delete>
+    <update id="deleteById">
+        UPDATE student_job_application SET status = 'withdrawn', update_time = NOW()
+        WHERE id = #{id} AND status = 'pending'
+    </update>
 
     <update id="claimPendingForDirectHire">
         UPDATE student_job_application

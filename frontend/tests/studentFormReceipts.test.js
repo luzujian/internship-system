@@ -23,7 +23,7 @@ function handler(file, name, scope) {
   return vm.runInNewContext(compiled.get(key), scope)
 }
 
-const application = validation => ({ applicationFormRef: validation(), submitting: ref(false), currentApplyingJob: ref({ id: 3, companyId: 5 }), applicationForm: ref({ positionName: '实习岗位', companyName: '公司', selfIntroduction: '认真负责' }), showApplicationDialog: ref(true), jobs: ref([]), selectedJob: ref(null), showJobDetailDialog: ref(true), eventBus: { emit: noop } })
+const application = validation => ({ applicationMaterialsReady: ref(true), applicationMaterialSelection: ref({ archiveIds: [], resume: null, certificates: [] }), applicationFormRef: validation(), submitting: ref(false), currentApplyingJob: ref({ id: 3, companyId: 5 }), applicationForm: ref({ positionName: '实习岗位', companyName: '公司', selfIntroduction: '认真负责' }), showApplicationDialog: ref(true), jobs: ref([]), selectedJob: ref(null), showJobDetailDialog: ref(true), eventBus: { emit: noop } })
 const appraisal = () => ({ submissionWindow: ref({ open: true }), appraisalFiles: ref([{ id: 6, placementId: 3 }]), allCompanyRatingsSelected: ref(true), appraisalSubmitting: ref(false), requiredCompanyRatings: ref([{ companyId: 5 }]), companyRatings: ref({ 5: 4 }), internshipRecords: ref([{ placementId: 3 }]), selectedPlacementId: ref('3'), placementKey: row => String(row.placementId), fetchAppraisal: noop })
 const onboarding = () => {
   const matchedCooperativeCompany = ref(null)

@@ -30,6 +30,15 @@ export const studentApplicationMaterialByteUrl = (id: unknown, key: unknown, tea
   return `/api/${teacher ? 'approval/student-applications' : 'student/applications'}/${recordId}/materials/${encodeURIComponent(key)}`
 }
 
+export const jobApplicationMaterialByteUrl = (applicationId: unknown, fileId: unknown,
+  scope: 'student' | 'company' | 'company-activity' = 'student'): string => {
+  const application = positiveRecordId(applicationId)
+  const file = positiveRecordId(fileId)
+  if (!application || !file || !['student', 'company', 'company-activity'].includes(scope)) return ''
+  const base = scope === 'company-activity' ? 'company/application-activities' : `${scope}/job-applications`
+  return `/api/${base}/${application}/materials/${file}`
+}
+
 export const companyQualificationMaterialByteUrl = (
   id: unknown,
   kind: unknown,
@@ -56,6 +65,9 @@ export const announcementAttachmentByteUrl = (announcementId: unknown, fileName:
 // remain metadata and must never become a request URL or a fallback URL.
 export const authorizedFileByteUrl = (value: unknown): string => {
   if (typeof value !== 'string') return ''
+  const jobMaterial = /^\/api\/(student\/job-applications|company\/job-applications|company\/application-activities)\/([1-9]\d*)\/materials\/([1-9]\d*)$/.exec(value)
+  if (jobMaterial) return jobApplicationMaterialByteUrl(jobMaterial[2], jobMaterial[3],
+    jobMaterial[1] === 'company/application-activities' ? 'company-activity' : jobMaterial[1].startsWith('student/') ? 'student' : 'company')
   const resourceId = /^\/api\/resource-documents\/download\/([1-9]\d*)$/.exec(value)?.[1]
   if (resourceId) return resourceDocumentByteUrl(resourceId)
   const studentFile = /^\/api\/student\/profile\/download\/(resume|certificate)\/([1-9]\d*)$/.exec(value)

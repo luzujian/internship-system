@@ -7,6 +7,9 @@ public interface StudentJobApplicationService {
     List<StudentJobApplication> findByStudentId(Long studentId);
     StudentJobApplication findById(Long id);
     int create(StudentJobApplication application);
+    int create(StudentJobApplication application, List<Long> archiveIds,
+               org.springframework.web.multipart.MultipartFile resume,
+               List<org.springframework.web.multipart.MultipartFile> certificates);
     int update(StudentJobApplication application);
     int updateStatusIfActive(Long id, String status, String rejectReason);
     int updateLatestStatusIfActive(Long studentId, Long positionId, String status, String rejectReason);

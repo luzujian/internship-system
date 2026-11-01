@@ -5,11 +5,25 @@ import {
   announcementAttachmentByteUrl,
   authorizedFileByteUrl,
   companyArchiveByteUrl,
+  jobApplicationMaterialByteUrl,
   companyQualificationMaterialByteUrl,
   resourceDocumentByteUrl,
   studentApplicationMaterialByteUrl,
   studentProfileByteUrl
 } from '../src/utils/authorizedFileUrl.ts'
+
+test('job materials require both the application and file identity, with no arbitrary URL fallback', () => {
+  for (const scope of ['student', 'company', 'company-activity']) {
+    const url = jobApplicationMaterialByteUrl(101, 81, scope)
+    assert.equal(authorizedFileByteUrl(url), url)
+    assert.match(url, /\/101\/materials\/81$/)
+  }
+  for (const id of [0, -1, '../101', '0101', '1?file=2', Number.MAX_SAFE_INTEGER + 1]) {
+    assert.equal(jobApplicationMaterialByteUrl(id, 81), '')
+    assert.equal(jobApplicationMaterialByteUrl(101, id), '')
+  }
+  assert.equal(authorizedFileByteUrl('/api/company/job-applications/101/materials/81?url=https://example.com/a.pdf'), '')
+})
 
 test('resource and announcement bytes use record-bound authenticated routes', () => {
   const resourceUrl = resourceDocumentByteUrl(42)

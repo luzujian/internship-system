@@ -8,10 +8,8 @@ import { createWorkbook, jsonToSheet, appendSheet, writeWorkbook, writeWorkbookT
 import { usePositionStore } from '../../store/position'
 import { useAuthStore } from '@/store/auth'
 import applicationApi from '@/api/InternshipApplicationService'
-import studentArchiveService, { type StudentArchive } from '@/api/StudentArchiveService'
-import FilePreviewDialog from '@/components/FilePreviewDialog.vue'
-import { companyArchiveByteUrl } from '@/utils/authorizedFileUrl'
-import { downloadAuthorizedFile } from '@/utils/authorizedFileDownload'
+import JobApplicationMaterialSnapshot from '@/components/JobApplicationMaterialSnapshot.vue'
+import { getApplicationMaterialSnapshot, downloadApplicationMaterial } from '@/api/jobApplicationMaterials'
 import { onNewApplication, offNewApplication, onCompanyTodoUpdate, offCompanyTodoUpdate } from '@/utils/websocket'
 import { fetchCompanyActivityDetail, fetchActivityForApplication, markCompanyActivityRead,
   type CompanyApplicationActivity } from '@/api/companyApplicationActivities'
@@ -59,10 +57,6 @@ const companyId = computed(() => {
 })
 
 const exporting = ref(false)
-const archiveDownloading = ref('')
-const filePreviewVisible = ref(false)
-const previewFileName = ref('')
-const previewAuthorizedUrl = ref('')
 const exportMode = ref('excel')
 const isMobile = useIsMobile()
 const showMobileFilters = ref(false)
@@ -140,25 +134,6 @@ const rejectDialogVisible = ref(false)
 const rejectSubmitting = ref(false)
 const rejectTarget = ref<ApplicationViewRow | null>(null)
 const rejectReason = ref('')
-const studentArchives = ref<StudentArchive[]>([])
-const archiveGroups = computed(() => [
-  {
-    type: 'resume',
-    title: '简历',
-    archives: studentArchives.value.filter(archive => archive.fileType === 'resume')
-  },
-  {
-    type: 'certificate',
-    title: '证书',
-    archives: studentArchives.value.filter(archive => archive.fileType === 'certificate')
-  },
-  {
-    type: 'other',
-    title: '其他材料',
-    archives: studentArchives.value.filter(archive => !['resume', 'certificate'].includes(archive.fileType))
-  }
-].filter(group => group.archives.length > 0))
-
 const groupedApplications = computed(() => {
   const groups: Record<string, { applications: ApplicationViewRow[]; status?: string | number; isSystemPosition: boolean }> = {}
 
@@ -418,36 +393,8 @@ const handleViewDetail = async (row) => {
   currentStudent.value = row
   activityReadError.value = ''
   activityReadUnavailable.value = false
-  studentArchives.value = []
   detailDialogVisible.value = true
-  const isCurrentStudent = () => (
-    requestId === detailRequest &&
-    String(currentStudent.value?.id) === String(row.id)
-    && String(currentStudent.value?.studentId) === String(row.studentId)
-  )
-
   void acknowledgeActivity(row, requestId)
-
-  // 获取学生申请材料
-  if (row.studentId && !row.historical) {
-    try {
-      const response = await studentArchiveService.getStudentArchives(row.studentId) as unknown as {
-        code?: number
-        data?: StudentArchive[]
-      }
-      if (!isCurrentStudent()) return
-      if (response.code === 200) {
-        studentArchives.value = Array.isArray(response.data) ? response.data : []
-      } else {
-        studentArchives.value = []
-      }
-    } catch (error) {
-      console.error('获取学生材料失败:', error)
-      if (isCurrentStudent()) studentArchives.value = []
-    }
-  }
-
-  console.log('查看学生详情:', row)
 }
 
 const acknowledgeActivity = async (row, requestId: number) => {
@@ -488,7 +435,7 @@ const openActivityDetail = async (value) => {
       searchForm.value.position = row.positionName || ''
       currentPage.value = 1
     }
-    await handleViewDetail({ ...row, activity: detail.activity })
+    await handleViewDetail({ ...row, activity: detail.activity, materialActivityId: detail.activity.id })
   } catch {
     if (requestId === activityRequest) ElMessage.error('动态详情加载失败，请返回首页重试')
   }
@@ -500,7 +447,6 @@ const retryActivityRead = () => {
 }
 
 const closeActivityDetail = () => {
-  filePreviewVisible.value = false
   detailRequest++
   activityRequest++
   if (route.query.activityId) {
@@ -511,38 +457,6 @@ const closeActivityDetail = () => {
 }
 
 watch(() => route.query.activityId, openActivityDetail, { immediate: true })
-
-// 下载申请材料
-const handleDownloadArchive = async (archive) => {
-  if (archiveDownloading.value) return
-  const authorizedUrl = companyArchiveByteUrl(archive.id, 'download')
-  if (!authorizedUrl) {
-    ElMessage.error('材料记录不可用，请重新打开申请详情')
-    return
-  }
-  archiveDownloading.value = String(archive.id)
-  try {
-    await downloadAuthorizedFile(authorizedUrl, archive.fileName || '申请材料')
-    ElMessage.success('开始下载')
-  } catch (error) {
-    console.error('下载失败:', error)
-    ElMessage.error('下载失败，请稍后重试')
-  } finally {
-    archiveDownloading.value = ''
-  }
-}
-
-// 预览申请材料
-const handlePreviewArchive = (archive) => {
-  const authorizedUrl = companyArchiveByteUrl(archive.id)
-  if (!authorizedUrl) {
-    ElMessage.error('材料记录不可用，请重新打开申请详情')
-    return
-  }
-  previewFileName.value = archive.fileName || '申请材料'
-  previewAuthorizedUrl.value = authorizedUrl
-  filePreviewVisible.value = true
-}
 
 const handleExport = async () => {
   let dataToExport = [...currentApplicationRows.value]
@@ -626,22 +540,24 @@ const exportWithFiles = async (workbook, baseFileName, data) => {
 
     for (const item of data) {
       try {
-        const response = await studentArchiveService.getStudentArchives(item.studentId)
-        const archives = response?.data || response
-
-        if (archives && Array.isArray(archives) && archives.length > 0) {
-          const studentFolder = zip.folder(`${item.studentName}_${item.studentId}`)
-          
-          for (const archive of archives) {
-            try {
-              const response = await studentArchiveService.downloadArchive(archive.id) as unknown as Blob
-              const blob = new Blob([response], { type: response.type })
-              const arrayBuffer = await blob.arrayBuffer()
-              studentFolder.file(archive.fileName, arrayBuffer)
-            } catch (fileError) {
-              console.warn(`下载文件失败: ${archive.fileName}`, fileError)
-              failures.push(`${item.studentName}/${archive.fileName}：文件下载失败`)
-            }
+        const response = await getApplicationMaterialSnapshot(item.id, 'company')
+        const snapshot = response.data
+        if (!snapshot?.snapshotAvailable) {
+          failures.push(`${item.studentName}/${item.positionName}：历史申请未保存投递时的材料`)
+          continue
+        }
+        if (snapshot.accessRestricted) {
+          failures.push(`${item.studentName}/${item.positionName}：申请当前状态不支持导出材料`)
+          continue
+        }
+        const safeName = (value: unknown) => String(value || '材料').replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').replace(/^\.+/, '_').slice(0, 120)
+        const studentFolder = zip.folder(`${safeName(item.studentName)}_${safeName(item.studentNo || item.studentId)}/${safeName(item.positionName)}_申请${item.id}`)
+        for (const file of snapshot.files) {
+          try {
+            const blob = await downloadApplicationMaterial(item.id, file.id, 'company')
+            studentFolder.file(`${file.id}_${safeName(file.fileName)}`, await blob.arrayBuffer())
+          } catch {
+            failures.push(`${item.studentName}/${item.positionName}/${file.fileName}：文件下载失败`)
           }
         }
       } catch (studentError) {
@@ -677,27 +593,6 @@ const getFileIcon = (fileName) => {
     return Document
   } else {
     return Folder
-  }
-}
-
-const handleDownloadFile = async (archiveId, fileName) => {
-  try {
-    const response = await studentArchiveService.downloadArchive(archiveId) as unknown as Blob
-    
-    const blob = new Blob([response], { type: response.type })
-    const url = window.URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = fileName
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-    window.URL.revokeObjectURL(url)
-    
-    ElMessage.success('下载成功')
-  } catch (error) {
-    console.error('下载文件失败:', error)
-    ElMessage.error('下载失败，请稍后重试')
   }
 }
 
@@ -1048,38 +943,12 @@ useAgentPageContext(() => {
           </div>
         </div>
 
-        <!-- 申请材料区域 -->
-        <div v-if="!currentStudent.historical" class="detail-section">
-          <h3 class="section-title">申请材料</h3>
-          <div v-if="studentArchives.length > 0" class="archive-groups">
-            <section
-              v-for="group in archiveGroups"
-              :key="group.type"
-              class="archive-group"
-              :class="{ 'archive-group--resume': group.type === 'resume' }"
-              :aria-label="group.title"
-            >
-              <div class="archive-group-header">
-                <h4 class="archive-group-title">{{ group.title }}</h4>
-                <span class="archive-group-count">{{ group.archives.length }} 份</span>
-              </div>
-              <div class="archives-list">
-                <div v-for="archive in group.archives" :key="archive.id" class="archive-item">
-                  <div class="archive-info">
-                    <el-icon class="archive-icon"><Document /></el-icon>
-                    <span class="archive-name" :title="archive.fileName">{{ archive.fileName }}</span>
-                  </div>
-                  <div class="archive-actions">
-                    <el-button size="small" type="primary" link @click="handlePreviewArchive(archive)">预览</el-button>
-                    <el-button size="small" type="primary" link :loading="archiveDownloading === String(archive.id)" :disabled="Boolean(archiveDownloading)" @click="handleDownloadArchive(archive)">下载</el-button>
-                  </div>
-                </div>
-              </div>
-            </section>
-          </div>
-          <div v-else class="no-archives">
-            <el-empty description="暂无申请材料" :image-size="60" />
-          </div>
+        <!-- 本次申请提交时保存的材料 -->
+        <div class="detail-section">
+          <h3 class="section-title">本次申请材料</h3>
+          <JobApplicationMaterialSnapshot v-if="detailDialogVisible"
+            :application-id="currentStudent.materialActivityId || currentStudent.id"
+            :scope="currentStudent.materialActivityId ? 'company-activity' : 'company'" />
         </div>
       </div>
 
@@ -1090,12 +959,6 @@ useAgentPageContext(() => {
       </template>
     </el-dialog>
 
-    <FilePreviewDialog
-      v-model="filePreviewVisible"
-      file-url=""
-      :file-name="previewFileName"
-      :authorized-url="previewAuthorizedUrl"
-    />
   </div>
 </template>
 

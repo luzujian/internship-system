@@ -26,6 +26,8 @@ public interface InternshipApplicationMapper {
     
     int updateStatus(@Param("id") Long id, @Param("status") String status);
 
+    int withdrawPendingById(@Param("id") Long id);
+
     int updateLatestStatusByStudentAndPosition(@Param("studentId") Long studentId,
                                                @Param("positionId") Long positionId,
                                                @Param("status") String status);

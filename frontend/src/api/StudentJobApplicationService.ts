@@ -1,4 +1,5 @@
 import request from '@/utils/request'
+import { applicationMaterialFormData, type ApplicationMaterialSelection } from './jobApplicationMaterials'
 
 export interface StudentJobApplication {
   id?: number
@@ -34,11 +35,12 @@ export default {
     })
   },
 
-  create(data: StudentJobApplication) {
+  create(data: StudentJobApplication, materials?: ApplicationMaterialSelection) {
     return request({
       url: '/student/job-applications',
       method: 'post',
-      data
+      data: materials ? applicationMaterialFormData(data, materials) : data,
+      ...(materials ? { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 120000 } : {})
     })
   },
 

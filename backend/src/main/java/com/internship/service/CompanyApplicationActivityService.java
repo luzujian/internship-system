@@ -4,6 +4,7 @@ import com.internship.entity.InternshipApplicationEntity;
 import com.internship.entity.StudentJobApplication;
 import com.internship.exception.BusinessException;
 import com.internship.mapper.InternshipApplicationMapper;
+import com.internship.mapper.JobApplicationMaterialMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
@@ -20,6 +21,7 @@ import java.util.Set;
 public class CompanyApplicationActivityService {
     private final InternshipApplicationMapper mapper;
     private final StudentJobApplicationService applications;
+    private final JobApplicationMaterialMapper materialSubmissions;
 
     public record Activity(Long id, String studentName, String positionName, String status,
                            boolean viewed, Date applyTime, Date activityTime, Long version) {}
@@ -38,6 +40,14 @@ public class CompanyApplicationActivityService {
 
     public Detail detail(Long companyId, Long id) {
         InternshipApplicationEntity snapshot = owned(companyId, id);
+        var binding = materialSubmissions.findByCompanyApplicationId(id);
+        if (binding != null) {
+            StudentJobApplication linked = applications.findById(binding.getJobApplicationId());
+            if (linked != null && (!Objects.equals(companyId, linked.getCompanyId())
+                    || !Objects.equals(snapshot.getStudentId(), linked.getStudentId())
+                    || !Objects.equals(snapshot.getPositionId(), linked.getPositionId()))) linked = null;
+            return new Detail(activity(snapshot), snapshot, linked);
+        }
         List<StudentJobApplication> jobs = attempts(companyId, snapshot.getStudentId(), snapshot.getPositionId());
         List<InternshipApplicationEntity> snapshots = mapper.findActivityAttempts(
                 companyId, snapshot.getStudentId(), snapshot.getPositionId());
@@ -52,6 +62,8 @@ public class CompanyApplicationActivityService {
         StudentJobApplication job = applications.findById(applicationId);
         if (job == null) throw new BusinessException("申请不存在或已撤回，请刷新列表");
         if (!companyId.equals(job.getCompanyId())) throw new AccessDeniedException("无权查看其他企业的申请");
+        var binding = materialSubmissions.findByJobApplicationId(applicationId);
+        if (binding != null) return activity(owned(companyId, binding.getCompanyApplicationId()));
         List<InternshipApplicationEntity> snapshots = mapper.findActivityAttempts(
                 companyId, job.getStudentId(), job.getPositionId());
         Long activityId = matchingActivity(job, snapshots, attempts(companyId, job.getStudentId(), job.getPositionId()));

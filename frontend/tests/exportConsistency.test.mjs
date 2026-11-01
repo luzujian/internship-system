@@ -124,12 +124,12 @@ test('ZIP download reports failed attachments inside the actual archive and warn
   const b = browserBindings()
   const run = loadFunction('views/company/ApplicationView.vue', 'exportWithFiles', {
     ...b, writeWorkbookToBuffer: async () => new Uint8Array([80, 75]),
-    studentArchiveService: { getStudentArchives: async () => ({ data: [{ id: 1, fileName: '简历.pdf' }] }), downloadArchive: async () => { throw new Error('unavailable') } }
+    getApplicationMaterialSnapshot: async () => ({ data: { snapshotAvailable: true, accessRestricted: false, files: [{ id: 1, fileName: '简历.pdf' }] } }), downloadApplicationMaterial: async () => { throw new Error('unavailable') }
   })
-  await run({}, '名单', [{ studentId: 3, studentName: '学生甲' }])
+  await run({}, '名单', [{ id: 31, studentId: 3, studentName: '学生甲', positionName: '开发' }])
   assert.equal(b.messages.at(-1).type, 'warning')
   const zip = await JSZip.loadAsync(await b.downloads[0].blob.arrayBuffer())
-  assert.match(await zip.file('_导出失败清单.txt').async('string'), /学生甲\/简历.pdf：文件下载失败/)
+  assert.match(await zip.file('_导出失败清单.txt').async('string'), /学生甲\/开发\/简历.pdf：文件下载失败/)
   assert.ok(zip.file('名单.xlsx'))
 })
 

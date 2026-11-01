@@ -47,10 +47,10 @@ test('one dialog footer button confirms every staged material', () => {
   assert.doesNotMatch(profile, /const uploadCertificate = async/)
 })
 
-test('application forms load saved materials before opening', () => {
-  const profileApply = profile.slice(profile.indexOf('const applyJob = async (job) =>'), profile.indexOf('const goToMaterialManagement'))
-  const jobsApply = jobs.slice(jobs.indexOf('const applyJob = async (job) =>'), jobs.indexOf('const goToMaterialManagement'))
-
-  assert.ok(profileApply.indexOf('await loadStudentMaterials()') < profileApply.indexOf('showApplicationDialog.value = true'))
-  assert.ok(jobsApply.indexOf('await loadStudentMaterials()') < jobsApply.indexOf('showApplicationDialog.value = true'))
+test('application-specific materials do not use or upload the personal-library pending files', () => {
+  for (const source of [profile, jobs]) {
+    const submit = source.slice(source.indexOf('const submitApplication = async () =>'), source.indexOf('const submitApplication = async () =>') + 1800)
+    assert.match(submit, /applicationMaterialSelection/)
+    assert.doesNotMatch(submit, /resumeFileList|certificateFileList|uploadMaterialFile/)
+  }
 })

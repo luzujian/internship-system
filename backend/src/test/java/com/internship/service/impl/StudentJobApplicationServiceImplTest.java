@@ -27,6 +27,42 @@ import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class StudentJobApplicationServiceImplTest {
+    @Mock private com.internship.service.JobApplicationMaterialService materials;
+    @Mock private com.internship.mapper.JobApplicationMaterialMapper materialSubmissions;
+
+    @Test void withdrawalUsesTheBoundAttemptAndKeepsItsMaterials() {
+        var app = application(42L, 12L); app.setId(101L); app.setStatus("pending");
+        var header = new com.internship.entity.dto.JobApplicationMaterialModels.Submission(); header.setCompanyApplicationId(501L);
+        when(mapper.findById(101L)).thenReturn(app);
+        when(mapper.deleteById(101L)).thenReturn(1);
+        when(materialSubmissions.findByJobApplicationId(101L)).thenReturn(header);
+        when(internshipApplicationMapper.withdrawPendingById(501L)).thenReturn(1);
+        assertEquals(1, service.deleteById(101L, 42L));
+        verify(internshipApplicationMapper, never()).updateLatestStatusByStudentAndPosition(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+        org.mockito.Mockito.verifyNoInteractions(materials);
+    }
+
+    @Test void customizedMaterialsAreBoundToTheActualGeneratedApplicationIds() {
+        var app = application(42L, 12L); app.setId(999L); app.setResumeUrl("forged-url");
+        var position = position(12L, 1); position.setCompanyId(7L);
+        when(positionMapper.findByIdForUpdate(12L)).thenReturn(position);
+        var selected = java.util.List.of(new com.internship.service.JobApplicationMaterialService.PreparedFile("resume", "custom.pdf", new byte[]{1}));
+        when(materials.prepare(42L, java.util.List.of(11L), null, java.util.List.of())).thenReturn(selected);
+        when(mapper.insert(app)).thenAnswer(call -> { app.setId(101L); return 1; });
+        when(internshipApplicationMapper.insert(org.mockito.ArgumentMatchers.any())).thenAnswer(call -> {
+            ((com.internship.entity.InternshipApplicationEntity) call.getArgument(0)).setId(501L); return 1;
+        });
+        assertEquals(1, service.create(app, java.util.List.of(11L), null, java.util.List.of()));
+        verify(materials).save(app, 501L, selected);
+        assertNull(app.getResumeUrl());
+    }
+
+    @Test void unreadableMaterialsAbortBeforeEitherApplicationTableIsWritten() {
+        var app = application(42L, 12L);
+        when(materials.prepare(42L, java.util.List.of(11L), null, java.util.List.of())).thenThrow(new BusinessException("材料已删除"));
+        assertThrows(BusinessException.class, () -> service.create(app, java.util.List.of(11L), null, java.util.List.of()));
+        org.mockito.Mockito.verifyNoInteractions(mapper, internshipApplicationMapper, positionMapper);
+    }
     @Test
     void mirroredSubmissionSharesThePersistedCreationTimestamp() {
         var app = application(31L, 12L);

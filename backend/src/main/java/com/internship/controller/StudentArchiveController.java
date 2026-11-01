@@ -4,12 +4,8 @@ import com.internship.anno.Log;
 import com.internship.entity.PageResult;
 import com.internship.entity.Result;
 import com.internship.entity.StudentArchive;
-import com.internship.entity.StudentJobApplication;
-import com.internship.mapper.StudentJobApplicationMapper;
 import com.internship.service.StudentArchiveService;
-import com.internship.service.StudentJobApplicationStatuses;
 import com.internship.utils.AliyunOSSOperator;
-import com.internship.utils.CurrentHolder;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ContentDisposition;
@@ -17,7 +13,6 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.annotation.*;
 
 import java.io.IOException;
@@ -25,8 +20,6 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.List;
-import java.util.Objects;
-import java.util.stream.Collectors;
 
 /**
  * 学生材料归档管理控制器
@@ -41,9 +34,6 @@ public class StudentArchiveController {
 
     @Autowired
     private AliyunOSSOperator aliyunOSSOperator;
-
-    @Autowired
-    private StudentJobApplicationMapper studentJobApplicationMapper;
 
     /**
      * 分页查询材料列表
@@ -138,13 +128,8 @@ public class StudentArchiveController {
      */
     @GetMapping("/company/student/{studentId}")
     @PreAuthorize("hasRole('COMPANY')")
-    public Result getCompanyStudentArchives(@PathVariable Long studentId) {
-        requireCompanyApplicationForStudent(studentId);
-        List<StudentArchive> archives = studentArchiveService.findByStudentId(studentId);
-        return Result.success(archives == null ? List.of() : archives.stream()
-                .filter(archive -> isVisibleToCompany(archive)
-                        && Objects.equals(studentId, archive.getStudentId()))
-                .collect(Collectors.toList()));
+    public ResponseEntity<Result> getCompanyStudentArchives(@PathVariable Long studentId) {
+        return ResponseEntity.status(410).body(Result.error("请从具体岗位申请查看提交时的材料，企业不能读取学生当前个人材料库"));
     }
 
     /**
@@ -191,38 +176,7 @@ public class StudentArchiveController {
     @GetMapping("/company/download/{id}")
     @PreAuthorize("hasRole('COMPANY')")
     public ResponseEntity<byte[]> downloadArchiveForCompany(@PathVariable Long id) {
-        log.info("企业用户下载归档文件，ID: {}", id);
-        try {
-            StudentArchive archive = studentArchiveService.findById(id);
-            if (archive == null) {
-                log.warn("归档文件不存在，ID: {}", id);
-                return ResponseEntity.notFound().build();
-            }
-
-            requireCompanyAccessToArchive(archive);
-
-            String fileUrl = archive.getFileUrl();
-            String fileName = archive.getFileName();
-
-            log.info("开始下载文件: {}", fileName);
-
-            byte[] fileBytes = aliyunOSSOperator.downloadFile(fileUrl);
-
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_OCTET_STREAM);
-            headers.setContentDisposition(ContentDisposition.builder("attachment")
-                    .filename(URLEncoder.encode(fileName, StandardCharsets.UTF_8.toString()).replaceAll("\\+", "%20"))
-                    .build());
-
-            return ResponseEntity.ok()
-                    .headers(headers)
-                    .body(fileBytes);
-        } catch (AccessDeniedException e) {
-            throw e;
-        } catch (Exception e) {
-            log.error("下载文件失败: {}", e.getMessage(), e);
-            return ResponseEntity.internalServerError().build();
-        }
+        return ResponseEntity.status(410).build();
     }
 
     /**
@@ -264,34 +218,6 @@ public class StudentArchiveController {
         }
     }
 
-    private void requireCompanyAccessToArchive(StudentArchive archive) {
-        if (!isVisibleToCompany(archive)) {
-            throw new AccessDeniedException("无权访问该学生材料");
-        }
-        requireCompanyApplicationForStudent(archive.getStudentId());
-    }
-
-    private boolean isVisibleToCompany(StudentArchive archive) {
-        if (archive == null) return false;
-        if (Integer.valueOf(1).equals(archive.getStatus())) return true;
-        // 简历、证书上传后统一进入待审核状态，投递企业仍需读取这些求职材料。
-        return Integer.valueOf(0).equals(archive.getStatus())
-                && ("resume".equals(archive.getFileType()) || "certificate".equals(archive.getFileType()));
-    }
-
-    private void requireCompanyApplicationForStudent(Long studentId) {
-        Long companyId = CurrentHolder.getUserId();
-        if (!"ROLE_COMPANY".equals(CurrentHolder.getUserRole()) || companyId == null || studentId == null) {
-            throw new AccessDeniedException("无权访问该学生材料");
-        }
-        List<StudentJobApplication> applications = studentJobApplicationMapper.findByStudentId(studentId);
-        if (applications == null || applications.stream().noneMatch(application -> application != null
-                && Objects.equals(companyId, application.getCompanyId())
-                && StudentJobApplicationStatuses.isActive(application.getStatus()))) {
-            throw new AccessDeniedException("无权访问该学生材料");
-        }
-    }
-
     /**
      * 企业用户预览归档文件
      */
@@ -299,40 +225,7 @@ public class StudentArchiveController {
     @GetMapping("/company/preview/{id}")
     @PreAuthorize("hasRole('COMPANY')")
     public ResponseEntity<byte[]> previewArchiveForCompany(@PathVariable Long id) {
-        log.info("企业用户预览归档文件，ID: {}", id);
-        try {
-            StudentArchive archive = studentArchiveService.findById(id);
-            if (archive == null) {
-                log.warn("归档文件不存在，ID: {}", id);
-                return ResponseEntity.notFound().build();
-            }
-
-            requireCompanyAccessToArchive(archive);
-
-            String fileUrl = archive.getFileUrl();
-            String fileName = archive.getFileName();
-
-            log.info("开始预览文件: {}", fileName);
-
-            byte[] fileBytes = aliyunOSSOperator.downloadFile(fileUrl);
-
-            String fileExtension = fileName.substring(fileName.lastIndexOf(".") + 1).toLowerCase();
-            MediaType mediaType = getMediaType(fileExtension);
-
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(mediaType);
-            headers.setContentDisposition(ContentDisposition.builder("inline")
-                    .build());
-
-            return ResponseEntity.ok()
-                    .headers(headers)
-                    .body(fileBytes);
-        } catch (AccessDeniedException e) {
-            throw e;
-        } catch (Exception e) {
-            log.error("预览文件失败: {}", e.getMessage(), e);
-            return ResponseEntity.internalServerError().build();
-        }
+        return ResponseEntity.status(410).build();
     }
 
     private MediaType getMediaType(String fileExtension) {
