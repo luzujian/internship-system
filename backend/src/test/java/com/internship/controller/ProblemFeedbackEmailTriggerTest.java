@@ -1,8 +1,14 @@
 package com.internship.controller;
 
 import com.internship.entity.ProblemFeedback;
+import com.internship.entity.StudentUser;
+import com.internship.entity.TeacherUser;
+import com.internship.entity.CompanyUser;
 import com.internship.entity.User;
 import com.internship.mapper.ProblemFeedbackMapper;
+import com.internship.mapper.StudentUserMapper;
+import com.internship.mapper.TeacherUserMapper;
+import com.internship.mapper.CompanyUserMapper;
 import com.internship.service.ProblemFeedbackSubmittedEvent;
 import com.internship.utils.CurrentHolder;
 import com.internship.websocket.AnnouncementWebSocketHandler;
@@ -26,6 +32,18 @@ class ProblemFeedbackEmailTriggerTest {
         ReflectionTestUtils.setField(controller, "problemFeedbackMapper", mapper);
         ReflectionTestUtils.setField(controller, "eventPublisher", publisher);
         ReflectionTestUtils.setField(controller, "webSocketHandler", socket);
+        StudentUserMapper students = mock(StudentUserMapper.class);
+        TeacherUserMapper teachers = mock(TeacherUserMapper.class);
+        CompanyUserMapper companies = mock(CompanyUserMapper.class);
+        ReflectionTestUtils.setField(controller, "studentUserMapper", students);
+        ReflectionTestUtils.setField(controller, "teacherUserMapper", teachers);
+        ReflectionTestUtils.setField(controller, "companyUserMapper", companies);
+        StudentUser student = new StudentUser(); student.setEmail("student@example.com");
+        TeacherUser teacher = new TeacherUser(); teacher.setEmail("teacher@example.com");
+        CompanyUser company = new CompanyUser(); company.setEmail("company@example.com");
+        when(students.findById(8L)).thenReturn(student);
+        when(teachers.findById(8L)).thenReturn(teacher);
+        when(companies.findById(8L)).thenReturn(company);
         User actor = new User(); actor.setId(8L); actor.setRole("ROLE_STUDENT");
         actor.setName("真实提交者"); actor.setUsername("real-account"); CurrentHolder.setUser(actor);
     }

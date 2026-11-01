@@ -1,8 +1,10 @@
 package com.internship.controller;
 
 import com.internship.entity.ProblemFeedback;
+import com.internship.entity.StudentUser;
 import com.internship.entity.User;
 import com.internship.mapper.ProblemFeedbackMapper;
+import com.internship.mapper.StudentUserMapper;
 import com.internship.utils.CurrentHolder;
 import com.internship.websocket.AnnouncementWebSocketHandler;
 import org.junit.jupiter.api.AfterEach;
@@ -23,6 +25,10 @@ class ProblemFeedbackOwnershipTest {
         ReflectionTestUtils.setField(controller, "problemFeedbackMapper", mapper);
         ReflectionTestUtils.setField(controller, "eventPublisher", mock(org.springframework.context.ApplicationEventPublisher.class));
         ReflectionTestUtils.setField(controller, "webSocketHandler", mock(AnnouncementWebSocketHandler.class));
+        StudentUserMapper students = mock(StudentUserMapper.class);
+        ReflectionTestUtils.setField(controller, "studentUserMapper", students);
+        StudentUser student = new StudentUser(); student.setEmail("student@example.com");
+        when(students.findById(7L)).thenReturn(student);
     }
 
     @AfterEach void clear() { CurrentHolder.remove(); SecurityContextHolder.clearContext(); }

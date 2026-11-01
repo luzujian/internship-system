@@ -5,10 +5,16 @@ import com.internship.utils.ExcelExports;
 import com.internship.anno.Log;
 import com.internship.entity.PageResult;
 import com.internship.entity.ProblemFeedback;
+import com.internship.entity.StudentUser;
+import com.internship.entity.TeacherUser;
+import com.internship.entity.CompanyUser;
 import com.internship.service.ProblemFeedbackSubmittedEvent;
 import org.springframework.context.ApplicationEventPublisher;
 import com.internship.entity.Result;
 import com.internship.mapper.ProblemFeedbackMapper;
+import com.internship.mapper.StudentUserMapper;
+import com.internship.mapper.TeacherUserMapper;
+import com.internship.mapper.CompanyUserMapper;
 import com.internship.utils.CurrentHolder;
 import com.internship.vo.ProblemFeedbackVO;
 import com.github.pagehelper.PageHelper;
@@ -34,6 +40,7 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -41,11 +48,22 @@ import java.util.stream.Collectors;
 @RequestMapping("/api/problem-feedback")
 public class ProblemFeedbackController {
 
+    private static final Pattern EMAIL_PATTERN = Pattern.compile("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+
     @Autowired
     private ApplicationEventPublisher eventPublisher;
 
     @Autowired
     private ProblemFeedbackMapper problemFeedbackMapper;
+
+    @Autowired
+    private StudentUserMapper studentUserMapper;
+
+    @Autowired
+    private TeacherUserMapper teacherUserMapper;
+
+    @Autowired
+    private CompanyUserMapper companyUserMapper;
 
     @Autowired
     private com.internship.websocket.AnnouncementWebSocketHandler webSocketHandler;
@@ -136,6 +154,10 @@ public class ProblemFeedbackController {
             String userType = currentFeedbackType();
             if (actor == null || actor.getId() == null || userType == null) {
                 return Result.error("当前用户身份不可用");
+            }
+            String email = currentFeedbackEmail(userType, actor.getId());
+            if (email == null || !EMAIL_PATTERN.matcher(email.trim()).matches()) {
+                return Result.error("请先在个人资料中填写有效邮箱，再提交问题反馈");
             }
             feedback.setId(null);
             feedback.setUserType(userType);
@@ -413,6 +435,24 @@ public class ProblemFeedbackController {
             case "ROLE_STUDENT" -> "student";
             case "ROLE_COMPANY" -> "company";
             case "ROLE_TEACHER", "ROLE_TEACHER_COLLEGE", "ROLE_TEACHER_DEPARTMENT", "ROLE_TEACHER_COUNSELOR" -> "teacher";
+            default -> null;
+        };
+    }
+
+    private String currentFeedbackEmail(String userType, Long userId) {
+        return switch (userType) {
+            case "student" -> {
+                StudentUser student = studentUserMapper.findById(userId);
+                yield student == null ? null : student.getEmail();
+            }
+            case "teacher" -> {
+                TeacherUser teacher = teacherUserMapper.findById(userId);
+                yield teacher == null ? null : teacher.getEmail();
+            }
+            case "company" -> {
+                CompanyUser company = companyUserMapper.findById(userId);
+                yield company == null ? null : company.getEmail();
+            }
             default -> null;
         };
     }

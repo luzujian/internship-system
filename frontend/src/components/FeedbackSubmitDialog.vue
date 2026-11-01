@@ -7,6 +7,17 @@
     :close-on-click-modal="false"
     class="feedback-submit-dialog"
   >
+    <el-alert
+      v-if="emailNotice"
+      :title="emailNotice"
+      type="warning"
+      :closable="false"
+      show-icon
+      class="email-notice"
+    >
+      <el-button link type="primary" @click="goToProfile">去完善邮箱</el-button>
+      <el-button link type="primary" :loading="checkingEmail" @click="checkEmail">重新检查</el-button>
+    </el-alert>
     <el-form ref="formRef" :model="form" :rules="rules" label-width="90px" class="feedback-form">
       <el-form-item label="问题标题" prop="title">
         <el-input
@@ -31,7 +42,9 @@
     <template #footer>
       <span class="dialog-footer">
         <el-button @click="handleCancel">取消</el-button>
-        <el-button type="primary" :loading="submitting" @click="handleSubmit">提交</el-button>
+        <el-button type="primary" :loading="submitting || checkingEmail" :disabled="!emailReady || checkingEmail" @click="handleSubmit">
+          {{ checkingEmail ? "正在检查邮箱" : "提交" }}
+        </el-button>
       </span>
     </template>
   </el-dialog>
@@ -39,6 +52,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, onUnmounted } from "vue";
+import { useRouter } from "vue-router";
 import { ElMessage } from "element-plus";
 import type { FormInstance, FormRules } from "element-plus";
 import request from "@/utils/request";
@@ -61,9 +75,48 @@ const emit = defineEmits<{
 }>();
 
 const authStore = useAuthStore();
+const router = useRouter();
 const formRef = ref<FormInstance | null>(null);
 const submitting = ref(false);
 const form = ref({ title: "", content: "" });
+const checkingEmail = ref(false);
+const emailReady = ref(false);
+const emailNotice = ref("");
+const profileEndpoints = {
+  student: "/student/profile",
+  teacher: "/account-settings/info",
+  company: "/company/profile",
+};
+const profilePaths = {
+  student: "/student/profile",
+  teacher: "/teacher/account-settings",
+  company: "/company/settings?tab=profile",
+};
+
+const checkEmail = async () => {
+  if (checkingEmail.value) return;
+  checkingEmail.value = true;
+  emailReady.value = false;
+  emailNotice.value = "";
+  try {
+    const response: any = await request.get(profileEndpoints[props.userType]);
+    if (response?.code !== 200 || !response.data) throw new Error("无法读取账号邮箱");
+    const email = String(response.data.email || "").trim();
+    emailReady.value = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(email);
+    if (!emailReady.value) {
+      emailNotice.value = "请先在个人资料中填写有效邮箱，便于管理员联系和回复，再提交问题反馈。";
+    }
+  } catch {
+    emailNotice.value = "暂时无法检查账号邮箱，请重新检查后再提交。";
+  } finally {
+    checkingEmail.value = false;
+  }
+};
+
+const goToProfile = () => {
+  emit("update:modelValue", false);
+  router.push(profilePaths[props.userType]);
+};
 
 const formContext = useFormContext();
 const feedbackFormId = "feedback:submit";
@@ -73,6 +126,7 @@ watch(
   (val) => {
     if (val) {
       formRef.value?.clearValidate();
+      checkEmail();
       formContext.register({
         formId: 'feedback:submit',
         title: "问题反馈",
@@ -129,6 +183,7 @@ const resolveUserInfo = () => {
 };
 
 const handleSubmit = async () => {
+  if (submitting.value || checkingEmail.value || !emailReady.value) return;
   if (!formRef.value) return;
   const valid = await formRef.value.validate().catch(() => false);
   if (!valid) return;
@@ -156,10 +211,10 @@ const handleSubmit = async () => {
       emit("update:modelValue", false);
       emit("submitted");
     } else {
-      ElMessage.error((response && response.msg) || "提交失败，请稍后重试");
+      ElMessage.error(response?.message || response?.msg || "提交失败，请稍后重试");
     }
   } catch (error) {
-    ElMessage.error("提交失败，请稍后重试");
+    ElMessage.error(error instanceof Error ? error.message : "提交失败，请稍后重试");
   } finally {
     submitting.value = false;
   }
@@ -167,6 +222,9 @@ const handleSubmit = async () => {
 </script>
 
 <style scoped>
+.email-notice {
+  margin-bottom: 12px;
+}
 .feedback-form {
   padding-top: 8px;
 }
