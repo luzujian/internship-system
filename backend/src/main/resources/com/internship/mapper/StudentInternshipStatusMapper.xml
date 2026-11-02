@@ -143,8 +143,9 @@
                  ORDER BY source_assignment.create_time DESC, source_assignment.id DESC LIMIT 1),
                 (SELECT approved.id FROM student_application approved
                  WHERE approved.student_id = su.id AND approved.application_type = 'selfPractice' AND approved.status = 'approved'
-                   AND approved.company = sis.company_name
-                   AND COALESCE(approved.position_name, '') = COALESCE(sis.position_name, '')
+                   <!-- 申请表与历史状态表的排序规则不同，跨表名称比较显式统一规则。 -->
+                   AND approved.company COLLATE utf8mb4_unicode_ci = sis.company_name COLLATE utf8mb4_unicode_ci
+                   AND COALESCE(approved.position_name, '') COLLATE utf8mb4_unicode_ci = COALESCE(sis.position_name, '') COLLATE utf8mb4_unicode_ci
                  ORDER BY approved.review_time DESC, approved.id DESC LIMIT 1))
         LEFT JOIN company_users c ON c.id = COALESCE(sis.company_id, sa.company_id)
         WHERE su.status = 1

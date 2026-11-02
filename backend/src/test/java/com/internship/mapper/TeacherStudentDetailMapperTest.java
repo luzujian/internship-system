@@ -3,9 +3,13 @@ package com.internship.mapper;
 import org.apache.ibatis.builder.xml.XMLMapperBuilder;
 import org.apache.ibatis.io.Resources;
 import org.apache.ibatis.session.Configuration;
+import org.apache.ibatis.mapping.Environment;
+import org.apache.ibatis.session.SqlSessionFactoryBuilder;
+import org.apache.ibatis.transaction.jdbc.JdbcTransactionFactory;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
+import org.springframework.jdbc.datasource.DriverManagerDataSource;
 
 import java.sql.DriverManager;
 import java.util.HashMap;
@@ -39,7 +43,7 @@ class TeacherStudentDetailMapperTest {
         assertFalse(sql.contains("su.password"));
     }
 
-    /** All rows below are SELECT-only CTE fixtures. No schema or business data is written. */
+    /** SELECT-only fixtures reproduce the different collations of the live historical tables. */
     @Test
     @EnabledIfEnvironmentVariable(named="TEACHER_DETAIL_READ_ONLY_DB_TESTS",matches="true")
     void mysqlReadsCurrentPlatformAndAutonomousContactsWithoutTakingLaterOrRejectedApplications() throws Exception {
@@ -51,7 +55,9 @@ class TeacherStudentDetailMapperTest {
                     UNION ALL SELECT 4,1,1,'10',NULL,NULL
                     UNION ALL SELECT 5,1,1,'10',NULL,NULL
                 ), student_internship_status AS (
-                    SELECT 11 id,1 student_id,3 status,10 company_id,'' company_name,'平台岗位' position_name,CAST('2026-01-01' AS DATETIME) create_time
+                    SELECT 11 id,1 student_id,3 status,10 company_id,
+                        _utf8mb4'' COLLATE utf8mb4_0900_ai_ci company_name,
+                        _utf8mb4'平台岗位' COLLATE utf8mb4_0900_ai_ci position_name,CAST('2026-01-01' AS DATETIME) create_time
                     UNION ALL SELECT 12,2,3,NULL,'合作单位','自主岗位','2026-01-01'
                     UNION ALL SELECT 13,3,3,NULL,'系统外单位','自主岗位','2026-01-01'
                     UNION ALL SELECT 15,5,0,NULL,'旧单位','自主岗位','2026-01-01'
@@ -60,9 +66,12 @@ class TeacherStudentDetailMapperTest {
                     SELECT 10 id,'医疗设备研发' introduction,'市辖区' city,'北京市' province,'企业联系人' contact_person,'010-12345678' contact_phone
                 ), internship_stage_assignment AS (
                     SELECT 71 id,2 student_id,'SELF_PRACTICE' source_type,201 source_assignment_id,1 current_flag,
-                        'IN_PROGRESS' status,'合作单位' company_name,'自主岗位' position_name,CAST('2026-01-01' AS DATETIME) create_time
+                        'IN_PROGRESS' status,_utf8mb4'合作单位' COLLATE utf8mb4_0900_ai_ci company_name,
+                        _utf8mb4'自主岗位' COLLATE utf8mb4_0900_ai_ci position_name,CAST('2026-01-01' AS DATETIME) create_time
                 ), student_application AS (
-                    SELECT 201 id,2 student_id,'selfPractice' application_type,'approved' status,'合作单位' company,'自主岗位' position_name,
+                    SELECT 201 id,2 student_id,'selfPractice' application_type,'approved' status,
+                        _utf8mb4'合作单位' COLLATE utf8mb4_unicode_ci company,
+                        _utf8mb4'自主岗位' COLLATE utf8mb4_unicode_ci position_name,
                         10 company_id,'申请城市' company_city,'当前人事经理' hr_manager_name,'020-11111111' hr_manager_phone,CAST('2026-01-01' AS DATETIME) review_time
                     UNION ALL SELECT 202,2,'selfPractice','approved','合作单位','自主岗位',10,'后来城市','后来联系人','020-22222222','2026-02-01'
                     UNION ALL SELECT 203,2,'selfPractice','pending','合作单位','自主岗位',10,'待审城市','待审联系人','020-33333333','2026-03-01'
@@ -101,6 +110,33 @@ class TeacherStudentDetailMapperTest {
                 assertNull(rows.get(4L).get("hr_manager_phone"));
                 assertNull(rows.get(5L).get("hr_manager_name"));
             }
+        }
+    }
+
+    @Test
+    @EnabledIfEnvironmentVariable(named="TEACHER_DETAIL_READ_ONLY_DB_TESTS",matches="true")
+    void realTablesSupportBothSingleStudentDetailsAndBatchExportReads() throws Exception {
+        var dataSource = new DriverManagerDataSource(System.getenv("TEACHER_DETAIL_READ_ONLY_DB_URL"),"user","1234");
+        configuration.setEnvironment(new Environment("read-only-detail-check", new JdbcTransactionFactory(), dataSource));
+        try (var session = new SqlSessionFactoryBuilder().build(configuration).openSession()) {
+            var connection = session.getConnection();
+            connection.setReadOnly(true);
+            var ids = new java.util.ArrayList<Long>();
+            try (var query = connection.prepareStatement("SELECT id FROM student_users WHERE status=1 ORDER BY id LIMIT 100");
+                 var result = query.executeQuery()) {
+                while (result.next()) ids.add(result.getLong(1));
+            }
+            assertFalse(ids.isEmpty(), "Live verification needs at least one active student");
+            var mapper = session.getMapper(StudentInternshipStatusMapper.class);
+            var single = mapper.findTeacherDetailExtrasByStudentIds(List.of(ids.getFirst()));
+            assertEquals(1, single.size());
+            assertEquals(ids.getFirst(), single.getFirst().getStudentId());
+            var batch = mapper.findTeacherDetailExtrasByStudentIds(ids);
+            assertEquals(ids.size(), batch.size());
+            assertEquals(new java.util.HashSet<>(ids), batch.stream()
+                    .map(com.internship.entity.dto.TeacherStudentDetailExtras::getStudentId)
+                    .collect(java.util.stream.Collectors.toSet()));
+            assertTrue(mapper.findTeacherDetailExtrasByStudentIds(List.of()).isEmpty());
         }
     }
 }
