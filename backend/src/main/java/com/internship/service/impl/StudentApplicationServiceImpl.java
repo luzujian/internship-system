@@ -878,6 +878,9 @@ public class StudentApplicationServiceImpl implements StudentApplicationService 
 
         Map<String, String> materials = new java.util.LinkedHashMap<>();
         if (existing.getMaterials() != null && normalizeCompanyNameKey(existing.getCompany()).equals(normalizeCompanyNameKey(application.getCompany()))) materials.putAll(existing.getMaterials());
+        if ("selfPractice".equals(type) && application.getRemovedMaterialKeys() != null) {
+            application.getRemovedMaterialKeys().forEach(materials::remove);
+        }
         if (application.getMaterials() != null) {
             application.getMaterials().forEach((key, value) -> {
                 if (StringUtils.isNotBlank(value)) materials.put(key, value);

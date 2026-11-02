@@ -35,6 +35,7 @@ const onboarding = () => {
     ensureSelfPracticeCompanyName: async () => !(similarCooperativeCompanies.value.length > 0 && !matchedCooperativeCompany.value),
     selfPracticeForm: ref({ company: '实习单位', positionName: '实习岗位', companyCity: '北京', hrManagerName: '王老师', hrManagerPhone: '13812345678', reason: '申请自主实习', otherMaterials: {} }),
     selfPracticeOtherFileList: ref([]),
+    selfPracticeRemovedMaterialKeys: ref([]),
     selfPracticeAgreementFiles: ref([{ uploadId: 701, status: 'success' }]),
     selfPracticeAgreementUploader: ref({ validate: () => true, markCommitted: noop, reset: noop }),
     delayForm: ref({ reason: '备考安排' }),

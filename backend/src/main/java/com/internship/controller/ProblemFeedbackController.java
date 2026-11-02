@@ -9,6 +9,10 @@ import com.internship.entity.StudentUser;
 import com.internship.entity.TeacherUser;
 import com.internship.entity.CompanyUser;
 import com.internship.service.ProblemFeedbackSubmittedEvent;
+import com.internship.service.ProblemFeedbackEmailReplyService;
+import com.internship.entity.dto.ProblemFeedbackEmailReplyModels;
+import com.internship.exception.BusinessException;
+import jakarta.validation.Valid;
 import org.springframework.context.ApplicationEventPublisher;
 import com.internship.entity.Result;
 import com.internship.mapper.ProblemFeedbackMapper;
@@ -55,6 +59,9 @@ public class ProblemFeedbackController {
 
     @Autowired
     private ProblemFeedbackMapper problemFeedbackMapper;
+
+    @Autowired
+    private ProblemFeedbackEmailReplyService emailReplies;
 
     @Autowired
     private StudentUserMapper studentUserMapper;
@@ -318,22 +325,34 @@ public class ProblemFeedbackController {
         }
     }
 
-    @PutMapping("/{id}/reply")
-    @Log(operationType = "UPDATE", module = "PROBLEM_FEEDBACK", description = "回复问题反馈")
-    @PreAuthorize("hasRole('ROLE_ADMIN')")
-    public Result replyFeedback(@PathVariable Long id, @RequestBody Map<String, Object> request) {
-        log.info("回复问题反馈: ID={}", id);
+    @GetMapping("/{id}/email-reply")
+    @PreAuthorize("hasRole('ROLE_ADMIN') and hasAnyAuthority('problem:view', 'problem:edit')")
+    public Result getEmailReplyContext(@PathVariable Long id) {
         try {
-            String adminReply = (String) request.get("adminReply");
-            Long adminId = ((Number) request.get("adminId")).longValue();
-            String adminName = (String) request.get("adminName");
-            String status = (String) request.get("status");
+            return Result.success(emailReplies.context(id));
+        } catch (BusinessException e) {
+            return Result.error(e.getMessage());
+        } catch (org.springframework.security.access.AccessDeniedException e) {
+            throw e;
+        } catch (RuntimeException e) {
+            log.error("读取邮件回复记录失败: feedbackId={}", id, e);
+            return Result.error("暂时无法读取邮件回复信息，请稍后重试");
+        }
+    }
 
-            int result = problemFeedbackMapper.reply(id, adminReply, adminId, adminName, status);
-            return Result.success("回复成功", result);
-        } catch (Exception e) {
-            log.error("回复问题反馈失败: {}", e.getMessage(), e);
-            return Result.error("回复问题反馈失败: " + e.getMessage());
+    @PutMapping("/{id}/reply")
+    @Log(operationType = "UPDATE", module = "PROBLEM_FEEDBACK", description = "邮件回复问题反馈")
+    @PreAuthorize("hasRole('ROLE_ADMIN') and hasAuthority('problem:edit')")
+    public Result replyFeedback(@PathVariable Long id, @Valid @RequestBody ProblemFeedbackEmailReplyModels.Request request) {
+        try {
+            return Result.success("邮件发送结果已记录", emailReplies.send(id, request));
+        } catch (BusinessException e) {
+            return Result.error(e.getMessage());
+        } catch (org.springframework.security.access.AccessDeniedException e) {
+            throw e;
+        } catch (RuntimeException e) {
+            log.error("邮件回复请求未完成: feedbackId={}", id, e);
+            return Result.error("邮件回复请求未完成，请重新检查发送记录后再操作");
         }
     }
 

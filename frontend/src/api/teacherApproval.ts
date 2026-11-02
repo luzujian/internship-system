@@ -8,6 +8,7 @@ export interface StudentApplication {
   grade?: string
   className?: string
   applicationType?: string
+  reviewTarget?: string
   reason?: string
   company?: string
   positionName?: string
@@ -86,7 +87,7 @@ export const approvalApi = {
     classId?: number
   }) => {
     try {
-      const response = await request.get<{ code: number; message: string; data: { total: number; rows: StudentApplication[] } }>('/approval/student-applications', { params })
+      const response = await request.get<{ total: number; rows: StudentApplication[] }>('/approval/student-applications', { params })
       return response.data
     } catch (error) {
       throw new Error(`Failed to fetch student applications: ${error}`)

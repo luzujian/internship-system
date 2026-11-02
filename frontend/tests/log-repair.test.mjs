@@ -128,7 +128,7 @@ function approvalFixture() {
     approvalApi: { approveStudentApplication: request, approveCompanyQualification: request, rejectStudentApplication: request, rejectCompanyQualification: request },
     formContext: { beginFormOperation: () => ({ complete() {} }) }
   }
-  const handlers = load('../src/views/teacher/Approval.vue', ['reviewingApplications', 'applicationReviewKey', 'isApplicationReviewing', 'markApplicationReviewed', 'approveApplication', 'rejectApplication', 'confirmReject'], context)
+  const handlers = load('../src/views/teacher/Approval.vue', ['batchApproving', 'reviewingApplications', 'applicationReviewKey', 'isApplicationReviewing', 'markApplicationReviewed', 'approveApplication', 'rejectApplication', 'confirmReject'], context)
   return { ...context, ...handlers, calls, pending }
 }
 

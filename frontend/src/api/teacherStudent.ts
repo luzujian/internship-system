@@ -41,9 +41,16 @@ export interface StudentUser {
   jobSearchStatus?: string
   jobSearchStatusText?: string
   pendingApplicationTexts?: string[]
-  internshipPath?: 'selfPractice' | 'mutualChoice' | 'delay'
+  internshipPath?: 'none' | 'selfPractice' | 'mutualChoice' | 'delay'
   companyId?: number
   company?: string
+  department?: string
+  positionName?: string
+  internshipPathText?: string
+  companyBusiness?: string
+  companyCity?: string
+  hrManagerName?: string
+  hrManagerPhone?: string
   progress?: number
   birthday?: string
   internshipStartDate?: string

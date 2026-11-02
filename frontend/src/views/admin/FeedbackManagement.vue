@@ -155,8 +155,8 @@
                     <el-icon><View /></el-icon>
                   </el-button>
                 </el-tooltip>
-                <el-tooltip v-if="authStore.hasPermission('problem:edit')" content="回复" placement="top">
-                  <el-button size="small" type="primary" @click="handleReply(scope.row)" class="table-btn edit">
+                <el-tooltip v-if="authStore.hasPermission('problem:edit')" content="邮件回复" placement="top">
+                  <el-button size="small" type="primary" aria-label="邮件回复" @click="handleReply(scope.row)" class="table-btn edit">
                     <el-icon><ChatDotRound /></el-icon>
                   </el-button>
                 </el-tooltip>
@@ -235,7 +235,7 @@
         </div>
         <div v-if="viewData.adminReply" class="reply-section">
           <el-divider></el-divider>
-          <div class="reply-label">管理员回复:</div>
+          <div class="reply-label">最近回复内容:</div>
           <div class="reply-content">
             <div class="reply-text">{{ viewData.adminReply }}</div>
             <div class="reply-meta">
@@ -253,8 +253,16 @@
     </el-dialog>
 
     <!-- 回复问题反馈对话框 - 统一风格 -->
-    <el-dialog v-model="replyDialogVisible" title="回复问题反馈" width="700px" class="form-dialog reply-dialog">
-      <el-form ref="replyFormRef" :model="replyForm" :rules="replyRules" label-width="100px" class="reply-form">
+    <el-dialog v-model="replyDialogVisible" title="邮件回复问题反馈" width="min(700px, calc(100vw - 24px))" class="form-dialog reply-dialog"
+      :close-on-click-modal="false" :close-on-press-escape="!replySending" :show-close="!replySending">
+      <el-alert v-if="replyNotice" :title="replyNotice" type="warning" :closable="false" show-icon class="email-reply-notice" />
+      <el-form ref="replyFormRef" v-loading="replyLoading" :model="replyForm" :rules="replyRules" label-width="100px" class="reply-form" :disabled="replySending">
+        <el-form-item label="发件人">
+          <el-input :model-value="replyContext ? `${replyContext.senderName} <${replyContext.senderEmail}>` : 'DeepIntern管理员'" readonly />
+        </el-form-item>
+        <el-form-item label="收件邮箱">
+          <el-input :model-value="replyContext?.recipientEmail || '该用户尚未填写有效邮箱'" readonly />
+        </el-form-item>
         <el-form-item label="反馈标题">
           <el-input v-model="replyForm.title" disabled></el-input>
         </el-form-item>
@@ -262,7 +270,7 @@
           <el-input v-model="replyForm.content" type="textarea" :rows="4" disabled></el-input>
         </el-form-item>
         <el-form-item label="回复内容" prop="adminReply">
-          <el-input v-model="replyForm.adminReply" type="textarea" :rows="6" placeholder="请输入回复内容"></el-input>
+          <el-input v-model="replyForm.adminReply" type="textarea" :rows="6" maxlength="10000" show-word-limit placeholder="请输入邮件回复内容"></el-input>
         </el-form-item>
         <el-form-item label="处理状态" prop="status">
           <el-select v-model="replyForm.status" placeholder="请选择处理状态">
@@ -272,10 +280,29 @@
           </el-select>
         </el-form-item>
       </el-form>
+      <div v-if="replyContext?.history.length" class="email-reply-history">
+        <el-divider>最近邮件发送记录</el-divider>
+        <el-collapse>
+          <el-collapse-item v-for="record in replyContext.history" :key="record.id" :name="record.id">
+            <template #title>
+              <el-tag :type="deliveryTag(record.deliveryStatus)" size="small">{{ deliveryLabel(record.deliveryStatus) }}</el-tag>
+              <span class="email-record-time">{{ formatDate(record.createdAt) }}</span>
+            </template>
+            <p>收件邮箱：{{ record.recipientEmail }}</p>
+            <p>操作人：{{ record.adminName }}</p>
+            <p v-if="record.finishedAt">结果记录时间：{{ formatDate(record.finishedAt) }}</p>
+            <p>{{ record.deliveryDetail }}</p>
+            <div class="reply-text">{{ record.replyContent }}</div>
+          </el-collapse-item>
+        </el-collapse>
+      </div>
       <template #footer>
         <span class="dialog-footer">
-          <el-button @click="replyDialogVisible = false" class="cancel-btn">取消</el-button>
-          <el-button type="primary" @click="handleReplySubmit" class="confirm-btn">确定</el-button>
+          <el-button :disabled="replySending" @click="replyDialogVisible = false" class="cancel-btn">关闭</el-button>
+          <el-button :disabled="replySending" :loading="replyLoading" @click="refreshReplyContext()">重新检查</el-button>
+          <el-button type="primary" :loading="replySending" :disabled="!canSendReply" @click="handleReplySubmit" class="confirm-btn">
+            {{ replySending ? '发送中' : replyContext?.history[0]?.deliveryStatus === 'FAILED' ? '重新发送' : '发送邮件' }}
+          </el-button>
         </span>
       </template>
     </el-dialog>
@@ -284,7 +311,7 @@
 
 <script setup lang="ts">
 import logger from '@/utils/logger'
-import { ref, reactive, onMounted, onUnmounted, watch } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
 import type { PaginationState } from '@/types/admin'
 import type { FormFieldDescriptor } from '@/agent/types'
 import { useRoute } from 'vue-router'
@@ -342,23 +369,82 @@ const viewData = ref<FeedbackRow | null>(null)
 
 const replyDialogVisible = ref(false)
 const replyFormRef = ref()
+const replySending = ref(false)
+const replyLoading = ref(false)
+const replyNotice = ref('')
+const replyContext = ref<problemFeedbackApi.FeedbackEmailContext | null>(null)
+const replyUncertain = ref(false)
+const replyRequestId = ref('')
 const replyForm = reactive({
   id: null as number | null,
   title: '',
   content: '',
   adminReply: '',
-  status: 'resolved'
+  status: 'processing'
 })
 
+const deliveryLabel = (status: problemFeedbackApi.FeedbackDeliveryStatus) => ({ SENDING: '发送中', SENT: '已发送', FAILED: '发送失败', UNKNOWN: '结果待确认' }[status])
+const deliveryTag = (status: problemFeedbackApi.FeedbackDeliveryStatus) => ({ SENDING: 'info', SENT: 'success', FAILED: 'danger', UNKNOWN: 'warning' }[status] as 'info' | 'success' | 'danger' | 'warning')
+const canSendReply = computed(() => {
+  const context = replyContext.value
+  const last = context?.history[0]
+  return !!context && !replyLoading.value && !replySending.value && !replyUncertain.value
+    && context.mailConfigured && /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(context.recipientEmail)
+    && !['SENDING', 'UNKNOWN'].includes(last?.deliveryStatus || '')
+    && !(last?.deliveryStatus === 'SENT' && last.recipientEmail.toLowerCase() === context.recipientEmail.toLowerCase()
+      && last.replyContent === replyForm.adminReply.trim())
+    && !!replyForm.adminReply.trim()
+})
+
+const refreshReplyContext = async (prefill = false): Promise<void> => {
+  const id = replyForm.id
+  if (id === null) return
+  replyLoading.value = true
+  try {
+    const response: any = await problemFeedbackApi.getFeedbackEmailContext(id)
+    if (replyForm.id !== id || !replyDialogVisible.value) return
+    if (response?.code !== 200 || !response.data) throw new Error(response?.message || '无法读取邮件回复信息')
+    const context: problemFeedbackApi.FeedbackEmailContext = response.data
+    replyContext.value = context
+    if (context.history.some(record => record.requestId === replyRequestId.value && ['SENT', 'FAILED'].includes(record.deliveryStatus))) {
+      replyRequestId.value = crypto.randomUUID()
+    }
+    replyForm.title = context.feedback.title
+    replyForm.content = context.feedback.content
+    if (prefill) {
+      replyForm.status = ['processing', 'resolved', 'closed'].includes(context.feedback.status || '') ? context.feedback.status! : 'processing'
+      replyForm.adminReply = context.history[0]?.replyContent || context.feedback.adminReply || ''
+    }
+    replyUncertain.value = false
+    const last = context.history[0]
+    replyNotice.value = !context.mailConfigured ? '系统邮件服务未配置，暂时无法发送。'
+      : !/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(context.recipientEmail) ? '反馈人尚未填写有效邮箱，无法发送邮件。'
+      : last?.deliveryStatus === 'SENDING' ? '上一封邮件仍在发送，请稍后重新检查。'
+      : last?.deliveryStatus === 'UNKNOWN' ? '上一封邮件结果待确认，请先核实邮件服务记录，避免重复发送。'
+      : last?.deliveryStatus === 'SENT' ? '最近邮件已被邮件服务器接收；如需继续回复，请填写新的回复内容。'
+      : last?.deliveryStatus === 'FAILED' ? last.deliveryDetail : ''
+  } catch (error) {
+    if (replyForm.id === id) {
+      replyNotice.value = error instanceof Error ? error.message : '无法读取邮件回复信息，请重新检查。'
+      replyUncertain.value = true
+    }
+  } finally {
+    if (replyForm.id === id) replyLoading.value = false
+  }
+}
+
 const replyRules = {
-  adminReply: [{ required: true, message: '请输入回复内容', trigger: 'blur' }],
+  adminReply: [
+    { required: true, message: '请输入回复内容', trigger: 'blur' },
+    { max: 10000, message: '回复内容不能超过10000字', trigger: 'blur' }
+  ],
   status: [{ required: true, message: '请选择处理状态', trigger: 'change' }]
 }
 
 // ===== 智能填表：回复弹窗（title/content 只读 disabled，不声明；只写响应式 model，不触发提交） =====
 const formContext = useFormContext()
 const feedbackReplyFillFields: FormFieldDescriptor[] = [
-  { prop: 'adminReply', label: '回复内容', type: 'textarea', required: true },
+  { prop: 'adminReply', label: '回复内容', type: 'textarea', required: true, max: 10000 },
   { prop: 'status', label: '处理状态', type: 'select', required: true,
     options: [
       { label: '处理中', value: 'processing' },
@@ -499,42 +585,60 @@ const handleReply = (row: FeedbackRow): void => {
   replyDialogVisible.value = true
   formContext.register({
     formId: 'admin:feedback',
-    title: '回复问题反馈',
+    title: '邮件回复问题反馈',
     fields: feedbackReplyFillFields,
     getModel: () => replyForm,
     getFormEl: () => replyFormRef.value
   })
+  replyContext.value = null
+  replyNotice.value = ''
+  replyUncertain.value = false
+  replyRequestId.value = crypto.randomUUID()
+  refreshReplyContext(true)
 }
 
 const handleReplySubmit = async (): Promise<void> => {
-  if (!replyFormRef.value) return
-  
-  await replyFormRef.value.validate(async (valid) => {
-    if (valid) {
-      try {
-        const adminUser = authStore.user
-        // 后端回复接口实际消费 adminReply/adminId/adminName/status，声明仅收敛 reply；
-        // 保持原请求体不变，用精确断言适配声明
-        const data = {
-          adminReply: replyForm.adminReply,
-          adminId: adminUser.id,
-          adminName: adminUser.username || adminUser.name,
-          status: replyForm.status
-        } as unknown as Parameters<typeof problemFeedbackApi.replyFeedback>[1]
-        const replyId = replyForm.id as unknown as number
-        const operation = formContext.beginFormOperation('admin:feedback')
-    const savedResponse = await problemFeedbackApi.replyFeedback(replyId, data)
-        if (savedResponse?.code !== 200) throw new Error(savedResponse?.message || '回复失败')
-        operation.complete({ status: 'submitted', label: '反馈回复已提交', url: '/admin/problem-feedback' })
-      ElMessage.success('回复成功')
-        replyDialogVisible.value = false
-        fetchData()
-      } catch (error) {
-        logger.error('回复失败:', error)
-        ElMessage.error('回复失败')
-      }
+  if (!replyFormRef.value || !canSendReply.value || replySending.value) return
+  const valid = await replyFormRef.value.validate().catch(() => false)
+  if (!valid || replySending.value) return
+  replySending.value = true
+  const operation = formContext.beginFormOperation('admin:feedback')
+  try {
+    const context = replyContext.value!
+    const data: problemFeedbackApi.FeedbackEmailReplyRequest = {
+      requestId: replyRequestId.value,
+      recipientEmail: context.recipientEmail,
+      adminReply: replyForm.adminReply.trim(),
+      status: replyForm.status,
+      feedbackVersion: context.feedbackVersion,
+      previousReplyId: context.history[0]?.id ?? null
     }
-  })
+    const savedResponse: any = await problemFeedbackApi.replyFeedback(replyForm.id!, data)
+    if (savedResponse?.code !== 200 || !savedResponse.data?.deliveryStatus) throw new Error(savedResponse?.message || '未收到邮件发送结果，请重新检查。')
+    const receipt: problemFeedbackApi.FeedbackEmailReceipt = savedResponse.data
+    if (receipt.deliveryStatus === 'SENT') {
+      operation.complete({ status: 'submitted', label: '反馈回复邮件已发送', url: '/admin/problem-feedback' })
+      ElMessage.success('邮件服务器已接收回复邮件')
+    } else if (receipt.deliveryStatus === 'FAILED') {
+      ElMessage.error(receipt.deliveryDetail)
+    } else {
+      ElMessage.warning(receipt.deliveryDetail || '邮件结果待确认，请先核实后再操作')
+    }
+    replyRequestId.value = crypto.randomUUID()
+    await refreshReplyContext()
+    if (receipt.deliveryStatus === 'UNKNOWN') {
+      replyUncertain.value = true
+      replyNotice.value = receipt.deliveryDetail || '结果待确认，请先核实邮件服务记录。'
+    }
+    fetchData()
+  } catch (error) {
+    logger.error('邮件回复未完成:', error)
+    replyNotice.value = error instanceof Error ? error.message : '暂未确认发送结果，请重新检查。'
+    replyUncertain.value = true
+    ElMessage.warning(replyNotice.value)
+  } finally {
+    replySending.value = false
+  }
 }
 
 const handleDelete = async (id: number): Promise<void> => {
@@ -1023,6 +1127,23 @@ const handleExportToExcel = async (): Promise<void> => {
   padding: 20px 0;
 }
 
+.email-reply-notice {
+  margin-bottom: 12px;
+}
+
+.email-record-time {
+  margin-left: 12px;
+}
+
+.email-reply-history {
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.email-reply-history p {
+  overflow-wrap: anywhere;
+}
+
 /* 对话框按钮 - 统一风格 */
 .dialog-footer {
   display: flex;
@@ -1031,7 +1152,7 @@ const handleExportToExcel = async (): Promise<void> => {
 }
 
 .cancel-btn,
-.confirm-btn {
+.confirm-btn:not(:disabled) {
   border-radius: 8px;
   padding: 10px 20px;
 }
@@ -1041,7 +1162,7 @@ const handleExportToExcel = async (): Promise<void> => {
   border: none;
 }
 
-.confirm-btn:hover {
+.confirm-btn:not(:disabled):hover {
   background: linear-gradient(135deg, #66b1ff, #73d13d);
   transform: translateY(-1px);
 }

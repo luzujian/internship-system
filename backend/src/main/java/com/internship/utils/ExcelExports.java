@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.internship.entity.Announcement;
 import com.internship.entity.Major;
 import com.internship.entity.StudentInternshipStatus;
+import com.internship.entity.dto.TeacherStudentDetailExtras;
 import jakarta.servlet.http.HttpServletResponse;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
@@ -17,6 +18,14 @@ import java.util.*;
 /** Shared value handling for list exports. Identifiers remain text; quantities and dates retain their types. */
 public final class ExcelExports {
     private ExcelExports() {}
+
+    private static final String[][] TEACHER_STUDENT_COLUMNS = {
+            {"studentId", "学号"}, {"name", "姓名"}, {"grade", "年级"}, {"department", "学院"},
+            {"major", "专业"}, {"className", "班级"}, {"phone", "手机号"}, {"email", "邮箱"},
+            {"internshipStatusText", "实习状态"}, {"internshipPathText", "实习途径"}, {"company", "实习单位"},
+            {"positionName", "实习岗位"}, {"companyBusiness", "企业主营业务"}, {"companyCity", "单位所在城市"},
+            {"hrManagerName", "人事经理姓名"}, {"hrManagerPhone", "联系电话"}
+    };
 
     public static void write(HttpServletResponse response, String name, String[] headers, List<Object[]> rows) throws IOException {
         try (Workbook workbook = new XSSFWorkbook()) {
@@ -70,10 +79,18 @@ public final class ExcelExports {
     }
     public static String pathCode(StudentInternshipStatus row) {
         if (Objects.equals(row.getStatus(), 6)) return "delay";
-        return row.getCompanyId() == null && !company(row).isBlank() ? "selfPractice" : "mutualChoice";
+        // 历史单位信息不能让暂无有效投递的学生被归入双向选择或自主实习。
+        if ("NOT_FOUND".equals(row.getJobSearchStatus())) return "none";
+        if ("NO_OFFER".equals(row.getJobSearchStatus()) || "PENDING_CONFIRMATION".equals(row.getJobSearchStatus())
+                || Objects.equals(row.getStatus(), 1) || Objects.equals(row.getStatus(), -2)) return "mutualChoice";
+        if (row.getStatus() != null && row.getStatus() >= 2 && row.getStatus() <= 5) {
+            if (row.getCompanyId() != null) return "mutualChoice";
+            if (!company(row).isBlank()) return "selfPractice";
+        }
+        return "none";
     }
     public static String path(StudentInternshipStatus row) {
-        return switch (pathCode(row)) { case "delay" -> "延迟实习"; case "selfPractice" -> "自主实习"; default -> "双向选择"; };
+        return switch (pathCode(row)) { case "delay" -> "延迟实习"; case "selfPractice" -> "自主实习"; case "mutualChoice" -> "双向选择"; default -> "无"; };
     }
     public static String status(StudentInternshipStatus row) {
         String primary = first(row.getJobSearchStatusText(), switch (row.getStatus() == null ? -99 : row.getStatus()) {
@@ -100,6 +117,47 @@ public final class ExcelExports {
                 status(r), path(r), company(r), position(r), r.getInternshipStartTime(), r.getInternshipEndTime(),
                 r.getUpdateTime(), companyConfirmation(r.getCompanyConfirmStatus()), r.getCreateTime()
         }).toList();
+        write(response, name, headers, rows);
+    }
+
+    /** 安全的详情投影也是教师 Excel 每行的唯一数据来源。 */
+    public static Map<String, Object> teacherStudentDetail(StudentInternshipStatus row, TeacherStudentDetailExtras extras) {
+        Map<String, Object> detail = new LinkedHashMap<>();
+        detail.put("id", row.getStudentId());
+        detail.put("studentId", row.getStudent() == null ? null : row.getStudent().getStudentUserId());
+        detail.put("name", first(row.getStudent() == null ? null : row.getStudent().getName(), row.getStudentName()));
+        String grade = row.getStudent() != null && row.getStudent().getGrade() != null
+                ? row.getStudent().getGrade().toString() : first(row.getGrade());
+        detail.put("grade", grade.isBlank() || grade.equals("无") || grade.endsWith("级") ? grade : grade + "级");
+        detail.put("department", extras == null ? null : extras.getDepartment());
+        detail.put("major", first(row.getMajor() == null ? null : row.getMajor().getName(), row.getMajorName()));
+        detail.put("className", first(row.getCls() == null ? null : row.getCls().getName(), row.getClassName()));
+        detail.put("phone", extras == null ? null : extras.getPhone());
+        detail.put("email", extras == null ? null : extras.getEmail());
+        detail.put("internshipStatus", row.getStatus());
+        detail.put("jobSearchStatus", row.getJobSearchStatus());
+        detail.put("jobSearchStatusText", row.getJobSearchStatusText());
+        detail.put("pendingApplicationTexts", row.getPendingApplicationTexts());
+        detail.put("internshipStatusText", row.getStatus() == null && first(row.getJobSearchStatusText()).isBlank() ? null : status(row));
+        detail.put("internshipPath", pathCode(row));
+        detail.put("internshipPathText", path(row));
+        detail.put("company", company(row));
+        detail.put("positionName", position(row));
+        detail.put("companyBusiness", extras == null ? null : extras.getCompanyBusiness());
+        detail.put("companyCity", extras == null ? null : extras.getCompanyCity());
+        detail.put("hrManagerName", extras == null ? null : extras.getHrManagerName());
+        detail.put("hrManagerPhone", extras == null ? null : extras.getHrManagerPhone());
+        for (String[] column : TEACHER_STUDENT_COLUMNS) {
+            Object value = detail.get(column[0]);
+            if (value == null || value instanceof String text && text.isBlank()) detail.put(column[0], "无");
+        }
+        return detail;
+    }
+
+    public static void teacherInternships(HttpServletResponse response, String name, List<Map<String, Object>> details) throws IOException {
+        String[] headers = Arrays.stream(TEACHER_STUDENT_COLUMNS).map(column -> column[1]).toArray(String[]::new);
+        List<Object[]> rows = details.stream().map(detail -> Arrays.stream(TEACHER_STUDENT_COLUMNS)
+                .map(column -> detail.get(column[0])).toArray()).toList();
         write(response, name, headers, rows);
     }
 

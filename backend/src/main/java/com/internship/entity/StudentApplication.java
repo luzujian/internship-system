@@ -62,6 +62,9 @@ public class StudentApplication {
     private String newCompany; // 单位变更申请：新实习单位
     
     private Map<String, String> materials; // 申请材料，JSON格式存储
+
+    @com.fasterxml.jackson.annotation.JsonProperty(access = com.fasterxml.jackson.annotation.JsonProperty.Access.WRITE_ONLY)
+    private java.util.List<String> removedMaterialKeys; // 重新提交时移除的其他资料，不落库
     
     private String status; // pending-待审核, approved-已通过, rejected-已驳回, withdrawn-学生已撤回
     

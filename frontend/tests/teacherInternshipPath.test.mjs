@@ -10,7 +10,8 @@ const { descriptor } = parse(source)
 const ast = ts.createSourceFile('TeacherStudentManagement.vue', descriptor.scriptSetup.content, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
 const names = ['students', 'filters', 'currentPage', 'pageSize', 'total', 'clientPagination', 'pagedStudents',
   'resolveInternshipCompanyName', 'internshipPathLabels', 'getInternshipPath', 'loadInternshipPathsByStudent', 'loadStudents', 'resetFilters',
-  'handleCurrentChange', 'handleSizeChange', 'sendBatchReminder']
+  'handleCurrentChange', 'handleSizeChange', 'sendBatchReminder', 'displayDetailValue', 'formatTableValue', 'formatGrade',
+  'getStatusValue', 'getStatusText', 'viewStudentDetail', 'currentStudent', 'showStudentDetailModal', 'detailLoading']
 const declarations = ast.statements.filter(ts.isVariableStatement)
   .flatMap(statement => [...statement.declarationList.declarations])
   .filter(declaration => names.includes(declaration.name.getText(ast)))
@@ -29,7 +30,7 @@ const rows = Array.from({ length: 52 }, (_, index) => ({
   companyName: '同名企业'
 }))
 
-function page({ counselor = false, management = false, data = rows, extraCounselorRows = [] } = {}) {
+function page({ counselor = false, management = false, data = rows, extraCounselorRows = [], detailData = {} } = {}) {
   const calls = [], reminders = [], errors = []
   const state = vm.runInNewContext(compiled, {
     ref, computed, console: { error: (...args) => errors.push(args) }, loading: ref(false),
@@ -51,7 +52,10 @@ function page({ counselor = false, management = false, data = rows, extraCounsel
     batchReminderForm: ref({ content: '请补充实习材料' }), batchReminderSending: ref(false),
     showBatchReminderDialog: ref(true),
     formContext: { beginFormOperation: () => ({ complete() {} }) },
-    request: { async post(_url, body) { reminders.push([...body.studentIds]); return { data: { success: body.studentIds.length, fail: 0 } } } }
+    request: {
+      async get(url) { calls.push({ endpoint: 'detail', url }); return { data: detailData } },
+      async post(_url, body) { reminders.push([...body.studentIds]); return { data: { success: body.studentIds.length, fail: 0 } } }
+    }
   })
   return { ...state, calls, reminders, errors }
 }
@@ -61,8 +65,56 @@ test('three paths distinguish registered and autonomous placements with the same
   assert.equal(state.getInternshipPath({ status: 3, companyId: 8, company: { companyName: '同名企业' } }), 'mutualChoice')
   assert.equal(state.getInternshipPath({ status: 3, companyId: null, companyName: '同名企业' }), 'selfPractice')
   assert.equal(state.getInternshipPath({ status: 4, companyId: null, companyName: '自主单位' }), 'selfPractice')
-  assert.equal(state.getInternshipPath({ status: 0, companyId: null, companyName: '   ' }), 'mutualChoice')
-  assert.equal(state.getInternshipPath({ status: 0 }), 'mutualChoice')
+  assert.equal(state.getInternshipPath({ status: 3, company: { companyName: ' ' }, companyName: '自主单位' }), 'selfPractice')
+})
+
+test('missing placement and no valid applications do not imply a mutual-choice route', () => {
+  const state = page()
+  for (const row of [
+    {}, { status: 0 }, { status: 0, companyId: null, companyName: '   ' },
+    { status: 0, companyId: 8, companyName: '历史单位' },
+    { status: 1, jobSearchStatus: 'NOT_FOUND', companyId: 8, companyName: '历史单位' },
+    { status: 0, jobSearchStatus: 'NOT_FOUND', pendingApplicationTexts: ['自主实习待审核'] },
+    { status: 3, companyId: null, companyName: '' }
+  ]) {
+    assert.equal(state.getInternshipPath(row), 'none')
+  }
+  assert.equal(state.internshipPathLabels.none, '无')
+})
+
+test('active applications and offers are evidence of mutual choice even without a placement record', () => {
+  const state = page()
+  assert.equal(state.getInternshipPath({ status: 0, jobSearchStatus: 'NO_OFFER' }), 'mutualChoice')
+  assert.equal(state.getInternshipPath({ status: 0, jobSearchStatus: 'PENDING_CONFIRMATION' }), 'mutualChoice')
+  assert.equal(state.getInternshipPath({ status: 1 }), 'mutualChoice')
+})
+
+test('missing table and detail fields show 无 while existing values and grade labels are preserved', () => {
+  const state = page()
+  for (const value of [null, undefined, '', '   ', '\t\n']) {
+    assert.equal(state.displayDetailValue(value), '无')
+    assert.equal(state.formatTableValue({}, {}, value), '无')
+    assert.equal(state.formatGrade(value), '无')
+  }
+  for (const value of [null, undefined, '']) assert.equal(state.getStatusText(value), '无')
+  assert.equal(state.displayDetailValue(0), '0')
+  assert.equal(state.displayDetailValue('023209170554'), '023209170554')
+  assert.equal(state.formatGrade(2023), '2023级')
+  assert.equal(state.formatGrade('2023级'), '2023级')
+})
+
+test('student detail retains every list field and loads company fields without replacing the student phone', async () => {
+  const company = { companyBusiness: '医疗设备研发', companyCity: '广州市', hrManagerName: '测试人事经理', hrManagerPhone: '020-12345678' }
+  const state = page({ detailData: { id: 183, ...company, phone: '13800000001', email: 'student@example.test' } })
+  const student = { id: 183, studentId: '001234', name: '测试学生', grade: '2023级', major: '测试专业', className: '测试班级',
+    internshipStatus: 3, jobSearchStatus: 'IN_PROGRESS', jobSearchStatusText: '实习进行中', internshipPath: 'selfPractice', company: '自主单位' }
+  await state.viewStudentDetail(student)
+  assert.equal(state.calls[0].url, '/teacher/students/183/internship-detail')
+  for (const [key, value] of Object.entries(student)) assert.equal(state.currentStudent.value[key], value, key)
+  for (const [key, value] of Object.entries(company)) assert.equal(state.currentStudent.value[key], value, key)
+  assert.equal(state.currentStudent.value.phone, '13800000001')
+  assert.equal(state.showStudentDetailModal.value, true)
+  assert.equal(state.detailLoading.value, false)
 })
 
 test('current delay takes priority over retained placement; a stale delay flag does not override a resumed internship', () => {
@@ -144,14 +196,33 @@ test('a path-filtered batch reminder addresses only matching student primary key
   assert.equal(state.errors.length, 0)
 })
 
-test('counselor tracking keeps students without a status row and classifies them as mutual choice', async () => {
+test('counselor tracking keeps students without a status row without including them in mutual choice', async () => {
   const state = page({ counselor: true, extraCounselorRows: [{ id: 99, name: '尚未登记', status: 1, internshipStatus: '0' }] })
   await state.loadStudents()
   assert.equal(state.total.value, 53)
-  assert.equal(state.students.value.at(-1).internshipPath, 'mutualChoice')
+  assert.equal(state.students.value.at(-1).internshipPath, 'none')
   state.filters.value.internshipPath = 'mutualChoice'
   await state.loadStudents()
-  assert.equal(state.total.value, 26)
+  assert.equal(state.total.value, 25)
   await state.sendBatchReminder()
-  assert.ok(state.reminders[0].includes(99))
+  assert.ok(!state.reminders[0].includes(99))
+  state.filters.value.internshipPath = 'none'
+  await state.loadStudents()
+  assert.equal(state.total.value, 1)
+  assert.equal(state.pagedStudents.value[0].id, 99)
+})
+
+test('college tracking filters no-route students separately from active applications', async () => {
+  const state = page({ data: [
+    { student: { id: 1, name: '尚未登记' }, status: 0, jobSearchStatus: 'NOT_FOUND' },
+    { student: { id: 2, name: '已投递' }, status: 0, jobSearchStatus: 'NO_OFFER' }
+  ] })
+  state.filters.value.internshipPath = 'none'
+  await state.loadStudents()
+  assert.equal(state.total.value, 1)
+  assert.equal(state.pagedStudents.value[0].id, 1)
+  state.filters.value.internshipPath = 'mutualChoice'
+  await state.loadStudents()
+  assert.equal(state.total.value, 1)
+  assert.equal(state.pagedStudents.value[0].id, 2)
 })

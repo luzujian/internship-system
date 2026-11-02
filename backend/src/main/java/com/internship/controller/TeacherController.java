@@ -4,6 +4,7 @@ import com.internship.utils.ExcelExports;
 
 import com.internship.anno.Log;
 import com.internship.dto.TeacherCompanyDTO;
+import com.internship.entity.dto.TeacherStudentDetailExtras;
 import com.internship.entity.*;
 import com.internship.entity.Class;
 import com.internship.entity.*;
@@ -95,12 +96,6 @@ public class TeacherController {
 
     @Autowired
     private StudentUserService studentUserService;
-
-    @Autowired
-    private InternshipStageAssignmentService internshipStageAssignmentService;
-
-    @Autowired
-    private PositionService positionService;
 
     @Autowired
     private DivisionMapper divisionMapper;
@@ -528,106 +523,14 @@ public class TeacherController {
     }
 
     /**
-     * 获取学生状态监控详情。这里按学生主键重新查询完整数据，避免复用列表行的精简字段，
-     * 同时只返回页面需要的安全字段，防止学生密码等敏感信息被序列化到前端。
+     * 学生详情与列表、导出使用同一份管辖范围内的当前状态，只返回页面需要的安全字段。
      */
     @GetMapping("/students/{studentId:\\d+}/internship-detail")
     public Result getStudentInternshipDetail(@PathVariable Long studentId) {
         try {
-            ScopeInfo scope = resolveTeacherScope();
-            StudentUser student = studentUserService.findById(studentId);
-            if (student == null) {
-                return Result.error("学生不存在");
-            }
-
-            Major major = student.getMajorId() == null ? null : majorService.findById(student.getMajorId());
-            if (!canViewStudentDetail(student, major, scope)) {
-                throw new AccessDeniedException("无权查看该学生详情");
-            }
-
-            Department department = null;
-            if (major != null && major.getDepartmentId() != null) {
-                department = departmentMapper.findById(major.getDepartmentId());
-            }
-
-            StudentInternshipStatus internshipStatus = studentInternshipStatusService.findByStudentId(studentId);
-            List<InternshipStageAssignment> assignments = internshipStageAssignmentService.findByStudentId(studentId);
-            if (assignments == null) assignments = Collections.emptyList();
-
-            Date now = new Date();
-            InternshipStageAssignment currentAssignment = selectCurrentAssignment(assignments, now);
-            boolean hasPendingConfirmation = assignments.stream().anyMatch(item ->
-                    "PENDING_CONFIRMATION".equals(item.getStatus()));
-
-            Object displayStatus = internshipStatus != null && internshipStatus.getStatus() != null
-                    && internshipStatus.getStatus() >= 2 && internshipStatus.getStatus() <= 6
-                    ? internshipStatus.getStatus()
-                    : currentAssignment != null ? deriveInternshipStatus(currentAssignment)
-                    : internshipStatus != null && internshipStatus.getStatus() != null
-                    && internshipStatus.getStatus() <= 6 ? internshipStatus.getStatus() : 0;
-
-            String companyName = null;
-            String positionName = null;
-            Date startTime = null;
-            Date endTime = null;
-
-            if (currentAssignment != null) {
-                companyName = currentAssignment.getCompanyName();
-                positionName = currentAssignment.getPositionName();
-                startTime = currentAssignment.getInternshipStartTime();
-                endTime = currentAssignment.getInternshipEndTime();
-                if (!StringUtils.hasText(companyName) && currentAssignment.getCompanyId() != null) {
-                    CompanyUser company = companyUserService.findById(currentAssignment.getCompanyId());
-                    companyName = company == null ? null : company.getCompanyName();
-                }
-                if (!StringUtils.hasText(positionName) && currentAssignment.getPositionId() != null) {
-                    Position position = positionService.findById(currentAssignment.getPositionId());
-                    positionName = position == null ? null : position.getPositionName();
-                }
-            } else if (internshipStatus != null) {
-                companyName = StringUtils.hasText(internshipStatus.getCompanyName())
-                        ? internshipStatus.getCompanyName()
-                        : internshipStatus.getCompany() == null ? null : internshipStatus.getCompany().getCompanyName();
-                positionName = StringUtils.hasText(internshipStatus.getPositionName())
-                        ? internshipStatus.getPositionName()
-                        : internshipStatus.getPosition() == null ? null : internshipStatus.getPosition().getPositionName();
-                startTime = internshipStatus.getInternshipStartTime();
-                endTime = internshipStatus.getInternshipEndTime();
-            }
-
-            String departmentName = department == null ? null : department.getName();
-            if (!StringUtils.hasText(departmentName) && StringUtils.hasText(student.getDepartment())) {
-                try {
-                    Department storedDepartment = departmentMapper.findById(Long.valueOf(student.getDepartment()));
-                    departmentName = storedDepartment == null ? null : storedDepartment.getName();
-                } catch (NumberFormatException ignored) {
-                    departmentName = student.getDepartment();
-                }
-            }
-
-            Map<String, Object> detail = new LinkedHashMap<>();
-            detail.put("id", student.getId());
-            detail.put("studentId", student.getStudentId());
-            detail.put("name", student.getName());
-            detail.put("gender", student.getGender());
-            detail.put("grade", student.getGrade());
-            detail.put("department", departmentName);
-            detail.put("major", major != null ? major.getName() : student.getMajor());
-            detail.put("className", student.getClassName());
-            detail.put("phone", student.getPhone());
-            detail.put("email", student.getEmail());
-            detail.put("internshipStatus", displayStatus);
-            if (internshipStatus != null) {
-                detail.put("jobSearchStatus", internshipStatus.getJobSearchStatus());
-                detail.put("jobSearchStatusText", internshipStatus.getJobSearchStatusText());
-                detail.put("pendingApplicationTexts", internshipStatus.getPendingApplicationTexts());
-            }
-            detail.put("company", companyName);
-            detail.put("positionName", positionName);
-            detail.put("hasPendingConfirmation", hasPendingConfirmation);
-            detail.put("internshipStartDate", startTime);
-            detail.put("internshipEndDate", endTime);
-            return Result.success(detail);
+            List<StudentInternshipStatus> rows = getScopedStudentList(studentId,null,null,null,null,null,null,null,null);
+            if (rows.isEmpty()) throw new AccessDeniedException("学生不存在或无权查看该学生详情");
+            return Result.success(buildTeacherStudentDetails(rows).get(0));
         } catch (AccessDeniedException e) {
             throw e;
         } catch (Exception e) {
@@ -643,44 +546,6 @@ public class TeacherController {
                     && scope.departmentIds.contains(major.getDepartmentId()))
                 || (major != null && scope.divisionIds != null
                     && scope.divisionIds.contains(major.getDivisionId()));
-    }
-
-    private Object deriveInternshipStatus(InternshipStageAssignment assignment) {
-        if (assignment == null) return 0;
-        if ("PENDING_CONFIRMATION".equals(assignment.getStatus())) return 1;
-        if ("INTERRUPTED".equals(assignment.getStatus())) return 5;
-        if ("REPLACED".equals(assignment.getStatus()) || "ENDED".equals(assignment.getStatus())) return 4;
-        Date now = new Date();
-        if (assignment.getInternshipEndTime() != null && assignment.getInternshipEndTime().before(now)) return 4;
-        if (assignment.getInternshipStartTime() != null && !assignment.getInternshipStartTime().after(now)) return 3;
-        return 2;
-    }
-
-    private InternshipStageAssignment selectCurrentAssignment(List<InternshipStageAssignment> assignments, Date now) {
-        Comparator<InternshipStageAssignment> byStartThenId = Comparator
-                .comparing(InternshipStageAssignment::getInternshipStartTime,
-                        Comparator.nullsFirst(Comparator.naturalOrder()))
-                .thenComparing(InternshipStageAssignment::getId,
-                        Comparator.nullsFirst(Comparator.naturalOrder()));
-
-        InternshipStageAssignment active = assignments.stream()
-                .filter(item -> Integer.valueOf(1).equals(item.getCurrentFlag()))
-                .filter(item -> !"PENDING_CONFIRMATION".equals(item.getStatus()))
-                .filter(item -> !"REPLACED".equals(item.getStatus()))
-                .filter(item -> !"ENDED".equals(item.getStatus()))
-                .filter(item -> !"INTERRUPTED".equals(item.getStatus()))
-                .filter(item -> item.getInternshipStartTime() == null || !item.getInternshipStartTime().after(now))
-                .filter(item -> item.getInternshipEndTime() == null || item.getInternshipEndTime().after(now))
-                .max(byStartThenId)
-                .orElse(null);
-        if (active != null) return active;
-
-        return assignments.stream()
-                .filter(item -> Integer.valueOf(1).equals(item.getCurrentFlag()))
-                .filter(item -> "CONFIRMED".equals(item.getStatus()))
-                .filter(item -> item.getInternshipStartTime() != null && item.getInternshipStartTime().after(now))
-                .min(byStartThenId)
-                .orElse(null);
     }
 
     private Long countScopedStatus(ScopeInfo scope, Integer status) {
@@ -804,7 +669,7 @@ public class TeacherController {
             if (ids.isEmpty() || !allowed.containsAll(ids)) throw new AccessDeniedException("导出包含管辖范围外的学生");
             rows = scoped.stream().filter(r -> ids.contains(r.getStudentId())).toList();
         } else rows = getScopedStudentList(studentId,name,gender,status,companyId,companyName,null,null,null);
-        ExcelExports.internships(response, "学生实习状态", rows);
+        ExcelExports.teacherInternships(response, "学生实习状态", buildTeacherStudentDetails(rows));
     }
 
     @Log(operationType = "EXPORT", module = "TEACHER_MANAGEMENT", description = "批量导出教师实习状态数据", riskLevel = "MEDIUM", critical = true)
@@ -820,7 +685,7 @@ public class TeacherController {
                 filters.get("companyName"),grade,filters.get("major"),className);
         String path = filters.get("internshipPath");
         if (StringUtils.hasText(path)) rows = rows.stream().filter(r -> path.equals(ExcelExports.pathCode(r))).toList();
-        ExcelExports.internships(response, "学生实习状态汇总", rows);
+        ExcelExports.teacherInternships(response, "学生实习状态汇总", buildTeacherStudentDetails(rows));
     }
 
     public void exportBatchInternshipStatus(String scope, String className, String grade, Integer status,
@@ -866,6 +731,15 @@ public class TeacherController {
                 scope.departmentIds, scope.divisionIds, scope.classIds);
         jobSearchStatusService.enrich(statuses);
         return statuses;
+    }
+
+    private List<Map<String, Object>> buildTeacherStudentDetails(List<StudentInternshipStatus> rows) {
+        if (rows.isEmpty()) return List.of();
+        List<Long> ids = rows.stream().map(StudentInternshipStatus::getStudentId).distinct().toList();
+        Map<Long, TeacherStudentDetailExtras> extras = studentInternshipStatusMapper
+                .findTeacherDetailExtrasByStudentIds(ids).stream().collect(Collectors.toMap(
+                        TeacherStudentDetailExtras::getStudentId, item -> item));
+        return rows.stream().map(row -> ExcelExports.teacherStudentDetail(row, extras.get(row.getStudentId()))).toList();
     }
 
     private Long getCurrentUserId() {

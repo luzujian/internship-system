@@ -64,11 +64,47 @@ class ExportConsistencyTest {
         when(teachers.findById(23L)).thenReturn(teacher); var relation=new ClassCounselorRelation(); relation.setClassId(10L);
         when(relations.findByCounselorId(23L)).thenReturn(List.of(relation));
         var text=selfPractice(); var platform=selfPractice(); platform.setStudentId(184L); platform.setCompanyId(3L);
-        when(statuses.listByScope(any(),any(),any(),any(),any(),any(),any(),any(),any(),any(),any(),any(),any())).thenReturn(List.of(text,platform));
+        var noPath=selfPractice(); noPath.setStudentId(185L); noPath.setStatus(1); noPath.setCompanyId(3L); noPath.setJobSearchStatus("NOT_FOUND");
+        when(statuses.listByScope(any(),any(),any(),any(),any(),any(),any(),any(),any(),any(),any(),any(),any())).thenReturn(List.of(text,platform,noPath));
         var response=new MockHttpServletResponse();
         controller.exportBatchInternshipStatus(null,"23信资17班","2023级",0,Map.of("name","测试","major","信息资源管理","companyName","自主联系单位","internshipPath","selfPractice"),response);
         verify(statuses).listByScope(isNull(),eq("测试"),isNull(),eq(0),isNull(),eq("自主联系单位"),eq("2023级"),eq("信息资源管理"),eq("23信资17班"),isNull(),isNull(),isNull(),eq(List.of(10L)));
-        try(var book=workbook(response)) { assertEquals(1,book.getSheetAt(0).getLastRowNum()); assertEquals("自主联系单位",book.getSheetAt(0).getRow(1).getCell(8).getStringCellValue()); }
+        try(var book=workbook(response)) { assertEquals(1,book.getSheetAt(0).getLastRowNum()); assertEquals("自主联系单位",book.getSheetAt(0).getRow(1).getCell(10).getStringCellValue()); }
+        for (String path : List.of("mutualChoice", "none")) {
+            var filtered=new MockHttpServletResponse();
+            controller.exportBatchInternshipStatus(null,null,null,null,Map.of("internshipPath",path),filtered);
+            try(var book=workbook(filtered)) {
+                assertEquals(1,book.getSheetAt(0).getLastRowNum());
+                assertEquals(path.equals("none") ? "无" : "双向选择",book.getSheetAt(0).getRow(1).getCell(9).getStringCellValue());
+            }
+        }
+    }
+
+    @Test void teacherWorkbookIncludesEveryDetailFieldAndFillsMissingValuesWithoutChangingIdentifiers() throws Exception {
+        var missing=new StudentInternshipStatus(); missing.setStudent(new StudentUser());
+        missing.setStudentName("  "); missing.setGrade(""); missing.setMajorName("\t"); missing.setClassName(" ");
+        missing.setCompanyName(" "); missing.setPositionName("");
+        var response=new MockHttpServletResponse();
+        ExcelExports.teacherInternships(response,"学生实习状态",List.of(
+                ExcelExports.teacherStudentDetail(selfPractice(),null), ExcelExports.teacherStudentDetail(missing,null)));
+        try(var book=workbook(response)) {
+            var sheet=book.getSheetAt(0); Row header=sheet.getRow(0); Row row=sheet.getRow(1);
+            assertEquals(List.of("学号","姓名","年级","学院","专业","班级","手机号","邮箱","实习状态","实习途径","实习单位","实习岗位",
+                            "企业主营业务","单位所在城市","人事经理姓名","联系电话"),
+                    IntStream.range(0,header.getLastCellNum()).mapToObj(i -> header.getCell(i).getStringCellValue()).toList());
+            assertEquals(CellType.STRING,row.getCell(0).getCellType());
+            assertEquals("023209170554",row.getCell(0).getStringCellValue());
+            assertEquals("2023级",row.getCell(2).getStringCellValue());
+            assertEquals("实习进行中",row.getCell(8).getStringCellValue());
+            assertEquals("自主实习",row.getCell(9).getStringCellValue());
+            assertEquals("自主联系单位",row.getCell(10).getStringCellValue());
+            assertEquals("文字岗位",row.getCell(11).getStringCellValue());
+            assertEquals("无",row.getCell(15).getStringCellValue());
+            assertEquals(header.getLastCellNum(),sheet.getRow(2).getLastCellNum());
+            for (int i=0;i<header.getLastCellNum();i++) assertEquals("无",sheet.getRow(2).getCell(i).getStringCellValue());
+        }
+        var legacy=selfPractice(); legacy.getStudent().setGrade(null); legacy.setGrade("2023");
+        assertEquals("2023级",ExcelExports.teacherStudentDetail(legacy,null).get("grade"));
     }
 
     @Test void applicationDocxAllowsNullGenderAndUsesTheRequestedStatusRecord() throws Exception {

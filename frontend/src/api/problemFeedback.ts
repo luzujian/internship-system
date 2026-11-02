@@ -71,7 +71,46 @@ export const updateFeedbackStatus = (id: number, status: number) => {
   return request.put(`/problem-feedback/${id}/status`, { status })
 }
 
-export const replyFeedback = (id: number, data: { reply: string }) => {
+export type FeedbackDeliveryStatus = 'SENDING' | 'SENT' | 'FAILED' | 'UNKNOWN'
+
+export interface FeedbackEmailReceipt {
+  id: number
+  requestId: string
+  recipientEmail: string
+  subject: string
+  replyContent: string
+  adminName: string
+  feedbackStatus: string
+  deliveryStatus: FeedbackDeliveryStatus
+  deliveryDetail: string
+  createdAt: string
+  finishedAt?: string
+}
+
+export interface FeedbackEmailContext {
+  feedback: Omit<ProblemFeedback, 'status'> & { status?: string; adminReply?: string }
+  recipientEmail: string
+  senderName: string
+  senderEmail: string
+  mailConfigured: boolean
+  feedbackVersion: number
+  history: FeedbackEmailReceipt[]
+}
+
+export interface FeedbackEmailReplyRequest {
+  requestId: string
+  recipientEmail: string
+  adminReply: string
+  status: string
+  feedbackVersion: number
+  previousReplyId: number | null
+}
+
+export const getFeedbackEmailContext = (id: number) => {
+  return request.get(`/problem-feedback/${id}/email-reply`)
+}
+
+export const replyFeedback = (id: number, data: FeedbackEmailReplyRequest) => {
   return request.put(`/problem-feedback/${id}/reply`, data)
 }
 

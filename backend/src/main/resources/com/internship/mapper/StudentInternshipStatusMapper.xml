@@ -104,6 +104,58 @@
         )
     </sql>
 
+    <resultMap id="TeacherStudentDetailExtrasResultMap" type="com.internship.entity.dto.TeacherStudentDetailExtras">
+        <id property="studentId" column="student_id"/>
+        <result property="department" column="department_name"/>
+        <result property="phone" column="student_phone"/>
+        <result property="email" column="student_email"/>
+        <result property="companyBusiness" column="company_business"/>
+        <result property="companyCity" column="company_city"/>
+        <result property="hrManagerName" column="hr_manager_name"/>
+        <result property="hrManagerPhone" column="hr_manager_phone"/>
+    </resultMap>
+
+    <!-- 仅查询已通过教师管辖范围校验的学生；批量读取，详情和导出使用相同来源。 -->
+    <select id="findTeacherDetailExtrasByStudentIds" resultMap="TeacherStudentDetailExtrasResultMap">
+        SELECT su.id AS student_id, su.phone AS student_phone, su.email AS student_email,
+               COALESCE(NULLIF(TRIM(d.name), ''),
+                   CASE WHEN TRIM(su.department) NOT REGEXP '^[0-9]+$' THEN NULLIF(TRIM(su.department), '') END) AS department_name,
+               c.introduction AS company_business,
+               COALESCE(NULLIF(TRIM(sa.company_city), ''),
+                   CASE WHEN c.city = '市辖区' THEN NULLIF(TRIM(c.province), '') ELSE NULLIF(TRIM(c.city), '') END) AS company_city,
+               COALESCE(NULLIF(TRIM(sa.hr_manager_name), ''), NULLIF(TRIM(c.contact_person), '')) AS hr_manager_name,
+               COALESCE(NULLIF(TRIM(sa.hr_manager_phone), ''), NULLIF(TRIM(c.contact_phone), '')) AS hr_manager_phone
+        FROM student_users su
+        <include refid="latestStudentStatusJoin"/>
+        LEFT JOIN major m ON m.id = su.major_id
+        LEFT JOIN department d ON d.id = COALESCE(m.department_id,
+            CASE WHEN TRIM(su.department) REGEXP '^[0-9]+$' THEN CAST(su.department AS UNSIGNED) END)
+        LEFT JOIN student_application sa ON sis.company_id IS NULL AND sis.status IN (2, 3, 4, 5)
+            AND sa.student_id = su.id AND sa.application_type = 'selfPractice' AND sa.status = 'approved'
+            AND sa.id = COALESCE(
+                (SELECT source_assignment.source_assignment_id
+                 FROM internship_stage_assignment source_assignment
+                 WHERE source_assignment.student_id = su.id AND source_assignment.source_type = 'SELF_PRACTICE'
+                   AND source_assignment.current_flag = 1
+                   AND source_assignment.status IN ('CONFIRMED', 'IN_PROGRESS', 'ENDED', 'INTERRUPTED')
+                   AND source_assignment.company_name = sis.company_name
+                   AND COALESCE(source_assignment.position_name, '') = COALESCE(sis.position_name, '')
+                 ORDER BY source_assignment.create_time DESC, source_assignment.id DESC LIMIT 1),
+                (SELECT approved.id FROM student_application approved
+                 WHERE approved.student_id = su.id AND approved.application_type = 'selfPractice' AND approved.status = 'approved'
+                   AND approved.company = sis.company_name
+                   AND COALESCE(approved.position_name, '') = COALESCE(sis.position_name, '')
+                 ORDER BY approved.review_time DESC, approved.id DESC LIMIT 1))
+        LEFT JOIN company_users c ON c.id = COALESCE(sis.company_id, sa.company_id)
+        WHERE su.status = 1
+        <choose>
+            <when test="studentIds != null and studentIds.size() > 0">
+                AND su.id IN <foreach collection="studentIds" item="studentId" open="(" separator="," close=")">#{studentId}</foreach>
+            </when>
+            <otherwise>AND 1 = 0</otherwise>
+        </choose>
+    </select>
+
     <sql id="jobSearchHasPassedOffer"><include refid="com.internship.mapper.JobSearchStatusMapper.hasPassedOffer"/></sql>
 
     <sql id="jobSearchHasPendingConfirmation"><include refid="com.internship.mapper.JobSearchStatusMapper.hasPendingConfirmation"/></sql>

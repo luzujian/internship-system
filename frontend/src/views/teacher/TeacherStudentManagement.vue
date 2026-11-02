@@ -152,22 +152,22 @@
         <article v-for="row in pagedStudents" :key="row.id || row.studentId" class="mobile-card">
           <div class="mobile-card-header">
             <el-checkbox v-if="showInternshipFields" :model-value="isStudentSelected(row)" :aria-label="`选择学生 ${row.name || row.studentId}`" @change="checked => toggleStudentSelection(row, checked)">
-              <span class="mobile-card-title">{{ row.name }}</span>
+              <span class="mobile-card-title">{{ displayDetailValue(row.name) }}</span>
             </el-checkbox>
-            <span v-else class="mobile-card-title">{{ row.name }}</span>
+            <span v-else class="mobile-card-title">{{ displayDetailValue(row.name) }}</span>
             <el-tag v-if="showInternshipFields" :type="getStatusTagType(row.jobSearchStatus || row.internshipStatus)" size="small">
               {{ row.jobSearchStatusText || getStatusText(row.internshipStatus) }}
             </el-tag>
             <el-tag v-else :type="row.status === 1 ? 'success' : 'danger'" size="small">{{ row.status === 1 ? '正常' : '禁用' }}</el-tag>
           </div>
           <div class="mobile-card-body">
-            <div class="mobile-card-row"><span class="mobile-card-label">学号</span><span class="mobile-card-value">{{ row.studentId }}</span></div>
-            <div v-if="row.grade" class="mobile-card-row"><span class="mobile-card-label">年级</span><span class="mobile-card-value">{{ row.grade }}</span></div>
-            <div v-if="row.major" class="mobile-card-row"><span class="mobile-card-label">专业</span><span class="mobile-card-value">{{ row.major }}</span></div>
-            <div v-if="row.className" class="mobile-card-row"><span class="mobile-card-label">班级</span><span class="mobile-card-value">{{ row.className }}</span></div>
+            <div class="mobile-card-row"><span class="mobile-card-label">学号</span><span class="mobile-card-value">{{ displayDetailValue(row.studentId) }}</span></div>
+            <div class="mobile-card-row"><span class="mobile-card-label">年级</span><span class="mobile-card-value">{{ displayDetailValue(row.grade) }}</span></div>
+            <div class="mobile-card-row"><span class="mobile-card-label">专业</span><span class="mobile-card-value">{{ displayDetailValue(row.major) }}</span></div>
+            <div class="mobile-card-row"><span class="mobile-card-label">班级</span><span class="mobile-card-value">{{ displayDetailValue(row.className) }}</span></div>
             <template v-if="showInternshipFields">
               <div class="mobile-card-row"><span class="mobile-card-label">实习途径</span><span class="mobile-card-value">{{ internshipPathLabels[row.internshipPath] }}</span></div>
-              <div class="mobile-card-row"><span class="mobile-card-label">实习单位</span><span class="mobile-card-value">{{ row.company || '未确定' }}</span></div>
+              <div class="mobile-card-row"><span class="mobile-card-label">实习单位</span><span class="mobile-card-value">{{ displayDetailValue(row.company) }}</span></div>
               <div v-for="text in row.pendingApplicationTexts" :key="text" class="pending-application-note">{{ text }}</div>
             </template>
           </div>
@@ -196,8 +196,8 @@
         class="data-table"
       >
         <el-table-column type="selection" width="55" align="center" v-if="showInternshipFields"></el-table-column>
-        <el-table-column prop="studentId" label="学号" width="120" align="center"></el-table-column>
-        <el-table-column prop="name" label="姓名" width="100" align="center"></el-table-column>
+        <el-table-column prop="studentId" label="学号" width="120" align="center" :formatter="formatTableValue"></el-table-column>
+        <el-table-column prop="name" label="姓名" width="100" align="center" :formatter="formatTableValue"></el-table-column>
         <el-table-column label="实习状态" min-width="170" align="center" v-if="showInternshipFields">
           <template #default="scope">
             <el-tag :type="getStatusTagType(scope.row.jobSearchStatus || scope.row.internshipStatus)" size="small" class="status-tag">
@@ -213,12 +213,12 @@
         </el-table-column>
         <el-table-column prop="company" label="实习单位" min-width="180" show-overflow-tooltip v-if="showInternshipFields">
           <template #default="scope">
-            {{ scope.row.company || '-' }}
+            {{ displayDetailValue(scope.row.company) }}
           </template>
         </el-table-column>
-        <el-table-column prop="grade" label="年级" align="center" width="80" />
-        <el-table-column prop="major" label="专业" min-width="150" show-overflow-tooltip></el-table-column>
-        <el-table-column prop="className" label="班级" min-width="120" show-overflow-tooltip></el-table-column>
+        <el-table-column prop="grade" label="年级" align="center" width="80" :formatter="formatTableValue" />
+        <el-table-column prop="major" label="专业" min-width="150" show-overflow-tooltip :formatter="formatTableValue"></el-table-column>
+        <el-table-column prop="className" label="班级" min-width="120" show-overflow-tooltip :formatter="formatTableValue"></el-table-column>
         <el-table-column prop="status" label="状态" align="center" width="80" v-if="!showInternshipFields">
           <template #default="scope">
             <el-tag :type="scope.row.status === 1 ? 'success' : 'danger'" size="small">
@@ -426,15 +426,17 @@
     </div>
 
     <div v-if="showStudentDetailModal" class="modal-overlay" @click.self="showStudentDetailModal = false">
-      <div class="modal-content student-detail-modal">
+      <div class="modal-content student-detail-modal" role="dialog" aria-modal="true" aria-labelledby="student-detail-title">
         <div class="modal-header">
-          <h3>{{ currentStudent?.name }} 学生详情</h3>
+          <div class="student-detail-heading">
+            <h3 id="student-detail-title">学生详情</h3>
+            <p>{{ displayDetailValue(currentStudent?.name) }} · {{ displayDetailValue(currentStudent?.studentId) }}</p>
+          </div>
           <button class="close-btn" aria-label="关闭学生详情" @click="showStudentDetailModal = false">×</button>
         </div>
         <div class="modal-body student-detail-body" v-loading="detailLoading">
           <div v-if="currentStudent" class="student-detail-content">
-            <div class="detail-left">
-              <div class="detail-section basic-info-section">
+              <section class="detail-section basic-info-section">
                 <h4>基本信息</h4>
                 <div class="detail-grid">
                   <div class="detail-item">
@@ -470,33 +472,55 @@
                     <span>{{ displayDetailValue(currentStudent.email) }}</span>
                   </div>
                 </div>
-              </div>
-            </div>
+              </section>
 
-            <div class="detail-right">
-              <div class="detail-section internship-info-section">
+              <section class="detail-section internship-info-section">
                 <h4>实习信息</h4>
                 <div class="detail-grid">
                   <div class="detail-item">
                     <label>实习单位：</label>
-                    <span>{{ currentStudent.company || '未确定' }}</span>
+                    <span>{{ displayDetailValue(currentStudent.company) }}</span>
                   </div>
                   <div class="detail-item">
                     <label>实习状态：</label>
                     <span class="status-badge" :class="getStatusClass(currentStudent.jobSearchStatus || currentStudent.internshipStatus)">{{ currentStudent.jobSearchStatusText || getStatusText(currentStudent.internshipStatus) }}</span><span v-for="text in currentStudent.pendingApplicationTexts" :key="text" class="pending-application-note">{{ text }}</span>
                   </div>
                   <div class="detail-item">
+                    <label>实习途径：</label>
+                    <span>{{ displayDetailValue(currentStudent.internshipPathText || internshipPathLabels[currentStudent.internshipPath]) }}</span>
+                  </div>
+                  <div class="detail-item">
                     <label>实习岗位：</label>
-                    <span>{{ currentStudent.positionName || '未确定' }}</span>
+                    <span>{{ displayDetailValue(currentStudent.positionName) }}</span>
                   </div>
                 </div>
-              </div>
+              </section>
 
-              <div class="detail-section button-section">
-                <button class="export-btn" @click="exportStudentProfile(currentStudent?.id)">导出档案</button>
-              </div>
-            </div>
+              <section class="detail-section company-info-section">
+                <h4>单位信息</h4>
+                <div class="detail-grid">
+                  <div class="detail-item">
+                    <label>企业主营业务：</label>
+                    <span class="company-business-text">{{ displayDetailValue(currentStudent.companyBusiness) }}</span>
+                  </div>
+                  <div class="detail-item">
+                    <label>单位所在城市：</label>
+                    <span>{{ displayDetailValue(currentStudent.companyCity) }}</span>
+                  </div>
+                  <div class="detail-item">
+                    <label>人事经理姓名：</label>
+                    <span>{{ displayDetailValue(currentStudent.hrManagerName) }}</span>
+                  </div>
+                  <div class="detail-item">
+                    <label>联系电话：</label>
+                    <span>{{ displayDetailValue(currentStudent.hrManagerPhone) }}</span>
+                  </div>
+                </div>
+              </section>
           </div>
+        </div>
+        <div class="student-detail-footer">
+          <button class="export-btn" :disabled="detailLoading" @click="exportStudentProfile(currentStudent?.id)">导出档案</button>
         </div>
       </div>
     </div>
@@ -719,22 +743,31 @@ const formatDate = (dateStr: string) => {
 }
 
 const resolveInternshipCompanyName = (item: any): string => {
-  if (item.company?.companyName) return item.company.companyName
-  if (item.companyName) return item.companyName
+  if (item.company?.companyName?.trim()) return item.company.companyName
+  if (item.companyName?.trim()) return item.companyName
   return typeof item.company === 'string' ? item.company : ''
 }
 
 const internshipPathLabels = {
+  none: '无',
   selfPractice: '自主实习',
   mutualChoice: '双向选择',
   delay: '延迟实习'
 }
 
 const getInternshipPath = (item: any): keyof typeof internshipPathLabels => {
-  if (Number(item.internshipStatus ?? item.status) === 6) return 'delay'
-  // 自主实习审批通过后保存单位名称，并清空平台企业 ID；延期优先于保留的单位信息。
-  if (!item.companyId && resolveInternshipCompanyName(item).trim()) return 'selfPractice'
-  return 'mutualChoice'
+  const status = Number(item.internshipStatus ?? item.status)
+  if (status === 6) return 'delay'
+  // 无有效投递时，历史单位信息不能作为当前途径的依据。
+  if (item.jobSearchStatus === 'NOT_FOUND') return 'none'
+  if (item.jobSearchStatus === 'NO_OFFER' || item.jobSearchStatus === 'PENDING_CONFIRMATION'
+    || status === 1 || status === -2) return 'mutualChoice'
+  // 自主实习审批通过后保存单位名称，并清空平台企业 ID。
+  if (status >= 2 && status <= 5) {
+    if (item.companyId) return 'mutualChoice'
+    if (resolveInternshipCompanyName(item).trim()) return 'selfPractice'
+  }
+  return 'none'
 }
 
 const loadInternshipPathsByStudent = async (): Promise<Map<number, any>> => {
@@ -1140,9 +1173,11 @@ const checkAIStatus = async (student: any) => {
 }
 
 const displayDetailValue = (value: unknown): string => {
-  if (value === null || value === undefined || String(value).trim() === '') return '-'
+  if (value === null || value === undefined || String(value).trim() === '') return '无'
   return String(value)
 }
+
+const formatTableValue = (_row: any, _column: any, value: unknown): string => displayDetailValue(value)
 
 const formatGender = (gender: unknown): string => {
   if (gender === 1 || gender === '1' || gender === '男') return '男'
@@ -1152,7 +1187,7 @@ const formatGender = (gender: unknown): string => {
 
 const formatGrade = (grade: unknown): string => {
   const value = displayDetailValue(grade)
-  return value === '-' || value.endsWith('级') ? value : `${value}级`
+  return value === '无' || value.endsWith('级') ? value : `${value}级`
 }
 
 const formatDetailDate = (dateValue: unknown, emptyText: string): string => {
@@ -1174,6 +1209,7 @@ const viewStudentDetail = async (student: any) => {
     const response: any = await request.get(`/teacher/students/${student.id}/internship-detail`)
     const detail = response?.data || response
     currentStudent.value = {
+      ...student,
       ...detail,
       jobSearchStatus: detail?.jobSearchStatus || student.jobSearchStatus,
       jobSearchStatusText: detail?.jobSearchStatusText || student.jobSearchStatusText,
@@ -1209,6 +1245,7 @@ const getStatusValue = (status: string): number => {
 }
 
 const getStatusText = (status: number | string): string => {
+  if (status === null || status === undefined || status === '') return '无'
   if (typeof status === 'string') {
     const derivedText: Record<string, string> = {
       NOT_FOUND: '暂无有效投递',
@@ -2080,58 +2117,89 @@ watch(() => router.currentRoute.value.query.agentStudentId, id => {
 }
 
 .student-detail-modal {
-  max-width: min(860px, calc(100vw - 32px));
-  width: 820px;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  min-width: 0;
+  width: 920px;
+  max-width: calc(100vw - 48px);
+  max-height: calc(100dvh - 64px);
+  padding: 0;
+  overflow: hidden;
+}
+
+.student-detail-modal .modal-header {
+  flex-shrink: 0;
+  padding: 20px 24px;
+  margin: 0;
+  border-bottom: 1px solid #edf0f5;
+}
+
+.student-detail-heading {
+  min-width: 0;
+}
+
+.student-detail-heading p {
+  margin: 6px 0 0;
+  color: #7b8494;
+  font-size: 13px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.student-detail-body {
+  min-height: 0;
+  padding: 20px 24px;
+  margin: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .student-detail-content {
-  display: flex;
-  gap: 16px;
-  min-height: 300px;
-}
-
-.detail-left {
-  flex: 1.3;
-  display: flex;
-  flex-direction: column;
-}
-
-.detail-right {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
   gap: 16px;
 }
 
 .detail-section {
-  background: #fafafa;
-  border-radius: 8px;
-  padding: 16px;
+  min-width: 0;
+  border: 1px solid #e8edf3;
+  border-radius: 10px;
+  padding: 18px;
 }
 
-.detail-left .detail-section {
-  height: 100%;
-}
-
-.detail-left .detail-grid {
+.basic-info-section .detail-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  column-gap: 20px;
+  column-gap: 24px;
+  row-gap: 16px;
+}
+
+.company-info-section {
+  grid-column: 1 / -1;
+}
+
+.company-info-section .detail-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.company-info-section .detail-item:first-child {
+  grid-column: 1 / -1;
 }
 
 .detail-section h4 {
-  margin: 0 0 12px 0;
-  font-size: 16px;
+  margin: 0 0 16px;
+  font-size: 14px;
   font-weight: 600;
   color: #303133;
-  padding-bottom: 8px;
-  border-bottom: 2px solid #409eff;
 }
 
 .detail-grid {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 16px;
 }
 
 .detail-item {
@@ -2141,29 +2209,34 @@ watch(() => router.currentRoute.value.query.agentStudentId, id => {
 }
 
 .detail-item label {
-  font-size: 13px;
-  color: #909399;
+  font-size: 12px;
+  color: #7b8494;
+  line-height: 1.5;
 }
 
 .detail-item span {
   font-size: 14px;
   color: #303133;
-  font-weight: 500;
+  font-weight: 400;
+  line-height: 1.6;
   overflow-wrap: anywhere;
 }
 
-.button-section {
-  background: transparent;
-  padding: 16px 0;
+.company-business-text {
+  white-space: pre-wrap;
+}
+
+.student-detail-footer {
+  flex-shrink: 0;
   display: flex;
-  justify-content: center;
-  align-items: center;
-  margin-top: auto;
+  justify-content: flex-end;
+  padding: 14px 24px;
+  border-top: 1px solid #edf0f5;
 }
 
 .export-btn {
-  padding: 12px 32px;
-  border-radius: 8px;
+  padding: 10px 24px;
+  border-radius: 6px;
   font-size: 14px;
   cursor: pointer;
   transition: all 0.3s;
@@ -2171,6 +2244,16 @@ watch(() => router.currentRoute.value.query.agentStudentId, id => {
   background-color: #409eff;
   color: white;
   font-weight: 500;
+}
+
+.export-btn:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+.student-detail-modal .status-badge {
+  align-self: flex-start;
+  padding: 3px 10px;
 }
 
 .export-btn:hover {
@@ -2274,11 +2357,28 @@ watch(() => router.currentRoute.value.query.agentStudentId, id => {
 
 @media (max-width: 768px) {
   .student-detail-content {
-    flex-direction: column;
+    grid-template-columns: minmax(0, 1fr);
   }
 
-  .detail-left .detail-grid {
-    grid-template-columns: 1fr;
+  .basic-info-section .detail-grid,
+  .company-info-section .detail-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .student-detail-modal .modal-header {
+    padding: 16px;
+  }
+
+  .student-detail-body {
+    padding: 16px;
+  }
+
+  .student-detail-footer {
+    padding: 12px 16px;
+  }
+
+  .student-detail-footer .export-btn {
+    min-height: 44px;
   }
 }
 
@@ -2421,7 +2521,8 @@ watch(() => router.currentRoute.value.query.agentStudentId, id => {
   }
 
   .modal-content.student-detail-modal {
-    height: calc(100% - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+    height: auto;
+    padding: 0;
   }
 
   .modal-header,

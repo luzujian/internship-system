@@ -48,7 +48,7 @@ const cases = [
   ['department', 'DepartmentMajorManagement', 'saveDepartment', v => ({ formTitle: ref('新增院系'), addDepartment: ref({ name: '学院' }), addDepartmentFormRef: v(), dialogFormVisible: ref(true), queryDepartments: noop }), 'dialogFormVisible'],
   ['division', 'DepartmentMajorManagement', 'saveDivision', v => ({ addDivisionForm: ref({ name: '系', departmentId: 1 }), addDivisionFormRef: v(), addDivisionDialogVisible: ref(true), getDivisionList: noop, queryDepartments: noop }), 'addDivisionDialogVisible'],
   ['division-edit', 'DepartmentMajorManagement', 'saveEditDivision', v => ({ editDivisionForm: ref({ id: 3, name: '系', departmentId: 1 }), editDivisionFormRef: v(), editDivisionDialogVisible: ref(true), getDivisionList: noop, queryDepartments: noop }), 'editDivisionDialogVisible'],
-  ['feedback', 'FeedbackManagement', 'handleReplySubmit', v => ({ replyForm: { id: 3, adminReply: '已核实', status: 'RESOLVED' }, replyFormRef: v(), replyDialogVisible: ref(true), fetchData: noop }), 'replyDialogVisible'],
+  ['feedback', 'FeedbackManagement', 'handleReplySubmit', v => ({ replyForm: { id: 3, adminReply: '已核实', status: 'resolved' }, replyFormRef: v(), replyDialogVisible: ref(true), replySending: ref(false), canSendReply: ref(true), replyRequestId: ref('request-id'), replyContext: ref({ recipientEmail: 'student@example.com', feedbackVersion: 1, history: [] }), replyUncertain: ref(false), replyNotice: ref(''), refreshReplyContext: noop, fetchData: noop }), 'replyDialogVisible'],
   ['keyword', 'KeywordLibraryManagement', 'handleSave', v => ({ form: ref({ keyword: '认真' }), formRef: v(), saving: ref(false), dialogVisible: ref(true), fetchKeywords: noop }), 'dialogVisible'],
   ['log-retention', 'LogManagement', 'saveRetentionPolicies', logRetention],
   ['major', 'MajorManagement', 'addMajor', v => ({ addForm: ref({ name: '计算机' }), addFormRef: v(), addDialogVisible: ref(true), loadMajors: noop }), 'addDialogVisible'],
@@ -74,12 +74,12 @@ function fixture(entry, mode = 'success', invalid = false) {
     return promise
   } })
   const scope = create(validation)
-  const write = async () => { order.push('write'); if (mode === 'throw') throw new Error('backend rejected'); return { code: mode === 'failure' ? 500 : 200, data: { deletedCount: 2, highRiskDays: 365, normalDays: 90, loginDays: 90 } } }
+  const write = async () => { order.push('write'); if (mode === 'throw') throw new Error('backend rejected'); return { code: mode === 'failure' ? 500 : 200, data: id === 'feedback' ? { deliveryStatus: 'SENT' } : { deletedCount: 2, highRiskDays: 365, normalDays: 90, loginDays: 90 } } }
   const service = new Proxy({}, { get: () => write })
   Object.assign(scope, {
     console: { error: noop }, logger: { log: noop, error: noop }, ElMessage: { success: noop, error: noop, warning: noop, info: noop }, ElMessageBox: { confirm: async () => {} },
     authStore: { user: { id: 3, name: '管理员' } }, nextTick: tick, sessionStorage: { removeItem: noop },
-    FormData: class { append() {} },
+    FormData: class { append() {} }, crypto: { randomUUID: () => 'next-request-id' },
     formContext: { beginFormOperation(formId, props) { assert.equal(formId, `admin:${id}`); order.push('capture'); return { complete(receipt) { if (dialog) assert.equal(scope[dialog].value, true, 'receipt must precede close'); order.push('complete'); receipts.push({ ...receipt, props }) } } } },
     AdminUserService: service, aiModelService: service, announcementApi: service, companyService: service, request: service,
     DivisionService: service, MajorService: service, DepartmentService: service, problemFeedbackApi: service, PositionCategoryService: service,

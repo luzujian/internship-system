@@ -35,6 +35,23 @@
         select * from problem_feedback where id = #{id}
     </select>
 
+    <select id="findByIdForUpdate" resultMap="ProblemFeedbackResultMap">
+        SELECT * FROM problem_feedback WHERE id = #{id} FOR UPDATE
+    </select>
+
+    <select id="findRecipientEmail" resultType="java.lang.String">
+        SELECT CASE f.user_type
+            WHEN 'student' THEN s.email
+            WHEN 'teacher' THEN t.email
+            WHEN 'company' THEN c.email
+        END
+        FROM problem_feedback f
+        LEFT JOIN student_users s ON f.user_type = 'student' AND s.id = f.user_id
+        LEFT JOIN teacher_users t ON f.user_type = 'teacher' AND t.id = f.user_id
+        LEFT JOIN company_users c ON f.user_type = 'company' AND c.id = f.user_id
+        WHERE f.id = #{id} AND COALESCE(f.deleted, 0) = 0
+    </select>
+
     <update id="update" parameterType="com.internship.entity.ProblemFeedback">
         update problem_feedback
         <set>

@@ -12,6 +12,7 @@
           v-for="(tab, index) in approvalTabs" 
           :key="tab.key"
           :class="['tab-btn', { active: activeTab === tab.key }]"
+          :disabled="batchApproving"
           @click="activeTab = tab.key"
         >
           {{ tab.name }}
@@ -23,7 +24,7 @@
 
     <!-- 审核列表 -->
     <el-card class="table-card" shadow="never">
-      <el-form :inline="!isMobile" :label-position="isMobile ? 'top' : 'right'" :model="searchForm" class="search-form" @keyup.enter="handleSearch">
+      <el-form :inline="!isMobile" :label-position="isMobile ? 'top' : 'right'" :model="searchForm" :disabled="batchApproving" class="search-form" @keyup.enter="handleSearch">
         <div class="search-row">
           <el-form-item label="关键词" class="keyword-filter">
             <el-input
@@ -79,6 +80,16 @@
             <el-button type="warning" @click="resetForm" class="reset-btn">
               <el-icon><Refresh /></el-icon>&nbsp;重置
             </el-button>
+            <el-button
+              v-if="activeTab === 'selfPractice' || activeTab === 'delay'"
+              type="success"
+              class="batch-approve-btn"
+              :loading="batchApproving"
+              :disabled="loading || !canBatchApprove || reviewingApplications.size > 0"
+              @click="approveAllApplications"
+            >
+              {{ batchApprovalTotal ? `通过中（${batchApprovalCompleted}/${batchApprovalTotal}）` : '一键通过' }}
+            </el-button>
           </el-form-item>
         </div>
       </el-form>
@@ -109,8 +120,8 @@
             <div class="mobile-card-row"><span class="mobile-card-label">申请时间</span><span class="mobile-card-value">{{ row.applyTime || '未填写' }}</span></div>
           </div>
           <div class="mobile-card-actions">
-            <el-button v-if="canReviewApplication(row)" type="success" :loading="isApplicationReviewing(row)" :disabled="isApplicationReviewing(row)" @click="approveApplication(row)">通过</el-button>
-            <el-button v-if="canReviewApplication(row)" type="danger" :disabled="isApplicationReviewing(row)" @click="rejectApplication(row)">驳回</el-button>
+            <el-button v-if="canReviewApplication(row)" type="success" :loading="isApplicationReviewing(row)" :disabled="batchApproving || isApplicationReviewing(row)" @click="approveApplication(row)">通过</el-button>
+            <el-button v-if="canReviewApplication(row)" type="danger" :disabled="batchApproving || isApplicationReviewing(row)" @click="rejectApplication(row)">驳回</el-button>
             <el-button type="primary" @click="activeTab === 'companyQualification' ? viewCompanyQualification(row) : viewApplication(row)">查看详情</el-button>
           </div>
         </article>
@@ -190,10 +201,10 @@
         <el-table-column label="操作" width="280" fixed="right" align="center">
           <template #default="scope">
             <MobileMoreActions>
-              <el-button v-if="canReviewApplication(scope.row)" size="small" type="success" :loading="isApplicationReviewing(scope.row)" :disabled="isApplicationReviewing(scope.row)" @click="approveApplication(scope.row)" class="table-btn success">
+              <el-button v-if="canReviewApplication(scope.row)" size="small" type="success" :loading="isApplicationReviewing(scope.row)" :disabled="batchApproving || isApplicationReviewing(scope.row)" @click="approveApplication(scope.row)" class="table-btn success">
                 通过
               </el-button>
-              <el-button v-if="canReviewApplication(scope.row)" size="small" type="danger" :disabled="isApplicationReviewing(scope.row)" @click="rejectApplication(scope.row)" class="table-btn danger">
+              <el-button v-if="canReviewApplication(scope.row)" size="small" type="danger" :disabled="batchApproving || isApplicationReviewing(scope.row)" @click="rejectApplication(scope.row)" class="table-btn danger">
                 驳回
               </el-button>
               <el-button size="small" type="primary" @click="activeTab === 'companyQualification' ? viewCompanyQualification(scope.row) : viewApplication(scope.row)" class="table-btn primary">
@@ -214,6 +225,7 @@
           :layout="isMobile ? 'total, sizes, prev, pager, next' : 'total, sizes, prev, pager, next, jumper'"
           :pager-count="isMobile ? 5 : 7"
           :total="total"
+          :disabled="batchApproving"
           class="custom-pagination"
         />
       </div>
@@ -252,7 +264,7 @@
         </div>
         <div class="modal-footer">
           <button class="btn-default btn-sm" @click="showRejectModal = false">取消</button>
-          <button class="btn-danger btn-sm" :disabled="isApplicationReviewing(currentApplication)" :aria-busy="isApplicationReviewing(currentApplication)" @click="confirmReject">{{ isApplicationReviewing(currentApplication) ? '处理中…' : '确认驳回' }}</button>
+          <button class="btn-danger btn-sm" :disabled="batchApproving || isApplicationReviewing(currentApplication)" :aria-busy="isApplicationReviewing(currentApplication)" @click="confirmReject">{{ isApplicationReviewing(currentApplication) ? '处理中…' : '确认驳回' }}</button>
         </div>
       </div>
     </div>
@@ -352,10 +364,10 @@
         </div>
         <div class="modal-footer">
           <button class="btn-default btn-sm" @click="showCompanyQualificationModal = false">关闭</button>
-          <button v-if="currentApplication && currentApplication.auditStatus === 0" class="btn-success btn-sm" :disabled="isApplicationReviewing(currentApplication)" :aria-busy="isApplicationReviewing(currentApplication)" @click="approveApplication(currentApplication)">
+          <button v-if="currentApplication && currentApplication.auditStatus === 0" class="btn-success btn-sm" :disabled="batchApproving || isApplicationReviewing(currentApplication)" :aria-busy="isApplicationReviewing(currentApplication)" @click="approveApplication(currentApplication)">
             通过
           </button>
-          <button v-if="currentApplication && currentApplication.auditStatus === 0" class="btn-danger btn-sm" :disabled="isApplicationReviewing(currentApplication)" @click="rejectApplication(currentApplication)">
+          <button v-if="currentApplication && currentApplication.auditStatus === 0" class="btn-danger btn-sm" :disabled="batchApproving || isApplicationReviewing(currentApplication)" @click="rejectApplication(currentApplication)">
             驳回
           </button>
         </div>
@@ -466,10 +478,10 @@
         </div>
         <div class="modal-footer">
           <button class="btn-default btn-sm" @click="showApplicationDetailModal = false">关闭</button>
-          <button v-if="currentApplication && currentApplication.status === 'pending' && currentApplication.reviewTarget !== 'COMPANY'" class="btn-success btn-sm" :disabled="isApplicationReviewing(currentApplication)" :aria-busy="isApplicationReviewing(currentApplication)" @click="approveApplication(currentApplication)">
+          <button v-if="currentApplication && currentApplication.status === 'pending' && currentApplication.reviewTarget !== 'COMPANY'" class="btn-success btn-sm" :disabled="batchApproving || isApplicationReviewing(currentApplication)" :aria-busy="isApplicationReviewing(currentApplication)" @click="approveApplication(currentApplication)">
             通过
           </button>
-          <button v-if="currentApplication && currentApplication.status === 'pending' && currentApplication.reviewTarget !== 'COMPANY'" class="btn-danger btn-sm" :disabled="isApplicationReviewing(currentApplication)" @click="rejectApplication(currentApplication)">
+          <button v-if="currentApplication && currentApplication.status === 'pending' && currentApplication.reviewTarget !== 'COMPANY'" class="btn-danger btn-sm" :disabled="batchApproving || isApplicationReviewing(currentApplication)" @click="rejectApplication(currentApplication)">
             驳回
           </button>
         </div>
@@ -485,13 +497,13 @@
 import { useAgentPageContext } from '@/agent/useAgentPageContext'
 import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useFormContext } from '@/agent/formContext'
-import { approvalApi } from '../../api/teacherApproval'
+import { approvalApi, type StudentApplication } from '../../api/teacherApproval'
 import { getTeacherClasses, type TeacherClass } from '../../api/teacherClass'
 import companyService from '../../api/company'
 import { getCurrentUser } from '../../utils/teacherUser'
 import { getCurrentTeacherType } from '../../utils/teacherPermissions'
 import { useAuthStore } from '@/store/auth'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Refresh, Document } from '@element-plus/icons-vue'
 import MobileMoreActions from '../../components/MobileMoreActions.vue'
 import FilePreviewDialog from '@/components/FilePreviewDialog.vue'
@@ -572,6 +584,12 @@ const currentPage = ref(1)
 const pageSize = ref(10)
 const total = ref(0)
 const loading = ref(false)
+const batchApproving = ref(false)
+const batchApprovalCompleted = ref(0)
+const batchApprovalTotal = ref(0)
+const canBatchApprove = computed(() => ['selfPractice', 'delay'].includes(activeTab.value)
+  && (!searchForm.status || searchForm.status === 'pending'))
+let approvalPageActive = true
 
 const showRejectModal = ref(false)
 const showCompanyQualificationModal = ref(false)
@@ -620,7 +638,7 @@ watch(() => [showApplicationDetailModal.value, currentApplication.value?.id, cur
   }
   materialPreviewVisible.value = false
 })
-onUnmounted(() => { agreementRequestId++ })
+onUnmounted(() => { agreementRequestId++; approvalPageActive = false })
 const rejectReason = ref('')
 const reviewingApplications = ref(new Set<string>())
 const applicationReviewKey = (application: any) => `${application?.type === 'companyQualification' ? 'companyQualification' : 'studentApplication'}:${application?.id}`
@@ -858,9 +876,91 @@ const viewApplication = async (application: any) => {
   }
 }
 
+const approveAllApplications = async () => {
+  if (batchApproving.value || loading.value || reviewingApplications.value.size || !canBatchApprove.value) return
+  const reviewerId = Number(authStore.user?.id)
+  if (!Number.isSafeInteger(reviewerId) || reviewerId <= 0) {
+    ElMessage.error('教师身份不可用，请重新登录')
+    return
+  }
+
+  const applicationType = activeTab.value
+  const params = {
+    applicationType,
+    status: 'pending',
+    studentName: searchForm.keyword || undefined,
+    studentUserId: searchForm.keyword || undefined,
+    majorId: searchForm.majorId || undefined,
+    classId: searchForm.classId || undefined
+  }
+  const filterText = [
+    searchForm.keyword && `关键词：${searchForm.keyword}`,
+    searchForm.majorId && `专业：${majorOptions.value.find(item => item.id === searchForm.majorId)?.name || searchForm.majorId}`,
+    searchForm.classId && `班级：${classOptions.value.find(item => item.id === searchForm.classId)?.name || searchForm.classId}`
+  ].filter(Boolean).join('；') || '全部专业、班级'
+  batchApproving.value = true
+  try {
+    // 先收集所有分页，确认后只处理这份名单，避免边审批边翻页漏掉申请。
+    const pending = new Map<number, StudentApplication>()
+    let pages = 1
+    for (let page = 1; page <= pages; page++) {
+      const response = await approvalApi.getStudentApplications({ ...params, page, pageSize: 100 })
+      if (!approvalPageActive) return
+      if (!Array.isArray(response.rows) || !Number.isFinite(response.total)) throw new Error('待审核申请加载失败，请重试')
+      if (page === 1) pages = Math.ceil(response.total / 100)
+      response.rows.forEach(application => {
+        if (application.id && application.applicationType === applicationType
+          && application.status === 'pending' && application.reviewTarget !== 'COMPANY') {
+          pending.set(application.id, application)
+        }
+      })
+    }
+    if (!pending.size) {
+      ElMessage.info('当前筛选范围内没有可通过的待审核申请')
+      return
+    }
+
+    await ElMessageBox.confirm(
+      `将通过您负责范围内、当前筛选条件下的 ${pending.size} 条${getApplicationTypeText(applicationType)}，包含所有分页。筛选条件：${filterText}。请确认已核对申请信息及材料，通过后将更新学生实习状态。`,
+      '一键通过确认',
+      { confirmButtonText: '确认全部通过', cancelButtonText: '取消', type: 'warning', closeOnClickModal: false, customClass: 'batch-approval-confirm' }
+    )
+    batchApprovalTotal.value = pending.size
+    let approved = 0
+    let failed = 0
+    for (const application of pending.values()) {
+      if (!approvalPageActive) break
+      try {
+        const response = await approvalApi.approveStudentApplication(application.id!, reviewerId)
+        if (response.code !== 200) throw new Error(response.message || '批准申请失败')
+        approved++
+        markApplicationReviewed({ ...application, type: applicationType }, true)
+      } catch {
+        failed++
+      } finally {
+        batchApprovalCompleted.value++
+      }
+    }
+    if (!approvalPageActive) return
+    currentPage.value = 1
+    await Promise.all([fetchApplications(), fetchStats()])
+    if (failed) {
+      ElMessage.warning(`已通过 ${approved} 条，${failed} 条未通过，请核对剩余申请后重试`)
+    } else {
+      ElMessage.success(`已成功通过 ${approved} 条${getApplicationTypeText(applicationType)}`)
+    }
+  } catch (error: any) {
+    if (error !== 'cancel' && error !== 'close') ElMessage.error(error?.message || '一键通过失败，请重试')
+  } finally {
+    batchApproving.value = false
+    batchApprovalCompleted.value = 0
+    batchApprovalTotal.value = 0
+  }
+}
+
 // 批准申请
 const approveApplication = async (application: any) => {
-  if (isApplicationReviewing(application)) return
+  if (batchApproving.value || isApplicationReviewing(application)) return
   const key = applicationReviewKey(application)
   reviewingApplications.value.add(key)
   try {
@@ -914,7 +1014,7 @@ onUnmounted(() => formContext.unregister('teacher:approval-reject'))
 
 // 驳回申请
 const rejectApplication = (application: any) => {
-  if (isApplicationReviewing(application)) return
+  if (batchApproving.value || isApplicationReviewing(application)) return
   currentApplication.value = application
   rejectReason.value = ''
   // 关闭所有可能的弹窗
@@ -947,7 +1047,7 @@ const confirmReject = async () => {
     return
   }
   const application = currentApplication.value
-  if (isApplicationReviewing(application)) return
+  if (batchApproving.value || isApplicationReviewing(application)) return
   const key = applicationReviewKey(application)
   reviewingApplications.value.add(key)
   
@@ -1213,6 +1313,10 @@ useAgentPageContext(() => ({
 .search-actions {
   display: flex;
   gap: 8px;
+}
+
+:global(.el-message-box.batch-approval-confirm) {
+  width: min(420px, calc(100vw - 40px));
 }
 
 .search-btn,
@@ -1631,6 +1735,10 @@ useAgentPageContext(() => ({
 
   .search-actions :deep(.el-button) {
     margin: 0;
+  }
+
+  .batch-approve-btn {
+    grid-column: 1 / -1;
   }
 
   .approval-mobile-list {

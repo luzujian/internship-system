@@ -313,7 +313,7 @@
             show-icon
           >
             <template #title>原申请已撤回</template>
-            可以修改申请内容后重新提交；未替换的已上传材料会保留。
+            可以修改申请内容后重新提交；未删除的已上传材料会保留。
           </el-alert>
           <el-form label-position="top" class="self-practice-form">
             <section class="self-practice-section" aria-labelledby="practice-info-title">
@@ -424,6 +424,8 @@
                 <el-icon><Document /></el-icon>
                 <span>{{ name }}</span>
                 <el-tag size="small" type="info">已上传</el-tag>
+                <el-button type="danger" link :disabled="onboardingSubmitting"
+                  :aria-label="`删除${name}`" @click="removeRetainedSelfPracticeMaterial(String(name))">删除</el-button>
               </div>
               </div>
             </el-form-item>
@@ -679,6 +681,7 @@ interface OnboardingApplication {
   hrManagerName?: string
   hrManagerPhone?: string
   materials?: Record<string, string>
+  removedMaterialKeys?: string[]
 }
 interface StudentApplicationRecord extends OnboardingApplication {
   reviewTarget?: 'COMPANY' | 'COUNSELOR'
@@ -1174,10 +1177,12 @@ const delayForm = ref({ reason: '', materialUrl: '' })
 const selfPracticeOtherFileList = ref<UploadUserFile[]>([])
 const selfPracticeOtherMaterialKeys = new Map<number, string>()
 const selfPracticeOriginalMaterials = ref<Record<string, string>>({})
+const selfPracticeRemovedMaterialKeys = ref<string[]>([])
 const selfPracticeOriginalCompany = ref('')
 const retainedSelfPracticeMaterials = computed(() =>
   normalizeCompanyName(selfPracticeForm.value.company) === normalizeCompanyName(selfPracticeOriginalCompany.value)
-    ? selfPracticeOriginalMaterials.value : {})
+    ? Object.fromEntries(Object.entries(selfPracticeOriginalMaterials.value)
+      .filter(([key, presence]) => presence && !selfPracticeRemovedMaterialKeys.value.includes(key))) : {})
 watch(selfPracticeAgreementFiles, files => {
   selfPracticeForm.value.agreementFileIds = files.filter(file => file.status === 'success').map(file => file.uploadId)
 }, { flush: 'sync' })
@@ -1303,6 +1308,7 @@ const resetSelfPracticeForm = (application?: StudentApplicationRecord | null) =>
   selfPracticeOtherFileList.value = []
   selfPracticeOtherMaterialKeys.clear()
   selfPracticeOriginalMaterials.value = { ...(application?.materials || {}) }
+  selfPracticeRemovedMaterialKeys.value = []
   selfPracticeOriginalCompany.value = application?.company || ''
   matchedCooperativeCompany.value = null
   similarCooperativeCompanies.value = []
@@ -1465,6 +1471,11 @@ const withdrawSelfPracticeApplication = async () => {
     withdrawingSelfPracticeApplication.value = false
   }
 }
+const removeRetainedSelfPracticeMaterial = (key: string) => {
+  if (onboardingSubmitting.value || selfPracticeRemovedMaterialKeys.value.includes(key)) return
+  selfPracticeRemovedMaterialKeys.value.push(key)
+}
+
 const removeSelfPracticeOtherFile = (file: UploadFile) => {
   const key = selfPracticeOtherMaterialKeys.get(file.uid)
   if (key) delete selfPracticeForm.value.otherMaterials[key]
@@ -1472,9 +1483,10 @@ const removeSelfPracticeOtherFile = (file: UploadFile) => {
 }
 
 const handleSelfPracticeOtherFileChange = async (file: UploadFile) => {
-  if (!file.raw || onboardingSubmitting.value) return
+  const currentFile = selfPracticeOtherFileList.value.find(item => item.uid === file.uid)
+  if (!file.raw || !currentFile || onboardingSubmitting.value) return
   const company = selfPracticeForm.value.company
-  file.status = 'uploading'
+  currentFile.status = 'uploading'
   try {
     const data = new FormData()
     data.append('file', file.raw)
@@ -1491,9 +1503,9 @@ const handleSelfPracticeOtherFileChange = async (file: UploadFile) => {
     while (selfPracticeForm.value.otherMaterials[key] || retainedSelfPracticeMaterials.value[key]) key = `${base}（${suffix++}）`
     selfPracticeForm.value.otherMaterials[key] = response.data.url
     selfPracticeOtherMaterialKeys.set(file.uid, key)
-    file.status = 'success'
+    currentFile.status = 'success'
   } catch (error: any) {
-    file.status = 'fail'
+    currentFile.status = 'fail'
     ElMessage.error(error?.message || '资料上传失败，请移除后重新上传')
   }
 }
@@ -1658,6 +1670,7 @@ const submitOnboardingApplication = async (type) => {
       applicationData.hrManagerName = selfPracticeForm.value.hrManagerName.trim()
       applicationData.hrManagerPhone = selfPracticeForm.value.hrManagerPhone.trim()
       applicationData.materials = { ...selfPracticeForm.value.otherMaterials }
+      applicationData.removedMaterialKeys = [...selfPracticeRemovedMaterialKeys.value]
     } else if (type === 'delay') {
       applicationData.materials = delayForm.value.materialUrl ? { delayPlan: delayForm.value.materialUrl } : {}
     }

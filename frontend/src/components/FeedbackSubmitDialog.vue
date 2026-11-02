@@ -8,6 +8,13 @@
     class="feedback-submit-dialog"
   >
     <el-alert
+      title="管理员回复将发送至账号绑定邮箱，请留意收件箱及垃圾邮件。"
+      type="info"
+      :closable="false"
+      show-icon
+      class="email-notice"
+    />
+    <el-alert
       v-if="emailNotice"
       :title="emailNotice"
       type="warning"
@@ -205,7 +212,11 @@ const handleSubmit = async () => {
     });
     if (response && response.code === 200) {
       operation.complete({ status: "submitted", label: form.value.title.trim() });
-      ElMessage.success("问题反馈提交成功");
+      ElMessage.success({
+        message: "问题反馈提交成功，管理员回复将发送至账号绑定邮箱，请留意收件箱及垃圾邮件。",
+        duration: 6000,
+        showClose: true,
+      });
       form.value.title = "";
       form.value.content = "";
       emit("update:modelValue", false);

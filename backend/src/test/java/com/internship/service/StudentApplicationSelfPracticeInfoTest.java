@@ -224,6 +224,77 @@ class StudentApplicationSelfPracticeInfoTest {
         assertEquals("new-acceptance.pdf", changed.getMaterials().get("实习接收函"));
     }
 
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"rejected", "withdrawn"})
+    void resubmissionRemovesOnlySelectedOtherMaterials(String status) {
+        StudentApplication existing = completeApplication();
+        existing.setId(15L);
+        existing.setStatus(status);
+        existing.setMaterials(java.util.Map.of("个人申请书", "old.pdf", "实习接收函", "keep.pdf"));
+        when(applicationMapper.findByIdForUpdate(15L)).thenReturn(existing);
+
+        StudentApplication changed = completeApplication();
+        changed.setRemovedMaterialKeys(java.util.List.of("个人申请书"));
+        when(applicationMapper.resetForResubmit(changed)).thenReturn(1);
+
+        assertEquals(1, service.resubmit(15L, 1L, changed));
+        assertEquals(java.util.Map.of("实习接收函", "keep.pdf"), changed.getMaterials());
+        assertEquals("old.pdf", existing.getMaterials().get("个人申请书"));
+        verify(agreementService).bindSubmission(1L, "SELF_PRACTICE", 15L, changed.getAgreementFileIds());
+    }
+
+    @Test
+    void resubmissionAllowsRemovingAllOptionalOtherMaterials() {
+        StudentApplication existing = completeApplication();
+        existing.setId(15L);
+        existing.setStatus("withdrawn");
+        existing.setMaterials(java.util.Map.of("个人申请书", "old.pdf"));
+        when(applicationMapper.findByIdForUpdate(15L)).thenReturn(existing);
+
+        StudentApplication changed = completeApplication();
+        changed.setRemovedMaterialKeys(java.util.List.of("个人申请书"));
+        changed.setMaterials(java.util.Map.of());
+        when(applicationMapper.resetForResubmit(changed)).thenReturn(1);
+
+        assertEquals(1, service.resubmit(15L, 1L, changed));
+        assertEquals(java.util.Map.of(), changed.getMaterials());
+    }
+
+    @Test
+    void deletedMaterialCanBeReuploadedUnderTheSameName() {
+        StudentApplication existing = completeApplication();
+        existing.setId(15L);
+        existing.setStatus("rejected");
+        existing.setMaterials(java.util.Map.of("个人申请书", "old.pdf", "实习接收函", "keep.pdf"));
+        when(applicationMapper.findByIdForUpdate(15L)).thenReturn(existing);
+
+        StudentApplication changed = completeApplication();
+        changed.setRemovedMaterialKeys(java.util.List.of("个人申请书"));
+        changed.setMaterials(java.util.Map.of("个人申请书", "replacement.pdf"));
+        when(applicationMapper.resetForResubmit(changed)).thenReturn(1);
+
+        assertEquals(1, service.resubmit(15L, 1L, changed));
+        assertEquals(java.util.Map.of("个人申请书", "replacement.pdf", "实习接收函", "keep.pdf"), changed.getMaterials());
+    }
+
+    @Test
+    void resubmissionForAnotherCompanyDoesNotRestorePreviousMaterials() {
+        StudentApplication existing = completeApplication();
+        existing.setId(15L);
+        existing.setStatus("withdrawn");
+        existing.setMaterials(java.util.Map.of("个人申请书", "old.pdf", "实习接收函", "old-acceptance.pdf"));
+        when(applicationMapper.findByIdForUpdate(15L)).thenReturn(existing);
+
+        StudentApplication changed = completeApplication();
+        changed.setCompany("新的实习单位");
+        changed.setRemovedMaterialKeys(java.util.List.of("个人申请书"));
+        changed.setMaterials(java.util.Map.of("个人申请书", "new-company.pdf"));
+        when(applicationMapper.resetForResubmit(changed)).thenReturn(1);
+
+        assertEquals(1, service.resubmit(15L, 1L, changed));
+        assertEquals(java.util.Map.of("个人申请书", "new-company.pdf"), changed.getMaterials());
+    }
+
     @Test
     void approvedSelfPracticeEmailTellsStudentItPassed() {
         StudentApplication pending = completeApplication();

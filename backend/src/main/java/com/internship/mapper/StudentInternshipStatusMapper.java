@@ -32,6 +32,9 @@ public interface StudentInternshipStatusMapper {
      * @return 学生实习状态
      */
     StudentInternshipStatus findByStudentId(Long studentId);
+
+    List<com.internship.entity.dto.TeacherStudentDetailExtras> findTeacherDetailExtrasByStudentIds(
+            @Param("studentIds") List<Long> studentIds);
     
     /**
      * 更新学生实习状态

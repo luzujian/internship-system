@@ -13,6 +13,10 @@ public interface ProblemFeedbackMapper {
 
     ProblemFeedback findById(Long id);
 
+    ProblemFeedback findByIdForUpdate(Long id);
+
+    String findRecipientEmail(Long id);
+
     int update(ProblemFeedback feedback);
 
     int deleteById(Long id);

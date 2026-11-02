@@ -1,6 +1,9 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
+import vm from 'node:vm'
+import ts from 'typescript'
+import { parse } from '@vue/compiler-sfc'
 
 const jobs = fs.readFileSync(new URL('./Jobs.vue', import.meta.url), 'utf8')
 const confirmation = fs.readFileSync(new URL('./InternshipConfirmationForm.vue', import.meta.url), 'utf8')
@@ -114,12 +117,19 @@ test('teacher monitoring and approval no longer expose stage-two or unit-change 
 })
 
 test('teacher monitoring displays the stored company name for self-practice students', () => {
-  assert.match(teacherStudentManagement, /const resolveInternshipCompanyName = \(item: any\): string =>/)
-  assert.match(teacherStudentManagement, /if \(item\.companyName\) return item\.companyName/)
-  assert.equal(
-    (teacherStudentManagement.match(/company: resolveInternshipCompanyName\(item\)/g) || []).length,
-    2
-  )
+  const script = parse(teacherStudentManagement).descriptor.scriptSetup.content
+  const ast = ts.createSourceFile('TeacherStudentManagement.ts', script, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
+  const declaration = ast.statements.filter(ts.isVariableStatement)
+    .flatMap(statement => [...statement.declarationList.declarations])
+    .find(item => item.name.getText(ast) === 'resolveInternshipCompanyName')
+  const code = ts.transpileModule(`(${declaration.initializer.getText(ast)})`, {
+    compilerOptions: { target: ts.ScriptTarget.ES2022 }
+  }).outputText
+  const companyName = vm.runInNewContext(code)
+  assert.equal(companyName({ companyName: '自主实习单位' }), '自主实习单位')
+  assert.equal(companyName({ company: { companyName: '合作实习单位' }, companyName: '历史单位' }), '合作实习单位')
+  assert.equal(companyName({ company: '自主实习单位', companyName: '  ' }), '自主实习单位')
+  assert.equal(companyName({}), '')
 })
 
 test('teacher monitoring can filter registered and self-practice companies', () => {
