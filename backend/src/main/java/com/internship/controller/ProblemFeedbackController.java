@@ -122,8 +122,6 @@ public class ProblemFeedbackController {
             @RequestParam(defaultValue = "10") Integer pageSize,
             @RequestParam(required = false) String userType,
             @RequestParam(required = false) String status,
-            @RequestParam(required = false) String priority,
-            @RequestParam(required = false) String feedbackType,
             @RequestParam(required = false) String userName,
             @RequestParam(required = false) String title) {
         log.info("分页查询问题反馈，页码: {}, 每页大小: {}", page, pageSize);
@@ -131,7 +129,7 @@ public class ProblemFeedbackController {
             // 使用 PageHelper 进行分页查询
             PageHelper.startPage(page, pageSize);
             List<ProblemFeedback> feedbackList = problemFeedbackMapper.list(
-                userType, status, priority, feedbackType, userName, title);
+                userType, status, null, null, userName, title);
 
             // 构建 PageInfo 对象
             PageInfo<ProblemFeedback> pageInfo = new PageInfo<>(feedbackList);
@@ -171,17 +169,9 @@ public class ProblemFeedbackController {
             feedback.setUserId(actor.getId());
             feedback.setUserName(actor.getName());
             feedback.setUserAccount(actor.getUsername());
-            String priority = "normal";
-            
-            if ("company".equals(userType)) {
-                priority = "high";
-            } else if ("teacher".equals(userType)) {
-                priority = "normal";
-            } else if ("student".equals(userType)) {
-                priority = "low";
-            }
-            
-            feedback.setPriority(priority);
+            // 兼容保留历史字段，处理顺序不再按提交者身份区分。
+            feedback.setPriority("normal");
+            feedback.setFeedbackType(null);
             feedback.setStatus("processing");
             
             int result = problemFeedbackMapper.insert(feedback);
@@ -210,8 +200,6 @@ public class ProblemFeedbackController {
             feedbackData.put("content", feedback.getContent());
             feedbackData.put("userType", feedback.getUserType());
             feedbackData.put("userName", feedback.getUserName());
-            feedbackData.put("priority", feedback.getPriority());
-            feedbackData.put("feedbackType", feedback.getFeedbackType());
             feedbackData.put("createTime", feedback.getCreateTime());
             feedbackData.put("status", feedback.getStatus());
             
@@ -245,6 +233,11 @@ public class ProblemFeedbackController {
                 editable.setFeedbackType(feedback.getFeedbackType());
                 editable.setAttachmentUrl(feedback.getAttachmentUrl());
                 feedback = editable;
+            }
+            if (feedback.getStatus() != null) {
+                String status = normalizeStatus(feedback.getStatus());
+                if (status == null) return Result.error("请选择待处理或已处理");
+                feedback.setStatus(status);
             }
             feedback.setId(id);
             int result = problemFeedbackMapper.update(feedback);
@@ -311,13 +304,15 @@ public class ProblemFeedbackController {
     }
 
     @PutMapping("/{id}/status")
-    @PreAuthorize("hasRole('ROLE_ADMIN')")
+    @PreAuthorize("hasRole('ROLE_ADMIN') and hasAuthority('problem:edit')")
     @Log(operationType = "AUDIT", module = "PROBLEM_FEEDBACK", description = "处理问题反馈", riskLevel = "MEDIUM")
     public Result updateStatus(@PathVariable Long id, @RequestBody Map<String, String> request) {
         log.info("更新问题反馈状态: ID={}, 状态={}", id, request.get("status"));
         try {
-            String status = request.get("status");
+            String status = normalizeStatus(request.get("status"));
+            if (status == null) return Result.error("请选择待处理或已处理");
             int result = problemFeedbackMapper.updateStatus(id, status);
+            if (result == 0) return Result.error("反馈不存在或已删除");
             return Result.success("更新状态成功", result);
         } catch (Exception e) {
             log.error("更新问题反馈状态失败: {}", e.getMessage(), e);
@@ -372,13 +367,13 @@ public class ProblemFeedbackController {
     @GetMapping("/processing-count")
     @PreAuthorize("hasRole('ROLE_ADMIN')")
     public Result getProcessingCount() {
-        log.info("获取处理中的问题反馈数量");
+        log.info("获取待处理的问题反馈数量");
         try {
             Long count = problemFeedbackMapper.countByStatus("processing");
             return Result.success(count);
         } catch (Exception e) {
-            log.error("获取处理中的问题反馈数量失败: {}", e.getMessage(), e);
-            return Result.error("获取处理中的问题反馈数量失败: " + e.getMessage());
+            log.error("获取待处理的问题反馈数量失败: {}", e.getMessage(), e);
+            return Result.error("获取待处理的问题反馈数量失败: " + e.getMessage());
         }
     }
 
@@ -404,16 +399,12 @@ public class ProblemFeedbackController {
     public void exportFeedbackData(HttpServletResponse response,
             @RequestParam(required = false) String userType,
             @RequestParam(required = false) String status,
-            @RequestParam(required = false) String priority,
-            @RequestParam(required = false) String feedbackType,
             @RequestParam(required = false) String userName,
             @RequestParam(required = false) String title) throws IOException {
-        Map<String,String> types = Map.of("system","系统问题","feature","功能建议","bug","程序错误","data","数据问题","other","其他");
-        List<Object[]> rows = problemFeedbackMapper.list(userType,status,priority,feedbackType,userName,title).stream()
+        List<Object[]> rows = problemFeedbackMapper.list(userType,status,null,null,userName,title).stream()
                 .map(r -> new Object[]{r.getTitle(),getStatusText(r.getStatus()),r.getUserName(),r.getUserAccount(),
-                        getUserTypeText(r.getUserType()),types.getOrDefault(ExcelExports.text(r.getFeedbackType()),"未知类型"),
-                        getPriorityText(r.getPriority()),r.getCreateTime(),r.getContent(),r.getAdminReply()}).toList();
-        ExcelExports.write(response,"问题反馈",new String[]{"标题","状态","用户姓名","用户账号","用户类型","反馈类型","优先级","提交时间","反馈内容","回复内容"},rows);
+                        getUserTypeText(r.getUserType()),r.getCreateTime(),r.getContent(),r.getAdminReply()}).toList();
+        ExcelExports.write(response,"问题反馈",new String[]{"标题","处理状态","用户姓名","用户账号","用户类型","提交时间","反馈内容","最近回复内容"},rows);
     }
 
     private String getUserTypeText(String userType) {
@@ -426,24 +417,23 @@ public class ProblemFeedbackController {
         }
     }
 
-    private String getPriorityText(String priority) {
-        if (priority == null) return "";
-        switch (priority) {
-            case "low": return "低";
-            case "normal": return "中";
-            case "high": return "高";
-            default: return priority;
-        }
+    private String normalizeStatus(String status) {
+        if (status == null) return null;
+        return switch (status) {
+            case "pending", "processing" -> "processing";
+            case "resolved", "closed" -> "resolved";
+            default -> null;
+        };
     }
 
     private String getStatusText(String status) {
         if (status == null) return "";
         switch (status) {
-            case "pending": return "待处理";
-            case "processing": return "处理中";
-            case "resolved": return "已解决";
-            case "closed": return "感谢您的反馈";
-            default: return status;
+            case "pending":
+            case "processing": return "待处理";
+            case "resolved":
+            case "closed": return "已处理";
+            default: return "未知状态";
         }
     }
 

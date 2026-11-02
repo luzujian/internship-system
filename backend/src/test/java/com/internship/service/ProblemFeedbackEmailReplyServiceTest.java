@@ -186,6 +186,7 @@ class ProblemFeedbackEmailReplyServiceTest {
     @Test void invalidTextAndStatusCannotSend() {
         assertThrows(BusinessException.class, () -> service.send(7L, new Request(UUID.randomUUID(), "student@example.com", "  ", "resolved", 1000L, null)));
         assertThrows(BusinessException.class, () -> service.send(7L, new Request(UUID.randomUUID(), "student@example.com", "内容", "forged", 1000L, null)));
+        assertThrows(BusinessException.class, () -> service.send(7L, new Request(UUID.randomUUID(), "student@example.com", "内容", "closed", 1000L, null)));
         verifyNoInteractions(feedbacks, replies, email, transactions);
     }
 

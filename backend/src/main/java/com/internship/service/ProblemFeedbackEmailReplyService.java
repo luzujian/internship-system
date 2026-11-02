@@ -183,7 +183,7 @@ public class ProblemFeedbackEmailReplyService {
         if (request == null || request.requestId() == null || request.feedbackVersion() == null
                 || request.adminReply() == null || request.adminReply().isBlank() || request.adminReply().length() > 10000
                 || request.recipientEmail() == null || !EMAIL.matcher(request.recipientEmail().trim()).matches()
-                || !Set.of("processing", "resolved", "closed").contains(text(request.status()))) {
+                || !Set.of("processing", "resolved").contains(text(request.status()))) {
             throw new BusinessException("请检查收件邮箱、回复内容和处理状态");
         }
     }

@@ -91,6 +91,9 @@ class ProblemFeedbackEmailRequirementTest {
         ProblemFeedback feedback = request();
         assertEquals(200, controller.addFeedback(feedback).getCode());
         assertEquals(7L, feedback.getUserId());
+        assertEquals("normal", feedback.getPriority());
+        assertEquals("processing", feedback.getStatus());
+        assertNull(feedback.getFeedbackType());
         verify(feedbacks).insert(feedback);
         if (role.startsWith("ROLE_TEACHER")) {
             verify(teachers).findById(7L);

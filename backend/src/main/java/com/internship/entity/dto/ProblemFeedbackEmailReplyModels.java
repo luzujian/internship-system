@@ -18,7 +18,7 @@ public final class ProblemFeedbackEmailReplyModels {
             @NotNull UUID requestId,
             @NotBlank @Email @Size(max = 254) String recipientEmail,
             @NotBlank @Size(max = 10000) String adminReply,
-            @NotBlank @Pattern(regexp = "processing|resolved|closed") String status,
+            @NotBlank @Pattern(regexp = "processing|resolved") String status,
             @NotNull Long feedbackVersion,
             Long previousReplyId) {}
 

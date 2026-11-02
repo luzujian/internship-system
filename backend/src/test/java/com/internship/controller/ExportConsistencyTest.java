@@ -194,9 +194,19 @@ class ExportConsistencyTest {
     @Test void feedbackExportUsesEveryFilterAndPageLabels() throws Exception {
         var controller=new ProblemFeedbackController(); var mapper=mock(ProblemFeedbackMapper.class); inject(controller,"problemFeedbackMapper",mapper);
         var f=new ProblemFeedback(); f.setStatus("closed"); f.setPriority("normal"); f.setFeedbackType("bug"); f.setTitle("故障");
-        when(mapper.list("student","closed","normal","bug","姓名","故障")).thenReturn(List.of(f));
-        var response=new MockHttpServletResponse(); controller.exportFeedbackData(response,"student","closed","normal","bug","姓名","故障");
-        try(var book=workbook(response)) { Row row=book.getSheetAt(0).getRow(1); assertEquals("感谢您的反馈",row.getCell(1).getStringCellValue()); assertEquals("程序错误",row.getCell(5).getStringCellValue()); assertEquals("中",row.getCell(6).getStringCellValue()); }
+        f.setContent("原始问题"); f.setAdminReply("管理员回复");
+        when(mapper.list("student","resolved",null,null,"姓名","故障")).thenReturn(List.of(f));
+        var response=new MockHttpServletResponse(); controller.exportFeedbackData(response,"student","resolved","姓名","故障");
+        try(var book=workbook(response)) {
+            Row header=book.getSheetAt(0).getRow(0), row=book.getSheetAt(0).getRow(1);
+            assertEquals(8,header.getLastCellNum());
+            assertEquals("处理状态",header.getCell(1).getStringCellValue());
+            assertEquals("提交时间",header.getCell(5).getStringCellValue());
+            assertEquals("已处理",row.getCell(1).getStringCellValue());
+            assertEquals("原始问题",row.getCell(6).getStringCellValue());
+            assertEquals("管理员回复",row.getCell(7).getStringCellValue());
+        }
+        verify(mapper).list("student","resolved",null,null,"姓名","故障");
     }
 
     @Test void announcementAudienceIncludesChineseTypesAndTargetDetails() {

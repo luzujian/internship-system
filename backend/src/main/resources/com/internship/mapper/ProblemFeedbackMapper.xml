@@ -26,6 +26,24 @@
         <result property="updateTime" column="update_time" />
     </resultMap>
 
+    <sql id="StatusFilter">
+        <if test="status != null and status != ''">
+            <choose>
+                <when test="status == 'processing' or status == 'pending'">
+                    and status in ('pending', 'processing')
+                </when>
+                <when test="status == 'resolved' or status == 'closed'">
+                    and status in ('resolved', 'closed')
+                </when>
+                <otherwise>and status = #{status}</otherwise>
+            </choose>
+        </if>
+    </sql>
+
+    <sql id="FeedbackOrder">
+        order by case when status in ('pending', 'processing') then 0 else 1 end, create_time desc, id desc
+    </sql>
+
     <insert id="insert" parameterType="com.internship.entity.ProblemFeedback" useGeneratedKeys="true" keyProperty="id">
         insert into problem_feedback (user_type, user_id, user_name, user_account, title, content, feedback_type, status, priority, attachment_url, create_time, update_time)
         values (#{userType}, #{userId}, #{userName}, #{userAccount}, #{title}, #{content}, #{feedbackType}, #{status}, #{priority}, #{attachmentUrl}, NOW(), NOW())
@@ -66,6 +84,7 @@
             </if>
             <if test="status != null and status != ''">
                 status = #{status},
+                resolve_time = case when #{status} = 'resolved' then NOW() else null end,
             </if>
             <if test="priority != null and priority != ''">
                 priority = #{priority},
@@ -85,7 +104,7 @@
             <if test="replyTime != null">
                 reply_time = #{replyTime},
             </if>
-            <if test="resolveTime != null">
+            <if test="resolveTime != null and (status == null or status == '')">
                 resolve_time = #{resolveTime},
             </if>
             update_time = NOW()
@@ -99,7 +118,7 @@
 
     <select id="findAll" resultMap="ProblemFeedbackResultMap">
         select * from problem_feedback where deleted = 0 
-        order by status = 'processing' DESC, FIELD(priority, 'high', 'normal', 'low'), create_time desc
+        <include refid="FeedbackOrder" />
     </select>
 
     <select id="findByOwner" resultMap="ProblemFeedbackResultMap">
@@ -115,9 +134,7 @@
             <if test="userType != null and userType != ''">
                 and user_type = #{userType}
             </if>
-            <if test="status != null and status != ''">
-                and status = #{status}
-            </if>
+            <include refid="StatusFilter" />
             <if test="priority != null and priority != ''">
                 and priority = #{priority}
             </if>
@@ -131,7 +148,7 @@
                 and title like concat('%',#{title},'%')
             </if>
         </where>
-        order by status = 'processing' DESC, FIELD(priority, 'high', 'normal', 'low'), create_time desc
+        <include refid="FeedbackOrder" />
     </select>
 
     <select id="selectByIds" resultType="com.internship.entity.ProblemFeedback" parameterType="java.util.List">
@@ -154,7 +171,7 @@
 
     <select id="findPage" resultMap="ProblemFeedbackResultMap">
         SELECT * FROM problem_feedback WHERE deleted = 0 
-        ORDER BY status = 'processing' DESC, FIELD(priority, 'high', 'normal', 'low'), create_time DESC 
+        <include refid="FeedbackOrder" />
         LIMIT #{offset}, #{pageSize}
     </select>
 
@@ -165,9 +182,7 @@
             <if test="userType != null and userType != ''">
                 and user_type = #{userType}
             </if>
-            <if test="status != null and status != ''">
-                and status = #{status}
-            </if>
+            <include refid="StatusFilter" />
             <if test="priority != null and priority != ''">
                 and priority = #{priority}
             </if>
@@ -181,7 +196,7 @@
                 and title like concat('%',#{title},'%')
             </if>
         </where>
-        order by status = 'processing' DESC, FIELD(priority, 'high', 'normal', 'low'), create_time desc
+        <include refid="FeedbackOrder" />
         limit #{offset}, #{pageSize}
     </select>
 
@@ -192,9 +207,7 @@
             <if test="userType != null and userType != ''">
                 and user_type = #{userType}
             </if>
-            <if test="status != null and status != ''">
-                and status = #{status}
-            </if>
+            <include refid="StatusFilter" />
             <if test="priority != null and priority != ''">
                 and priority = #{priority}
             </if>
@@ -213,11 +226,9 @@
     <update id="updateStatus">
         update problem_feedback
         set status = #{status},
-            update_time = NOW()
-        <if test="status == 'resolved'">
-            , resolve_time = NOW()
-        </if>
-        where id = #{id}
+            update_time = NOW(),
+            resolve_time = case when #{status} = 'resolved' then NOW() else null end
+        where id = #{id} and deleted = 0
     </update>
 
     <update id="reply">
@@ -227,22 +238,16 @@
             admin_name = #{adminName},
             reply_time = NOW(),
             status = #{status},
-            update_time = NOW()
-        <if test="status == 'resolved'">
-            , resolve_time = NOW()
-        </if>
+            update_time = NOW(),
+            resolve_time = case when #{status} = 'resolved' then NOW() else null end
         where id = #{id}
     </update>
 
     <select id="getStatistics" resultType="java.util.Map">
         SELECT
             COUNT(*) as total,
-            SUM(CASE WHEN status = 'processing' OR status = 'pending' THEN 1 ELSE 0 END) as processing,
-            SUM(CASE WHEN status = 'resolved' THEN 1 ELSE 0 END) as resolved,
-            SUM(CASE WHEN status = 'closed' THEN 1 ELSE 0 END) as closed,
-            SUM(CASE WHEN priority = 'high' THEN 1 ELSE 0 END) as high,
-            SUM(CASE WHEN priority = 'normal' THEN 1 ELSE 0 END) as normal,
-            SUM(CASE WHEN priority = 'low' THEN 1 ELSE 0 END) as low,
+            SUM(CASE WHEN status IN ('pending', 'processing') THEN 1 ELSE 0 END) as processing,
+            SUM(CASE WHEN status IN ('resolved', 'closed') THEN 1 ELSE 0 END) as resolved,
             SUM(CASE WHEN user_type = 'student' THEN 1 ELSE 0 END) as student,
             SUM(CASE WHEN user_type = 'teacher' THEN 1 ELSE 0 END) as teacher,
             SUM(CASE WHEN user_type = 'company' THEN 1 ELSE 0 END) as company
@@ -251,7 +256,8 @@
     </select>
 
     <select id="countByStatus" resultType="java.lang.Long">
-        SELECT COUNT(*) FROM problem_feedback WHERE status = #{status} AND deleted = 0
+        SELECT COUNT(*) FROM problem_feedback WHERE deleted = 0
+        <include refid="StatusFilter" />
     </select>
 
     <select id="findRecent" resultMap="ProblemFeedbackResultMap">

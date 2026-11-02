@@ -187,7 +187,7 @@
               </div>
               <el-radio-group v-model="feedbackTab" size="small" class="feedback-tabs">
                 <el-radio-button label="all">全部</el-radio-button>
-                <el-radio-button label="processing">未处理</el-radio-button>
+                <el-radio-button label="processing">待处理</el-radio-button>
                 <el-radio-button label="resolved">已处理</el-radio-button>
               </el-radio-group>
             </div>
@@ -264,11 +264,11 @@
         <span class="dialog-footer">
           <el-button @click="feedbackDetailVisible = false">取消</el-button>
           <el-button
-            v-if="feedbackDetail && feedbackDetail.status === 'processing'"
+            v-if="feedbackDetail && normalizeFeedbackStatus(feedbackDetail.status) === 'processing' && authStore.hasPermission('problem:edit')"
             type="primary"
             :loading="markingResolved"
             @click="markFeedbackResolved"
-          >已处理</el-button>
+          >标记已处理</el-button>
         </span>
       </template>
     </el-dialog>
@@ -549,6 +549,7 @@
 <script setup lang="ts">
 import { getUploadErrorMessage } from '@/utils/uploadErrorMessage'
 import logger from '@/utils/logger'
+import { normalizeFeedbackStatus, getFeedbackStatusText, getFeedbackStatusTag } from '@/utils/problemFeedbackStatus'
 import OnlineUserOverview from '@/components/admin/OnlineUserOverview.vue'
 import { ref, onMounted, onUnmounted, nextTick, computed, watch } from 'vue'
 import { useFormContext } from '@/agent/formContext'
@@ -662,13 +663,13 @@ const filteredFeedback = computed<FeedbackRow[]>(() => {
     return tb - ta
   })
   if (feedbackTab.value === 'processing' || feedbackTab.value === 'resolved') {
-    return rows.filter((row) => row.status === feedbackTab.value)
+    return rows.filter((row) => normalizeFeedbackStatus(row.status) === feedbackTab.value)
   }
   return rows
 })
 
 const emptyFeedbackText = computed<string>(() => {
-  if (feedbackTab.value === 'processing') return '暂无未处理的问题反馈'
+  if (feedbackTab.value === 'processing') return '暂无待处理的问题反馈'
   if (feedbackTab.value === 'resolved') return '暂无已处理的问题反馈'
   return '暂无问题反馈'
 })
@@ -1060,17 +1061,6 @@ const getUserTypeText = (type) => {
     'company': '企业'
   }
   return typeMap[type] || type
-}
-
-// 首页问题反馈状态标签（未处理/已处理）
-const getFeedbackStatusTag = (status) => {
-  if (status === 'resolved') return 'success'
-  return 'warning'
-}
-
-const getFeedbackStatusText = (status) => {
-  if (status === 'resolved') return '已处理'
-  return '未处理'
 }
 
 // 显示公告发布对话框

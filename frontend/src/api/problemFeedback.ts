@@ -6,7 +6,8 @@ export interface ProblemFeedback {
   content: string
   userId?: number
   userType?: string
-  status?: number
+  status?: string
+  adminReply?: string
   reply?: string
   replyTime?: string
   createTime?: string
@@ -38,9 +39,11 @@ export const getFeedbackById = (id: number) => {
 export const getFeedbackByPage = (params: {
   page?: number
   pageSize?: number
-  status?: number
+  status?: string
   userType?: string
   userId?: number
+  userName?: string
+  title?: string
 }) => {
   return request.get<ProblemFeedback[]>('/problem-feedback/page', { params })
 }
@@ -67,7 +70,7 @@ export const getMyFeedback = (userType: string, userId: number) => {
   })
 }
 
-export const updateFeedbackStatus = (id: number, status: number) => {
+export const updateFeedbackStatus = (id: number, status: string) => {
   return request.put(`/problem-feedback/${id}/status`, { status })
 }
 
@@ -88,7 +91,7 @@ export interface FeedbackEmailReceipt {
 }
 
 export interface FeedbackEmailContext {
-  feedback: Omit<ProblemFeedback, 'status'> & { status?: string; adminReply?: string }
+  feedback: ProblemFeedback
   recipientEmail: string
   senderName: string
   senderEmail: string

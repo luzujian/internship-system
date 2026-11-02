@@ -17,37 +17,17 @@
       <el-form :inline="true" :model="searchForm" class="search-form" @keyup.enter="handleSearch">
         <div class="search-row">
           <el-form-item label="用户类型">
-            <el-select v-model="searchForm.userType" placeholder="请选择用户类型" clearable style="width: 120px;">
+            <el-select v-model="searchForm.userType" placeholder="全部用户类型" clearable style="width: 100%;">
               <el-option label="全部" value=""></el-option>
               <el-option label="学生" value="student"></el-option>
               <el-option label="教师" value="teacher"></el-option>
               <el-option label="企业" value="company"></el-option>
             </el-select>
           </el-form-item>
-          <el-form-item label="状态">
-            <el-select v-model="searchForm.status" placeholder="请选择状态" clearable style="width: 120px;">
+          <el-form-item label="处理状态">
+            <el-select v-model="searchForm.status" placeholder="全部处理状态" clearable style="width: 100%;">
               <el-option label="全部" value=""></el-option>
-              <el-option label="处理中" value="processing"></el-option>
-              <el-option label="已解决" value="resolved"></el-option>
-              <el-option label="感谢您的反馈" value="closed"></el-option>
-            </el-select>
-          </el-form-item>
-          <el-form-item label="优先级">
-            <el-select v-model="searchForm.priority" placeholder="请选择优先级" clearable style="width: 120px;">
-              <el-option label="全部" value=""></el-option>
-              <el-option label="高" value="high"></el-option>
-              <el-option label="中" value="normal"></el-option>
-              <el-option label="低" value="low"></el-option>
-            </el-select>
-          </el-form-item>
-          <el-form-item label="反馈类型">
-            <el-select v-model="searchForm.feedbackType" placeholder="请选择反馈类型" clearable style="width: 140px;">
-              <el-option label="全部" value=""></el-option>
-              <el-option label="系统问题" value="system"></el-option>
-              <el-option label="功能建议" value="feature"></el-option>
-              <el-option label="程序错误" value="bug"></el-option>
-              <el-option label="数据问题" value="data"></el-option>
-              <el-option label="其他" value="other"></el-option>
+              <el-option v-for="option in feedbackStatusOptions" :key="option.value" :label="option.label" :value="option.value" />
             </el-select>
           </el-form-item>
           <el-form-item label="用户姓名">
@@ -55,8 +35,7 @@
               v-model="searchForm.userName"
               placeholder="请输入用户姓名"
               clearable
-              style="width: 200px;"
-              @keyup.enter="handleSearch"
+              style="width: 100%;"
             ></el-input>
           </el-form-item>
           <el-form-item label="标题">
@@ -64,8 +43,7 @@
               v-model="searchForm.title"
               placeholder="请输入标题"
               clearable
-              style="width: 150px;"
-              @keyup.enter="handleSearch"
+              style="width: 100%;"
             ></el-input>
           </el-form-item>
         </div>
@@ -111,9 +89,9 @@
         class="data-table"
       >
         <el-table-column type="selection" width="55" align="center" reserve-selection></el-table-column>
-        <el-table-column type="index" label="序号" width="55" align="center" :index="(index) => (currentPage - 1) * pageSize + index + 1"></el-table-column>
+        <el-table-column v-if="!isMobile" type="index" label="序号" width="55" align="center" :index="(index) => (currentPage - 1) * pageSize + index + 1"></el-table-column>
         <el-table-column prop="title" label="标题" width="300" show-overflow-tooltip></el-table-column>
-        <el-table-column prop="status" label="状态" width="150" align="center">
+        <el-table-column prop="status" label="处理状态" width="120" align="center">
           <template #default="scope">
             <el-tag :type="getStatusTag(scope.row.status)" size="small" class="status-tag">
               {{ getStatusText(scope.row.status) }}
@@ -129,24 +107,10 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="feedbackType" label="反馈类型" width="200" align="center">
-          <template #default="scope">
-            <el-tag :type="getFeedbackTypeTag(scope.row.feedbackType)" size="small">
-              {{ getFeedbackTypeText(scope.row.feedbackType) }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column prop="priority" label="优先级" width="80" align="center">
-          <template #default="scope">
-            <el-tag :type="getPriorityTag(scope.row.priority)" size="small">
-              {{ getPriorityText(scope.row.priority) }}
-            </el-tag>
-          </template>
-        </el-table-column>
         <el-table-column prop="createTime" label="提交时间" width="200" align="center">
           <template #default="scope">{{ formatDate(scope.row.createTime) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="240" fixed="right" align="center">
+        <el-table-column label="操作" :width="isMobile ? 110 : 180" fixed="right" align="center">
           <template #default="scope">
             <div class="action-buttons">
               <MobileMoreActions>
@@ -158,6 +122,15 @@
                 <el-tooltip v-if="authStore.hasPermission('problem:edit')" content="邮件回复" placement="top">
                   <el-button size="small" type="primary" aria-label="邮件回复" @click="handleReply(scope.row)" class="table-btn edit">
                     <el-icon><ChatDotRound /></el-icon>
+                  </el-button>
+                </el-tooltip>
+                <el-tooltip v-if="authStore.hasPermission('problem:edit') && normalizeFeedbackStatus(scope.row.status)"
+                  :content="normalizeFeedbackStatus(scope.row.status) === 'resolved' ? '改为待处理' : '标记已处理'" placement="top">
+                  <el-button size="small" type="primary" plain class="table-btn"
+                    :aria-label="normalizeFeedbackStatus(scope.row.status) === 'resolved' ? '改为待处理' : '标记已处理'"
+                    :loading="statusUpdatingId === scope.row.id" :disabled="statusUpdatingId !== null"
+                    @click="handleStatusChange(scope.row)">
+                    <el-icon><Refresh v-if="normalizeFeedbackStatus(scope.row.status) === 'resolved'" /><Check v-else /></el-icon>
                   </el-button>
                 </el-tooltip>
                 <el-tooltip v-if="authStore.hasPermission('problem:delete')" content="删除" placement="top">
@@ -179,7 +152,7 @@
           @size-change="handleSizeChange"
           @current-change="handleCurrentChange"
           :page-sizes="[10, 20, 50]"
-          layout="total, sizes, prev, pager, next, jumper"
+          :layout="isMobile ? 'total, prev, pager, next' : 'total, sizes, prev, pager, next, jumper'"
           :total="total"
           class="custom-pagination"
         />
@@ -187,7 +160,7 @@
     </el-card>
 
     <!-- 查看问题反馈对话框 - 统一风格 -->
-    <el-dialog v-model="viewDialogVisible" title="查看问题反馈" width="900px" class="form-dialog view-dialog">
+    <el-dialog v-model="viewDialogVisible" title="查看问题反馈" width="min(900px, calc(100vw - 24px))" class="form-dialog view-dialog">
       <div v-if="viewData" class="view-content">
         <h3 class="view-title">{{ viewData.title }}</h3>
         <div class="view-meta">
@@ -206,19 +179,7 @@
             </el-tag>
           </div>
           <div class="meta-item">
-            <span class="meta-label">反馈类型:</span>
-            <el-tag :type="getFeedbackTypeTag(viewData.feedbackType)" size="small">
-              {{ getFeedbackTypeText(viewData.feedbackType) }}
-            </el-tag>
-          </div>
-          <div class="meta-item">
-            <span class="meta-label">优先级:</span>
-            <el-tag :type="getPriorityTag(viewData.priority)" size="small">
-              {{ getPriorityText(viewData.priority) }}
-            </el-tag>
-          </div>
-          <div class="meta-item">
-            <span class="meta-label">状态:</span>
+            <span class="meta-label">处理状态:</span>
             <el-tag :type="getStatusTag(viewData.status)" size="small">
               {{ getStatusText(viewData.status) }}
             </el-tag>
@@ -274,10 +235,9 @@
         </el-form-item>
         <el-form-item label="处理状态" prop="status">
           <el-select v-model="replyForm.status" placeholder="请选择处理状态">
-            <el-option label="处理中" value="processing"></el-option>
-            <el-option label="已解决" value="resolved"></el-option>
-            <el-option label="感谢您的反馈" value="closed"></el-option>
+            <el-option v-for="option in feedbackStatusOptions" :key="option.value" :label="option.label" :value="option.value" />
           </el-select>
+          <div class="status-help">处理状态按所选保存，邮件发送结果单独记录。</div>
         </el-form-item>
       </el-form>
       <div v-if="replyContext?.history.length" class="email-reply-history">
@@ -316,15 +276,17 @@ import type { PaginationState } from '@/types/admin'
 import type { FormFieldDescriptor } from '@/agent/types'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search, Refresh, Delete, View, ChatDotRound, Download } from '@element-plus/icons-vue'
+import { Search, Refresh, Delete, View, ChatDotRound, Download, Check } from '@element-plus/icons-vue'
 import * as problemFeedbackApi from '../../api/problemFeedback'
 import { useAuthStore } from '../../store/auth'
-import { exportToExcel } from '../../utils/xlsx'
 import MobileMoreActions from '../../components/MobileMoreActions.vue'
 import { useFormContext } from '@/agent/formContext'
+import { useIsMobile } from '@/composables/useIsMobile'
+import { feedbackStatusOptions, normalizeFeedbackStatus, getFeedbackStatusText as getStatusText, getFeedbackStatusTag as getStatusTag } from '@/utils/problemFeedbackStatus'
 
 const route = useRoute()
 const authStore = useAuthStore()
+const isMobile = useIsMobile()
 
 interface FeedbackRow {
   id?: number | string
@@ -332,13 +294,10 @@ interface FeedbackRow {
   userName?: string
   userAccount?: string
   userType?: number | string
-  type?: number | string
-  feedbackType?: string
   title?: string
   content?: string
   images?: string
   status?: number | string
-  priority?: string
   reply?: string
   adminReply?: string
   adminName?: string
@@ -354,12 +313,11 @@ const pageSize = ref<number>(10)
 const total = ref<number>(0)
 const loading = ref(false)
 const tableData = ref<FeedbackRow[]>([])
+const statusUpdatingId = ref<number | string | null>(null)
 
 const searchForm = reactive({
   userType: '',
   status: '',
-  priority: '',
-  feedbackType: '',
   userName: '',
   title: ''
 })
@@ -412,7 +370,7 @@ const refreshReplyContext = async (prefill = false): Promise<void> => {
     replyForm.title = context.feedback.title
     replyForm.content = context.feedback.content
     if (prefill) {
-      replyForm.status = ['processing', 'resolved', 'closed'].includes(context.feedback.status || '') ? context.feedback.status! : 'processing'
+      replyForm.status = normalizeFeedbackStatus(context.feedback.status) || 'processing'
       replyForm.adminReply = context.history[0]?.replyContent || context.feedback.adminReply || ''
     }
     replyUncertain.value = false
@@ -446,11 +404,7 @@ const formContext = useFormContext()
 const feedbackReplyFillFields: FormFieldDescriptor[] = [
   { prop: 'adminReply', label: '回复内容', type: 'textarea', required: true, max: 10000 },
   { prop: 'status', label: '处理状态', type: 'select', required: true,
-    options: [
-      { label: '处理中', value: 'processing' },
-      { label: '已解决', value: 'resolved' },
-      { label: '感谢您的反馈', value: 'closed' }
-    ] }
+    options: feedbackStatusOptions }
 ]
 watch(replyDialogVisible, (open) => {
   if (!open) formContext.unregister('admin:feedback')
@@ -502,19 +456,14 @@ const fetchFeedbackById = async (id: string | string[]): Promise<void> => {
 const fetchData = async (): Promise<void> => {
   loading.value = true
   try {
-    // 后端分页接口实际支持 userType/status/priority/feedbackType/userName/title 组合过滤，
-    // api 声明仅收敛常用字段；此处保持原查询键集合不变，用精确断言适配声明
-    const rawParams = {
+    const params = {
       page: currentPage.value,
       pageSize: pageSize.value,
       userType: searchForm.userType || undefined,
       status: searchForm.status || undefined,
-      priority: searchForm.priority || undefined,
-      feedbackType: searchForm.feedbackType || undefined,
       userName: searchForm.userName || undefined,
       title: searchForm.title || undefined
     }
-    const params = rawParams as unknown as Parameters<typeof problemFeedbackApi.getFeedbackByPage>[0]
     const response = await problemFeedbackApi.getFeedbackByPage(params) as unknown as {
       code?: number
       message?: string
@@ -558,8 +507,6 @@ const handleSearch = (): void => {
 const resetForm = (): void => {
   searchForm.userType = ''
   searchForm.status = ''
-  searchForm.priority = ''
-  searchForm.feedbackType = ''
   searchForm.userName = ''
   searchForm.title = ''
   currentPage.value = 1
@@ -580,8 +527,7 @@ const handleReply = (row: FeedbackRow): void => {
   replyForm.title = typeof row.title === 'string' ? row.title : ''
   replyForm.content = typeof row.content === 'string' ? row.content : ''
   replyForm.adminReply = typeof row.adminReply === 'string' ? row.adminReply : (typeof row.reply === 'string' ? row.reply : '')
-  const statusText = row.status
-  replyForm.status = typeof statusText === 'string' ? statusText : (statusText !== undefined ? String(statusText) : 'resolved')
+  replyForm.status = normalizeFeedbackStatus(row.status) || 'processing'
   replyDialogVisible.value = true
   formContext.register({
     formId: 'admin:feedback',
@@ -638,6 +584,25 @@ const handleReplySubmit = async (): Promise<void> => {
     ElMessage.warning(replyNotice.value)
   } finally {
     replySending.value = false
+  }
+}
+
+const handleStatusChange = async (row: FeedbackRow): Promise<void> => {
+  if (statusUpdatingId.value !== null || row.id === undefined) return
+  const currentStatus = normalizeFeedbackStatus(row.status)
+  if (!currentStatus) return
+  const status = currentStatus === 'resolved' ? 'processing' : 'resolved'
+  statusUpdatingId.value = row.id
+  try {
+    const response: any = await problemFeedbackApi.updateFeedbackStatus(Number(row.id), status)
+    if (response?.code !== 200) throw new Error(response?.message || '更新处理状态失败')
+    ElMessage.success(status === 'resolved' ? '已标记为已处理' : '已改为待处理')
+    if (viewData.value?.id === row.id) viewData.value.status = status
+    await fetchData()
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '更新处理状态失败')
+  } finally {
+    statusUpdatingId.value = null
   }
 }
 
@@ -720,64 +685,6 @@ const getUserTypeTag = (type: string | number | undefined): string => {
     company: 'info'
   }
   return map[String(type ?? '')] || 'info'
-}
-
-const getFeedbackTypeText = (type: string | number | undefined): string => {
-  const map: Record<string, string> = {
-    system: '系统问题',
-    feature: '功能建议',
-    bug: '程序错误',
-    data: '数据问题',
-    other: '其他'
-  }
-  return map[String(type ?? '')] || '未知类型'
-}
-
-const getFeedbackTypeTag = (type: string | number | undefined): string => {
-  const map: Record<string, string> = {
-    system: 'danger',
-    feature: 'success',
-    bug: 'warning',
-    data: 'info',
-    other: 'info'
-  }
-  return map[String(type ?? '')] || 'info'
-}
-
-const getPriorityText = (priority: string | number | undefined): string => {
-  const map: Record<string, string> = {
-    high: '高',
-    normal: '中',
-    low: '低'
-  }
-  return map[String(priority ?? '')] || '未知优先级'
-}
-
-const getPriorityTag = (priority: string | number | undefined): string => {
-  const map: Record<string, string> = {
-    high: 'danger',
-    normal: 'warning',
-    low: 'info'
-  }
-  return map[String(priority ?? '')] || 'info'
-}
-
-const getStatusText = (status: string | number | undefined): string => {
-  const map: Record<string, string> = {
-    processing: '处理中',
-    resolved: '已解决',
-    closed: '感谢您的反馈'
-  }
-  return map[String(status ?? '')] || '未知状态'
-}
-
-const getStatusTag = (status: string | number | undefined): string => {
-  const map: Record<string, string> = {
-    processing: 'warning',
-    resolved: 'success',
-    closed: 'info'
-  }
-  return map[String(status ?? '')] || 'warning'
 }
 
 const handleExportToExcel = async (): Promise<void> => {
@@ -930,6 +837,8 @@ const handleExportToExcel = async (): Promise<void> => {
 
 .search-row .el-form-item {
   margin-bottom: 0;
+  margin-right: 0;
+  min-width: 0;
   flex: 1;
 }
 
@@ -1131,6 +1040,14 @@ const handleExportToExcel = async (): Promise<void> => {
   margin-bottom: 12px;
 }
 
+.status-help {
+  width: 100%;
+  color: #909399;
+  font-size: 12px;
+  line-height: 1.5;
+  margin-top: 6px;
+}
+
 .email-record-time {
   margin-left: 12px;
 }
@@ -1214,6 +1131,10 @@ const handleExportToExcel = async (): Promise<void> => {
   .search-row {
     flex-direction: column;
     gap: 12px;
+  }
+
+  .search-row .el-form-item {
+    width: 100%;
   }
   
   .search-actions {

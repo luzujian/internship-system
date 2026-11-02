@@ -69,7 +69,7 @@ class ProblemFeedbackOwnershipTest {
         assertEquals(200, controller.addFeedback(request).getCode());
         assertEquals("student", request.getUserType()); assertEquals(7L, request.getUserId());
         assertEquals("真实用户", request.getUserName()); assertEquals("real-user", request.getUserAccount());
-        assertEquals("low", request.getPriority());
+        assertEquals("normal", request.getPriority());
         when(mapper.findById(10L)).thenReturn(row("student", 7));
         request.setStatus("resolved"); request.setPriority("high"); request.setAdminReply("伪造回复");
         request.setAdminId(1L); request.setAdminName("管理员");
